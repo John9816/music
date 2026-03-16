@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Duck Music</string>
+
+    <string name="menu_profile">个人资料</string>
+    <string name="menu_logout">退出登录</string>
+    <string name="menu_favorites">我的收藏</string>
+    <string name="menu_history">播放历史</string>
+    <string name="menu_my_playlists">我的歌单</string>
+    <string name="menu_create_playlist">新建歌单</string>
+    <string name="menu_clear_history">清空历史</string>
+
+    <string name="nav_discover">发现</string>
+    <string name="nav_library">搜索</string>
+    <string name="nav_playlists">歌单</string>
+    <string name="nav_profile">我的</string>
+
+    <string name="content_desc_play_pause">播放/暂停</string>
+    <string name="content_desc_play">播放</string>
+    <string name="content_desc_pause">暂停</string>
+    <string name="content_desc_previous">上一首</string>
+    <string name="content_desc_next">下一首</string>
+    <string name="content_desc_close">关闭</string>
+    <string name="content_desc_queue">播放队列</string>
+    <string name="content_desc_remove">移除</string>
+    <string name="content_desc_repeat">循环播放</string>
+    <string name="content_desc_shuffle">随机播放</string>
+    <string name="content_desc_now_playing">正在播放</string>
+
+    <string name="action_play_next">下一首播放</string>
+    <string name="action_add_to_queue">加入队列</string>
+    <string name="queue_title">当前播放</string>
+    <string name="queue_clear">清空</string>
+    <string name="queue_empty">队列为空</string>
+    <string name="queue_playing_badge">正在播放</string>
+    <string name="playback_error_generic">播放出错，请稍后重试</string>
+    <string name="msg_added_to_queue">已加入播放队列</string>
+    <string name="msg_added_to_queue_next">已设为下一首播放</string>
+    <string name="msg_queue_cleared">已清空播放队列</string>
+    <string name="msg_removed_from_queue">已从队列移除</string>
+
+    <string name="favorites_title">我的收藏</string>
+    <string name="favorites_subtitle">同步到云端的收藏歌曲</string>
+    <string name="favorites_loaded_count">已加载 %1$d 首收藏歌曲</string>
+    <string name="history_title">播放历史</string>
+    <string name="history_subtitle">最近播放记录（云端同步）</string>
+    <string name="history_loaded_count">已加载 %1$d 条记录</string>
+
+    <string name="user_playlist_title">我的歌单</string>
+    <string name="user_playlist_hint">点击歌单查看歌曲，长按可删除</string>
+    <string name="user_playlist_empty">还没有歌单，先新建一个吧</string>
+    <string name="user_playlist_loading">正在加载歌单歌曲…</string>
+    <string name="user_playlist_public">公开歌单</string>
+    <string name="user_playlist_private">私密歌单</string>
+    <string name="user_playlist_delete_title">删除“%1$s”吗？</string>
+    <string name="user_playlist_delete_message">删除后将无法恢复。</string>
+    <string name="user_playlist_delete_confirm">删除</string>
+    <string name="user_playlist_pick_title">选择要添加的歌单</string>
+    <string name="user_playlist_create_first">请先创建一个歌单再添加</string>
+    <string name="user_playlist_create_title">新建歌单</string>
+    <string name="user_playlist_create_confirm">创建</string>
+    <string name="user_playlist_name_required">请输入歌单名称</string>
+    <string name="user_playlist_name_hint">歌单名称</string>
+    <string name="user_playlist_desc_hint">描述（可选）</string>
+
+    <string name="action_favorite">收藏</string>
+    <string name="action_unfavorite">取消收藏</string>
+    <string name="action_add_to_playlist">添加到歌单</string>
+    <string name="action_remove_from_playlist">从歌单移除</string>
+    <string name="action_play_all">播放全部</string>
+
+    <string name="song_list_empty_favorites">你还没有收藏歌曲</string>
+    <string name="song_list_empty_history">还没有播放记录</string>
+    <string name="playlist_loading">正在加载榜单歌曲…</string>
+    <string name="playlist_showing">当前显示 %1$s</string>
+    <string name="toplist_empty">榜单暂时为空，请稍后重试</string>
+    <string name="recommend_loaded_count">已加载 %1$d 首推荐歌曲</string>
+    <string name="songs_loaded_count">已加载 %1$d 首歌曲</string>
+    <string name="search_hint">搜索歌曲或歌手</string>
+    <string name="action_search">搜索</string>
+    <string name="search_result_title">搜索结果</string>
+    <string name="search_searching">正在搜索“%1$s”</string>
+    <string name="search_found_count">共找到 %1$d 首歌曲</string>
+    <string name="search_not_found">没有找到匹配歌曲</string>
+    <string name="search_input_required">请输入歌曲名或歌手名</string>
+    <string name="song_list_empty_recommend">暂时没有推荐歌曲</string>
+    <string name="song_list_empty_playlist">请先选择一个榜单</string>
+    <string name="song_list_empty_search">换个关键词试试</string>
+    <string name="song_list_title">歌曲列表</string>
+    <string name="song_list_subtitle">点击任意歌曲开始播放</string>
+    <string name="current_playing_title">当前播放</string>
+    <string name="current_playing_empty">未播放</string>
+    <string name="current_playing_hint">选择一首歌开始播放</string>
+    <string name="lyrics_title">歌词</string>
+    <string name="lyrics_placeholder">歌词将在播放歌曲后显示</string>
+
+    <string name="login_title">欢迎回来</string>
+    <string name="login_subtitle">登录后即可同步收藏、切换歌单并继续播放</string>
+    <string name="signup_title">创建账号</string>
+    <string name="signup_subtitle">只需邮箱和密码，就能开始你的音乐空间</string>
+    <string name="auth_mode_label">邮箱登录</string>
+    <string name="email_hint">邮箱</string>
+    <string name="password_hint">密码</string>
+    <string name="login_action">登录</string>
+    <string name="signup_action">注册</string>
+    <string name="toggle_to_signup">还没有账号？点击注册</string>
+    <string name="toggle_to_login">已有账号？点击登录</string>
+    <string name="auth_helper">首次注册成功后可直接返回登录，或自动进入首页。</string>
+    <string name="email_required">请输入邮箱</string>
+    <string name="email_invalid">请输入有效的邮箱地址</string>
+    <string name="password_required">请输入密码</string>
+    <string name="password_too_short">密码长度至少 6 位</string>
+
+    <string name="profile_title">个人资料</string>
+    <string name="settings_title">设置</string>
+    <string name="profile_signed_in">已登录账号</string>
+    <string name="profile_info_title">账号信息</string>
+    <string name="profile_liked_title">我喜欢的音乐</string>
+    <string name="profile_liked_empty">还没有喜欢的音乐</string>
+    <string name="profile_history_title">播放历史</string>
+    <string name="profile_history_empty">还没有播放记录</string>
+    <string name="profile_check_update">检查更新</string>
+    <string name="update_title">发现新版本</string>
+    <string name="update_latest">已是最新版本</string>
+    <string name="update_download">去下载</string>
+    <string name="update_later">稍后</string>
+    <string name="update_exit">退出</string>
+    <string name="update_no_url">未提供下载地址</string>
+    <string name="profile_theme">换肤</string>
+    <string name="theme_follow_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="profile_edit_button">编辑资料</string>
+    <string name="profile_edit_title">编辑资料</string>
+    <string name="profile_edit_confirm">保存</string>
+    <string name="profile_username_hint">用户名</string>
+    <string name="profile_nickname_hint">昵称</string>
+    <string name="profile_signature_hint">个性签名</string>
+    <string name="profile_avatar_hint">头像 URL</string>
+    <string name="profile_email_placeholder">未设置邮箱</string>
+    <string name="profile_username">用户名：%1$s</string>
+    <string name="profile_nickname">昵称：%1$s</string>
+    <string name="profile_username_placeholder">用户名：未设置</string>
+    <string name="profile_nickname_placeholder">昵称：未设置</string>
+    <string name="profile_signature_empty">这个人很懒，什么都没写</string>
+    <string name="profile_badge">徽章：%1$s</string>
+    <string name="profile_user_id">ID：%1$s</string>
+    <string name="profile_user_id_placeholder">ID：--</string>
+    <string name="profile_logout">退出当前账号</string>
+    <string name="content_desc_avatar">用户头像</string>
+    <string name="content_desc_back">返回</string>
+    <string name="content_desc_settings">设置</string>
+
+    <string name="item_song_name_placeholder">歌曲名</string>
+    <string name="item_artist_placeholder">歌手</string>
+    <string name="item_playlist_name_placeholder">榜单名称</string>
+    <string name="item_playlist_cover_desc">榜单封面</string>
+    <string name="playlist_meta">%1$d 首 · %2$s播放</string>
+    <string name="play_count_yi">%.1f 亿</string>
+    <string name="play_count_wan">%.1f 万</string>
+    <string name="play_count_plain">%1$d</string>
+
+    <string name="weekly_hot_title">本周最热音乐</string>
+    <string name="weekly_hot_subtitle">这里是本周最新热歌</string>
+    <string name="daily_recommend_title">每日推荐</string>
+    <string name="daily_recommend_subtitle">为你挑选的精选歌曲</string>
+</resources>

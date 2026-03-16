@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <include
+        android:id="@+id/immersiveHeader"
+        layout="@layout/include_immersive_header_background"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/immersive_header_height"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:elevation="0dp"
+            android:minHeight="@dimen/toolbar_min_height"
+            android:paddingStart="@dimen/spacing_m"
+            android:paddingEnd="@dimen/spacing_s"
+            app:itemIconTint="?attr/colorOnSurfaceVariant"
+            app:navigationIconTint="?attr/colorOnSurfaceVariant"
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant"
+            app:titleTextColor="?attr/colorOnSurface" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/fragmentContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@id/bottomContentBarrier"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/appBar" />
+
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/bottomContentBarrier"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierAllowsGoneWidgets="true"
+        app:barrierDirection="top"
+        app:constraint_referenced_ids="miniPlayer,bottomNav" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/miniPlayer"
+        style="@style/Widget.MusicPlayer.Card.Outlined"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_marginTop="@dimen/spacing_s"
+        android:layout_marginEnd="@dimen/spacing_m"
+        android:layout_marginBottom="@dimen/spacing_s"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/surface"
+        app:strokeColor="@color/divider"
+        app:strokeWidth="1dp"
+        app:layout_constraintBottom_toTopOf="@id/bottomNav"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="@dimen/spacing_sm">
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/coverContainer"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                app:cardBackgroundColor="@color/surface_alt"
+                app:cardCornerRadius="22dp"
+                app:cardElevation="0dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent">
+
+                <ImageView
+                    android:id="@+id/ivMiniCover"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/current_playing_title"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_music_note_24"
+                    android:tint="@color/brand_primary" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:id="@+id/tvMiniTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/spacing_m"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/current_playing_empty"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                app:layout_constraintEnd_toStartOf="@id/miniPlayPauseContainer"
+                app:layout_constraintStart_toEndOf="@id/coverContainer"
+                app:layout_constraintBottom_toBottomOf="@id/coverContainer"
+                app:layout_constraintTop_toTopOf="@id/coverContainer" />
+
+            <FrameLayout
+                android:id="@+id/miniPlayPauseContainer"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                app:layout_constraintBottom_toBottomOf="@id/coverContainer"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@id/coverContainer">
+
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/miniProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clickable="false"
+                    android:focusable="false"
+                    android:indeterminate="false"
+                    android:importantForAccessibility="no"
+                    app:indicatorColor="@color/brand_primary_dark"
+                    app:indicatorInset="0dp"
+                    app:indicatorSize="40dp"
+                    app:trackColor="@color/brand_primary_light"
+                    app:trackThickness="2dp" />
+
+                <ImageButton
+                    android:id="@+id/btnMiniPlayPause"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/content_desc_play_pause"
+                    android:padding="@dimen/spacing_s"
+                    android:src="@drawable/ic_pause_24"
+                    android:tint="@color/text_primary" />
+            </FrameLayout>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNav"
+        style="@style/Widget.Material3.BottomNavigationView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        app:labelVisibilityMode="labeled"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:menu="@menu/bottom_nav" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

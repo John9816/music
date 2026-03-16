@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/nav_discover"
+        android:icon="@drawable/ic_home_24"
+        android:title="@string/nav_discover"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/nav_library"
+        android:icon="@drawable/ic_search_24"
+        android:title="@string/nav_library"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/nav_playlists"
+        android:icon="@drawable/ic_playlist_24"
+        android:title="@string/nav_playlists"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/nav_profile"
+        android:icon="@drawable/ic_person_24"
+        android:title="@string/nav_profile"
+        app:showAsAction="always" />
+</menu>

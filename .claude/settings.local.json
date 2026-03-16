@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew clean:*)",
+      "Bash(./gradlew.bat clean:*)",
+      "mcp__sequential-thinking__sequentialthinking"
+    ]
+  }
+}

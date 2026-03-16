@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_group_language">语种</string>
+    <string name="playlist_group_style">风格</string>
+    <string name="playlist_group_scene">场景</string>
+    <string name="playlist_group_emotion">情绪</string>
+    <string name="playlist_group_theme">主题</string>
+</resources>

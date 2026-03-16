@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tvLine"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:lineSpacingExtra="6dp"
+    android:paddingVertical="@dimen/spacing_sm"
+    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+    android:textColor="@color/text_secondary"
+    android:textSize="14sp" />
+

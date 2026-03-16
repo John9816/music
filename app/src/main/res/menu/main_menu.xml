@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_favorites"
+        android:title="@string/menu_favorites"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_history"
+        android:title="@string/menu_history"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_my_playlists"
+        android:title="@string/menu_my_playlists"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_create_playlist"
+        android:title="@string/menu_create_playlist"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_clear_history"
+        android:title="@string/menu_clear_history"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_profile"
+        android:title="@string/menu_profile"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_logout"
+        android:title="@string/menu_logout"
+        app:showAsAction="never" />
+</menu>

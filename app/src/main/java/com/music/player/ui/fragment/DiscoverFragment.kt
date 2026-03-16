@@ -1,0 +1,284 @@
+package com.music.player.ui.fragment
+
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Toast
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.PagerSnapHelper
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.music.player.R
+import com.music.player.data.model.Song
+import com.music.player.databinding.FragmentDiscoverBinding
+import com.music.player.ui.adapter.HotSongAdapter
+import com.music.player.ui.adapter.NewestAlbumBannerAdapter
+import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.viewmodel.LibraryViewModel
+import com.music.player.ui.viewmodel.MusicViewModel
+
+class DiscoverFragment : Fragment() {
+
+    private var _binding: FragmentDiscoverBinding? = null
+    private val binding: FragmentDiscoverBinding
+        get() = _binding!!
+
+    private lateinit var musicViewModel: MusicViewModel
+    private lateinit var libraryViewModel: LibraryViewModel
+    private lateinit var songAdapter: SongAdapter
+    private lateinit var weeklyHotAdapter: HotSongAdapter
+    private lateinit var newestAlbumAdapter: NewestAlbumBannerAdapter
+
+    private val newestAlbumSnapHelper = PagerSnapHelper()
+    private val newestAlbumHandler = Handler(Looper.getMainLooper())
+    private val newestAlbumIntervalMs = 4500L
+    private val newestAlbumAutoScroll = object : Runnable {
+        override fun run() {
+            val binding = _binding ?: return
+            val adapter = binding.rvNewestAlbums.adapter ?: return
+            val count = adapter.itemCount
+            if (count <= 1) return
+
+            val lm = binding.rvNewestAlbums.layoutManager as? LinearLayoutManager ?: return
+            val snapped = newestAlbumSnapHelper.findSnapView(lm) ?: return
+            val current = lm.getPosition(snapped).coerceAtLeast(0)
+            val next = (current + 1) % count
+            binding.rvNewestAlbums.smoothScrollToPosition(next)
+
+            newestAlbumHandler.postDelayed(this, newestAlbumIntervalMs)
+        }
+    }
+
+    private var isMusicLoading = false
+    private var isLibraryLoading = false
+    private var isWeeklyHotLoading = false
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        _binding = FragmentDiscoverBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
+        libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
+
+        setupRecyclerViews()
+        setupObservers()
+
+        binding.tvSongListSubtitle.text = getString(R.string.daily_recommend_subtitle)
+
+        libraryViewModel.prefetch()
+
+        if (musicViewModel.dailyRecommend.value.isNullOrEmpty()) {
+            musicViewModel.loadDailyRecommend()
+        } else {
+            renderSongs(musicViewModel.dailyRecommend.value.orEmpty())
+        }
+
+        if (musicViewModel.weeklyHotSongs.value.isNullOrEmpty()) {
+            musicViewModel.loadWeeklyHotSongs(limit = 10)
+        }
+
+        if (musicViewModel.newestAlbums.value.isNullOrEmpty()) {
+            musicViewModel.loadNewestAlbums()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        maybeStartNewestAlbumCarousel()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopNewestAlbumCarousel()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        stopNewestAlbumCarousel()
+        _binding = null
+    }
+
+    private fun setupRecyclerViews() {
+        songAdapter = SongAdapter(
+            onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) },
+            onSongLongClick = { song -> showSongActions(song) }
+        )
+        binding.recyclerView.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = songAdapter
+            setHasFixedSize(true)
+        }
+
+        weeklyHotAdapter = HotSongAdapter(
+            onSongClick = { song -> musicViewModel.playFromList(weeklyHotAdapter.currentList, song) },
+            onSongLongClick = { song -> showSongActions(song) }
+        )
+        binding.rvWeeklyHot.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvWeeklyHot.adapter = weeklyHotAdapter
+        binding.rvWeeklyHot.setHasFixedSize(true)
+
+        newestAlbumAdapter = NewestAlbumBannerAdapter()
+        binding.rvNewestAlbums.apply {
+            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+            adapter = newestAlbumAdapter
+            setHasFixedSize(true)
+        }
+        newestAlbumSnapHelper.attachToRecyclerView(binding.rvNewestAlbums)
+    }
+
+    private fun setupObservers() {
+        musicViewModel.dailyRecommend.observe(viewLifecycleOwner) { songs ->
+            renderSongs(songs)
+            binding.tvSongListSubtitle.text = getString(R.string.recommend_loaded_count, songs.size)
+        }
+
+        musicViewModel.weeklyHotSongs.observe(viewLifecycleOwner) { songs ->
+            weeklyHotAdapter.submitList(songs)
+            syncWeeklyHotCardVisibility()
+        }
+
+        musicViewModel.newestAlbums.observe(viewLifecycleOwner) { albums ->
+            newestAlbumAdapter.submitList(albums)
+            binding.rvNewestAlbums.visibility = if (albums.isEmpty()) View.GONE else View.VISIBLE
+            syncWeeklyHotCardVisibility()
+            maybeStartNewestAlbumCarousel()
+        }
+
+        musicViewModel.weeklyHotLoading.observe(viewLifecycleOwner) { loading ->
+            isWeeklyHotLoading = loading
+            binding.pbWeeklyHot.visibility = if (loading) View.VISIBLE else View.GONE
+            syncWeeklyHotCardVisibility()
+        }
+
+        musicViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
+            isMusicLoading = loading
+            syncLoadingState()
+            syncEmptyState()
+        }
+
+        libraryViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
+            isLibraryLoading = loading
+            syncLoadingState()
+        }
+    }
+
+    private fun maybeStartNewestAlbumCarousel() {
+        val binding = _binding ?: return
+        if (!isResumed) return
+        if (binding.rvNewestAlbums.visibility != View.VISIBLE) return
+        if ((binding.rvNewestAlbums.adapter?.itemCount ?: 0) <= 1) return
+        newestAlbumHandler.removeCallbacks(newestAlbumAutoScroll)
+        newestAlbumHandler.postDelayed(newestAlbumAutoScroll, newestAlbumIntervalMs)
+    }
+
+    private fun stopNewestAlbumCarousel() {
+        newestAlbumHandler.removeCallbacks(newestAlbumAutoScroll)
+    }
+
+    private fun syncWeeklyHotCardVisibility() {
+        val binding = _binding ?: return
+        val hasWeeklyHot = weeklyHotAdapter.currentList.isNotEmpty()
+        val hasNewestAlbums = newestAlbumAdapter.currentList.isNotEmpty()
+        binding.cardWeeklyHot.visibility =
+            if (isWeeklyHotLoading || hasWeeklyHot || hasNewestAlbums) View.VISIBLE else View.GONE
+    }
+
+    private fun renderSongs(songs: List<Song>) {
+        songAdapter.submitList(songs)
+        syncEmptyState(songs.isEmpty())
+    }
+
+    private fun syncEmptyState(forceEmpty: Boolean = songAdapter.currentList.isEmpty()) {
+        val anyLoading = isMusicLoading || isLibraryLoading
+        binding.tvEmptyState.visibility = if (anyLoading || !forceEmpty) View.GONE else View.VISIBLE
+        binding.tvEmptyState.text = getString(R.string.song_list_empty_recommend)
+    }
+
+    private fun syncLoadingState() {
+        val anyLoading = isMusicLoading || isLibraryLoading
+        binding.progressBar.visibility = if (anyLoading) View.VISIBLE else View.GONE
+    }
+
+    private fun showSongActions(song: Song) {
+        val favoriteIds = libraryViewModel.favoriteIds.value.orEmpty()
+        val isFavorite = favoriteIds.contains(song.id)
+
+        val items = mutableListOf<String>()
+        val actions = mutableListOf<() -> Unit>()
+
+        items += getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
+        actions += { libraryViewModel.setFavorite(song, !isFavorite) }
+
+        items += getString(R.string.action_add_to_playlist)
+        actions += { showAddToPlaylistDialog(song) }
+
+        items += getString(R.string.action_play_next)
+        actions += {
+            musicViewModel.enqueueNext(song)
+            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
+        }
+
+        items += getString(R.string.action_add_to_queue)
+        actions += {
+            musicViewModel.enqueue(song)
+            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(song.name)
+            .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
+            .show()
+    }
+
+    private fun showAddToPlaylistDialog(song: Song) {
+        val playlists = libraryViewModel.playlists.value.orEmpty()
+        if (playlists.isEmpty()) {
+            Toast.makeText(requireContext(), getString(R.string.user_playlist_create_first), Toast.LENGTH_SHORT).show()
+            showCreatePlaylistDialog()
+            return
+        }
+
+        val names = playlists.map { it.name }.toTypedArray()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.user_playlist_pick_title)
+            .setItems(names) { _, which ->
+                libraryViewModel.addSongToPlaylist(playlists[which].id, song)
+            }
+            .show()
+    }
+
+    private fun showCreatePlaylistDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_create_playlist, null)
+        val nameInput =
+            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPlaylistName)
+        val descInput =
+            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPlaylistDesc)
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.user_playlist_create_title)
+            .setView(dialogView)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.user_playlist_create_confirm) { _, _ ->
+                val name = nameInput.text?.toString()?.trim().orEmpty()
+                val desc = descInput.text?.toString()?.trim().orEmpty()
+                if (name.isBlank()) {
+                    Toast.makeText(requireContext(), getString(R.string.user_playlist_name_required), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                libraryViewModel.createPlaylist(name, desc)
+            }
+            .show()
+    }
+}
