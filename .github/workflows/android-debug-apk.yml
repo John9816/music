@@ -1,12 +1,22 @@
-name: Android Debug APK
+name: Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: "Build variant to assemble (debug|release|both)"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - both
+          - debug
+          - release
   push:
     branches: [ "main", "master" ]
 
 jobs:
-  build-debug:
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,12 +33,34 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Build APK(s)
+        shell: bash
+        run: |
+          set -euo pipefail
+          variant="${{ github.event.inputs.variant || 'both' }}"
+          echo "variant=$variant"
+          if [[ "$variant" == "debug" ]]; then
+            ./gradlew :app:assembleDebug --no-daemon
+          elif [[ "$variant" == "release" ]]; then
+            ./gradlew :app:assembleRelease --no-daemon
+          else
+            ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon
+          fi
 
-      - name: Upload APK artifact
+      - name: Upload Debug APK artifact
+        if: ${{ github.event.inputs.variant != 'release' }}
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Upload Release APK artifact
+        if: ${{ github.event.inputs.variant != 'debug' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/output-metadata.json
+          if-no-files-found: warn
