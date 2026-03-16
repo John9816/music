@@ -245,7 +245,7 @@ object PlaybackCoordinator {
                         }
                         .onFailure { throwable ->
                             if (throwable !is CancellationException && prepareToken == token) {
-                                _error.tryEmit(throwable.message ?: "鎾斁澶辫触")
+                                _error.tryEmit(throwable.message ?: "播放失败")
                             }
                         }
                 }
@@ -304,7 +304,7 @@ object PlaybackCoordinator {
     private fun playPreparedSong(song: Song) {
         val mediaUrl = song.url?.trim().orEmpty()
         if (mediaUrl.isBlank()) {
-            _error.tryEmit("鎾斁鍦板潃涓虹┖")
+            _error.tryEmit("播放地址为空")
             return
         }
 
@@ -317,9 +317,15 @@ object PlaybackCoordinator {
         val sinceTap = (SystemClock.elapsedRealtime() - lastStartElapsedMs).coerceAtLeast(0L)
         Log.d(TAG, "playPreparedSong after ${sinceTap}ms, songId=${song.id}")
 
-        val title = song.name
-        val artist = song.artists.joinToString(", ") { it.name }
-        val artwork = song.album.picUrl.trim().takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+        // Defensive: some endpoints may return partial song objects (e.g., missing album/picUrl/artists).
+        // Avoid crashing on playback start.
+        val title = song.name.ifBlank { "Unknown" }
+        val artist = song.artists.orEmpty().joinToString(", ") { it.name }.ifBlank { "Unknown" }
+        val artwork = song.album
+            ?.picUrl
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Uri.parse(it) }
 
         val metadata = MediaMetadata.Builder()
             .setTitle(title)
