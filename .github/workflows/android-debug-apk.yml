@@ -37,6 +37,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Ensure repo-local gradle.properties doesn't force a Windows-only Java path.
+          # (setup-java provides the correct JAVA_HOME on GitHub runners.)
+          if [[ -f gradle.properties ]]; then
+            sed -i.bak '/^org\.gradle\.java\.home=/d' gradle.properties || true
+          fi
           variant="${{ github.event.inputs.variant || 'both' }}"
           echo "variant=$variant"
           if [[ "$variant" == "debug" ]]; then

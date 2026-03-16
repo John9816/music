@@ -3,7 +3,7 @@
 ## 环境要求
 
 - Android Studio Arctic Fox 或更高版本
-- JDK 11 或更高版本
+- JDK 17 或更高版本（Android Gradle Plugin 8.x 需要）
 - Android SDK (API 24-34)
 - Gradle 8.2+
 
@@ -49,13 +49,14 @@
 ### 1. 检查 Java 环境
 ```bash
 java -version
-# 应该显示 Java 11 或更高版本
+# 应该显示 Java 17 或更高版本
 ```
 
 ### 2. 设置环境变量（如果需要）
 ```bash
-# Windows
-set JAVA_HOME=C:\Program Files\Java\jdk-11
+# Windows（推荐使用 Android Studio 自带的 JBR/JDK 17）
+# 例如：C:\Program Files\Android\Android Studio\jbr
+set JAVA_HOME=C:\Program Files\Android\Android Studio\jbr
 set ANDROID_HOME=C:\Users\YourName\AppData\Local\Android\Sdk
 
 # 或在系统环境变量中设置
