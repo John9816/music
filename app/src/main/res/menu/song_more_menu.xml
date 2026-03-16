@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/action_unfavorite"
+        android:title="@string/action_unfavorite" />
+
+    <item
+        android:id="@+id/action_pin"
+        android:title="@string/action_pin_to_top" />
+
+</menu>

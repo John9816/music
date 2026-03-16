@@ -26,6 +26,7 @@
     <string name="content_desc_repeat">循环播放</string>
     <string name="content_desc_shuffle">随机播放</string>
     <string name="content_desc_now_playing">正在播放</string>
+    <string name="content_desc_more">更多操作</string>
 
     <string name="action_play_next">下一首播放</string>
     <string name="action_add_to_queue">加入队列</string>
@@ -65,6 +66,10 @@
 
     <string name="action_favorite">收藏</string>
     <string name="action_unfavorite">取消收藏</string>
+    <string name="action_unlike">取消喜欢</string>
+    <string name="action_pin_to_top">置顶</string>
+    <string name="action_unpin">取消置顶</string>
+    <string name="action_delete_history_record">删除这条听歌记录</string>
     <string name="action_add_to_playlist">添加到歌单</string>
     <string name="action_remove_from_playlist">从歌单移除</string>
     <string name="action_play_all">播放全部</string>

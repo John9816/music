@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -59,7 +61,15 @@ class SongCollectionFragment : Fragment() {
         binding.ivHeaderOverlay.visibility = View.VISIBLE
         binding.ivHeaderOverlay.setImageResource(if (mode == Mode.LIKED) R.drawable.ic_favorite_24 else R.drawable.ic_play_24)
 
-        songAdapter = SongAdapter(onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) })
+        songAdapter = SongAdapter(
+            onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) },
+            onMoreClick = { anchor, song ->
+                when (mode) {
+                    Mode.LIKED -> showLikedSongMenu(anchor, song)
+                    Mode.HISTORY -> showHistorySongMenu(anchor, song)
+                }
+            }
+        )
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
@@ -76,6 +86,12 @@ class SongCollectionFragment : Fragment() {
         libraryViewModel.history.observe(viewLifecycleOwner) { songs ->
             if (mode != Mode.HISTORY) return@observe
             renderSongs(songs, emptyRes = R.string.profile_history_empty)
+        }
+
+        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
+            message ?: return@observe
+            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+            libraryViewModel.consumeMessage()
         }
 
         when (mode) {
@@ -128,5 +144,59 @@ class SongCollectionFragment : Fragment() {
         val songs = songAdapter.currentList
         if (songs.isEmpty()) return
         musicViewModel.playFromList(songs, songs.first())
+    }
+
+    private fun showLikedSongMenu(anchor: View, song: com.music.player.data.model.Song) {
+        val popup = PopupMenu(requireContext(), anchor).apply {
+            menuInflater.inflate(R.menu.song_more_menu, menu)
+        }
+
+        popup.menu.findItem(R.id.action_unfavorite)?.title = getString(R.string.action_unlike)
+
+        val pinned = libraryViewModel.isPinnedFavorite(song.id)
+        popup.menu.findItem(R.id.action_pin)?.title =
+            getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_unfavorite -> {
+                    libraryViewModel.setFavorite(song, false)
+                    true
+                }
+                R.id.action_pin -> {
+                    libraryViewModel.togglePinFavorite(song.id)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        popup.show()
+    }
+
+    private fun showHistorySongMenu(anchor: View, song: com.music.player.data.model.Song) {
+        val popup = PopupMenu(requireContext(), anchor).apply {
+            menuInflater.inflate(R.menu.song_history_more_menu, menu)
+        }
+
+        val pinned = libraryViewModel.isPinnedHistory(song.id)
+        popup.menu.findItem(R.id.action_pin)?.title =
+            getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_pin -> {
+                    libraryViewModel.togglePinHistory(song.id)
+                    true
+                }
+                R.id.action_delete_history -> {
+                    libraryViewModel.deleteHistoryItem(song.id)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        popup.show()
     }
 }

@@ -2,6 +2,7 @@ package com.music.player.ui.adapter
 
 import android.content.res.ColorStateList
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -13,7 +14,8 @@ import com.music.player.databinding.ItemSongBinding
 
 class SongAdapter(
     private val onSongClick: (Song) -> Unit,
-    private val onSongLongClick: (Song) -> Unit = {}
+    private val onSongLongClick: (Song) -> Unit = {},
+    private val onMoreClick: ((anchor: View, song: Song) -> Unit)? = null
 ) : ListAdapter<Song, SongAdapter.SongViewHolder>(SongDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
@@ -38,6 +40,14 @@ class SongAdapter(
             binding.tvSongName.text = song.name
             binding.tvArtist.text = song.artists.joinToString(", ") { it.name }
             binding.tvDuration.text = formatDuration(song.duration)
+
+            if (onMoreClick == null) {
+                binding.btnMore.visibility = View.GONE
+                binding.btnMore.setOnClickListener(null)
+            } else {
+                binding.btnMore.visibility = View.VISIBLE
+                binding.btnMore.setOnClickListener { onMoreClick.invoke(binding.btnMore, song) }
+            }
 
             val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
             if (coverUrl == null) {

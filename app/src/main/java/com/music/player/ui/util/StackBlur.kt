@@ -21,8 +21,9 @@ object StackBlur {
         val bsum = IntArray(w * h)
 
         val vmin = IntArray(max(w, h))
-        val dv = IntArray(256 * div)
-        for (i in dv.indices) dv[i] = i / div
+        val divsum = ((div + 1) shr 1).let { it * it }
+        val dv = IntArray(256 * divsum)
+        for (i in dv.indices) dv[i] = i / divsum
 
         var yi = 0
         var yw = 0
@@ -64,9 +65,9 @@ object StackBlur {
 
             var stackPointer = r
             for (x in 0 until w) {
-                rsum[yi] = dv[rtot]
-                gsum[yi] = dv[gtot]
-                bsum[yi] = dv[btot]
+                rsum[yi] = dv[rtot.coerceIn(0, dv.lastIndex)]
+                gsum[yi] = dv[gtot.coerceIn(0, dv.lastIndex)]
+                bsum[yi] = dv[btot.coerceIn(0, dv.lastIndex)]
 
                 rtot -= routsum
                 gtot -= goutsum
@@ -145,7 +146,10 @@ object StackBlur {
             var stackPointer = r
             for (y in 0 until h) {
                 val a = pixels[yi2] and -0x1000000
-                pixels[yi2] = a or (dv[rtot] shl 16) or (dv[gtot] shl 8) or dv[btot]
+                val rOut = dv[rtot.coerceIn(0, dv.lastIndex)]
+                val gOut = dv[gtot.coerceIn(0, dv.lastIndex)]
+                val bOut = dv[btot.coerceIn(0, dv.lastIndex)]
+                pixels[yi2] = a or (rOut shl 16) or (gOut shl 8) or bOut
 
                 rtot -= routsum
                 gtot -= goutsum
@@ -190,4 +194,3 @@ object StackBlur {
         return bitmap
     }
 }
-

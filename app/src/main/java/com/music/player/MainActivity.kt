@@ -47,6 +47,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : AppCompatActivity() {
 
@@ -84,12 +85,12 @@ class MainActivity : AppCompatActivity() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            updateMiniPlayPauseIcon(isPlaying)
+            updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             val p = player ?: return
-            updateMiniPlayPauseIcon(p.isPlaying)
+            updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
             updateMiniProgress()
         }
 
@@ -125,6 +126,7 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
 
         PlaybackCoordinator.init(applicationContext)
+        observePlayerAttachment()
         maybeResetPlaybackAfterFreshLogin()
         attachPlayerListener()
 
@@ -177,7 +179,17 @@ class MainActivity : AppCompatActivity() {
         val p = player ?: return
         p.removeListener(playerListener)
         p.addListener(playerListener)
-        updateMiniPlayPauseIcon(p.isPlaying)
+        updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
+    }
+
+    private fun observePlayerAttachment() {
+        lifecycleScope.launch {
+            PlaybackCoordinator.playerAttached.collect { attached ->
+                if (!attached) return@collect
+                attachPlayerListener()
+                updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
+            }
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -386,7 +398,7 @@ class MainActivity : AppCompatActivity() {
                     .into(binding.ivMiniCover)
             }
 
-            updateMiniPlayPauseIcon(player?.isPlaying == true)
+            updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
             libraryViewModel.addToHistory(song)
         }
 
@@ -416,7 +428,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 p.play()
             }
-            updateMiniPlayPauseIcon(p.isPlaying)
+            updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
         }
 
         binding.miniPlayer.setOnClickListener {
@@ -439,6 +451,13 @@ class MainActivity : AppCompatActivity() {
         binding.btnMiniPlayPause.setImageResource(icon)
         binding.btnMiniPlayPause.contentDescription = getString(contentDesc)
         updateMiniCoverRotation(isPlaying)
+    }
+
+    private fun shouldShowAsPlaying(player: Player?): Boolean {
+        player ?: return false
+        if (player.playbackState == Player.STATE_ENDED) return false
+        if (player.isPlaying) return true
+        return player.playWhenReady
     }
 
     private fun updateMiniCoverRotation(isPlaying: Boolean) {

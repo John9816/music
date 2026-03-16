@@ -121,6 +121,20 @@ class SupabaseMusicRepository(context: Context) {
         }
     }
 
+    suspend fun deletePlayHistoryItem(songId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val trimmed = songId.trim()
+            if (trimmed.isBlank()) throw IllegalArgumentException("无效歌曲 ID")
+            val (token, userId) = requireSession()
+            val response = api.deletePlayHistoryItem(
+                token = "Bearer $token",
+                userId = "eq.$userId",
+                songId = "eq.$trimmed"
+            )
+            if (!response.isSuccessful) throw IllegalStateException("删除播放记录失败")
+        }
+    }
+
     suspend fun listUserPlaylists(): Result<List<UserPlaylist>> = withContext(Dispatchers.IO) {
         runCatching {
             requireSession()

@@ -24,7 +24,10 @@ class MusicRepository {
     private val lyricsApi = RetrofitClient.lyricsApi
 
     private companion object {
-        private const val GDSTUDIO_BITRATE = 320
+        // Prefer a lower bitrate to improve start latency and reduce buffering on weak networks.
+        // Fallback to a higher bitrate if the low-bitrate request fails.
+        private const val GDSTUDIO_BITRATE_FAST = 128
+        private const val GDSTUDIO_BITRATE_FALLBACK = 320
     }
 
     suspend fun getDailyRecommend(): Result<List<Song>> {
@@ -233,16 +236,24 @@ class MusicRepository {
 
     suspend fun getSongUrl(id: String): Result<String> {
         return try {
-            val response = gdStudioApi.getSongUrl(id = id, bitRate = GDSTUDIO_BITRATE)
-            val raw = response.body()?.string() ?: response.errorBody()?.string() ?: ""
-            val url = parseGdStudioUrl(raw)
-            if (response.isSuccessful && !url.isNullOrBlank()) return Result.success(url)
+            val attempts = listOf(GDSTUDIO_BITRATE_FAST, GDSTUDIO_BITRATE_FALLBACK).distinct()
+            var lastFailure: Exception? = null
 
-            val code = response.code()
-            val snippet = raw.trim().replace(Regex("\\s+"), " ").take(160)
-            val fallback = snippet.ifBlank { "empty response" }
-            val message = "getSongUrl failed (HTTP $code): $fallback"
-            Result.failure(Exception(message))
+            for (bitrate in attempts) {
+                val response = gdStudioApi.getSongUrl(id = id, bitRate = bitrate)
+                val raw = response.body()?.string() ?: response.errorBody()?.string() ?: ""
+                val url = parseGdStudioUrl(raw)
+                if (response.isSuccessful && !url.isNullOrBlank()) {
+                    return Result.success(url)
+                }
+
+                val code = response.code()
+                val snippet = raw.trim().replace(Regex("\\s+"), " ").take(160)
+                val detail = snippet.ifBlank { "empty response" }
+                lastFailure = Exception("getSongUrl failed (bitrate=$bitrate, HTTP $code): $detail")
+            }
+
+            Result.failure(lastFailure ?: Exception("getSongUrl failed"))
         } catch (e: Exception) {
             Result.failure(e)
         }

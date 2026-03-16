@@ -82,8 +82,21 @@
             android:textColor="@color/text_secondary"
             android:textStyle="bold"
             app:layout_constraintBottom_toBottomOf="@id/tvArtist"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btnMore"
             app:layout_constraintTop_toTopOf="@id/tvSongName" />
+
+        <ImageButton
+            android:id="@+id/btnMore"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/content_desc_more"
+            android:padding="@dimen/spacing_s"
+            android:src="@drawable/ic_more_vert_24"
+            android:tint="@color/text_secondary"
+            app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/iconContainer" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

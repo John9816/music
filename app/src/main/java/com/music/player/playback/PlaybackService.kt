@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.TaskStackBuilder
 import androidx.core.content.ContextCompat
+import androidx.core.content.PermissionChecker
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -112,6 +113,7 @@ class PlaybackService : Service() {
         notificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
             .setMediaDescriptionAdapter(descriptionAdapter)
             .setNotificationListener(notificationListener)
+            .setSmallIconResourceId(R.drawable.ic_music_note_24)
             .build()
 
         notificationManager.setPlayer(notificationPlayer)
@@ -181,17 +183,33 @@ class PlaybackService : Service() {
             ongoing: Boolean
         ) {
             if (ongoing) {
-                startForeground(notificationId, notification)
+                runCatching {
+                    if (canPostNotifications()) {
+                        startForeground(notificationId, notification)
+                    } else {
+                        Log.w(TAG, "notifications disabled; skip startForeground()")
+                    }
+                }.onFailure { t ->
+                    Log.e(TAG, "startForeground failed", t)
+                }
             } else {
-                stopForeground(STOP_FOREGROUND_DETACH)
+                runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
             }
         }
 
         override fun onNotificationCancelled(notificationId: Int, dismissedByUser: Boolean) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
             PlaybackCoordinator.resetPlayback()
             stopSelf()
         }
+    }
+
+    private fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return true
+        return PermissionChecker.checkSelfPermission(
+            this,
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) == PermissionChecker.PERMISSION_GRANTED
     }
 
     private fun createNotificationChannel() {

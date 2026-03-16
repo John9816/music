@@ -59,6 +59,13 @@ interface SupabaseMusicApi {
         @Query("user_id") userId: String
     ): Response<Unit>
 
+    @DELETE("rest/v1/music_history")
+    suspend fun deletePlayHistoryItem(
+        @Header("Authorization") token: String,
+        @Query("user_id") userId: String,
+        @Query("song_id") songId: String
+    ): Response<Unit>
+
     @POST("rest/v1/music_playlists")
     suspend fun insertPlaylist(
         @Header("Authorization") token: String,
