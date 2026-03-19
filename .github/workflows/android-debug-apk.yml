@@ -33,6 +33,47 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Read app version
+        id: app_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="$(grep -oE 'versionName "[^"]+"' app/build.gradle | head -n1 | sed -E 's/versionName "([^"]+)"/\1/')"
+          version_code="$(grep -oE 'versionCode [0-9]+' app/build.gradle | head -n1 | awk '{print $2}')"
+          if [[ -z "$version_name" || -z "$version_code" ]]; then
+            echo "Failed to read version information from app/build.gradle" >&2
+            exit 1
+          fi
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name"
+          echo "version_code=$version_code"
+
+      - name: Validate release tag matches app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_tag="v${{ steps.app_version.outputs.version_name }}"
+          actual_tag="${GITHUB_REF_NAME}"
+          if [[ "$actual_tag" != "$expected_tag" ]]; then
+            echo "Tag $actual_tag does not match app version $expected_tag" >&2
+            exit 1
+          fi
+
+      - name: Prepare signing config
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -59,7 +100,7 @@ jobs:
         if: ${{ github.event.inputs.variant != 'release' }}
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: music-player-v${{ steps.app_version.outputs.version_name }}-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
 
@@ -67,7 +108,7 @@ jobs:
         if: ${{ github.event.inputs.variant != 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: music-player-v${{ steps.app_version.outputs.version_name }}-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/release/output-metadata.json
@@ -77,6 +118,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: Music Player v${{ steps.app_version.outputs.version_name }}
           generate_release_notes: true
           files: |
             app/build/outputs/apk/debug/*.apk
