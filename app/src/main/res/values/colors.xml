@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#FF6750A4</color>
-    <color name="brand_primary_dark">#FF4F378B</color>
-    <color name="brand_primary_light">#FFEADDFF</color>
-    <color name="brand_secondary">#FF00A884</color>
-    <color name="page_background">#FFF6F7FB</color>
-    <color name="surface">#FFFFFFFF</color>
-    <color name="surface_alt">#FFF0F2F8</color>
-    <color name="text_primary">#FF1B1B21</color>
-    <color name="text_secondary">#FF667085</color>
-    <color name="divider">#1A1B1B21</color>
-    <color name="danger">#FFD92D20</color>
-    <color name="purple_500">#FF6750A4</color>
-    <color name="purple_700">#FF4F378B</color>
-    <color name="teal_200">#FF00A884</color>
-    <color name="teal_700">#FF00A884</color>
+    <color name="brand_primary">#FFBE5A31</color>
+    <color name="brand_primary_dark">#FF8C3F1D</color>
+    <color name="brand_primary_light">#FFF6D7C8</color>
+    <color name="brand_secondary">#FF2F8F83</color>
+    <color name="page_background">#FFE8DAC8</color>
+    <color name="surface">#FFFFFCF8</color>
+    <color name="surface_alt">#FFF1E4D5</color>
+    <color name="text_primary">#FF201611</color>
+    <color name="text_secondary">#FF786252</color>
+    <color name="divider">#33201611</color>
+    <color name="danger">#FFC54035</color>
+    <color name="purple_500">#FFBE5A31</color>
+    <color name="purple_700">#FF8C3F1D</color>
+    <color name="teal_200">#FF2F8F83</color>
+    <color name="teal_700">#FF2F8F83</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

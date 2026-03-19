@@ -2,30 +2,35 @@
 
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
 import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.databinding.ActivityProfileBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
-import com.music.player.ui.util.applyEdgeToEdge
-import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.resolveAvatarUrl
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
-import com.music.player.ui.viewmodel.MusicViewModel
 
 class ProfileActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityProfileBinding
     private lateinit var authViewModel: AuthViewModel
-    private lateinit var musicViewModel: MusicViewModel
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
+    private lateinit var insetsController: WindowInsetsControllerCompat
     private var currentUser: UserProfile? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,12 +42,35 @@ class ProfileActivity : AppCompatActivity() {
         val isNightMode =
             (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
-        applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
-        binding.toolbar.applyStatusBarInsetPadding()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        insetsController = WindowInsetsControllerCompat(window, binding.root).apply {
+            isAppearanceLightStatusBars = !isNightMode
+            isAppearanceLightNavigationBars = !isNightMode
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = bars.top)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.scrollView) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = bars.bottom)
+            insets
+        }
+        binding.toolbar.requestApplyInsets()
+        binding.scrollView.requestApplyInsets()
 
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
-        musicViewModel = ViewModelProvider(this)[MusicViewModel::class.java]
-        immersiveHeaderBackground = ImmersiveHeaderBackground(this, binding.immersiveHeader.ivHeaderBackground)
+        immersiveHeaderBackground = ImmersiveHeaderBackground(
+            this,
+            binding.immersiveHeader.ivHeaderBackground
+        ) { suggestion ->
+            insetsController.isAppearanceLightStatusBars = suggestion.lightSystemBars
+            insetsController.isAppearanceLightNavigationBars = suggestion.lightSystemBars
+            binding.immersiveHeader.viewHeaderScrim.alpha = suggestion.topScrimAlpha
+        }
 
         setupUI()
         setupObservers()
@@ -52,6 +80,16 @@ class ProfileActivity : AppCompatActivity() {
     private fun setupUI() {
         binding.toolbar.setNavigationOnClickListener {
             finish()
+        }
+        binding.toolbar.inflateMenu(R.menu.toolbar_search)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_search_tab -> {
+                    openSongSearch()
+                    true
+                }
+                else -> false
+            }
         }
 
         binding.btnEditProfile.setOnClickListener {
@@ -65,10 +103,6 @@ class ProfileActivity : AppCompatActivity() {
     }
 
     private fun setupObservers() {
-        musicViewModel.currentSong.observe(this) { song ->
-            immersiveHeaderBackground.setImageUrl(song?.album?.picUrl)
-        }
-
         authViewModel.currentUser.observe(this) { user ->
             currentUser = user
             user?.let {
@@ -78,22 +112,14 @@ class ProfileActivity : AppCompatActivity() {
                 binding.tvSignature.text = it.signature ?: getString(R.string.profile_signature_empty)
                 binding.tvUserId.text = getString(R.string.profile_user_id, "${it.id.take(8)}...")
 
-                val avatarUrl = it.avatar_url?.trim().orEmpty()
-                if (avatarUrl.isBlank()) {
-                    val paddingPx = (22f * resources.displayMetrics.density).toInt()
-                    binding.ivAvatar.setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
-                    binding.ivAvatar.imageTintList = ColorStateList.valueOf(getColor(R.color.brand_primary))
-                    binding.ivAvatar.setImageResource(R.drawable.ic_person_24)
-                } else {
-                    binding.ivAvatar.setPadding(0, 0, 0, 0)
-                    binding.ivAvatar.imageTintList = null
-                    Glide.with(binding.ivAvatar)
-                        .load(avatarUrl)
-                        .placeholder(R.drawable.ic_person_24)
-                        .error(R.drawable.ic_person_24)
-                        .circleCrop()
-                        .into(binding.ivAvatar)
-                }
+                binding.ivAvatar.setPadding(0, 0, 0, 0)
+                binding.ivAvatar.imageTintList = null
+                Glide.with(binding.ivAvatar)
+                    .load(it.resolveAvatarUrl())
+                    .placeholder(R.drawable.ic_person_24)
+                    .error(R.drawable.ic_person_24)
+                    .circleCrop()
+                    .into(binding.ivAvatar)
 
                 if (!it.badge.isNullOrEmpty()) {
                     binding.tvBadge.text = getString(R.string.profile_badge, it.badge)
@@ -134,6 +160,16 @@ class ProfileActivity : AppCompatActivity() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
+    }
+
+    private fun openSongSearch() {
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(MainActivity.EXTRA_INITIAL_TAB_ID, R.id.nav_library)
+                putExtra(MainActivity.EXTRA_FOCUS_LIBRARY_SEARCH, true)
+            }
+        )
     }
 
     private fun showEditProfileDialog() {

@@ -15,15 +15,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/spacing_m">
+            android:paddingStart="@dimen/spacing_m"
+            android:paddingTop="@dimen/spacing_s"
+            android:paddingEnd="@dimen/spacing_m"
+            android:paddingBottom="@dimen/spacing_m">
 
         <com.google.android.material.card.MaterialCardView
             style="@style/Widget.MusicPlayer.Card.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="@color/surface"
-            app:strokeColor="@color/divider"
-            app:strokeWidth="1dp">
+            >
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -50,20 +51,23 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <TextView
-                    android:id="@+id/tvEmail"
+                    android:id="@+id/tvNickname"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_m"
-                    android:text="@string/profile_email_placeholder"
+                    android:text="@string/profile_nickname_placeholder"
                     android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
                     android:textColor="@color/text_primary"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tvSignature"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_xs"
-                    android:text="@string/profile_signed_in"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:text="@string/profile_signature_empty"
                     android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                     android:textColor="@color/text_secondary" />
 
@@ -87,10 +91,8 @@
             style="@style/Widget.MusicPlayer.Card.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_m"
-            app:cardBackgroundColor="@color/surface"
-            app:strokeColor="@color/divider"
-            app:strokeWidth="1dp">
+            android:layout_marginTop="@dimen/spacing_s"
+            >
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -112,7 +114,7 @@
                         android:layout_width="52dp"
                         android:layout_height="52dp"
                         app:cardBackgroundColor="@color/surface_alt"
-                        app:cardCornerRadius="@dimen/radius_m"
+                        app:cardCornerRadius="0dp"
                         app:cardElevation="0dp">
 
                         <ImageView
@@ -160,7 +162,7 @@
                         android:layout_width="52dp"
                         android:layout_height="52dp"
                         app:cardBackgroundColor="@color/surface_alt"
-                        app:cardCornerRadius="@dimen/radius_m"
+                        app:cardCornerRadius="0dp"
                         app:cardElevation="0dp">
 
                         <ImageView
@@ -197,8 +199,8 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:layout_gravity="top|end"
-        android:layout_marginTop="0dp"
-        android:layout_marginEnd="0dp"
+        android:layout_marginTop="@dimen/spacing_s"
+        android:layout_marginEnd="@dimen/spacing_m"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/content_desc_settings"
         android:padding="@dimen/spacing_s"

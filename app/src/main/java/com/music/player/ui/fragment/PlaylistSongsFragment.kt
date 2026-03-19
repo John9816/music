@@ -51,7 +51,7 @@ class PlaylistSongsFragment : Fragment() {
         binding.tvHeaderPlayCount.visibility = View.GONE
         binding.btnPlayAll.setOnClickListener { playAll() }
 
-        songAdapter = SongAdapter(onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) })
+        songAdapter = SongAdapter(onSongClick = { song -> musicViewModel.playStandaloneSong(song) })
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter

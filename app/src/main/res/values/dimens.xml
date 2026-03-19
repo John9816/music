@@ -16,6 +16,7 @@
     <dimen name="control_height_m">48dp</dimen>
     <dimen name="control_height_l">56dp</dimen>
 
-    <dimen name="toolbar_min_height">56dp</dimen>
+    <dimen name="toolbar_min_height">40dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
+    <dimen name="immersive_top_scrim_height">200dp</dimen>
 </resources>

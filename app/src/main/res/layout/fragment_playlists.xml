@@ -4,7 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/transparent"
-    android:padding="@dimen/spacing_m">
+    android:paddingStart="@dimen/spacing_m"
+    android:paddingTop="@dimen/spacing_xs"
+    android:paddingEnd="@dimen/spacing_m"
+    android:paddingBottom="@dimen/spacing_xs">
 
     <TextView
         android:id="@+id/tvTitle"
@@ -38,7 +41,7 @@
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
+                android:layout_marginTop="0dp">
 
                 <TextView
                     android:id="@+id/tvLangTitle"
@@ -68,18 +71,18 @@
                 android:id="@+id/rvLangPlaylists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s"
+                android:layout_marginTop="@dimen/spacing_xs"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                android:paddingStart="@dimen/spacing_xs"
-                android:paddingEnd="@dimen/spacing_s"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:scrollbars="none" />
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l">
+                android:layout_marginTop="@dimen/spacing_sm">
 
                 <TextView
                     android:id="@+id/tvStyleTitle"
@@ -109,18 +112,18 @@
                 android:id="@+id/rvStylePlaylists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s"
+                android:layout_marginTop="@dimen/spacing_xs"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                android:paddingStart="@dimen/spacing_xs"
-                android:paddingEnd="@dimen/spacing_s"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:scrollbars="none" />
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l">
+                android:layout_marginTop="@dimen/spacing_sm">
 
                 <TextView
                     android:id="@+id/tvSceneTitle"
@@ -150,18 +153,18 @@
                 android:id="@+id/rvScenePlaylists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s"
+                android:layout_marginTop="@dimen/spacing_xs"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                android:paddingStart="@dimen/spacing_xs"
-                android:paddingEnd="@dimen/spacing_s"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:scrollbars="none" />
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l">
+                android:layout_marginTop="@dimen/spacing_sm">
 
                 <TextView
                     android:id="@+id/tvEmotionTitle"
@@ -191,18 +194,18 @@
                 android:id="@+id/rvEmotionPlaylists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s"
+                android:layout_marginTop="@dimen/spacing_xs"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                android:paddingStart="@dimen/spacing_xs"
-                android:paddingEnd="@dimen/spacing_s"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:scrollbars="none" />
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l">
+                android:layout_marginTop="@dimen/spacing_sm">
 
                 <TextView
                     android:id="@+id/tvThemeTitle"
@@ -232,13 +235,13 @@
                 android:id="@+id/rvThemePlaylists"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s"
-                android:layout_marginBottom="@dimen/spacing_l"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:layout_marginBottom="@dimen/spacing_m"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                android:paddingStart="@dimen/spacing_xs"
-                android:paddingEnd="@dimen/spacing_s"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
                 android:scrollbars="none" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

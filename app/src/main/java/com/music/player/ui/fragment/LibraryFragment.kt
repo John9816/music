@@ -5,7 +5,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import androidx.core.content.getSystemService
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -56,6 +58,11 @@ class LibraryFragment : Fragment() {
         libraryViewModel.prefetch()
     }
 
+    override fun onResume() {
+        super.onResume()
+        consumePendingSearchFocusRequest()
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
@@ -63,7 +70,7 @@ class LibraryFragment : Fragment() {
 
     private fun setupRecyclerView() {
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) },
+            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
             onSongLongClick = { song -> showSongActions(song) }
         )
         binding.recyclerView.apply {
@@ -71,10 +78,17 @@ class LibraryFragment : Fragment() {
             adapter = songAdapter
             setHasFixedSize(true)
         }
+        binding.recyclerView.setOnTouchListener { _, _ ->
+            hideKeyboardAndClearFocus()
+            false
+        }
     }
 
     private fun setupInput() {
         binding.etSearch.setOnClickListener { binding.etSearch.requestFocus() }
+        binding.root.setOnClickListener { hideKeyboardAndClearFocus() }
+        binding.cardSongList.setOnClickListener { hideKeyboardAndClearFocus() }
+        binding.tvEmptyState.setOnClickListener { hideKeyboardAndClearFocus() }
 
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -86,6 +100,18 @@ class LibraryFragment : Fragment() {
         }
 
         binding.btnSearch.setOnClickListener { performSearch() }
+    }
+
+    fun requestSearchFocus() {
+        val context = context ?: return
+        binding.etSearch.post {
+            if (_binding == null) return@post
+            binding.searchInputLayout.error = null
+            binding.etSearch.requestFocus()
+            binding.etSearch.setSelection(binding.etSearch.text?.length ?: 0)
+            val imm = context.getSystemService<InputMethodManager>()
+            imm?.showSoftInput(binding.etSearch, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun setupObservers() {
@@ -124,6 +150,7 @@ class LibraryFragment : Fragment() {
         syncEmptyState(forceEmpty = false)
         binding.tvSectionTitle.text = getString(R.string.search_result_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_searching, query)
+        hideKeyboardAndClearFocus()
         musicViewModel.searchSongs(query)
     }
 
@@ -188,5 +215,20 @@ class LibraryFragment : Fragment() {
                 libraryViewModel.addSongToPlaylist(playlists[which].id, song)
             }
             .show()
+    }
+
+    private fun hideKeyboardAndClearFocus() {
+        val imm = context?.getSystemService<InputMethodManager>() ?: return
+        binding.etSearch.clearFocus()
+        imm.hideSoftInputFromWindow(binding.etSearch.windowToken, 0)
+    }
+
+    private fun consumePendingSearchFocusRequest() {
+        val activity = activity as? com.music.player.MainActivity ?: return
+        if (!activity.intent.getBooleanExtra(com.music.player.MainActivity.EXTRA_FOCUS_LIBRARY_SEARCH, false)) {
+            return
+        }
+        activity.intent.removeExtra(com.music.player.MainActivity.EXTRA_FOCUS_LIBRARY_SEARCH)
+        requestSearchFocus()
     }
 }

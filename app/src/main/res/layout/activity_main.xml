@@ -9,9 +9,10 @@
         android:id="@+id/immersiveHeader"
         layout="@layout/include_immersive_header_background"
         android:layout_width="0dp"
-        android:layout_height="@dimen/immersive_header_height"
+        android:layout_height="0dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
     <com.google.android.material.appbar.AppBarLayout
@@ -19,6 +20,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
+        android:elevation="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -43,10 +45,10 @@
         android:id="@+id/fragmentContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/bottomContentBarrier"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/appBar" />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <androidx.constraintlayout.widget.Barrier
         android:id="@+id/bottomContentBarrier"
@@ -69,11 +71,12 @@
         android:focusable="true"
         android:visibility="gone"
         app:cardBackgroundColor="@color/surface"
-        app:strokeColor="@color/divider"
-        app:strokeWidth="1dp"
+        app:cardElevation="0dp"
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        app:layout_constraintStart_toStartOf="parent"
+        app:strokeColor="@color/divider"
+        app:strokeWidth="1dp">
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
@@ -87,6 +90,8 @@
                 app:cardBackgroundColor="@color/surface_alt"
                 app:cardCornerRadius="22dp"
                 app:cardElevation="0dp"
+                app:strokeColor="@color/divider"
+                app:strokeWidth="1dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent">
@@ -122,7 +127,8 @@
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 app:layout_constraintBottom_toBottomOf="@id/coverContainer"
-                app:layout_constraintEnd_toEndOf="parent"
+                android:layout_marginEnd="@dimen/spacing_xs"
+                app:layout_constraintEnd_toStartOf="@id/btnMiniQueue"
                 app:layout_constraintTop_toTopOf="@id/coverContainer">
 
                 <com.google.android.material.progressindicator.CircularProgressIndicator
@@ -151,6 +157,19 @@
                     android:tint="@color/text_primary" />
             </FrameLayout>
 
+            <ImageButton
+                android:id="@+id/btnMiniQueue"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/content_desc_queue"
+                android:padding="@dimen/spacing_s"
+                android:src="@drawable/ic_queue_24"
+                android:tint="@color/text_primary"
+                app:layout_constraintBottom_toBottomOf="@id/coverContainer"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@id/coverContainer" />
+
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -159,8 +178,16 @@
         style="@style/Widget.Material3.BottomNavigationView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="@color/surface"
+        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_marginEnd="@dimen/spacing_m"
+        android:layout_marginBottom="@dimen/spacing_m"
+        android:background="@drawable/bg_floating_nav"
+        android:elevation="6dp"
+        android:paddingHorizontal="@dimen/spacing_s"
+        android:paddingTop="@dimen/spacing_s"
         app:labelVisibilityMode="labeled"
+        app:itemIconTint="@color/navigation_item_color"
+        app:itemTextColor="@color/navigation_item_color"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

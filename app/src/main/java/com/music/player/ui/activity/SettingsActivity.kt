@@ -1,25 +1,33 @@
 package com.music.player.ui.activity
 
 import android.content.Intent
-import android.net.Uri
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
+import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
-import com.music.player.ui.util.applyEdgeToEdge
-import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
-import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.UpdateState
 import com.music.player.ui.viewmodel.UpdateViewModel
+import com.music.player.update.AppUpdateInstaller
+import com.music.player.update.AppUpdatePreferences
+import com.music.player.update.showAppUpdateDialog
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -30,8 +38,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var authViewModel: AuthViewModel
     private lateinit var updateViewModel: UpdateViewModel
-    private lateinit var musicViewModel: MusicViewModel
+    private lateinit var appUpdateInstaller: AppUpdateInstaller
+    private lateinit var appUpdatePreferences: AppUpdatePreferences
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
+    private lateinit var insetsController: WindowInsetsControllerCompat
     private var currentUser: UserProfile? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,13 +53,22 @@ class SettingsActivity : AppCompatActivity() {
         val isNightMode =
             (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
-        applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
+        insetsController = applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
         binding.toolbar.applyStatusBarInsetPadding()
+        binding.scrollView.applyNavigationBarInsetPadding()
 
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
         updateViewModel = ViewModelProvider(this)[UpdateViewModel::class.java]
-        musicViewModel = ViewModelProvider(this)[MusicViewModel::class.java]
-        immersiveHeaderBackground = ImmersiveHeaderBackground(this, binding.immersiveHeader.ivHeaderBackground)
+        appUpdateInstaller = AppUpdateInstaller(this)
+        appUpdatePreferences = AppUpdatePreferences(this)
+        immersiveHeaderBackground = ImmersiveHeaderBackground(
+            this,
+            binding.immersiveHeader.ivHeaderBackground
+        ) { suggestion ->
+            insetsController.isAppearanceLightStatusBars = suggestion.lightSystemBars
+            insetsController.isAppearanceLightNavigationBars = suggestion.lightSystemBars
+            binding.immersiveHeader.viewHeaderScrim.alpha = suggestion.topScrimAlpha
+        }
 
         setupUi()
         setupObservers()
@@ -59,9 +78,21 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupUi() {
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.toolbar.inflateMenu(R.menu.toolbar_search)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_search_tab -> {
+                    openSongSearch()
+                    true
+                }
+                else -> false
+            }
+        }
 
         binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
-        binding.btnCheckUpdate.setOnClickListener { updateViewModel.check(BuildConfig.VERSION_CODE) }
+        binding.btnCheckUpdate.setOnClickListener {
+            updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = true)
+        }
         binding.btnTheme.setOnClickListener { showThemeDialog() }
         binding.btnLogout.setOnClickListener {
             authViewModel.signOut()
@@ -70,10 +101,6 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun setupObservers() {
-        musicViewModel.currentSong.observe(this) { song ->
-            immersiveHeaderBackground.setImageUrl(song?.album?.picUrl)
-        }
-
         authViewModel.currentUser.observe(this) { user ->
             currentUser = user
             binding.tvEmail.text = user?.email ?: getString(R.string.profile_email_placeholder)
@@ -83,26 +110,55 @@ class SettingsActivity : AppCompatActivity() {
             when (state) {
                 is UpdateState.Idle -> Unit
                 is UpdateState.Loading -> {
-                    Toast.makeText(this, getString(R.string.profile_check_update) + "...", Toast.LENGTH_SHORT).show()
+                    if (state.userInitiated) {
+                        Toast.makeText(
+                            this,
+                            getString(R.string.profile_check_update) + "...",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
                 is UpdateState.Latest -> {
-                    Toast.makeText(this, getString(R.string.update_latest), Toast.LENGTH_SHORT).show()
+                    if (state.userInitiated) {
+                        Toast.makeText(this, getString(R.string.update_latest), Toast.LENGTH_SHORT).show()
+                    }
                     updateViewModel.reset()
                 }
                 is UpdateState.UpdateAvailable -> {
-                    showUpdateDialog(
-                        BuildConfig.VERSION_NAME,
-                        BuildConfig.VERSION_CODE,
-                        state.latest.version,
-                        state.latest.buildNumber,
-                        state.latest.description,
-                        state.latest.downloadUrl,
-                        state.force
+                    appUpdatePreferences.clearSkippedIfOlderThan(state.latest.buildNumber)
+                    if (!state.userInitiated &&
+                        appUpdatePreferences.shouldSuppressAutoPrompt(
+                            buildNumber = state.latest.buildNumber,
+                            force = state.force
+                        )
+                    ) {
+                        updateViewModel.reset()
+                        return@observe
+                    }
+
+                    showAppUpdateDialog(
+                        currentVersion = BuildConfig.VERSION_NAME,
+                        currentBuildNumber = BuildConfig.VERSION_CODE,
+                        latest = state.latest,
+                        force = state.force,
+                        onConfirm = {
+                            val url = state.latest.downloadUrl?.trim().orEmpty()
+                            if (url.isBlank()) {
+                                Toast.makeText(this, getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
+                                return@showAppUpdateDialog
+                            }
+                            appUpdateInstaller.downloadAndInstall(url, state.latest.version)
+                        },
+                        onLater = {
+                            appUpdatePreferences.markSkipped(state.latest.buildNumber)
+                        }
                     )
                     updateViewModel.reset()
                 }
                 is UpdateState.Error -> {
-                    Toast.makeText(this, state.message, Toast.LENGTH_LONG).show()
+                    if (state.userInitiated) {
+                        Toast.makeText(this, state.message, Toast.LENGTH_LONG).show()
+                    }
                     updateViewModel.reset()
                 }
             }
@@ -166,54 +222,21 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showUpdateDialog(
-        currentVersion: String,
-        currentBuildNumber: Int,
-        version: String,
-        buildNumber: Int,
-        description: String?,
-        downloadUrl: String?,
-        force: Boolean
-    ) {
-        val message = buildString {
-            append("Local: ").append(currentVersion).append(" (").append(currentBuildNumber).append(")")
-            append("\nRemote: ").append(version).append(" (").append(buildNumber).append(")")
-            if (!description.isNullOrBlank()) {
-                append("\n\n").append(description.trim())
-            }
-        }
-
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.update_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.update_download) { _, _ ->
-                val url = downloadUrl?.trim().orEmpty()
-                if (url.isBlank()) {
-                    Toast.makeText(this, getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                runCatching {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }.onFailure {
-                    Toast.makeText(this, it.message ?: getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
-                }
-            }
-
-        if (force) {
-            dialog.setCancelable(false)
-            dialog.setNegativeButton(R.string.update_exit) { _, _ -> finishAffinity() }
-        } else {
-            dialog.setNegativeButton(R.string.update_later, null)
-        }
-
-        dialog.show()
-    }
-
     private fun navigateToLogin() {
         startActivity(Intent(this, LoginActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
+    }
+
+    private fun openSongSearch() {
+        startActivity(
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(MainActivity.EXTRA_INITIAL_TAB_ID, R.id.nav_library)
+                putExtra(MainActivity.EXTRA_FOCUS_LIBRARY_SEARCH, true)
+            }
+        )
     }
 
     private fun showEditProfileDialog() {
@@ -247,5 +270,52 @@ class SettingsActivity : AppCompatActivity() {
                 )
             }
             .show()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::appUpdateInstaller.isInitialized) {
+            appUpdateInstaller.dispose()
+        }
+    }
+
+    private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        return WindowInsetsControllerCompat(window, rootView).apply {
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
+        }
+    }
+
+    private fun View.applyStatusBarInsetPadding() {
+        applySystemBarInsetPadding(applyTop = true)
+    }
+
+    private fun View.applyNavigationBarInsetPadding() {
+        applySystemBarInsetPadding(applyBottom = true)
+    }
+
+    private fun View.applySystemBarInsetPadding(
+        applyTop: Boolean = false,
+        applyBottom: Boolean = false
+    ) {
+        val initialTop = paddingTop
+        val initialBottom = paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(
+                top = initialTop + if (applyTop) bars.top else 0,
+                bottom = initialBottom + if (applyBottom) bars.bottom else 0
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(this)
     }
 }

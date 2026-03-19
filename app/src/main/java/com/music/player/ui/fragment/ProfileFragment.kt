@@ -15,7 +15,7 @@ import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.ui.activity.SettingsActivity
-import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.resolveAvatarUrl
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
 
@@ -51,8 +51,6 @@ class ProfileFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         authViewModel = ViewModelProvider(requireActivity())[AuthViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
-
-        binding.scrollContent.applyStatusBarInsetPadding()
 
         setupUi()
         setupObservers()
@@ -149,25 +147,21 @@ class ProfileFragment : Fragment() {
 
     private fun renderUser(user: UserProfile?) {
         user ?: return
-        binding.tvEmail.text = user.email ?: getString(R.string.profile_email_placeholder)
+        binding.tvNickname.text = user.nickname?.takeIf { it.isNotBlank() }
+            ?: user.username?.takeIf { it.isNotBlank() }
+            ?: user.email?.substringBefore("@")
+            ?: getString(R.string.profile_nickname_placeholder)
+        binding.tvSignature.text = user.signature?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.profile_signature_empty)
 
-        val avatarUrl = user.avatar_url?.trim().orEmpty()
-        if (avatarUrl.isBlank()) {
-            val paddingPx = (22f * resources.displayMetrics.density).toInt()
-            binding.ivAvatar.setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
-            binding.ivAvatar.imageTintList =
-                ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
-            binding.ivAvatar.setImageResource(R.drawable.ic_person_24)
-        } else {
-            binding.ivAvatar.setPadding(0, 0, 0, 0)
-            binding.ivAvatar.imageTintList = null
-            Glide.with(binding.ivAvatar)
-                .load(avatarUrl)
-                .placeholder(R.drawable.ic_person_24)
-                .error(R.drawable.ic_person_24)
-                .circleCrop()
-                .into(binding.ivAvatar)
-        }
+        binding.ivAvatar.setPadding(0, 0, 0, 0)
+        binding.ivAvatar.imageTintList = null
+        Glide.with(binding.ivAvatar)
+            .load(user.resolveAvatarUrl())
+            .placeholder(R.drawable.ic_person_24)
+            .error(R.drawable.ic_person_24)
+            .circleCrop()
+            .into(binding.ivAvatar)
 
         if (!user.badge.isNullOrEmpty()) {
             binding.tvBadge.text = getString(R.string.profile_badge, user.badge)

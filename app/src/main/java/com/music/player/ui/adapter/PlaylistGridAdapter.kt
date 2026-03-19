@@ -48,7 +48,7 @@ class PlaylistGridAdapter(
                 .load(ImageUrl.bestQuality(playlist.coverImgUrl))
                 .placeholder(R.drawable.ic_playlist_placeholder)
                 .error(R.drawable.ic_playlist_placeholder)
-                .fitCenter()
+                .centerCrop()
                 .dontAnimate()
                 .into(binding.ivCover)
 

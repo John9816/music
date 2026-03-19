@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="action_like">喜欢</string>
+    <string name="action_download_song">下载</string>
+    <string name="msg_song_download_started">已开始下载</string>
+    <string name="msg_song_download_failed">下载失败，请稍后重试</string>
+    <string name="msg_song_download_unavailable">当前歌曲暂时无法下载</string>
+    <string name="download_song_description">%1$s - %2$s</string>
+</resources>

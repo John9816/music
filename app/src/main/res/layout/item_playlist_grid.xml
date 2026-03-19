@@ -1,39 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.MusicPlayer.Card.Outlined"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="@dimen/spacing_sm"
+    android:layout_marginBottom="@dimen/spacing_s"
     android:clickable="true"
     android:focusable="true"
-    app:cardBackgroundColor="@android:color/transparent"
-    app:cardElevation="0dp"
-    app:strokeWidth="0dp">
+    >
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="0dp">
+        android:padding="@dimen/spacing_s">
 
-        <FrameLayout
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
-            android:layout_height="120dp">
+            android:layout_height="wrap_content">
 
-            <ImageView
-                android:id="@+id/ivCover"
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardCover"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/surface_alt"
-                android:contentDescription="@string/item_playlist_cover_desc"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_playlist_placeholder" />
+                android:layout_height="0dp"
+                app:cardBackgroundColor="@color/surface_alt"
+                app:cardCornerRadius="0dp"
+                app:cardElevation="0dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintDimensionRatio="1:1"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent">
+
+                <ImageView
+                    android:id="@+id/ivCover"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/item_playlist_cover_desc"
+                    android:scaleType="centerCrop"
+                    android:src="@drawable/ic_playlist_placeholder" />
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:id="@+id/tvPlayCountBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
                 android:layout_margin="6dp"
                 android:background="@drawable/bg_play_count_badge"
                 android:ellipsize="end"
@@ -44,8 +55,10 @@
                 android:paddingBottom="2dp"
                 android:textColor="@color/white"
                 android:textSize="11sp"
-                android:visibility="gone" />
-        </FrameLayout>
+                android:visibility="gone"
+                app:layout_constraintStart_toStartOf="@id/cardCover"
+                app:layout_constraintTop_toTopOf="@id/cardCover" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
         <TextView
             android:id="@+id/tvPlaylistDesc"

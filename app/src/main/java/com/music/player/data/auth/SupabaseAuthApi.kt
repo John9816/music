@@ -14,6 +14,9 @@ interface SupabaseAuthApi {
     @POST("auth/v1/token?grant_type=password")
     suspend fun signIn(@Body request: SignInRequest): Response<AuthResponse>
 
+    @POST("auth/v1/token?grant_type=refresh_token")
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<AuthResponse>
+
     @POST("auth/v1/logout")
     suspend fun signOut(@Header("Authorization") token: String): Response<Unit>
 
@@ -31,6 +34,10 @@ data class SignInRequest(
     val password: String
 )
 
+data class RefreshTokenRequest(
+    val refresh_token: String
+)
+
 data class AuthResponse(
     val access_token: String?,
     val token_type: String?,
@@ -44,5 +51,11 @@ data class AuthResponse(
 data class UserData(
     val id: String,
     val email: String?,
-    val created_at: String?
+    val created_at: String?,
+    val user_metadata: Map<String, @JvmSuppressWildcards Any?>? = null,
+    val identities: List<UserIdentity>? = null
+)
+
+data class UserIdentity(
+    val identity_data: Map<String, @JvmSuppressWildcards Any?>? = null
 )

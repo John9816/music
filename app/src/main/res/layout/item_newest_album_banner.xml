@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="160dp"
     app:cardBackgroundColor="@color/surface"
-    app:cardCornerRadius="@dimen/radius_xl"
+    app:cardCornerRadius="0dp"
     app:cardElevation="0dp">
 
     <FrameLayout

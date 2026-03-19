@@ -1,8 +1,11 @@
 package com.music.player.ui.util
 
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -18,7 +21,8 @@ import kotlin.math.roundToInt
 
 class ImmersiveHeaderBackground(
     private val lifecycleOwner: LifecycleOwner,
-    private val imageView: ImageView
+    private val imageView: ImageView,
+    private val onSystemBarStyleSuggested: ((SystemBarStyleSuggestion) -> Unit)? = null
 ) {
     private var lastUrl: String? = null
     private var blurJob: Job? = null
@@ -48,6 +52,15 @@ class ImmersiveHeaderBackground(
         if (normalized == null) {
             imageView.alpha = 1f
             imageView.setImageResource(R.drawable.bg_header_default)
+            val isNight =
+                (imageView.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+            onSystemBarStyleSuggested?.invoke(
+                SystemBarStyleSuggestion(
+                    lightSystemBars = !isNight,
+                    topScrimAlpha = 0.14f
+                )
+            )
             return
         }
 
@@ -56,8 +69,12 @@ class ImmersiveHeaderBackground(
             override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
                 blurJob?.cancel()
                 blurJob = lifecycleOwner.lifecycleScope.launchWhenStarted {
-                    val blurred = withContext(Dispatchers.Default) { blurForHeader(resource) }
+                    val (blurred, suggestion) = withContext(Dispatchers.Default) {
+                        val blurredBitmap = blurForHeader(resource)
+                        blurredBitmap to suggestSystemBars(blurredBitmap)
+                    }
                     imageView.setImageBitmap(blurred)
+                    suggestion?.let { onSystemBarStyleSuggested?.invoke(it) }
                 }
             }
 
@@ -66,6 +83,15 @@ class ImmersiveHeaderBackground(
             override fun onLoadFailed(errorDrawable: Drawable?) {
                 imageView.alpha = 1f
                 imageView.setImageResource(R.drawable.bg_header_default)
+                val isNight =
+                    (imageView.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                        Configuration.UI_MODE_NIGHT_YES
+                onSystemBarStyleSuggested?.invoke(
+                    SystemBarStyleSuggestion(
+                        lightSystemBars = !isNight,
+                        topScrimAlpha = 0.18f
+                    )
+                )
             }
         }
         target = newTarget
@@ -98,5 +124,48 @@ class ImmersiveHeaderBackground(
             )
         return StackBlur.blur(scaled, radius = 18)
     }
-}
 
+    private fun suggestSystemBars(bitmap: Bitmap): SystemBarStyleSuggestion? {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return null
+        val average = averageColor(bitmap)
+        val contrastWhite = ColorUtils.calculateContrast(Color.WHITE, average)
+        val contrastBlack = ColorUtils.calculateContrast(Color.BLACK, average)
+        val lightSystemBars = contrastBlack >= contrastWhite
+        val bestContrast = maxOf(contrastWhite, contrastBlack)
+        val topScrimAlpha = when {
+            bestContrast < 2.2 -> 0.40f
+            bestContrast < 3.0 -> 0.28f
+            bestContrast < 3.6 -> 0.20f
+            else -> 0.14f
+        }
+        return SystemBarStyleSuggestion(lightSystemBars = lightSystemBars, topScrimAlpha = topScrimAlpha)
+    }
+
+    private fun averageColor(bitmap: Bitmap): Int {
+        val sampleX = 12
+        val sampleY = 12
+        val w = bitmap.width
+        val h = bitmap.height
+        var sumR = 0L
+        var sumG = 0L
+        var sumB = 0L
+        var count = 0L
+
+        for (iy in 0 until sampleY) {
+            val y = ((iy + 0.5f) * h / sampleY).toInt().coerceIn(0, h - 1)
+            for (ix in 0 until sampleX) {
+                val x = ((ix + 0.5f) * w / sampleX).toInt().coerceIn(0, w - 1)
+                val c = bitmap.getPixel(x, y)
+                sumR += Color.red(c)
+                sumG += Color.green(c)
+                sumB += Color.blue(c)
+                count++
+            }
+        }
+
+        val r = (sumR / count).toInt().coerceIn(0, 255)
+        val g = (sumG / count).toInt().coerceIn(0, 255)
+        val b = (sumB / count).toInt().coerceIn(0, 255)
+        return Color.rgb(r, g, b)
+    }
+}

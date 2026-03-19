@@ -6,24 +6,24 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.databinding.ActivityLoginBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.applyEdgeToEdge
-import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.applySystemBarInsetPadding
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
-import com.music.player.ui.viewmodel.MusicViewModel
 
 class LoginActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoginBinding
     private lateinit var authViewModel: AuthViewModel
-    private lateinit var musicViewModel: MusicViewModel
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
+    private lateinit var insetsController: WindowInsetsControllerCompat
     private var isLoginMode = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,12 +35,18 @@ class LoginActivity : AppCompatActivity() {
         val isNightMode =
             (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
-        applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
-        binding.scrollView.applyStatusBarInsetPadding()
+        insetsController = applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
+        binding.scrollView.applySystemBarInsetPadding(applyTop = true, applyBottom = true)
 
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
-        musicViewModel = ViewModelProvider(this)[MusicViewModel::class.java]
-        immersiveHeaderBackground = ImmersiveHeaderBackground(this, binding.immersiveHeader.ivHeaderBackground)
+        immersiveHeaderBackground = ImmersiveHeaderBackground(
+            this,
+            binding.immersiveHeader.ivHeaderBackground
+        ) { suggestion ->
+            insetsController.isAppearanceLightStatusBars = suggestion.lightSystemBars
+            insetsController.isAppearanceLightNavigationBars = suggestion.lightSystemBars
+            binding.immersiveHeader.viewHeaderScrim.alpha = suggestion.topScrimAlpha
+        }
 
         if (authViewModel.isLoggedIn()) {
             navigateToMain()
@@ -75,10 +81,6 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun setupObservers() {
-        musicViewModel.currentSong.observe(this) { song ->
-            immersiveHeaderBackground.setImageUrl(song?.album?.picUrl)
-        }
-
         authViewModel.authState.observe(this) { state ->
             when (state) {
                 is AuthState.Loading -> {

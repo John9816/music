@@ -2,6 +2,7 @@ package com.music.player.ui.fragment
 
 import android.content.res.ColorStateList
 import android.os.Bundle
+import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,23 +12,27 @@ import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnLayout
+import androidx.core.view.updatePadding
+import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import com.bumptech.glide.Glide
-import com.google.android.material.bottomsheet.BottomSheetBehavior
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.model.LyricLine
 import com.music.player.databinding.BottomSheetNowPlayingBinding
 import com.music.player.ui.adapter.LyricsAdapter
 import com.music.player.ui.lyrics.LyricsParser
+import com.music.player.ui.util.applyNavigationBarInsetPadding
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
@@ -40,7 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
+class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private var _binding: BottomSheetNowPlayingBinding? = null
     private val binding: BottomSheetNowPlayingBinding
@@ -81,23 +86,34 @@ class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
         return binding.root
     }
 
-    override fun getTheme(): Int = R.style.ThemeOverlayMusicPlayerFullscreenBottomSheet
+    override fun getTheme(): Int = R.style.ThemeOverlayMusicPlayerFullscreenDialog
 
     override fun onStart() {
         super.onStart()
 
-        (dialog as? BottomSheetDialog)?.let { bottomSheetDialog ->
-            bottomSheetDialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            bottomSheetDialog.window?.setLayout(MATCH_PARENT, MATCH_PARENT)
-            val bottomSheet =
-                bottomSheetDialog.findViewById<FrameLayout>(com.google.android.material.R.id.design_bottom_sheet)
-                    ?: return@let
-            bottomSheet.background = ColorDrawable(Color.TRANSPARENT)
-            bottomSheet.layoutParams = bottomSheet.layoutParams.apply { height = MATCH_PARENT }
-            BottomSheetBehavior.from(bottomSheet).apply {
-                state = BottomSheetBehavior.STATE_EXPANDED
-                skipCollapsed = true
+        dialog?.window?.let { window ->
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.setLayout(MATCH_PARENT, MATCH_PARENT)
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            window.attributes = window.attributes.apply {
+                width = MATCH_PARENT
+                height = MATCH_PARENT
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
+            if (Build.VERSION.SDK_INT >= 29) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            val controller = WindowInsetsControllerCompat(window, binding.root)
+            val isNightMode =
+                (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            controller.isAppearanceLightStatusBars = !isNightMode
+            controller.isAppearanceLightNavigationBars = !isNightMode
         }
 
         startLyricUpdates()
@@ -122,6 +138,12 @@ class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
         lyricsAdapter = LyricsAdapter()
         binding.rvLyrics.layoutManager = LinearLayoutManager(requireContext())
         binding.rvLyrics.adapter = lyricsAdapter
+        binding.topBar.applyStatusBarInsetPadding()
+        binding.controlsBar.applyNavigationBarInsetPadding()
+        binding.root.doOnLayout { updateFullscreenContentPadding() }
+        binding.topBar.doOnLayout { updateFullscreenContentPadding() }
+        binding.progressContainer.doOnLayout { updateFullscreenContentPadding() }
+        binding.controlsBar.doOnLayout { updateFullscreenContentPadding() }
         binding.rvLyrics.doOnLayout {
             val minInset = dp(24)
             val inset = (it.height / 2 - minInset).coerceAtLeast(minInset)
@@ -169,8 +191,11 @@ class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
         binding.btnNext.setOnClickListener { musicViewModel.skipNext() }
         binding.btnPlayPause.setOnClickListener {
             val p = (activity as? MainActivity)?.player ?: return@setOnClickListener
+            val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {
                 p.pause()
+            } else if (p.mediaItemCount == 0 && currentSong != null) {
+                musicViewModel.playSong(currentSong)
             } else {
                 if (p.playbackState == Player.STATE_IDLE && p.mediaItemCount > 0) {
                     p.prepare()
@@ -266,7 +291,7 @@ class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
                 Glide.with(this)
                     .load(coverUrl)
                     .placeholder(R.drawable.ic_music_note_24)
-                    .centerCrop()
+                    .circleCrop()
                     .into(binding.ivCoverBig)
 
                 loadBlurBackground(coverUrl)
@@ -336,6 +361,16 @@ class NowPlayingBottomSheetFragment : BottomSheetDialogFragment() {
         binding.btnPlayPause.setImageResource(icon)
         binding.btnPlayPause.contentDescription = getString(contentDesc)
         syncCoverRotation()
+    }
+
+    private fun updateFullscreenContentPadding() {
+        if (_binding == null) return
+        val topInset = binding.topBar.bottom.coerceAtLeast(0)
+        val bottomInset = (binding.root.height - binding.progressContainer.top).coerceAtLeast(0)
+        binding.vfContent.updatePadding(
+            top = topInset,
+            bottom = bottomInset
+        )
     }
 
     private fun syncCoverRotation() {

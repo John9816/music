@@ -27,6 +27,11 @@ import kotlinx.coroutines.withContext
 
 object PlaybackCoordinator {
 
+    enum class PlaylistViewMode {
+        RECENT,
+        QUEUE
+    }
+
     private const val TAG = "PlaybackCoordinator"
     private const val MAX_HISTORY = 100
     private const val EXTRA_SONG_ID = "song_id"
@@ -52,6 +57,12 @@ object PlaybackCoordinator {
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
+
+    private val _recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
+    val recentlyPlayed: StateFlow<List<Song>> = _recentlyPlayed.asStateFlow()
+
+    private val _playlistViewMode = MutableStateFlow(PlaylistViewMode.RECENT)
+    val playlistViewMode: StateFlow<PlaylistViewMode> = _playlistViewMode.asStateFlow()
 
     private val _canSkipPrevious = MutableStateFlow(false)
     val canSkipPrevious: StateFlow<Boolean> = _canSkipPrevious.asStateFlow()
@@ -111,10 +122,16 @@ object PlaybackCoordinator {
         startPlayback(song, recordHistory = true)
     }
 
+    fun playStandaloneSong(song: Song) {
+        _queue.value = emptyList()
+        _playlistViewMode.value = PlaylistViewMode.RECENT
+        startPlayback(song, recordHistory = true)
+    }
+
     fun playFromList(songs: List<Song>, song: Song) {
         val index = songs.indexOfFirst { it.id == song.id }
         if (index < 0) {
-            playSong(song)
+            playStandaloneSong(song)
             return
         }
 
@@ -122,11 +139,13 @@ object PlaybackCoordinator {
         navigationHistory.clear()
         songs.take(index).forEach { navigationHistory.addLast(it) }
         _canSkipPrevious.value = navigationHistory.isNotEmpty()
+        syncRecentlyPlayed()
 
         val upcoming = songs.drop(index + 1)
             .filterNot { it.id == song.id }
             .distinctBy { it.id }
         _queue.value = upcoming
+        _playlistViewMode.value = PlaylistViewMode.QUEUE
 
         startPlayback(song, recordHistory = false)
     }
@@ -135,18 +154,21 @@ object PlaybackCoordinator {
         val updated = _queue.value.orEmpty()
             .filterNot { it.id == song.id } + song
         _queue.value = updated
+        _playlistViewMode.value = PlaylistViewMode.QUEUE
     }
 
     fun enqueueNext(song: Song) {
         val updated = listOf(song) + _queue.value.orEmpty()
             .filterNot { it.id == song.id }
         _queue.value = updated
+        _playlistViewMode.value = PlaylistViewMode.QUEUE
     }
 
     fun skipNext(): Boolean {
         val queueSnapshot = _queue.value.orEmpty()
         val next = queueSnapshot.firstOrNull() ?: return false
         _queue.value = queueSnapshot.drop(1)
+        _playlistViewMode.value = if (_queue.value.isEmpty()) PlaylistViewMode.RECENT else PlaylistViewMode.QUEUE
         startPlayback(next, recordHistory = true)
         return true
     }
@@ -167,15 +189,36 @@ object PlaybackCoordinator {
         val queueSnapshot = _queue.value.orEmpty()
         val song = queueSnapshot.firstOrNull { it.id == songId } ?: return
         _queue.value = queueSnapshot.filterNot { it.id == songId }
+        _playlistViewMode.value = if (_queue.value.isEmpty()) PlaylistViewMode.RECENT else PlaylistViewMode.QUEUE
+        startPlayback(song, recordHistory = true)
+    }
+
+    fun playFromRecent(songId: String) {
+        val song = navigationHistory.lastOrNull { it.id == songId } ?: return
+        rebuildNavigationHistory(
+            navigationHistory.filterNot { it.id == songId }
+        )
+        _queue.value = emptyList()
+        _playlistViewMode.value = PlaylistViewMode.RECENT
         startPlayback(song, recordHistory = true)
     }
 
     fun removeFromQueue(songId: String) {
         _queue.value = _queue.value.orEmpty().filterNot { it.id == songId }
+        if (_queue.value.isEmpty()) {
+            _playlistViewMode.value = PlaylistViewMode.RECENT
+        }
     }
 
     fun clearQueue() {
         _queue.value = emptyList()
+        _playlistViewMode.value = PlaylistViewMode.RECENT
+    }
+
+    fun removeFromRecentlyPlayed(songId: String) {
+        rebuildNavigationHistory(
+            navigationHistory.filterNot { it.id == songId }
+        )
     }
 
     fun clearNowPlaying() {
@@ -183,11 +226,26 @@ object PlaybackCoordinator {
         _currentSong.value = null
     }
 
+    fun restorePreviewSong(song: Song) {
+        if (_currentSong.value != null) return
+        cancelPrepare()
+        navigationHistory.clear()
+        _canSkipPrevious.value = false
+        syncRecentlyPlayed()
+        _queue.value = emptyList()
+        _playlistViewMode.value = PlaylistViewMode.RECENT
+        pendingPreparedSong = null
+        _isLoading.value = false
+        _currentSong.value = song
+    }
+
     fun resetPlayback() {
         cancelPrepare()
         navigationHistory.clear()
         _canSkipPrevious.value = false
+        syncRecentlyPlayed()
         _queue.value = emptyList()
+        _playlistViewMode.value = PlaylistViewMode.RECENT
         _currentSong.value = null
         _isLoading.value = false
         player?.stop()
@@ -206,6 +264,7 @@ object PlaybackCoordinator {
                 navigationHistory.removeFirst()
             }
             _canSkipPrevious.value = true
+            syncRecentlyPlayed()
         }
 
         prepareJob?.cancel()
@@ -360,5 +419,18 @@ object PlaybackCoordinator {
         lyricsJob?.cancel()
         lyricsJob = null
         prepareToken += 1
+    }
+
+    private fun rebuildNavigationHistory(songs: List<Song>) {
+        navigationHistory.clear()
+        songs.forEach { navigationHistory.addLast(it) }
+        _canSkipPrevious.value = navigationHistory.isNotEmpty()
+        syncRecentlyPlayed()
+    }
+
+    private fun syncRecentlyPlayed() {
+        val seen = LinkedHashSet<String>()
+        _recentlyPlayed.value = navigationHistory.asReversed()
+            .filter { seen.add(it.id) }
     }
 }

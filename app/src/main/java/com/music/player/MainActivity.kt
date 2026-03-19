@@ -11,10 +11,13 @@ import android.os.Bundle
 import android.view.View
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
+import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.animation.LinearInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +25,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -38,16 +42,22 @@ import com.music.player.ui.fragment.LibraryFragment
 import com.music.player.ui.fragment.NowPlayingBottomSheetFragment
 import com.music.player.ui.fragment.PlaylistsFragment
 import com.music.player.ui.fragment.ProfileFragment
+import com.music.player.ui.fragment.QueueBottomSheetFragment
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
+import com.music.player.ui.viewmodel.UpdateState
+import com.music.player.ui.viewmodel.UpdateViewModel
+import com.music.player.update.AppUpdateInstaller
+import com.music.player.update.AppUpdatePreferences
+import com.music.player.update.showAppUpdateDialog
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 
 class MainActivity : AppCompatActivity() {
 
@@ -58,6 +68,9 @@ class MainActivity : AppCompatActivity() {
         private const val TAG_PROFILE = "tab_profile"
 
         const val EXTRA_FROM_LOGIN = "extra_from_login"
+        const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
+        const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
+        private var hasCheckedForUpdatesThisProcess = false
     }
 
     val player: Player?
@@ -67,12 +80,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var musicViewModel: MusicViewModel
     private lateinit var authViewModel: AuthViewModel
     private lateinit var libraryViewModel: LibraryViewModel
+    private lateinit var updateViewModel: UpdateViewModel
+    private lateinit var appUpdateInstaller: AppUpdateInstaller
+    private lateinit var appUpdatePreferences: AppUpdatePreferences
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
+    private lateinit var insetsController: WindowInsetsControllerCompat
+    private var discoverSearchView: View? = null
 
     private var suppressNavCallback = false
     private var currentTabId: Int = R.id.nav_discover
     private var miniProgressJob: Job? = null
     private var miniCoverAnimator: ObjectAnimator? = null
+    private var hasRestoredRecentSong = false
 
     private val settingsLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -110,9 +129,16 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        immersiveHeaderBackground = ImmersiveHeaderBackground(this, binding.immersiveHeader.ivHeaderBackground)
-
         setupEdgeToEdge()
+
+        immersiveHeaderBackground = ImmersiveHeaderBackground(
+            this,
+            binding.immersiveHeader.ivHeaderBackground
+        ) { suggestion ->
+            insetsController.isAppearanceLightStatusBars = suggestion.lightSystemBars
+            insetsController.isAppearanceLightNavigationBars = suggestion.lightSystemBars
+            binding.immersiveHeader.viewHeaderScrim.alpha = suggestion.topScrimAlpha
+        }
 
         musicViewModel = ViewModelProvider(this)[MusicViewModel::class.java]
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
@@ -122,6 +148,10 @@ class MainActivity : AppCompatActivity() {
             navigateToLogin()
             return
         }
+
+        updateViewModel = ViewModelProvider(this)[UpdateViewModel::class.java]
+        appUpdateInstaller = AppUpdateInstaller(this)
+        appUpdatePreferences = AppUpdatePreferences(this)
 
         requestNotificationPermissionIfNeeded()
 
@@ -137,9 +167,11 @@ class MainActivity : AppCompatActivity() {
 
         setupMiniPlayer()
         setupObservers()
+        setupUpdateObservers()
         setupBottomNavigation(savedInstanceState)
 
         libraryViewModel.prefetch()
+        maybeCheckForAppUpdate(savedInstanceState)
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -167,6 +199,12 @@ class MainActivity : AppCompatActivity() {
         )
 
         syncTopBarState()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleInitialTabIntent()
     }
 
     override fun onStart() {
@@ -201,6 +239,55 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupUpdateObservers() {
+        updateViewModel.state.observe(this) { state ->
+            when (state) {
+                is UpdateState.Idle -> Unit
+                is UpdateState.Loading -> Unit
+                is UpdateState.Latest -> updateViewModel.reset()
+                is UpdateState.UpdateAvailable -> {
+                    appUpdatePreferences.clearSkippedIfOlderThan(state.latest.buildNumber)
+                    if (!state.userInitiated &&
+                        appUpdatePreferences.shouldSuppressAutoPrompt(
+                            buildNumber = state.latest.buildNumber,
+                            force = state.force
+                        )
+                    ) {
+                        updateViewModel.reset()
+                        return@observe
+                    }
+
+                    showAppUpdateDialog(
+                        currentVersion = BuildConfig.VERSION_NAME,
+                        currentBuildNumber = BuildConfig.VERSION_CODE,
+                        latest = state.latest,
+                        force = state.force,
+                        onConfirm = {
+                            val url = state.latest.downloadUrl?.trim().orEmpty()
+                            if (url.isBlank()) {
+                                Toast.makeText(this, getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
+                                return@showAppUpdateDialog
+                            }
+                            appUpdateInstaller.downloadAndInstall(url, state.latest.version)
+                        },
+                        onLater = {
+                            appUpdatePreferences.markSkipped(state.latest.buildNumber)
+                        }
+                    )
+                    updateViewModel.reset()
+                }
+                is UpdateState.Error -> updateViewModel.reset()
+            }
+        }
+    }
+
+    private fun maybeCheckForAppUpdate(savedInstanceState: Bundle?) {
+        if (savedInstanceState != null) return
+        if (hasCheckedForUpdatesThisProcess) return
+        hasCheckedForUpdatesThisProcess = true
+        updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = false)
+    }
+
     private fun setupEdgeToEdge() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
@@ -209,23 +296,26 @@ class MainActivity : AppCompatActivity() {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
         }
-
-        val controller = WindowInsetsControllerCompat(window, binding.root)
-        val lightSystemBars = !isNightMode()
-        controller.isAppearanceLightStatusBars = lightSystemBars
-        controller.isAppearanceLightNavigationBars = lightSystemBars
-
-        ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
-            val statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            view.updatePadding(top = statusInsets.top)
+        insetsController = WindowInsetsControllerCompat(window, binding.root).apply {
+            isAppearanceLightStatusBars = !isNightMode()
+            isAppearanceLightNavigationBars = !isNightMode()
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = bars.top)
             insets
         }
-
         ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
-            val navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            view.updatePadding(bottom = navInsets.bottom)
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = bars.bottom)
             insets
         }
+        binding.toolbar.requestApplyInsets()
+        binding.bottomNav.requestApplyInsets()
+        binding.root.doOnLayout { updateMainContentPadding() }
+        binding.appBar.doOnLayout { updateMainContentPadding() }
+        binding.bottomNav.doOnLayout { updateMainContentPadding() }
+        binding.miniPlayer.doOnLayout { updateMainContentPadding() }
     }
 
     private fun isNightMode(): Boolean {
@@ -248,7 +338,11 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        val initialTab = if (savedInstanceState == null) R.id.nav_discover else binding.bottomNav.selectedItemId
+        val initialTab = if (savedInstanceState == null) {
+            intent.getIntExtra(EXTRA_INITIAL_TAB_ID, R.id.nav_discover)
+        } else {
+            binding.bottomNav.selectedItemId
+        }
         suppressNavCallback = true
         binding.bottomNav.selectedItemId = initialTab
         suppressNavCallback = false
@@ -261,9 +355,7 @@ class MainActivity : AppCompatActivity() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_search_tab -> {
-                    if (binding.bottomNav.selectedItemId != R.id.nav_library) {
-                        binding.bottomNav.selectedItemId = R.id.nav_library
-                    }
+                    openSongSearch()
                     true
                 }
                 R.id.action_settings -> {
@@ -272,6 +364,26 @@ class MainActivity : AppCompatActivity() {
                 }
                 else -> false
             }
+        }
+        ensureDiscoverSearchView()
+        updateToolbar()
+    }
+
+    private fun handleInitialTabIntent() {
+        val requestedTab = intent.getIntExtra(EXTRA_INITIAL_TAB_ID, View.NO_ID)
+        if (requestedTab == View.NO_ID) return
+        if (::binding.isInitialized && binding.bottomNav.selectedItemId != requestedTab) {
+            binding.bottomNav.selectedItemId = requestedTab
+        }
+        intent.removeExtra(EXTRA_INITIAL_TAB_ID)
+    }
+
+    private fun openSongSearch() {
+        intent.putExtra(EXTRA_FOCUS_LIBRARY_SEARCH, true)
+        if (binding.bottomNav.selectedItemId != R.id.nav_library) {
+            binding.bottomNav.selectedItemId = R.id.nav_library
+        } else {
+            (supportFragmentManager.findFragmentByTag(TAG_LIBRARY) as? LibraryFragment)?.requestSearchFocus()
         }
     }
 
@@ -354,26 +466,65 @@ class MainActivity : AppCompatActivity() {
                 supportFragmentManager.popBackStack()
             }
         }
+        updateToolbarForVisiblePage(showBack = showBack)
     }
 
     fun setBottomNavVisible(visible: Boolean) {
         binding.bottomNav.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.root.post { updateMainContentPadding() }
     }
 
     private fun updateToolbar() {
         // Keep the top bar minimal and consistent (like the lyrics page).
         binding.toolbar.title = ""
         binding.toolbar.subtitle = null
+        updateToolbarForVisiblePage(showBack = binding.toolbar.navigationIcon != null)
+    }
+
+    private fun ensureDiscoverSearchView() {
+        if (discoverSearchView != null) return
+        val searchView = LayoutInflater.from(this)
+            .inflate(R.layout.view_discover_toolbar_search, binding.toolbar, false)
+        val reservedActionWidth =
+            resources.getDimensionPixelSize(R.dimen.control_height_l) +
+                resources.getDimensionPixelSize(R.dimen.spacing_s)
+        searchView.layoutParams = Toolbar.LayoutParams(
+            Toolbar.LayoutParams.MATCH_PARENT,
+            Toolbar.LayoutParams.WRAP_CONTENT,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
+            marginEnd = reservedActionWidth
+        }
+        searchView.findViewById<View>(R.id.cardDiscoverSearch).setOnClickListener {
+            openSongSearch()
+        }
+        discoverSearchView = searchView
+    }
+
+    private fun updateToolbarForVisiblePage(showBack: Boolean) {
+        val isDiscoverRoot = currentTabId == R.id.nav_discover && !showBack
+        val searchMenuItem = binding.toolbar.menu.findItem(R.id.action_search_tab)
+        searchMenuItem?.isVisible = !isDiscoverRoot
+
+        val existingSearchView = discoverSearchView
+        if (isDiscoverRoot) {
+            if (existingSearchView != null && existingSearchView.parent == null) {
+                binding.toolbar.addView(existingSearchView, 0)
+            }
+        } else if (existingSearchView?.parent === binding.toolbar) {
+            binding.toolbar.removeView(existingSearchView)
+        }
     }
 
     private fun setupObservers() {
         musicViewModel.currentSong.observe(this) { song ->
-            immersiveHeaderBackground.setImageUrl(song?.album?.picUrl)
+            immersiveHeaderBackground.setImageUrl(null)
             if (song == null) {
                 binding.miniPlayer.visibility = View.GONE
                 binding.miniProgress.isIndeterminate = false
                 binding.miniProgress.progress = 0
                 updateMiniCoverRotation(false)
+                updateMainContentPadding()
                 return@observe
             }
 
@@ -400,6 +551,7 @@ class MainActivity : AppCompatActivity() {
 
             updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
             libraryViewModel.addToHistory(song)
+            updateMainContentPadding()
         }
 
         musicViewModel.error.observe(this) { error ->
@@ -413,6 +565,14 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             libraryViewModel.consumeMessage()
         }
+
+        libraryViewModel.latestHistorySong.observe(this) { song ->
+            if (hasRestoredRecentSong) return@observe
+            if (musicViewModel.currentSong.value != null) return@observe
+            song ?: return@observe
+            hasRestoredRecentSong = true
+            musicViewModel.restorePreviewSong(song)
+        }
     }
 
     private fun setupMiniPlayer() {
@@ -420,8 +580,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnMiniPlayPause.setOnClickListener {
             val p = player ?: return@setOnClickListener
+            val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {
                 p.pause()
+            } else if (p.mediaItemCount == 0 && currentSong != null) {
+                musicViewModel.playSong(currentSong)
             } else {
                 if (p.playbackState == Player.STATE_IDLE && p.mediaItemCount > 0) {
                     p.prepare()
@@ -429,6 +592,12 @@ class MainActivity : AppCompatActivity() {
                 p.play()
             }
             updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
+        }
+
+        binding.btnMiniQueue.setOnClickListener {
+            if (musicViewModel.currentSong.value != null) {
+                QueueBottomSheetFragment().show(supportFragmentManager, "queue")
+            }
         }
 
         binding.miniPlayer.setOnClickListener {
@@ -514,6 +683,15 @@ class MainActivity : AppCompatActivity() {
         binding.miniProgress.progress = progress
     }
 
+    private fun updateMainContentPadding() {
+        val topInset = binding.appBar.bottom.coerceAtLeast(0)
+        val bottomInset = (binding.root.height - binding.bottomContentBarrier.top).coerceAtLeast(0)
+        binding.fragmentContainer.updatePadding(
+            top = topInset,
+            bottom = bottomInset
+        )
+    }
+
     override fun onStop() {
         super.onStop()
         miniProgressJob?.cancel()
@@ -528,5 +706,48 @@ class MainActivity : AppCompatActivity() {
         miniCoverAnimator?.cancel()
         miniCoverAnimator = null
         player?.removeListener(playerListener)
+        if (::appUpdateInstaller.isInitialized) {
+            appUpdateInstaller.dispose()
+        }
+    }
+
+    private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        return WindowInsetsControllerCompat(window, rootView).apply {
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
+        }
+    }
+
+    private fun View.applyStatusBarInsetPadding() {
+        applySystemBarInsetPadding(applyTop = true)
+    }
+
+    private fun View.applyNavigationBarInsetPadding() {
+        applySystemBarInsetPadding(applyBottom = true)
+    }
+
+    private fun View.applySystemBarInsetPadding(
+        applyTop: Boolean = false,
+        applyBottom: Boolean = false
+    ) {
+        val initialTop = paddingTop
+        val initialBottom = paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(
+                top = initialTop + if (applyTop) bars.top else 0,
+                bottom = initialBottom + if (applyBottom) bars.bottom else 0
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(this)
     }
 }

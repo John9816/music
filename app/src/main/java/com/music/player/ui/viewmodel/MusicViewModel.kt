@@ -11,6 +11,7 @@ import com.music.player.data.model.Song
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.playback.PlaybackCoordinator
+import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
 import kotlinx.coroutines.launch
 
 class MusicViewModel : ViewModel() {
@@ -84,6 +85,12 @@ class MusicViewModel : ViewModel() {
     private val _queue = MutableLiveData<List<Song>>(emptyList())
     val queue: LiveData<List<Song>> = _queue
 
+    private val _recentlyPlayed = MutableLiveData<List<Song>>(emptyList())
+    val recentlyPlayed: LiveData<List<Song>> = _recentlyPlayed
+
+    private val _playlistViewMode = MutableLiveData(PlaylistViewMode.RECENT)
+    val playlistViewMode: LiveData<PlaylistViewMode> = _playlistViewMode
+
     private val _canSkipPrevious = MutableLiveData(false)
     val canSkipPrevious: LiveData<Boolean> = _canSkipPrevious
 
@@ -96,6 +103,8 @@ class MusicViewModel : ViewModel() {
     init {
         viewModelScope.launch { PlaybackCoordinator.currentSong.collect { _currentSong.value = it } }
         viewModelScope.launch { PlaybackCoordinator.queue.collect { _queue.value = it } }
+        viewModelScope.launch { PlaybackCoordinator.recentlyPlayed.collect { _recentlyPlayed.value = it } }
+        viewModelScope.launch { PlaybackCoordinator.playlistViewMode.collect { _playlistViewMode.value = it } }
         viewModelScope.launch { PlaybackCoordinator.canSkipPrevious.collect { _canSkipPrevious.value = it } }
         viewModelScope.launch { PlaybackCoordinator.isLoading.collect { _isLoading.value = it } }
         viewModelScope.launch { PlaybackCoordinator.error.collect { _error.value = it } }
@@ -262,11 +271,26 @@ class MusicViewModel : ViewModel() {
 
     fun playSong(song: Song) = PlaybackCoordinator.playSong(song)
 
+    fun playStandaloneSong(song: Song) = PlaybackCoordinator.playStandaloneSong(song)
+
+    fun restorePreviewSong(song: Song) = PlaybackCoordinator.restorePreviewSong(song)
+
     fun playFromList(songs: List<Song>, song: Song) = PlaybackCoordinator.playFromList(songs, song)
 
     fun enqueue(song: Song) = PlaybackCoordinator.enqueue(song)
 
     fun enqueueNext(song: Song) = PlaybackCoordinator.enqueueNext(song)
+
+    fun resolveSongUrl(song: Song, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            val cachedUrl = song.url?.trim().orEmpty()
+            if (cachedUrl.isNotBlank()) {
+                onResult(Result.success(cachedUrl))
+                return@launch
+            }
+            onResult(repository.getSongUrl(song.id))
+        }
+    }
 
     fun skipNext(): Boolean = PlaybackCoordinator.skipNext()
 
@@ -274,7 +298,11 @@ class MusicViewModel : ViewModel() {
 
     fun playFromQueue(songId: String) = PlaybackCoordinator.playFromQueue(songId)
 
+    fun playFromRecent(songId: String) = PlaybackCoordinator.playFromRecent(songId)
+
     fun removeFromQueue(songId: String) = PlaybackCoordinator.removeFromQueue(songId)
+
+    fun removeFromRecentlyPlayed(songId: String) = PlaybackCoordinator.removeFromRecentlyPlayed(songId)
 
     fun clearQueue() = PlaybackCoordinator.clearQueue()
 

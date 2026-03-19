@@ -1,7 +1,6 @@
 package com.music.player.data.auth
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -22,81 +21,57 @@ sealed class AuthResult {
 }
 
 class AuthRepository(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+    private val sessionManager = AuthSessionManager(context.applicationContext)
     private val authApi = SupabaseClient.authApi
     private val restApi = SupabaseClient.restApi
 
-    private fun saveSession(token: String, userId: String?) {
-        prefs.edit()
-            .putString("access_token", token)
-            .putString("user_id", userId)
-            .apply()
-    }
-
-    private fun getToken(): String? {
-        return prefs.getString("access_token", null)
-    }
-
-    private fun getCachedUserId(): String? {
-        return prefs.getString("user_id", null)
-    }
-
-    private fun clearToken() {
-        prefs.edit()
-            .remove("access_token")
-            .remove("user_id")
-            .apply()
-    }
+    private fun cacheUserId(userId: String) = sessionManager.cacheUserId(userId)
+    private fun getCachedUserId(): String? = sessionManager.getCachedUserId()
 
     suspend fun signIn(email: String, password: String): AuthResult {
         return withContext(Dispatchers.IO) {
             try {
                 val response = authApi.signIn(SignInRequest(email, password))
+                val authResponse = response.body()
 
-                if (response.isSuccessful && response.body() != null) {
-                    val authResponse = response.body()!!
-
-                    // 检查是否有错误
-                    if (authResponse.error != null) {
-                        return@withContext AuthResult.Error(
-                            when {
-                                authResponse.error.contains("Invalid") -> "账号或密码错误"
-                                authResponse.error.contains("Email not confirmed") -> "账号未验证，请查收邮件"
-                                else -> authResponse.error_description ?: authResponse.error
-                            }
-                        )
-                    }
-
-                    val token = authResponse.access_token
-
-                    if (token != null) {
-                        val user = authResponse.user
-                        if (user != null) {
-                            saveSession(token, user.id)
-                            saveSession(token, user.id)
-                            AuthResult.Success(
-                                UserProfile(
-                                    id = user.id,
-                                    email = user.email
-                                )
-                            )
-                        } else {
-                            AuthResult.Error("登录失败")
-                        }
-                    } else {
-                        AuthResult.Error("登录失败")
-                    }
-                } else {
-                    // 解析错误响应
-                    val errorBody = response.errorBody()?.string()
-                    AuthResult.Error(
+                if (!response.isSuccessful || authResponse == null) {
+                    val errorBody = response.errorBody()?.string().orEmpty()
+                    return@withContext AuthResult.Error(
                         when {
-                            errorBody?.contains("Invalid login credentials") == true -> "账号或密码错误"
-                            errorBody?.contains("Email not confirmed") == true -> "账号未验证，请查收邮件"
+                            errorBody.contains("Invalid login credentials") -> "账号或密码错误"
+                            errorBody.contains("Email not confirmed") -> "账号未验证，请查收邮件"
                             else -> "登录失败，请检查网络连接"
                         }
                     )
                 }
+
+                if (authResponse.error != null) {
+                    return@withContext AuthResult.Error(
+                        when {
+                            authResponse.error.contains("Invalid") -> "账号或密码错误"
+                            authResponse.error.contains("Email not confirmed") -> "账号未验证，请查收邮件"
+                            else -> authResponse.error_description ?: authResponse.error
+                        }
+                    )
+                }
+
+                val token = authResponse.access_token ?: return@withContext AuthResult.Error("登录失败")
+                val user = authResponse.user ?: return@withContext AuthResult.Error("登录失败")
+
+                sessionManager.saveSession(
+                    accessToken = token,
+                    refreshToken = authResponse.refresh_token,
+                    expiresInSeconds = authResponse.expires_in,
+                    userId = user.id
+                )
+
+                AuthResult.Success(
+                    UserProfile(
+                        id = user.id,
+                        email = user.email,
+                        avatar_url = extractAvatarUrl(user)
+                    )
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
                 AuthResult.Error("网络错误: ${e.message}")
@@ -108,33 +83,32 @@ class AuthRepository(context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val response = authApi.signUp(AuthRequest(email, password))
+                val authResponse = response.body()
 
-                if (response.isSuccessful && response.body() != null) {
-                    val authResponse = response.body()!!
-                    val token = authResponse.access_token
-
-                    if (token != null) {
-                        // session will be saved when user is available
-                        val user = authResponse.user
-                        if (user != null) {
-                            // 创建用户资料
-                            createUserProfile(token, user.id, email)
-
-                            AuthResult.Success(
-                                UserProfile(
-                                    id = user.id,
-                                    email = user.email
-                                )
-                            )
-                        } else {
-                            AuthResult.Error("注册失败")
-                        }
-                    } else {
-                        AuthResult.Error("注册失败")
-                    }
-                } else {
-                    AuthResult.Error("该邮箱已被注册")
+                if (!response.isSuccessful || authResponse == null) {
+                    return@withContext AuthResult.Error("该邮箱已被注册")
                 }
+
+                val token = authResponse.access_token ?: return@withContext AuthResult.Error("注册失败")
+                val user = authResponse.user ?: return@withContext AuthResult.Error("注册失败")
+                val authAvatarUrl = extractAvatarUrl(user)
+
+                sessionManager.saveSession(
+                    accessToken = token,
+                    refreshToken = authResponse.refresh_token,
+                    expiresInSeconds = authResponse.expires_in,
+                    userId = user.id
+                )
+
+                createUserProfile(token, user.id, email, authAvatarUrl)
+
+                AuthResult.Success(
+                    UserProfile(
+                        id = user.id,
+                        email = user.email,
+                        avatar_url = authAvatarUrl
+                    )
+                )
             } catch (e: Exception) {
                 handleAuthError(e)
             }
@@ -143,15 +117,12 @@ class AuthRepository(context: Context) {
 
     suspend fun signOut() {
         withContext(Dispatchers.IO) {
-            try {
-                val token = getToken()
-                if (token != null) {
+            val token = runCatching { sessionManager.getValidAccessToken(authApi) }.getOrNull()
+            sessionManager.clear()
+            runCatching {
+                if (!token.isNullOrBlank()) {
                     authApi.signOut("Bearer $token")
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                clearToken()
             }
         }
     }
@@ -159,72 +130,96 @@ class AuthRepository(context: Context) {
     suspend fun getCurrentUser(): UserProfile? {
         return withContext(Dispatchers.IO) {
             try {
-                val token = getToken() ?: return@withContext null
+                val token = sessionManager.getValidAccessToken(authApi) ?: return@withContext null
 
-                val response = authApi.getUser("Bearer $token")
-                if (response.isSuccessful && response.body() != null) {
-                    val user = response.body()!!
-                    if (getCachedUserId().isNullOrBlank()) {
-                        saveSession(token, user.id)
+                var response = authApi.getUser("Bearer $token")
+                if (response.code() == 401) {
+                    val refreshed = sessionManager.forceRefresh(authApi)
+                    if (refreshed != null) {
+                        response = authApi.getUser("Bearer $refreshed")
                     }
-
-                    val profileResponse = restApi.getUsers(
-                        token = "Bearer $token",
-                        id = "eq.${user.id}",
-                        select = "id,email,username,nickname,signature,badge,avatar_url,created_at",
-                        limit = 1
-                    )
-
-                    val profileRow = profileResponse.body()?.firstOrNull()
-                    if (profileRow == null) {
-                        createUserProfile(token, user.id, user.email ?: "")
-                        return@withContext UserProfile(id = user.id, email = user.email)
-                    }
-
-                    UserProfile(
-                        id = user.id,
-                        email = profileRow["email"] as? String ?: user.email,
-                        username = profileRow["username"] as? String,
-                        nickname = profileRow["nickname"] as? String,
-                        signature = profileRow["signature"] as? String,
-                        badge = profileRow["badge"] as? String,
-                        avatar_url = profileRow["avatar_url"] as? String,
-                        created_at = profileRow["created_at"] as? String
-                    )
-                } else {
-                    null
                 }
-            } catch (e: Exception) {
+                if (!response.isSuccessful || response.body() == null) {
+                    if (response.code() == 401) sessionManager.clear()
+                    return@withContext null
+                }
+
+                val user = response.body()!!
+                val authAvatarUrl = extractAvatarUrl(user)
+                if (getCachedUserId().isNullOrBlank()) {
+                    cacheUserId(user.id)
+                }
+
+                val resolvedToken = sessionManager.getValidAccessToken(authApi) ?: token
+                val profileResponse = restApi.getUsers(
+                    token = "Bearer $resolvedToken",
+                    id = "eq.${user.id}",
+                    select = "id,email,username,nickname,signature,badge,avatar_url,created_at",
+                    limit = 1
+                )
+
+                val profileRow = profileResponse.body()?.firstOrNull()
+                if (profileRow == null) {
+                    createUserProfile(token, user.id, user.email ?: "", authAvatarUrl)
+                    return@withContext UserProfile(
+                        id = user.id,
+                        email = user.email,
+                        avatar_url = authAvatarUrl
+                    )
+                }
+
+                val profileAvatarUrl = (profileRow["avatar_url"] as? String)?.trim().orEmpty()
+                UserProfile(
+                    id = user.id,
+                    email = profileRow["email"] as? String ?: user.email,
+                    username = profileRow["username"] as? String,
+                    nickname = profileRow["nickname"] as? String,
+                    signature = profileRow["signature"] as? String,
+                    badge = profileRow["badge"] as? String,
+                    avatar_url = profileAvatarUrl.ifBlank { authAvatarUrl },
+                    created_at = profileRow["created_at"] as? String
+                )
+            } catch (_: Exception) {
                 null
             }
         }
     }
 
-    fun isUserLoggedIn(): Boolean {
-        return getToken() != null
-    }
+    fun isUserLoggedIn(): Boolean = sessionManager.isLoggedIn()
 
-    private suspend fun createUserProfile(token: String, userId: String, email: String) {
+    private suspend fun createUserProfile(
+        token: String,
+        userId: String,
+        email: String,
+        avatarUrl: String? = null
+    ) {
         try {
             val username = email.substringBefore("@")
-            val profile = mapOf(
+            val profile = mutableMapOf<String, Any>(
                 "id" to userId,
                 "email" to email,
                 "username" to username,
                 "nickname" to username
             )
-
+            avatarUrl?.takeIf { it.isNotBlank() }?.let { profile["avatar_url"] = it }
             restApi.insertUser(token = "Bearer $token", user = profile)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    suspend fun updateUserProfile(username: String?, nickname: String?, signature: String?, avatarUrl: String?): AuthResult {
+    suspend fun updateUserProfile(
+        username: String?,
+        nickname: String?,
+        signature: String?,
+        avatarUrl: String?
+    ): AuthResult {
         return withContext(Dispatchers.IO) {
             try {
-                val token = getToken() ?: return@withContext AuthResult.Error("未登录")
-                val user = getCurrentUser() ?: return@withContext AuthResult.Error("未登录")
+                val token = sessionManager.getValidAccessToken(authApi)
+                    ?: return@withContext AuthResult.Error("未登录")
+                val user = getCurrentUser()
+                    ?: return@withContext AuthResult.Error("未登录")
 
                 val updates = mutableMapOf<String, Any?>()
                 username?.let { updates["username"] = it }
@@ -259,5 +254,23 @@ class AuthRepository(context: Context) {
             else -> e.message ?: "操作失败，请重试"
         }
         return AuthResult.Error(message)
+    }
+
+    private fun extractAvatarUrl(user: UserData): String? {
+        val metadataAvatar = findAvatarInMap(user.user_metadata)
+        if (metadataAvatar != null) return metadataAvatar
+
+        return user.identities.orEmpty()
+            .asSequence()
+            .mapNotNull { identity -> findAvatarInMap(identity.identity_data) }
+            .firstOrNull()
+    }
+
+    private fun findAvatarInMap(data: Map<String, Any?>?): String? {
+        if (data.isNullOrEmpty()) return null
+        return listOf("avatar_url", "avatarUrl", "picture", "avatar")
+            .firstNotNullOfOrNull { key -> data[key] as? String }
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
     }
 }

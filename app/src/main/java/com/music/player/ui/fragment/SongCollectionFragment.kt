@@ -62,7 +62,7 @@ class SongCollectionFragment : Fragment() {
         binding.ivHeaderOverlay.setImageResource(if (mode == Mode.LIKED) R.drawable.ic_favorite_24 else R.drawable.ic_play_24)
 
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) },
+            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
             onMoreClick = { anchor, song ->
                 when (mode) {
                     Mode.LIKED -> showLikedSongMenu(anchor, song)

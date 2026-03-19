@@ -1,12 +1,17 @@
 package com.music.player.ui.fragment
 
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -111,8 +116,9 @@ class DiscoverFragment : Fragment() {
 
     private fun setupRecyclerViews() {
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playFromList(songAdapter.currentList, song) },
-            onSongLongClick = { song -> showSongActions(song) }
+            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            onSongLongClick = { song -> showSongActions(song) },
+            onMoreClick = { anchor, song -> showDailyRecommendMenu(anchor, song) }
         )
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
@@ -121,7 +127,7 @@ class DiscoverFragment : Fragment() {
         }
 
         weeklyHotAdapter = HotSongAdapter(
-            onSongClick = { song -> musicViewModel.playFromList(weeklyHotAdapter.currentList, song) },
+            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
             onSongLongClick = { song -> showSongActions(song) }
         )
         binding.rvWeeklyHot.layoutManager =
@@ -240,6 +246,98 @@ class DiscoverFragment : Fragment() {
             .setTitle(song.name)
             .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
             .show()
+    }
+
+    private fun showDailyRecommendMenu(anchor: View, song: Song) {
+        val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
+        val popup = PopupMenu(requireContext(), anchor).apply {
+            menuInflater.inflate(R.menu.song_discover_more_menu, menu)
+        }
+
+        popup.menu.findItem(R.id.action_like)?.title =
+            getString(if (isFavorite) R.string.action_unlike else R.string.action_like)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_play_next -> {
+                    musicViewModel.enqueueNext(song)
+                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
+                    true
+                }
+
+                R.id.action_like -> {
+                    libraryViewModel.setFavorite(song, !isFavorite)
+                    true
+                }
+
+                R.id.action_download_song -> {
+                    startSongDownload(song)
+                    true
+                }
+
+                else -> false
+            }
+        }
+
+        popup.show()
+    }
+
+    private fun startSongDownload(song: Song) {
+        musicViewModel.resolveSongUrl(song) { result ->
+            val context = context ?: return@resolveSongUrl
+            result
+                .onSuccess { url ->
+                    if (url.isBlank()) {
+                        Toast.makeText(context, getString(R.string.msg_song_download_unavailable), Toast.LENGTH_SHORT).show()
+                        return@onSuccess
+                    }
+                    enqueueSongDownload(song, url)
+                }
+                .onFailure {
+                    Toast.makeText(context, getString(R.string.msg_song_download_unavailable), Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+
+    private fun enqueueSongDownload(song: Song, url: String) {
+        val context = context ?: return
+        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        if (downloadManager == null) {
+            Toast.makeText(context, getString(R.string.msg_song_download_failed), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        runCatching {
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setTitle(song.name)
+                setDescription(
+                    getString(
+                        R.string.download_song_description,
+                        song.name,
+                        song.artists.joinToString(", ") { it.name }
+                    )
+                )
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+                setMimeType("audio/mpeg")
+                setDestinationInExternalPublicDir(
+                    Environment.DIRECTORY_MUSIC,
+                    "Duck Music/${buildDownloadFileName(song)}"
+                )
+            }
+            downloadManager.enqueue(request)
+        }.onSuccess {
+            Toast.makeText(context, getString(R.string.msg_song_download_started), Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, getString(R.string.msg_song_download_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun buildDownloadFileName(song: Song): String {
+        val artistNames = song.artists.joinToString(", ") { it.name }.ifBlank { "Unknown Artist" }
+        val rawName = "${song.name} - $artistNames.mp3"
+        return rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

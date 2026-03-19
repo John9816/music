@@ -7,7 +7,7 @@ import android.view.View
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
-fun Activity.applyEdgeToEdge(rootView: View, lightSystemBars: Boolean) {
+fun Activity.applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
     WindowCompat.setDecorFitsSystemWindows(window, false)
     window.statusBarColor = Color.TRANSPARENT
     window.navigationBarColor = Color.TRANSPARENT
@@ -19,5 +19,5 @@ fun Activity.applyEdgeToEdge(rootView: View, lightSystemBars: Boolean) {
     val controller = WindowInsetsControllerCompat(window, rootView)
     controller.isAppearanceLightStatusBars = lightSystemBars
     controller.isAppearanceLightNavigationBars = lightSystemBars
+    return controller
 }
-

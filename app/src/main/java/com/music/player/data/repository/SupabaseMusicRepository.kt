@@ -1,11 +1,11 @@
 package com.music.player.data.repository
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.music.player.data.auth.MusicFavoriteInsert
 import com.music.player.data.auth.MusicPlayHistoryInsert
 import com.music.player.data.auth.MusicPlaylistInsert
 import com.music.player.data.auth.MusicPlaylistSongInsert
+import com.music.player.data.auth.AuthSessionManager
 import com.music.player.data.auth.SupabaseClient
 import com.music.player.data.model.Album
 import com.music.player.data.model.Artist
@@ -20,26 +20,26 @@ import java.util.TimeZone
 
 class SupabaseMusicRepository(context: Context) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+    private val sessionManager = AuthSessionManager(context.applicationContext)
     private val authApi = SupabaseClient.authApi
     private val api = SupabaseClient.musicApi
 
-    private fun getToken(): String? = prefs.getString("access_token", null)
-
-    private fun getCachedUserId(): String? = prefs.getString("user_id", null)
-
-    private fun cacheUserId(userId: String) {
-        prefs.edit().putString("user_id", userId).apply()
-    }
-
     private suspend fun requireSession(): Pair<String, String> {
-        val token = getToken() ?: throw IllegalStateException("未登录")
-        val cachedUserId = getCachedUserId()
+        var token = sessionManager.getValidAccessToken(authApi) ?: throw IllegalStateException("未登录")
+        val cachedUserId = sessionManager.getCachedUserId()
         if (!cachedUserId.isNullOrBlank()) return token to cachedUserId
 
-        val response = authApi.getUser("Bearer $token")
+        var response = authApi.getUser("Bearer $token")
+        if (response.code() == 401) {
+            val refreshed = sessionManager.forceRefresh(authApi)
+            if (refreshed != null) {
+                token = refreshed
+                response = authApi.getUser("Bearer $refreshed")
+            }
+        }
+
         val userId = response.body()?.id ?: throw IllegalStateException("获取用户信息失败")
-        cacheUserId(userId)
+        sessionManager.cacheUserId(userId)
         return token to userId
     }
 

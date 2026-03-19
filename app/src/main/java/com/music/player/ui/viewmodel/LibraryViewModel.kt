@@ -33,6 +33,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _history = MutableLiveData<List<Song>>(emptyList())
     val history: LiveData<List<Song>> = _history
 
+    private val _latestHistorySong = MutableLiveData<Song?>()
+    val latestHistorySong: LiveData<Song?> = _latestHistorySong
+
     private val _playlists = MutableLiveData<List<UserPlaylist>>(emptyList())
     val playlists: LiveData<List<UserPlaylist>> = _playlists
 
@@ -79,6 +82,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun prefetch() {
         refreshFavorites(silent = true)
+        refreshHistory(silent = true)
     }
 
     fun refreshFavorites(silent: Boolean = false) {
@@ -129,11 +133,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun refreshHistory() {
+    fun refreshHistory(silent: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             repository.listPlayHistory()
-                .onSuccess { _history.value = applyPinnedHistoryOrder(it) }
+                .onSuccess {
+                    _latestHistorySong.value = it.firstOrNull()
+                    _history.value = applyPinnedHistoryOrder(it)
+                }
                 .onFailure { _message.value = it.message ?: "获取播放历史失败" }
             _isLoading.value = false
         }

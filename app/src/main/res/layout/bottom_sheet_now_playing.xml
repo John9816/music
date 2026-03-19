@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/transparent">
+    android:background="@color/page_background">
 
     <ImageView
         android:id="@+id/ivBlurBackground"
@@ -63,10 +63,10 @@
         android:layout_height="0dp"
         android:inAnimation="@android:anim/fade_in"
         android:outAnimation="@android:anim/fade_out"
-        app:layout_constraintBottom_toTopOf="@id/progressContainer"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/topBar">
+        app:layout_constraintTop_toTopOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -81,7 +81,7 @@
                 android:layout_weight="1"
                 android:gravity="center">
 
-                <com.google.android.material.imageview.ShapeableImageView
+                <ImageView
                     android:id="@+id/ivCoverBig"
                     android:layout_width="280dp"
                     android:layout_height="280dp"
@@ -89,8 +89,7 @@
                     android:contentDescription="@string/current_playing_title"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_music_note_24"
-                    android:tint="@color/brand_primary"
-                    app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlayMusicPlayerCircle" />
+                    android:tint="@color/brand_primary" />
             </FrameLayout>
 
             <TextView
@@ -126,7 +125,7 @@
             android:paddingHorizontal="@dimen/spacing_m"
             android:paddingBottom="@dimen/spacing_m">
 
-            <com.google.android.material.imageview.ShapeableImageView
+            <ImageView
                 android:id="@+id/ivCoverSmall"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
@@ -134,8 +133,7 @@
                 android:contentDescription="@string/current_playing_title"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_note_24"
-                android:tint="@color/brand_primary"
-                app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlayMusicPlayerCircle" />
+                android:tint="@color/brand_primary" />
 
             <TextView
                 android:id="@+id/tvTitleSmall"
