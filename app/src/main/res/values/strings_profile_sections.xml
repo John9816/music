@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="profile_music_shortcuts">音乐档案</string>
+    <string name="profile_music_shortcuts_subtitle">喜欢、历史和歌单都会在这里汇总</string>
+    <string name="profile_liked_hint">打开你收藏和标记喜欢的歌曲</string>
+    <string name="profile_history_hint">查看最近播放过的音乐记录</string>
+    <string name="profile_liked_meta">共 %1$d 首 · %2$s</string>
+    <string name="profile_history_meta">共 %1$d 条 · %2$s</string>
+    <string name="profile_song_meta">%1$s · %2$s</string>
+    <string name="profile_overview_label">我的音乐仓库</string>
+    <string name="profile_sync_hint">下拉可以同步最新数据</string>
+    <string name="profile_account_meta">%1$s · ID %2$s</string>
+    <string name="profile_account_placeholder">已登录账号</string>
+    <string name="profile_stat_liked">喜欢</string>
+    <string name="profile_stat_history">历史</string>
+    <string name="profile_stat_playlists">歌单</string>
+</resources>

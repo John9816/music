@@ -50,6 +50,9 @@ class PlaylistCategoryAllFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(this)[PlaylistCategoryAllViewModel::class.java]
+        binding.tvPlaylistCategoryTitle.text = titleText.ifBlank {
+            category.ifBlank { getString(R.string.nav_playlists) }
+        }
 
         adapter = PlaylistGridAdapter { playlist ->
             parentFragmentManager.beginTransaction()
@@ -78,7 +81,9 @@ class PlaylistCategoryAllFragment : Fragment() {
 
         viewModel.playlists.observe(viewLifecycleOwner) { playlists ->
             adapter.submitList(playlists)
-            binding.tvEmpty.visibility = if (playlists.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = playlists.isEmpty()
+            binding.tvEmpty.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
 
         viewModel.isLoading.observe(viewLifecycleOwner) { loading ->
@@ -93,6 +98,7 @@ class PlaylistCategoryAllFragment : Fragment() {
 
         if (category.isBlank()) {
             binding.tvEmpty.visibility = View.VISIBLE
+            binding.recyclerView.visibility = View.GONE
             binding.tvEmpty.text = getString(R.string.toplist_empty)
             return
         }

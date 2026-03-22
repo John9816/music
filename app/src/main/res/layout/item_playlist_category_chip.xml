@@ -3,22 +3,24 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     style="@style/Widget.MusicPlayer.Card.Outlined"
     android:layout_width="wrap_content"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
     android:layout_marginEnd="@dimen/spacing_s"
     android:clickable="true"
     android:focusable="true"
-    app:cardBackgroundColor="@color/surface"
+    app:cardBackgroundColor="@android:color/transparent"
     app:cardElevation="0dp"
-    app:strokeColor="@color/divider"
+    app:cardCornerRadius="18dp"
+    app:strokeColor="?attr/dividerColor"
     app:strokeWidth="1dp">
 
     <TextView
         android:id="@+id/tvName"
         android:layout_width="wrap_content"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:gravity="center"
         android:paddingHorizontal="@dimen/spacing_m"
-        android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-        android:textColor="@color/text_primary" />
+        android:paddingVertical="@dimen/spacing_sm"
+        android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+        android:textColor="?attr/textPrimary" />
 </com.google.android.material.card.MaterialCardView>
 

@@ -15,8 +15,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/profile_username_hint"
-            app:boxBackgroundColor="@color/surface"
-            app:boxStrokeColor="@color/divider">
+            app:boxBackgroundColor="?attr/surfaceColor"
+            app:boxStrokeColor="?attr/dividerColor">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etUsername"
@@ -32,8 +32,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_sm"
             android:hint="@string/profile_nickname_hint"
-            app:boxBackgroundColor="@color/surface"
-            app:boxStrokeColor="@color/divider">
+            app:boxBackgroundColor="?attr/surfaceColor"
+            app:boxStrokeColor="?attr/dividerColor">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etNickname"
@@ -49,8 +49,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_sm"
             android:hint="@string/profile_signature_hint"
-            app:boxBackgroundColor="@color/surface"
-            app:boxStrokeColor="@color/divider">
+            app:boxBackgroundColor="?attr/surfaceColor"
+            app:boxStrokeColor="?attr/dividerColor">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etSignature"
@@ -67,8 +67,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_sm"
             android:hint="@string/profile_avatar_hint"
-            app:boxBackgroundColor="@color/surface"
-            app:boxStrokeColor="@color/divider">
+            app:boxBackgroundColor="?attr/surfaceColor"
+            app:boxStrokeColor="?attr/dividerColor">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etAvatarUrl"
@@ -80,3 +80,4 @@
 
     </LinearLayout>
 </ScrollView>
+

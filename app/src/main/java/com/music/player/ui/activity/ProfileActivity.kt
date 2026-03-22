@@ -1,7 +1,6 @@
-﻿package com.music.player.ui.activity
+package com.music.player.ui.activity
 
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.view.View
@@ -20,8 +19,8 @@ import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.databinding.ActivityProfileBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
-import com.music.player.ui.util.resolveAvatarUrl
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.safeDrawingInsets
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 
@@ -34,7 +33,7 @@ class ProfileActivity : AppCompatActivity() {
     private var currentUser: UserProfile? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.applySavedNightMode(this)
+        ThemeManager.prepareActivity(this)
         super.onCreate(savedInstanceState)
         binding = ActivityProfileBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -48,14 +47,17 @@ class ProfileActivity : AppCompatActivity() {
         insetsController = WindowInsetsControllerCompat(window, binding.root).apply {
             isAppearanceLightStatusBars = !isNightMode
             isAppearanceLightNavigationBars = !isNightMode
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.safeDrawingInsets()
             view.updatePadding(top = bars.top)
             insets
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.scrollView) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.safeDrawingInsets()
             view.updatePadding(bottom = bars.bottom)
             insets
         }
@@ -75,6 +77,13 @@ class ProfileActivity : AppCompatActivity() {
         setupUI()
         setupObservers()
         authViewModel.refreshProfile()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::insetsController.isInitialized) {
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     private fun setupUI() {
@@ -115,7 +124,7 @@ class ProfileActivity : AppCompatActivity() {
                 binding.ivAvatar.setPadding(0, 0, 0, 0)
                 binding.ivAvatar.imageTintList = null
                 Glide.with(binding.ivAvatar)
-                    .load(it.resolveAvatarUrl())
+                    .load(resolveAvatarUrl(it))
                     .placeholder(R.drawable.ic_person_24)
                     .error(R.drawable.ic_person_24)
                     .circleCrop()
@@ -199,5 +208,17 @@ class ProfileActivity : AppCompatActivity() {
                 )
             }
             .show()
+    }
+
+    private fun resolveAvatarUrl(user: UserProfile): String {
+        val direct = user.avatar_url?.trim().orEmpty()
+        if (direct.isNotBlank()) return direct
+
+        val seed = user.nickname?.trim().orEmpty()
+            .ifBlank { user.username?.trim().orEmpty() }
+            .ifBlank { user.email?.trim().orEmpty() }
+            .ifBlank { user.id }
+
+        return "https://api.dicebear.com/9.x/initials/png?seed=${android.net.Uri.encode(seed)}&radius=50&backgroundType=gradientLinear"
     }
 }

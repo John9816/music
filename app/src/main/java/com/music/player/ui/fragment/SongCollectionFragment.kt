@@ -14,6 +14,7 @@ import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -56,9 +57,11 @@ class SongCollectionFragment : Fragment() {
 
         val titleRes = if (mode == Mode.LIKED) R.string.profile_liked_title else R.string.profile_history_title
         binding.tvHeaderTitle.setText(titleRes)
-        binding.tvHeaderDescription.visibility = View.GONE
+        binding.tvHeaderDescription.setText(
+            if (mode == Mode.LIKED) R.string.favorites_subtitle else R.string.history_subtitle
+        )
+        binding.tvHeaderDescription.visibility = View.VISIBLE
         binding.tvHeaderPlayCount.visibility = View.GONE
-        binding.ivHeaderOverlay.visibility = View.VISIBLE
         binding.ivHeaderOverlay.setImageResource(if (mode == Mode.LIKED) R.drawable.ic_favorite_24 else R.drawable.ic_play_24)
 
         songAdapter = SongAdapter(
@@ -128,10 +131,11 @@ class SongCollectionFragment : Fragment() {
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
             binding.ivHeaderCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHeaderCover.imageTintList =
-                android.content.res.ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+            binding.ivHeaderCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
+            binding.ivHeaderOverlay.visibility = View.VISIBLE
         } else {
             binding.ivHeaderCover.imageTintList = null
+            binding.ivHeaderOverlay.visibility = View.GONE
             Glide.with(binding.ivHeaderCover)
                 .load(url)
                 .placeholder(R.drawable.ic_music_note_24)

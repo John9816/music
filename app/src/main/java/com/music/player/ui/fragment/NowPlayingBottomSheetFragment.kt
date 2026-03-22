@@ -12,10 +12,14 @@ import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
+import android.util.TypedValue
 import android.view.WindowManager
 import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.updatePadding
@@ -31,12 +35,13 @@ import com.music.player.data.model.LyricLine
 import com.music.player.databinding.BottomSheetNowPlayingBinding
 import com.music.player.ui.adapter.LyricsAdapter
 import com.music.player.ui.lyrics.LyricsParser
-import com.music.player.ui.util.applyNavigationBarInsetPadding
-import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
+import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.ui.util.StackBlur
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,6 +49,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.music.player.ui.viewmodel.LibraryViewModel
 
 class NowPlayingBottomSheetFragment : DialogFragment() {
 
@@ -52,6 +58,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         get() = _binding!!
 
     private lateinit var musicViewModel: MusicViewModel
+    private lateinit var libraryViewModel: LibraryViewModel
     private lateinit var lyricsAdapter: LyricsAdapter
 
     private var lyricLines: List<LyricLine> = emptyList()
@@ -62,6 +69,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private var currentActiveIndex: Int = -1
     private var isUserSeeking: Boolean = false
     private var coverRotateAnimator: ObjectAnimator? = null
+    private var favoriteIds: Set<String> = emptySet()
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -98,11 +106,19 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = Color.TRANSPARENT
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            if (Build.VERSION.SDK_INT >= 31) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.setBackgroundBlurRadius(dp(56))
+            }
             window.attributes = window.attributes.apply {
                 width = MATCH_PARENT
                 height = MATCH_PARENT
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                if (Build.VERSION.SDK_INT >= 31) {
+                    blurBehindRadius = dp(24)
+                    dimAmount = 0.06f
+                }
             }
             if (Build.VERSION.SDK_INT >= 29) {
                 window.isStatusBarContrastEnforced = false
@@ -114,6 +130,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                     android.content.res.Configuration.UI_MODE_NIGHT_YES
             controller.isAppearanceLightStatusBars = !isNightMode
             controller.isAppearanceLightNavigationBars = !isNightMode
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
         }
 
         startLyricUpdates()
@@ -134,10 +153,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
+        libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         lyricsAdapter = LyricsAdapter()
         binding.rvLyrics.layoutManager = LinearLayoutManager(requireContext())
         binding.rvLyrics.adapter = lyricsAdapter
+        PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
         binding.root.doOnLayout { updateFullscreenContentPadding() }
@@ -156,9 +177,13 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
 
         binding.btnClose.setOnClickListener { dismiss() }
+        binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
+        binding.btnFavorite.setOnClickListener { toggleFavoriteForCurrentSong() }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
+        updateAudioQualityButton()
+        updateFavoriteButton()
 
         val player = (activity as? MainActivity)?.player
         if (player != null) {
@@ -227,8 +252,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         musicViewModel.canSkipPrevious.observe(viewLifecycleOwner) {
             syncSkipButtons()
         }
+        libraryViewModel.favoriteIds.observe(viewLifecycleOwner) { ids ->
+            favoriteIds = ids.orEmpty()
+            updateFavoriteButton()
+        }
 
         musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            updateAudioQualityButton()
+            updateFavoriteButton()
             if (song == null) {
                 binding.tvTitleBig.text = getString(R.string.current_playing_empty)
                 binding.tvArtistBig.text = getString(R.string.current_playing_hint)
@@ -243,10 +274,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 currentActiveIndex = -1
 
                 binding.ivCoverBig.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
                 binding.ivCoverSmall.setImageResource(R.drawable.ic_music_note_24)
                 binding.ivCoverSmall.imageTintList =
-                    ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+                    ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
 
                 binding.ivBlurBackground.setImageDrawable(null)
                 blurredCoverBitmap = null
@@ -279,10 +310,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
             if (coverUrl == null) {
                 binding.ivCoverBig.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
                 binding.ivCoverSmall.setImageResource(R.drawable.ic_music_note_24)
                 binding.ivCoverSmall.imageTintList =
-                    ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+                    ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
                 binding.ivBlurBackground.setImageDrawable(null)
                 blurredCoverBitmap = null
             } else {
@@ -302,6 +333,58 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 syncCoverRotation()
             }
         }
+    }
+
+    private fun showAudioQualityDialog() {
+        val levels = AudioQualityPreferences.Level.entries.toList()
+        val currentLevel = AudioQualityPreferences.getPreferredLevel(requireContext())
+        val checked = levels.indexOf(currentLevel).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_audio_quality_dialog_title)
+            .setSingleChoiceItems(levels.map { it.displayName }.toTypedArray(), checked) { dialog, which ->
+                val selectedLevel = levels[which]
+                if (selectedLevel != currentLevel) {
+                    AudioQualityPreferences.setPreferredLevel(requireContext(), selectedLevel)
+                    updateAudioQualityButton()
+                    if (musicViewModel.currentSong.value != null) {
+                        musicViewModel.reloadCurrentSongForAudioQualityChange()
+                    }
+                    Toast.makeText(
+                        requireContext(),
+                        "已切换音质：${selectedLevel.displayName}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateAudioQualityButton() {
+        if (_binding == null) return
+        binding.btnAudioQuality.text = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
+    }
+
+    private fun toggleFavoriteForCurrentSong() {
+        val song = musicViewModel.currentSong.value ?: return
+        val willFavorite = !favoriteIds.contains(song.id)
+        libraryViewModel.setFavorite(song, willFavorite)
+    }
+
+    private fun updateFavoriteButton() {
+        if (_binding == null) return
+        val song = musicViewModel.currentSong.value
+        val isFavorite = song != null && favoriteIds.contains(song.id)
+        binding.btnFavorite.isEnabled = song != null
+        binding.btnFavorite.alpha = if (song == null) 0.38f else 1f
+        binding.btnFavorite.imageTintList = ColorStateList.valueOf(
+            themeColor(if (isFavorite) R.attr.brandPrimary else R.attr.textSecondary)
+        )
+        binding.btnFavorite.contentDescription = getString(
+            if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
+        )
     }
 
     private fun syncSkipButtons() {
@@ -328,7 +411,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             }.getOrNull() ?: return@launch
 
             val blurred = withContext(Dispatchers.Default) {
-                StackBlur.blur(bitmap, radius = 18)
+                StackBlur.blur(bitmap, radius = 24)
             }
 
             if (_binding != null) {
@@ -464,7 +547,13 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnPlayMode.setImageResource(icon)
         binding.btnPlayMode.contentDescription = getString(desc)
         binding.btnPlayMode.imageTintList =
-            ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+            ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+    }
+
+    private fun themeColor(attrResId: Int): Int {
+        val typedValue = TypedValue()
+        requireContext().theme.resolveAttribute(attrResId, typedValue, true)
+        return typedValue.data
     }
 
     private fun startLyricUpdates() {
@@ -545,6 +634,52 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             String.format("%d:%02d:%02d", hours, minutes, seconds)
         } else {
             String.format("%02d:%02d", minutes, seconds)
+        }
+    }
+
+    private fun View.applyStatusBarInsetPadding() {
+        applySystemBarInsetPadding(applyTop = true)
+    }
+
+    private fun View.applyNavigationBarInsetPadding() {
+        applySystemBarInsetPadding(applyBottom = true)
+    }
+
+    private fun View.applySystemBarInsetPadding(
+        applyLeft: Boolean = false,
+        applyTop: Boolean = false,
+        applyRight: Boolean = false,
+        applyBottom: Boolean = false
+    ) {
+        val initialLeft = paddingLeft
+        val initialTop = paddingTop
+        val initialRight = paddingRight
+        val initialBottom = paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bars = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.updatePadding(
+                left = initialLeft + if (applyLeft) bars.left else 0,
+                top = initialTop + if (applyTop) bars.top else 0,
+                right = initialRight + if (applyRight) bars.right else 0,
+                bottom = initialBottom + if (applyBottom) bars.bottom else 0
+            )
+            insets
+        }
+
+        if (isAttachedToWindow) {
+            requestApplyInsets()
+        } else {
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    v.removeOnAttachStateChangeListener(this)
+                    v.requestApplyInsets()
+                }
+
+                override fun onViewDetachedFromWindow(v: View) = Unit
+            })
         }
     }
 

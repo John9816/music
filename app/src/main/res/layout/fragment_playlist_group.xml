@@ -3,51 +3,99 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/transparent">
+    android:background="@android:color/transparent"
+    android:paddingStart="@dimen/spacing_l"
+    android:paddingTop="@dimen/spacing_l"
+    android:paddingEnd="@dimen/spacing_l"
+    android:paddingBottom="@dimen/spacing_l">
+
+    <TextView
+        android:id="@+id/tvPlaylistPageEyebrow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/nav_playlists"
+        android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+        android:textColor="?attr/brandPrimary"
+        android:textStyle="bold"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/tvPlaylistPageTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_m"
+        android:maxLines="2"
+        android:text="@string/nav_playlists"
+        android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+        android:textColor="?attr/textPrimary"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvPlaylistPageEyebrow" />
+
+    <View
+        android:id="@+id/dividerHeader"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_marginTop="@dimen/spacing_l"
+        android:background="?attr/colorOutline"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvPlaylistPageTitle" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvCategories"
         android:layout_width="0dp"
-        android:layout_height="44dp"
-        android:layout_marginTop="@dimen/spacing_m"
+        android:layout_height="wrap_content"
         android:clipToPadding="false"
+        android:minHeight="@dimen/control_height_m"
         android:overScrollMode="never"
-        android:paddingStart="@dimen/spacing_m"
-        android:paddingEnd="@dimen/spacing_m"
+        android:paddingTop="@dimen/spacing_s"
+        android:paddingEnd="@dimen/spacing_xs"
         android:scrollbars="none"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toBottomOf="@id/dividerHeader" />
+
+    <View
+        android:id="@+id/dividerCategories"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_marginTop="@dimen/spacing_s"
+        android:background="?attr/colorOutline"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/rvCategories" />
 
     <TextView
         android:id="@+id/tvEmpty"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_l"
+        android:layout_marginTop="@dimen/spacing_xl"
         android:gravity="center"
         android:paddingHorizontal="@dimen/spacing_xl"
         android:text="@string/toplist_empty"
         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/textSecondary"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/rvCategories" />
+        app:layout_constraintTop_toBottomOf="@id/dividerCategories" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="@dimen/spacing_sm"
-        android:paddingStart="@dimen/spacing_sm"
-        android:paddingTop="@dimen/spacing_s"
-        android:paddingEnd="@dimen/spacing_sm"
-        android:paddingBottom="@dimen/spacing_s"
+        android:clipToPadding="false"
         android:overScrollMode="never"
+        android:paddingTop="@dimen/spacing_m"
+        android:paddingBottom="@dimen/spacing_3xl"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/rvCategories" />
+        app:layout_constraintTop_toBottomOf="@id/tvEmpty"
+        app:layout_goneMarginTop="@dimen/spacing_m" />
 
     <ProgressBar
         android:id="@+id/progressBar"

@@ -1,6 +1,7 @@
 package com.music.player.data.auth
 
 import android.util.Log
+import com.music.player.data.api.NetworkRuntime
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -17,11 +18,13 @@ object SupabaseClient {
         level = if (com.music.player.BuildConfig.DEBUG) {
             HttpLoggingInterceptor.Level.BODY
         } else {
-            HttpLoggingInterceptor.Level.BASIC
+            HttpLoggingInterceptor.Level.NONE
         }
     }
 
     private val okHttpClient = OkHttpClient.Builder()
+        .connectionPool(NetworkRuntime.connectionPool())
+        .retryOnConnectionFailure(true)
         .addInterceptor(loggingInterceptor)
         .addInterceptor { chain ->
             val originalRequest = chain.request()
@@ -36,9 +39,10 @@ object SupabaseClient {
 
             chain.proceed(request)
         }
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS)
         .build()
 
     val retrofit: Retrofit = Retrofit.Builder()

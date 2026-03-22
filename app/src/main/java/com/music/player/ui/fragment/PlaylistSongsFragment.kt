@@ -14,6 +14,7 @@ import com.music.player.R
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
 class PlaylistSongsFragment : Fragment() {
@@ -45,10 +46,8 @@ class PlaylistSongsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
 
-        binding.tvHeaderTitle.visibility = View.GONE
+        binding.tvHeaderTitle.visibility = View.VISIBLE
         binding.ivHeaderOverlay.visibility = View.GONE
-        binding.tvHeaderDescription.visibility = View.GONE
-        binding.tvHeaderPlayCount.visibility = View.GONE
         binding.btnPlayAll.setOnClickListener { playAll() }
 
         songAdapter = SongAdapter(onSongClick = { song -> musicViewModel.playStandaloneSong(song) })
@@ -60,9 +59,10 @@ class PlaylistSongsFragment : Fragment() {
 
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
             playlist ?: return@observe
+            binding.tvHeaderTitle.text = playlist.name
             updateHeaderCover(playlist.coverImgUrl)
 
-            val description = playlist.description.trim()
+            val description = playlist.description.replace(Regex("\\s+"), " ").trim()
             binding.tvHeaderDescription.text = description
             binding.tvHeaderDescription.visibility = if (description.isBlank()) View.GONE else View.VISIBLE
 
@@ -103,8 +103,7 @@ class PlaylistSongsFragment : Fragment() {
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
             binding.ivHeaderCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHeaderCover.imageTintList =
-                ColorStateList.valueOf(requireContext().getColor(R.color.brand_primary))
+            binding.ivHeaderCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
         } else {
             binding.ivHeaderCover.imageTintList = null
             Glide.with(binding.ivHeaderCover)

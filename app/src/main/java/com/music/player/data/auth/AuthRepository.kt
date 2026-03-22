@@ -26,7 +26,6 @@ class AuthRepository(context: Context) {
     private val restApi = SupabaseClient.restApi
 
     private fun cacheUserId(userId: String) = sessionManager.cacheUserId(userId)
-    private fun getCachedUserId(): String? = sessionManager.getCachedUserId()
 
     suspend fun signIn(email: String, password: String): AuthResult {
         return withContext(Dispatchers.IO) {
@@ -130,12 +129,13 @@ class AuthRepository(context: Context) {
     suspend fun getCurrentUser(): UserProfile? {
         return withContext(Dispatchers.IO) {
             try {
-                val token = sessionManager.getValidAccessToken(authApi) ?: return@withContext null
+                var resolvedToken = sessionManager.getValidAccessToken(authApi) ?: return@withContext null
 
-                var response = authApi.getUser("Bearer $token")
+                var response = authApi.getUser("Bearer $resolvedToken")
                 if (response.code() == 401) {
                     val refreshed = sessionManager.forceRefresh(authApi)
-                    if (refreshed != null) {
+                    if (!refreshed.isNullOrBlank()) {
+                        resolvedToken = refreshed
                         response = authApi.getUser("Bearer $refreshed")
                     }
                 }
@@ -146,26 +146,27 @@ class AuthRepository(context: Context) {
 
                 val user = response.body()!!
                 val authAvatarUrl = extractAvatarUrl(user)
-                if (getCachedUserId().isNullOrBlank()) {
-                    cacheUserId(user.id)
+                val fallbackProfile = buildFallbackProfile(user, authAvatarUrl)
+                cacheUserId(user.id)
+
+                resolvedToken = sessionManager.getValidAccessToken(authApi) ?: resolvedToken
+                val profileResponse = runCatching {
+                    restApi.getUsers(
+                        token = "Bearer $resolvedToken",
+                        id = "eq.${user.id}",
+                        select = "id,email,username,nickname,signature,badge,avatar_url,created_at",
+                        limit = 1
+                    )
+                }.getOrNull()
+
+                val profileRow = profileResponse?.body()?.firstOrNull()
+                if (profileResponse?.isSuccessful == true && profileRow == null) {
+                    createUserProfile(resolvedToken, user.id, user.email.orEmpty(), authAvatarUrl)
+                    return@withContext fallbackProfile
                 }
 
-                val resolvedToken = sessionManager.getValidAccessToken(authApi) ?: token
-                val profileResponse = restApi.getUsers(
-                    token = "Bearer $resolvedToken",
-                    id = "eq.${user.id}",
-                    select = "id,email,username,nickname,signature,badge,avatar_url,created_at",
-                    limit = 1
-                )
-
-                val profileRow = profileResponse.body()?.firstOrNull()
                 if (profileRow == null) {
-                    createUserProfile(token, user.id, user.email ?: "", authAvatarUrl)
-                    return@withContext UserProfile(
-                        id = user.id,
-                        email = user.email,
-                        avatar_url = authAvatarUrl
-                    )
+                    return@withContext fallbackProfile
                 }
 
                 val profileAvatarUrl = (profileRow["avatar_url"] as? String)?.trim().orEmpty()
@@ -194,7 +195,7 @@ class AuthRepository(context: Context) {
         avatarUrl: String? = null
     ) {
         try {
-            val username = email.substringBefore("@")
+            val username = email.substringBefore("@").ifBlank { "user_${userId.take(8)}" }
             val profile = mutableMapOf<String, Any>(
                 "id" to userId,
                 "email" to email,
@@ -206,6 +207,15 @@ class AuthRepository(context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun buildFallbackProfile(user: UserData, authAvatarUrl: String?): UserProfile {
+        return UserProfile(
+            id = user.id,
+            email = user.email,
+            avatar_url = authAvatarUrl,
+            created_at = user.created_at
+        )
     }
 
     suspend fun updateUserProfile(

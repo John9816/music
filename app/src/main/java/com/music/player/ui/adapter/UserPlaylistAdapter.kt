@@ -31,8 +31,11 @@ class UserPlaylistAdapter(
         fun bind(playlist: UserPlaylist) {
             val context = binding.root.context
             binding.tvPlaylistName.text = playlist.name
-            binding.tvPlaylistMeta.text = playlist.description?.takeIf { it.isNotBlank() }
-                ?: context.getString(if (playlist.isPublic) R.string.user_playlist_public else R.string.user_playlist_private)
+            binding.tvPlaylistMeta.text = buildMeta(context, playlist)
+
+            val desc = playlist.description?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+            binding.tvPlaylistDesc.text = desc
+            binding.tvPlaylistDesc.visibility = if (desc.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
 
             Glide.with(binding.ivCover)
                 .load(playlist.coverUrl)
@@ -46,6 +49,14 @@ class UserPlaylistAdapter(
                 true
             }
         }
+
+        private fun buildMeta(context: android.content.Context, playlist: UserPlaylist): String {
+            val visibility = context.getString(
+                if (playlist.isPublic) R.string.user_playlist_public else R.string.user_playlist_private
+            )
+            val dateText = playlist.updatedAt?.take(10)?.trim().orEmpty()
+            return if (dateText.isBlank()) visibility else "$visibility · $dateText"
+        }
     }
 
     private class DiffCallback : DiffUtil.ItemCallback<UserPlaylist>() {
@@ -53,4 +64,3 @@ class UserPlaylistAdapter(
         override fun areContentsTheSame(oldItem: UserPlaylist, newItem: UserPlaylist): Boolean = oldItem == newItem
     }
 }
-

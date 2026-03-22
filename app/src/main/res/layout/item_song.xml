@@ -1,27 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.MusicPlayer.Card.Outlined"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="@dimen/spacing_sm"
+    android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true"
-    >
+    android:orientation="vertical"
+    android:paddingTop="@dimen/spacing_s">
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="@dimen/spacing_m"
-        android:paddingVertical="@dimen/spacing_sm">
+        android:paddingBottom="@dimen/spacing_sm">
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/iconContainer"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            app:cardBackgroundColor="@color/surface_alt"
-            app:cardCornerRadius="0dp"
+            app:cardBackgroundColor="?attr/surfaceColor"
+            app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
+            app:strokeColor="?attr/dividerColor"
+            app:strokeWidth="1dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent">
@@ -31,25 +32,26 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="@string/item_song_name_placeholder"
-                android:src="@drawable/ic_music_note_24"
                 android:scaleType="centerCrop"
-                android:tint="@color/brand_primary" />
+                android:src="@drawable/ic_music_note_24"
+                android:tint="?attr/brandPrimary" />
         </com.google.android.material.card.MaterialCardView>
 
         <TextView
             android:id="@+id/tvSongName"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_m"
+            android:layout_marginEnd="@dimen/spacing_sm"
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/item_song_name_placeholder"
             android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/textPrimary"
             android:textStyle="bold"
-            app:layout_constraintEnd_toStartOf="@id/tvDuration"
+            app:layout_constraintEnd_toStartOf="@id/btnMore"
             app:layout_constraintStart_toEndOf="@id/iconContainer"
-            app:layout_constraintTop_toTopOf="@id/iconContainer"
-            android:layout_marginStart="@dimen/spacing_m" />
+            app:layout_constraintTop_toTopOf="@id/iconContainer" />
 
         <TextView
             android:id="@+id/tvArtist"
@@ -57,12 +59,12 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/spacing_m"
             android:layout_marginTop="@dimen/spacing_xs"
+            android:layout_marginEnd="@dimen/spacing_s"
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/item_artist_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="@color/text_secondary"
-            app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="?attr/textSecondary"
             app:layout_constraintEnd_toStartOf="@id/tvDuration"
             app:layout_constraintStart_toEndOf="@id/iconContainer"
             app:layout_constraintTop_toBottomOf="@id/tvSongName" />
@@ -71,30 +73,32 @@
             android:id="@+id/tvDuration"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_duration_chip"
-            android:paddingHorizontal="@dimen/spacing_s"
-            android:paddingVertical="@dimen/spacing_xs"
+            android:layout_marginStart="@dimen/spacing_s"
             android:text="00:00"
             android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-            android:textColor="@color/text_secondary"
-            android:textStyle="bold"
-            app:layout_constraintBottom_toBottomOf="@id/tvArtist"
-            app:layout_constraintEnd_toStartOf="@id/btnMore"
-            app:layout_constraintTop_toTopOf="@id/tvSongName" />
+            android:textColor="?attr/textSecondary"
+            app:layout_constraintBaseline_toBaselineOf="@id/tvArtist"
+            app:layout_constraintEnd_toStartOf="@id/btnMore" />
 
         <ImageButton
             android:id="@+id/btnMore"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/content_desc_more"
-            android:padding="6dp"
+            android:padding="4dp"
             android:src="@drawable/ic_more_vert_24"
-            android:tint="@color/text_secondary"
+            android:tint="?attr/textSecondary"
             app:layout_constraintBottom_toBottomOf="@id/iconContainer"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="@id/iconContainer" />
-
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-</com.google.android.material.card.MaterialCardView>
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="64dp"
+        android:alpha="0.72"
+        android:background="?attr/colorOutline" />
+</LinearLayout>
+

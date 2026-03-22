@@ -16,6 +16,8 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.PagerSnapHelper
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.R
 import com.music.player.data.model.Song
@@ -23,10 +25,11 @@ import com.music.player.databinding.FragmentDiscoverBinding
 import com.music.player.ui.adapter.HotSongAdapter
 import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
-class DiscoverFragment : Fragment() {
+class DiscoverFragment : Fragment(), RootTabInteraction {
 
     private var _binding: FragmentDiscoverBinding? = null
     private val binding: FragmentDiscoverBinding
@@ -61,6 +64,11 @@ class DiscoverFragment : Fragment() {
     private var isMusicLoading = false
     private var isLibraryLoading = false
     private var isWeeklyHotLoading = false
+    private var isUserRefreshing = false
+    private var appBarVerticalOffset = 0
+    private var awaitingRecommendRefresh = false
+    private var awaitingWeeklyHotRefresh = false
+    private var awaitingNewestAlbumRefresh = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -78,23 +86,24 @@ class DiscoverFragment : Fragment() {
 
         setupRecyclerViews()
         setupObservers()
+        setupInteractions()
 
         binding.tvSongListSubtitle.text = getString(R.string.daily_recommend_subtitle)
 
-        libraryViewModel.prefetch()
+        val shouldWarmDiscover = musicViewModel.dailyRecommend.value.isNullOrEmpty() ||
+            musicViewModel.weeklyHotSongs.value.isNullOrEmpty() ||
+            musicViewModel.newestAlbums.value.isNullOrEmpty()
 
-        if (musicViewModel.dailyRecommend.value.isNullOrEmpty()) {
-            musicViewModel.loadDailyRecommend()
+        if (shouldWarmDiscover) {
+            musicViewModel.prefetchDiscover(limit = 10)
         } else {
             renderSongs(musicViewModel.dailyRecommend.value.orEmpty())
-        }
-
-        if (musicViewModel.weeklyHotSongs.value.isNullOrEmpty()) {
-            musicViewModel.loadWeeklyHotSongs(limit = 10)
-        }
-
-        if (musicViewModel.newestAlbums.value.isNullOrEmpty()) {
-            musicViewModel.loadNewestAlbums()
+            weeklyHotAdapter.submitList(musicViewModel.weeklyHotSongs.value.orEmpty())
+            newestAlbumAdapter.submitList(musicViewModel.newestAlbums.value.orEmpty())
+            binding.rvNewestAlbums.visibility =
+                if (newestAlbumAdapter.currentList.isEmpty()) View.GONE else View.VISIBLE
+            syncWeeklyHotCardVisibility()
+            maybeStartNewestAlbumCarousel()
         }
     }
 
@@ -112,6 +121,16 @@ class DiscoverFragment : Fragment() {
         super.onDestroyView()
         stopNewestAlbumCarousel()
         _binding = null
+    }
+
+    override fun onTabReselected() {
+        val binding = _binding ?: return
+        binding.appBar.setExpanded(true, true)
+        if (binding.recyclerView.canScrollVertically(-1)) {
+            binding.recyclerView.smoothScrollToPosition(0)
+            return
+        }
+        refreshContent(userInitiated = true)
     }
 
     private fun setupRecyclerViews() {
@@ -140,19 +159,48 @@ class DiscoverFragment : Fragment() {
             layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
             adapter = newestAlbumAdapter
             setHasFixedSize(true)
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                        maybeStartNewestAlbumCarousel()
+                    } else {
+                        stopNewestAlbumCarousel()
+                    }
+                }
+            })
         }
         newestAlbumSnapHelper.attachToRecyclerView(binding.rvNewestAlbums)
+    }
+
+    private fun setupInteractions() {
+        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
+        binding.swipeRefresh.setDistanceToTriggerSync(
+            resources.getDimensionPixelSize(R.dimen.spacing_xxl)
+        )
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            shouldBlockSwipeRefresh()
+        }
+        binding.swipeRefresh.setOnRefreshListener {
+            refreshContent(userInitiated = true)
+        }
+        binding.appBar.addOnOffsetChangedListener(AppBarLayout.OnOffsetChangedListener { _, verticalOffset ->
+            appBarVerticalOffset = verticalOffset
+        })
     }
 
     private fun setupObservers() {
         musicViewModel.dailyRecommend.observe(viewLifecycleOwner) { songs ->
             renderSongs(songs)
             binding.tvSongListSubtitle.text = getString(R.string.recommend_loaded_count, songs.size)
+            awaitingRecommendRefresh = false
+            syncRefreshState()
         }
 
         musicViewModel.weeklyHotSongs.observe(viewLifecycleOwner) { songs ->
             weeklyHotAdapter.submitList(songs)
             syncWeeklyHotCardVisibility()
+            awaitingWeeklyHotRefresh = false
+            syncRefreshState()
         }
 
         musicViewModel.newestAlbums.observe(viewLifecycleOwner) { albums ->
@@ -160,6 +208,8 @@ class DiscoverFragment : Fragment() {
             binding.rvNewestAlbums.visibility = if (albums.isEmpty()) View.GONE else View.VISIBLE
             syncWeeklyHotCardVisibility()
             maybeStartNewestAlbumCarousel()
+            awaitingNewestAlbumRefresh = false
+            syncRefreshState()
         }
 
         musicViewModel.weeklyHotLoading.observe(viewLifecycleOwner) { loading ->
@@ -178,6 +228,23 @@ class DiscoverFragment : Fragment() {
             isLibraryLoading = loading
             syncLoadingState()
         }
+    }
+
+    private fun refreshContent(userInitiated: Boolean) {
+        if (userInitiated) {
+            isUserRefreshing = true
+            awaitingRecommendRefresh = true
+            awaitingWeeklyHotRefresh = true
+            awaitingNewestAlbumRefresh = true
+            binding.swipeRefresh.isRefreshing = true
+            binding.swipeRefresh.postDelayed({
+                if (_binding != null && isUserRefreshing) {
+                    stopRefreshIndicator()
+                }
+            }, 3000L)
+        }
+        libraryViewModel.prefetch(forceRefresh = userInitiated)
+        musicViewModel.prefetchDiscover(limit = 10, forceRefresh = userInitiated)
     }
 
     private fun maybeStartNewestAlbumCarousel() {
@@ -215,6 +282,27 @@ class DiscoverFragment : Fragment() {
     private fun syncLoadingState() {
         val anyLoading = isMusicLoading || isLibraryLoading
         binding.progressBar.visibility = if (anyLoading) View.VISIBLE else View.GONE
+    }
+
+    private fun syncRefreshState() {
+        if (!isUserRefreshing) return
+        if (awaitingRecommendRefresh || awaitingWeeklyHotRefresh || awaitingNewestAlbumRefresh) return
+        stopRefreshIndicator()
+    }
+
+    private fun stopRefreshIndicator() {
+        isUserRefreshing = false
+        awaitingRecommendRefresh = false
+        awaitingWeeklyHotRefresh = false
+        awaitingNewestAlbumRefresh = false
+        binding.swipeRefresh.isRefreshing = false
+    }
+
+    private fun shouldBlockSwipeRefresh(): Boolean {
+        if (_binding == null) return true
+        if (binding.swipeRefresh.isRefreshing) return false
+        if (appBarVerticalOffset != 0) return true
+        return binding.recyclerView.canScrollVertically(-1)
     }
 
     private fun showSongActions(song: Song) {

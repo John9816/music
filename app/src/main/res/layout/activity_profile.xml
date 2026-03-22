@@ -67,7 +67,7 @@
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="88dp"
                         android:layout_height="88dp"
-                        app:cardBackgroundColor="@color/brand_primary_light"
+                        app:cardBackgroundColor="?attr/brandPrimaryLight"
                         app:cardCornerRadius="44dp"
                         app:cardElevation="0dp">
 
@@ -78,7 +78,7 @@
                             android:contentDescription="@string/content_desc_avatar"
                             android:padding="22dp"
                             android:src="@drawable/ic_person_24"
-                            android:tint="@color/brand_primary" />
+                            android:tint="?attr/brandPrimary" />
                     </com.google.android.material.card.MaterialCardView>
 
                     <TextView
@@ -88,7 +88,7 @@
                         android:layout_marginTop="@dimen/spacing_m"
                         android:text="@string/profile_email_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
-                        android:textColor="@color/text_primary"
+                        android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
                     <TextView
@@ -97,17 +97,17 @@
                         android:layout_marginTop="@dimen/spacing_xs"
                         android:text="@string/profile_signed_in"
                         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="?attr/textSecondary" />
 
                     <TextView
                         android:id="@+id/tvBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_m"
-                        android:background="@color/brand_primary_light"
+                        android:background="?attr/brandPrimaryLight"
                         android:paddingHorizontal="@dimen/spacing_sm"
                         android:paddingVertical="@dimen/spacing_s"
-                        android:textColor="@color/brand_primary"
+                        android:textColor="?attr/brandPrimary"
                         android:textSize="12sp"
                         android:textStyle="bold"
                         android:visibility="gone" />
@@ -132,7 +132,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/profile_info_title"
                         android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                        android:textColor="@color/text_primary"
+                        android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
                     <TextView
@@ -142,7 +142,7 @@
                         android:layout_marginTop="@dimen/spacing_m"
                         android:text="@string/profile_username_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                        android:textColor="@color/text_primary" />
+                        android:textColor="?attr/textPrimary" />
 
                     <TextView
                         android:id="@+id/tvNickname"
@@ -151,7 +151,7 @@
                         android:layout_marginTop="@dimen/spacing_sm"
                         android:text="@string/profile_nickname_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                        android:textColor="@color/text_primary" />
+                        android:textColor="?attr/textPrimary" />
 
                     <TextView
                         android:id="@+id/tvSignature"
@@ -161,7 +161,7 @@
                         android:lineSpacingExtra="4dp"
                         android:text="@string/profile_signature_empty"
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="?attr/textSecondary" />
 
                     <TextView
                         android:id="@+id/tvUserId"
@@ -170,7 +170,7 @@
                         android:layout_marginTop="@dimen/spacing_sm"
                         android:text="@string/profile_user_id_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                        android:textColor="@color/text_secondary" />
+                        android:textColor="?attr/textSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -184,7 +184,7 @@
                 android:textAllCaps="false"
                 android:textSize="15sp"
                 android:textStyle="bold"
-                app:strokeColor="@color/brand_primary" />
+                app:strokeColor="?attr/brandPrimary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLogout"
@@ -196,9 +196,10 @@
                 android:textAllCaps="false"
                 android:textSize="16sp"
                 android:textStyle="bold"
-                app:backgroundTint="@color/danger"
+                app:backgroundTint="?attr/dangerColor"
                 app:cornerRadius="@dimen/radius_m" />
         </LinearLayout>
     </ScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

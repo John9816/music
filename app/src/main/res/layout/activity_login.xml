@@ -34,7 +34,7 @@
                 android:layout_marginTop="0dp"
                 android:text="@string/login_title"
                 android:textAppearance="@style/TextAppearance.Material3.HeadlineLarge"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
 
             <TextView
@@ -45,7 +45,7 @@
                 android:gravity="center"
                 android:text="@string/login_subtitle"
                 android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/textSecondary"
                 android:textSize="14sp" />
 
             <com.google.android.material.card.MaterialCardView
@@ -66,7 +66,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/auth_mode_label"
                         android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                        android:textColor="@color/text_primary"
+                        android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -76,7 +76,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_m"
                         android:hint="@string/email_hint"
-                        app:boxBackgroundColor="@color/surface"
+                        app:boxBackgroundColor="?attr/surfaceColor"
                         app:startIconDrawable="@drawable/ic_email_24">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -86,7 +86,7 @@
                             android:imeOptions="actionNext"
                             android:inputType="textEmailAddress"
                             android:maxLines="1"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/textPrimary"
                             android:textSize="16sp" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -97,7 +97,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_m"
                         android:hint="@string/password_hint"
-                        app:boxBackgroundColor="@color/surface"
+                        app:boxBackgroundColor="?attr/surfaceColor"
                         app:startIconDrawable="@drawable/ic_lock_24">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -107,7 +107,7 @@
                             android:imeOptions="actionDone"
                             android:inputType="textPassword"
                             android:maxLines="1"
-                            android:textColor="@color/text_primary"
+                            android:textColor="?attr/textPrimary"
                             android:textSize="16sp" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -142,7 +142,7 @@
                         android:paddingHorizontal="@dimen/spacing_s"
                         android:paddingVertical="@dimen/spacing_s"
                         android:text="@string/toggle_to_signup"
-                        android:textColor="@color/brand_primary"
+                        android:textColor="?attr/brandPrimary"
                         android:textSize="14sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -154,9 +154,10 @@
                 android:layout_marginTop="@dimen/spacing_m"
                 android:gravity="center"
                 android:text="@string/auth_helper"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/textSecondary"
                 android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                 android:textSize="12sp" />
         </LinearLayout>
     </ScrollView>
 </FrameLayout>
+

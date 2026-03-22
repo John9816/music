@@ -12,6 +12,12 @@ import retrofit2.http.Query
 
 interface SupabaseMusicApi {
 
+    @POST("rest/v1/rpc/get_music_library_bootstrap")
+    suspend fun getLibraryBootstrap(
+        @Header("Authorization") token: String,
+        @Body body: MusicLibraryBootstrapRequest = MusicLibraryBootstrapRequest()
+    ): Response<MusicLibraryBootstrapRow>
+
     @GET("rest/v1/liked_songs")
     suspend fun listFavorites(
         @Header("Authorization") token: String,
@@ -28,6 +34,22 @@ interface SupabaseMusicApi {
         @Body favorite: MusicFavoriteInsert
     ): Response<Unit>
 
+    @GET("rest/v1/music_favorites")
+    suspend fun listLegacyFavorites(
+        @Header("Authorization") token: String,
+        @Query("select") select: String = "song_id,song_name,artist_name,album_cover,created_at",
+        @Query("user_id") userId: String,
+        @Query("order") order: String = "created_at.desc",
+        @Query("limit") limit: Int = 200
+    ): Response<List<LegacyMusicFavoriteRow>>
+
+    @POST("rest/v1/music_favorites")
+    suspend fun insertLegacyFavorite(
+        @Header("Authorization") token: String,
+        @Header("Prefer") prefer: String = "return=minimal",
+        @Body favorite: LegacyMusicFavoriteInsert
+    ): Response<Unit>
+
     @DELETE("rest/v1/liked_songs")
     suspend fun deleteFavorite(
         @Header("Authorization") token: String,
@@ -35,11 +57,18 @@ interface SupabaseMusicApi {
         @Query("song_id") songId: String
     ): Response<Unit>
 
-    // daohangv2 schema: music_history
+    @DELETE("rest/v1/music_favorites")
+    suspend fun deleteLegacyFavorite(
+        @Header("Authorization") token: String,
+        @Query("user_id") userId: String,
+        @Query("song_id") songId: String
+    ): Response<Unit>
+
     @GET("rest/v1/music_history")
     suspend fun listPlayHistory(
         @Header("Authorization") token: String,
         @Query("select") select: String = "song_id,source,name,artist,album,cover_url,duration,played_at",
+        @Query("user_id") userId: String,
         @Query("order") order: String = "played_at.desc",
         @Query("limit") limit: Int = 100
     ): Response<List<MusicPlayHistoryRow>>
@@ -47,14 +76,35 @@ interface SupabaseMusicApi {
     @POST("rest/v1/music_history")
     suspend fun insertPlayHistory(
         @Header("Authorization") token: String,
-        // Upsert on (user_id, song_id) so repeat plays update played_at.
         @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=minimal",
         @Query("on_conflict") onConflict: String = "user_id,song_id",
         @Body history: MusicPlayHistoryInsert
     ): Response<Unit>
 
+    @GET("rest/v1/music_play_history")
+    suspend fun listLegacyPlayHistory(
+        @Header("Authorization") token: String,
+        @Query("select") select: String = "song_id,song_name,artist_name,played_at",
+        @Query("user_id") userId: String,
+        @Query("order") order: String = "played_at.desc",
+        @Query("limit") limit: Int = 100
+    ): Response<List<LegacyMusicPlayHistoryRow>>
+
+    @POST("rest/v1/music_play_history")
+    suspend fun insertLegacyPlayHistory(
+        @Header("Authorization") token: String,
+        @Header("Prefer") prefer: String = "return=minimal",
+        @Body history: LegacyMusicPlayHistoryInsert
+    ): Response<Unit>
+
     @DELETE("rest/v1/music_history")
     suspend fun clearPlayHistory(
+        @Header("Authorization") token: String,
+        @Query("user_id") userId: String
+    ): Response<Unit>
+
+    @DELETE("rest/v1/music_play_history")
+    suspend fun clearLegacyPlayHistory(
         @Header("Authorization") token: String,
         @Query("user_id") userId: String
     ): Response<Unit>
@@ -65,6 +115,22 @@ interface SupabaseMusicApi {
         @Query("user_id") userId: String,
         @Query("song_id") songId: String
     ): Response<Unit>
+
+    @DELETE("rest/v1/music_play_history")
+    suspend fun deleteLegacyPlayHistoryItem(
+        @Header("Authorization") token: String,
+        @Query("user_id") userId: String,
+        @Query("song_id") songId: String
+    ): Response<Unit>
+
+    @GET("rest/v1/music_playlists")
+    suspend fun listUserPlaylists(
+        @Header("Authorization") token: String,
+        @Query("user_id") userId: String,
+        @Query("select") select: String = "id,name,description,cover_url,is_public,created_at,updated_at",
+        @Query("order") order: String = "updated_at.desc,created_at.desc",
+        @Query("limit") limit: Int = 100
+    ): Response<List<MusicPlaylistRow>>
 
     @POST("rest/v1/music_playlists")
     suspend fun insertPlaylist(
@@ -111,6 +177,18 @@ interface SupabaseMusicApi {
     ): Response<Unit>
 }
 
+data class MusicLibraryBootstrapRequest(
+    @SerializedName("p_favorites_limit") val favoritesLimit: Int = 200,
+    @SerializedName("p_history_limit") val historyLimit: Int = 100,
+    @SerializedName("p_playlists_limit") val playlistsLimit: Int = 100
+)
+
+data class MusicLibraryBootstrapRow(
+    @SerializedName("favorites") val favorites: List<MusicFavoriteRow>?,
+    @SerializedName("history") val history: List<MusicPlayHistoryRow>?,
+    @SerializedName("playlists") val playlists: List<MusicPlaylistRow>?
+)
+
 data class MusicFavoriteRow(
     @SerializedName("song_id") val songId: String,
     @SerializedName("source") val source: String?,
@@ -133,6 +211,22 @@ data class MusicFavoriteInsert(
     @SerializedName("duration") val duration: Int?
 )
 
+data class LegacyMusicFavoriteRow(
+    @SerializedName("song_id") val songId: String,
+    @SerializedName("song_name") val songName: String?,
+    @SerializedName("artist_name") val artistName: String?,
+    @SerializedName("album_cover") val albumCover: String?,
+    @SerializedName("created_at") val createdAt: String?
+)
+
+data class LegacyMusicFavoriteInsert(
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("song_id") val songId: String,
+    @SerializedName("song_name") val songName: String,
+    @SerializedName("artist_name") val artistName: String,
+    @SerializedName("album_cover") val albumCover: String?
+)
+
 data class MusicPlayHistoryRow(
     @SerializedName("song_id") val songId: String,
     @SerializedName("source") val source: String?,
@@ -153,6 +247,21 @@ data class MusicPlayHistoryInsert(
     @SerializedName("album") val albumName: String?,
     @SerializedName("cover_url") val albumCover: String?,
     @SerializedName("duration") val duration: Int?,
+    @SerializedName("played_at") val playedAt: String
+)
+
+data class LegacyMusicPlayHistoryRow(
+    @SerializedName("song_id") val songId: String,
+    @SerializedName("song_name") val songName: String?,
+    @SerializedName("artist_name") val artistName: String?,
+    @SerializedName("played_at") val playedAt: String?
+)
+
+data class LegacyMusicPlayHistoryInsert(
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("song_id") val songId: String,
+    @SerializedName("song_name") val songName: String,
+    @SerializedName("artist_name") val artistName: String,
     @SerializedName("played_at") val playedAt: String
 )
 

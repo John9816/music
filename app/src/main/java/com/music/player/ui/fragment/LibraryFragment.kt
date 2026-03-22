@@ -8,6 +8,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.core.content.getSystemService
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,10 +17,11 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentLibraryBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
-class LibraryFragment : Fragment() {
+class LibraryFragment : Fragment(), RootTabInteraction {
 
     private var _binding: FragmentLibraryBinding? = null
     private val binding: FragmentLibraryBinding
@@ -31,6 +33,7 @@ class LibraryFragment : Fragment() {
 
     private var isMusicLoading = false
     private var isLibraryLoading = false
+    private var isUserRefreshing = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -49,6 +52,7 @@ class LibraryFragment : Fragment() {
         setupRecyclerView()
         setupInput()
         setupObservers()
+        setupInteractions()
 
         binding.tvSectionTitle.text = getString(R.string.search_result_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_hint)
@@ -66,6 +70,19 @@ class LibraryFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onTabReselected() {
+        val binding = _binding ?: return
+        if (binding.recyclerView.canScrollVertically(-1)) {
+            binding.recyclerView.smoothScrollToPosition(0)
+            return
+        }
+        if (binding.etSearch.text?.isNullOrBlank() != false) {
+            requestSearchFocus()
+            return
+        }
+        refreshSearch()
     }
 
     private fun setupRecyclerView() {
@@ -89,6 +106,10 @@ class LibraryFragment : Fragment() {
         binding.root.setOnClickListener { hideKeyboardAndClearFocus() }
         binding.cardSongList.setOnClickListener { hideKeyboardAndClearFocus() }
         binding.tvEmptyState.setOnClickListener { hideKeyboardAndClearFocus() }
+        binding.etSearch.doAfterTextChanged {
+            binding.searchInputLayout.error = null
+            syncSearchActionState()
+        }
 
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -100,6 +121,12 @@ class LibraryFragment : Fragment() {
         }
 
         binding.btnSearch.setOnClickListener { performSearch() }
+    }
+
+    private fun setupInteractions() {
+        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
+        binding.swipeRefresh.setOnRefreshListener { refreshSearch() }
+        syncSearchActionState()
     }
 
     fun requestSearchFocus() {
@@ -123,6 +150,7 @@ class LibraryFragment : Fragment() {
             } else {
                 getString(R.string.search_found_count, songs.size)
             }
+            stopRefreshIndicator()
         }
 
         musicViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
@@ -142,6 +170,7 @@ class LibraryFragment : Fragment() {
         if (query.isBlank()) {
             binding.searchInputLayout.error = getString(R.string.search_input_required)
             binding.etSearch.requestFocus()
+            stopRefreshIndicator()
             return
         }
         binding.searchInputLayout.error = null
@@ -154,6 +183,23 @@ class LibraryFragment : Fragment() {
         musicViewModel.searchSongs(query)
     }
 
+    private fun refreshSearch() {
+        val query = binding.etSearch.text?.toString()?.trim().orEmpty()
+        if (query.isBlank()) {
+            stopRefreshIndicator()
+            requestSearchFocus()
+            return
+        }
+        isUserRefreshing = true
+        binding.swipeRefresh.isRefreshing = true
+        binding.swipeRefresh.postDelayed({
+            if (_binding != null && isUserRefreshing) {
+                stopRefreshIndicator()
+            }
+        }, 3000L)
+        musicViewModel.searchSongs(query)
+    }
+
     private fun renderSongs(songs: List<Song>) {
         songAdapter.submitList(songs)
         syncEmptyState(songs.isEmpty())
@@ -162,12 +208,24 @@ class LibraryFragment : Fragment() {
     private fun syncLoadingState() {
         val anyLoading = isMusicLoading || isLibraryLoading
         binding.progressBar.visibility = if (anyLoading) View.VISIBLE else View.GONE
-        binding.btnSearch.isEnabled = !anyLoading
+        syncSearchActionState()
     }
 
     private fun syncEmptyState(forceEmpty: Boolean = songAdapter.currentList.isEmpty()) {
         val anyLoading = isMusicLoading || isLibraryLoading
         binding.tvEmptyState.visibility = if (anyLoading || !forceEmpty) View.GONE else View.VISIBLE
+    }
+
+    private fun syncSearchActionState() {
+        val anyLoading = isMusicLoading || isLibraryLoading
+        val hasQuery = binding.etSearch.text?.toString()?.trim().isNullOrEmpty().not()
+        binding.btnSearch.isEnabled = hasQuery && !anyLoading
+        binding.swipeRefresh.isEnabled = hasQuery && !anyLoading
+    }
+
+    private fun stopRefreshIndicator() {
+        isUserRefreshing = false
+        binding.swipeRefresh.isRefreshing = false
     }
 
     private fun showSongActions(song: Song) {

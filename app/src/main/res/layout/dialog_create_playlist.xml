@@ -11,8 +11,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/user_playlist_name_hint"
-        app:boxBackgroundColor="@color/surface"
-        app:boxStrokeColor="@color/brand_primary">
+        app:boxBackgroundColor="?attr/surfaceColor"
+        app:boxStrokeColor="?attr/brandPrimary">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etPlaylistName"
@@ -28,8 +28,8 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_sm"
         android:hint="@string/user_playlist_desc_hint"
-        app:boxBackgroundColor="@color/surface"
-        app:boxStrokeColor="@color/divider">
+        app:boxBackgroundColor="?attr/surfaceColor"
+        app:boxStrokeColor="?attr/dividerColor">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etPlaylistDesc"
@@ -41,3 +41,4 @@
     </com.google.android.material.textfield.TextInputLayout>
 
 </LinearLayout>
+

@@ -1,5 +1,8 @@
 package com.music.player.data.api
 
+import com.music.player.BuildConfig
+import okhttp3.CacheControl
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Interceptor
 import okhttp3.Cookie
@@ -13,10 +16,17 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
     private const val ALGER_BASE_URL = "http://mc.alger.fun/"
     private const val GDSTUDIO_BASE_URL = "https://music-api.gdstudio.xyz/"
+    private const val CHKSZ_BASE_URL = "https://api.chksz.top/"
     private const val LYRICS_BASE_URL = "https://node.api.xfabe.com/"
+    private const val HTTP_CACHE_SIZE_BYTES = 32L * 1024L * 1024L
+    private val connectionPool: ConnectionPool = NetworkRuntime.connectionPool()
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BASIC
+        level = if (BuildConfig.DEBUG) {
+            HttpLoggingInterceptor.Level.BASIC
+        } else {
+            HttpLoggingInterceptor.Level.NONE
+        }
     }
 
     private val algerHeadersInterceptor = Interceptor { chain ->
@@ -37,13 +47,61 @@ object RetrofitClient {
         }
     }
 
+    private val offlineCacheInterceptor = Interceptor { chain ->
+        var request = chain.request()
+        if (request.method.equals("GET", ignoreCase = true) && !NetworkRuntime.isNetworkAvailable()) {
+            request = request.newBuilder()
+                .cacheControl(
+                    CacheControl.Builder()
+                        .onlyIfCached()
+                        .maxStale(7, TimeUnit.DAYS)
+                        .build()
+                )
+                .build()
+        }
+        chain.proceed(request)
+    }
+
+    private val responseCacheInterceptor = Interceptor { chain ->
+        val request = chain.request()
+        val response = chain.proceed(request)
+        if (!request.method.equals("GET", ignoreCase = true)) {
+            return@Interceptor response
+        }
+        if (request.header("Cache-Control") != null || response.header("Cache-Control") != null) {
+            return@Interceptor response
+        }
+
+        val maxAgeSeconds = when (request.url.encodedPath) {
+            "/api/lyric" -> 7 * 24 * 60 * 60
+            "/api/song/detail" -> 30 * 60
+            "/api/playlist/detail" -> 10 * 60
+            "/api/top/playlist" -> 10 * 60
+            "/api/personalized/newsong" -> 5 * 60
+            "/api/album/newest" -> 10 * 60
+            "/api/toplist" -> 10 * 60
+            else -> 5 * 60
+        }
+
+        response.newBuilder()
+            .removeHeader("Pragma")
+            .header("Cache-Control", "public, max-age=$maxAgeSeconds")
+            .build()
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
+        .cache(NetworkRuntime.httpCache(directoryName = "music-http-cache", maxSizeBytes = HTTP_CACHE_SIZE_BYTES))
+        .connectionPool(connectionPool)
+        .retryOnConnectionFailure(true)
         .cookieJar(InMemoryCookieJar())
+        .addInterceptor(offlineCacheInterceptor)
         .addInterceptor(algerHeadersInterceptor)
+        .addNetworkInterceptor(responseCacheInterceptor)
         .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS)
         .build()
 
     private fun createRetrofit(baseUrl: String): Retrofit {
@@ -56,6 +114,7 @@ object RetrofitClient {
 
     val musicApi: MusicApiService = createRetrofit(ALGER_BASE_URL).create(MusicApiService::class.java)
     val gdStudioApi: GdStudioApiService = createRetrofit(GDSTUDIO_BASE_URL).create(GdStudioApiService::class.java)
+    val chkSzApi: ChkSzApiService = createRetrofit(CHKSZ_BASE_URL).create(ChkSzApiService::class.java)
     val lyricsApi: LyricsApiService = createRetrofit(LYRICS_BASE_URL).create(LyricsApiService::class.java)
 }
 

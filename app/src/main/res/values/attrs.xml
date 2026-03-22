@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="brandPrimary" format="color" />
+    <attr name="brandPrimaryDark" format="color" />
+    <attr name="brandPrimaryLight" format="color" />
+    <attr name="brandSecondary" format="color" />
+    <attr name="pageBackground" format="color" />
+    <attr name="surfaceColor" format="color" />
+    <attr name="surfaceAltColor" format="color" />
+    <attr name="textPrimary" format="color" />
+    <attr name="textSecondary" format="color" />
+    <attr name="dividerColor" format="color" />
+    <attr name="dangerColor" format="color" />
+    <attr name="glassSurface" format="color" />
+    <attr name="glassSurfaceStrong" format="color" />
+    <attr name="glassSurfaceSoft" format="color" />
+    <attr name="glassStroke" format="color" />
+    <attr name="glassStrokeSoft" format="color" />
+    <attr name="glassHighlight" format="color" />
+    <attr name="glassShadow" format="color" />
+    <attr name="glassOverlayTint" format="color" />
+</resources>

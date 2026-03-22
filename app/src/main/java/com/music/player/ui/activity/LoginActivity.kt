@@ -1,20 +1,25 @@
-﻿package com.music.player.ui.activity
+package com.music.player.ui.activity
 
 import android.content.Intent
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
 import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.databinding.ActivityLoginBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
-import com.music.player.ui.util.applyEdgeToEdge
-import com.music.player.ui.util.applySystemBarInsetPadding
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.safeDrawingInsets
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 
@@ -27,7 +32,7 @@ class LoginActivity : AppCompatActivity() {
     private var isLoginMode = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.applySavedNightMode(this)
+        ThemeManager.prepareActivity(this)
         super.onCreate(savedInstanceState)
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -55,6 +60,13 @@ class LoginActivity : AppCompatActivity() {
 
         setupUi()
         setupObservers()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::insetsController.isInitialized) {
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     private fun setupUi() {
@@ -168,5 +180,41 @@ class LoginActivity : AppCompatActivity() {
             putExtra(MainActivity.EXTRA_FROM_LOGIN, true)
         })
         finish()
+    }
+
+    private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        return WindowInsetsControllerCompat(window, rootView).apply {
+            isAppearanceLightStatusBars = lightSystemBars
+            isAppearanceLightNavigationBars = lightSystemBars
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    private fun View.applySystemBarInsetPadding(
+        applyTop: Boolean = false,
+        applyBottom: Boolean = false
+    ) {
+        val initialTop = paddingTop
+        val initialBottom = paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bars = insets.safeDrawingInsets()
+            view.updatePadding(
+                top = initialTop + if (applyTop) bars.top else 0,
+                bottom = initialBottom + if (applyBottom) bars.bottom else 0
+            )
+            insets
+        }
+        requestApplyInsets()
     }
 }

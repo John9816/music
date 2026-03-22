@@ -1,6 +1,5 @@
 package com.music.player.ui.adapter
 
-import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -10,6 +9,8 @@ import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.NewestAlbum
 import com.music.player.databinding.ItemNewestAlbumBannerBinding
+import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.resolveThemeColorStateList
 
 class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapter.Vh>(Diff) {
 
@@ -34,13 +35,14 @@ class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapt
             val coverUrl = item.album.picUrl.takeIf { it.isNotBlank() }
             if (coverUrl == null) {
                 binding.ivCover.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCover.imageTintList = ColorStateList.valueOf(context.getColor(R.color.brand_primary))
+                binding.ivCover.imageTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
             } else {
                 binding.ivCover.imageTintList = null
                 Glide.with(binding.ivCover)
-                    .load(coverUrl)
+                    .load(ImageUrl.bestQuality(coverUrl))
                     .placeholder(R.drawable.ic_music_note_24)
                     .centerCrop()
+                    .dontAnimate()
                     .into(binding.ivCover)
             }
         }
@@ -54,4 +56,3 @@ class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapt
             oldItem == newItem
     }
 }
-

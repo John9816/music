@@ -1,67 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.MusicPlayer.Card.Outlined"
-    android:layout_width="172dp"
+    android:layout_width="168dp"
     android:layout_height="wrap_content"
-    android:layout_marginEnd="@dimen/spacing_s"
+    android:layout_marginEnd="@dimen/spacing_sm"
+    android:background="?attr/selectableItemBackground"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:orientation="vertical"
+    android:paddingBottom="0dp">
 
-    <LinearLayout
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="132dp"
+        app:cardBackgroundColor="?attr/surfaceColor"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/dividerColor"
+        app:strokeWidth="1dp">
+
+        <ImageView
+            android:id="@+id/ivCover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/item_song_name_placeholder"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_note_24"
+            android:tint="?attr/brandPrimary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <TextView
+        android:id="@+id/tvSongName"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:text="@string/item_song_name_placeholder"
+        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+        android:textColor="?attr/textPrimary"
+        android:textStyle="bold" />
 
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="134dp"
-            app:cardBackgroundColor="@color/surface_alt"
-            app:cardCornerRadius="@dimen/radius_l"
-            app:cardElevation="0dp">
+    <TextView
+        android:id="@+id/tvArtist"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:text="@string/item_artist_placeholder"
+        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+        android:textColor="?attr/textSecondary"
+        android:textSize="12sp" />
+</LinearLayout>
 
-            <ImageView
-                android:id="@+id/ivCover"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:contentDescription="@string/item_song_name_placeholder"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_music_note_24"
-                android:tint="@color/brand_primary" />
-        </com.google.android.material.card.MaterialCardView>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="@dimen/spacing_xs"
-            android:paddingTop="@dimen/spacing_s"
-            android:paddingEnd="@dimen/spacing_xs"
-            android:paddingBottom="@dimen/spacing_xs">
-
-            <TextView
-                android:id="@+id/tvSongName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="@string/item_song_name_placeholder"
-                android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                android:textColor="@color/text_primary"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvArtist"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="@string/item_artist_placeholder"
-                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-        </LinearLayout>
-    </LinearLayout>
-
-</com.google.android.material.card.MaterialCardView>

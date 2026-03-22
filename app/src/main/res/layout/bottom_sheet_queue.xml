@@ -3,17 +3,22 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@color/page_background"
+    android:background="@android:color/transparent"
     android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
+        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_marginTop="@dimen/spacing_m"
+        android:layout_marginEnd="@dimen/spacing_m"
+        android:orientation="horizontal"
         android:paddingStart="@dimen/spacing_m"
         android:paddingTop="@dimen/spacing_s"
         android:paddingEnd="@dimen/spacing_s"
-        android:paddingBottom="@dimen/spacing_s">
+        android:paddingBottom="@dimen/spacing_s"
+        android:background="?attr/surfaceColor">
 
         <TextView
             android:id="@+id/tvTitle"
@@ -22,7 +27,7 @@
             android:layout_weight="1"
             android:text="@string/queue_title"
             android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/textPrimary"
             android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
@@ -40,15 +45,19 @@
             android:contentDescription="@string/content_desc_close"
             android:padding="@dimen/spacing_s"
             android:src="@drawable/ic_close_24"
-            android:tint="@color/text_secondary" />
+            android:tint="?attr/textSecondary" />
     </LinearLayout>
 
-    <FrameLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="@dimen/spacing_m"
-        android:paddingEnd="@dimen/spacing_m"
-        android:paddingBottom="@dimen/spacing_m">
+        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_marginTop="@dimen/spacing_s"
+        android:layout_marginEnd="@dimen/spacing_m"
+        android:layout_marginBottom="@dimen/spacing_m"
+        android:background="?attr/surfaceColor"
+        android:paddingTop="@dimen/spacing_s"
+        android:paddingBottom="@dimen/spacing_s">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
@@ -56,6 +65,8 @@
             android:layout_height="wrap_content"
             android:clipToPadding="false"
             android:overScrollMode="never"
+            android:paddingStart="@dimen/spacing_m"
+            android:paddingEnd="@dimen/spacing_m"
             android:paddingBottom="@dimen/spacing_s"
             android:scrollbars="vertical" />
 
@@ -67,8 +78,9 @@
             android:paddingHorizontal="@dimen/spacing_xl"
             android:text="@string/queue_empty"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/textSecondary"
             android:visibility="gone" />
-    </FrameLayout>
+    </LinearLayout>
 
 </LinearLayout>
+

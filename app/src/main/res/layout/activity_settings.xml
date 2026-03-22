@@ -26,7 +26,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:navigationContentDescription="@string/content_desc_back"
         app:navigationIcon="@drawable/ic_arrow_back_24"
         app:navigationIconTint="?attr/colorOnSurfaceVariant"
         app:title="@string/settings_title"
@@ -68,7 +67,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/profile_info_title"
                         android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                        android:textColor="@color/text_primary"
+                        android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
                     <TextView
@@ -78,7 +77,7 @@
                         android:layout_marginTop="@dimen/spacing_m"
                         android:text="@string/profile_email_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                        android:textColor="@color/text_primary" />
+                        android:textColor="?attr/textPrimary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -88,7 +87,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_s"
                 android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                android:textColor="@color/text_secondary" />
+                android:textColor="?attr/textSecondary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEditProfile"
@@ -100,7 +99,7 @@
                 android:textAllCaps="false"
                 android:textSize="15sp"
                 android:textStyle="bold"
-                app:strokeColor="@color/brand_primary" />
+                app:strokeColor="?attr/brandPrimary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCheckUpdate"
@@ -112,7 +111,27 @@
                 android:textAllCaps="false"
                 android:textSize="15sp"
                 android:textStyle="bold"
-                app:strokeColor="@color/brand_primary" />
+                app:strokeColor="?attr/brandPrimary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNightMode"
+                style="@style/Widget.MusicPlayer.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/control_height_m"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:text="@string/settings_night_mode"
+                android:textAllCaps="false"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:strokeColor="?attr/brandPrimary" />
+
+            <TextView
+                android:id="@+id/tvNightModeSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textColor="?attr/textSecondary"
+                android:textSize="13sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnTheme"
@@ -120,11 +139,59 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/control_height_m"
                 android:layout_marginTop="@dimen/spacing_s"
-                android:text="@string/profile_theme"
+                android:text="@string/settings_color_theme"
                 android:textAllCaps="false"
                 android:textSize="15sp"
                 android:textStyle="bold"
-                app:strokeColor="@color/brand_primary" />
+                app:strokeColor="?attr/brandPrimary" />
+
+            <TextView
+                android:id="@+id/tvThemeSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textColor="?attr/textSecondary"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPlayerStyle"
+                style="@style/Widget.MusicPlayer.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/control_height_m"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:text="@string/settings_player_style"
+                android:textAllCaps="false"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:strokeColor="?attr/brandPrimary" />
+
+            <TextView
+                android:id="@+id/tvPlayerStyleSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textColor="?attr/textSecondary"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAudioQuality"
+                style="@style/Widget.MusicPlayer.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/control_height_m"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:text="@string/settings_audio_quality"
+                android:textAllCaps="false"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:strokeColor="?attr/brandPrimary" />
+
+            <TextView
+                android:id="@+id/tvAudioQualitySummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textColor="?attr/textSecondary"
+                android:textSize="13sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLogout"
@@ -136,9 +203,10 @@
                 android:textAllCaps="false"
                 android:textSize="15sp"
                 android:textStyle="bold"
-                app:strokeColor="@color/danger" />
+                app:strokeColor="?attr/dangerColor" />
 
         </LinearLayout>
     </ScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

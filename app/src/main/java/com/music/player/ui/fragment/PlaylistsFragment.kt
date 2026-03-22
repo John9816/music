@@ -13,10 +13,11 @@ import com.music.player.data.model.Playlist
 import com.music.player.data.model.PlaylistCategory
 import com.music.player.databinding.FragmentPlaylistsBinding
 import com.music.player.ui.adapter.PlaylistAdapter
+import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
-class PlaylistsFragment : Fragment() {
+class PlaylistsFragment : Fragment(), RootTabInteraction {
 
     private var _binding: FragmentPlaylistsBinding? = null
     private val binding: FragmentPlaylistsBinding
@@ -37,6 +38,12 @@ class PlaylistsFragment : Fragment() {
     private var themeCat: String = ""
     private val groupLoaded = BooleanArray(5)
     private var categoriesReady: Boolean = false
+    private var isLangLoading: Boolean = false
+    private var isStyleLoading: Boolean = false
+    private var isSceneLoading: Boolean = false
+    private var isEmotionLoading: Boolean = false
+    private var isThemeLoading: Boolean = false
+    private var isUserRefreshing: Boolean = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentPlaylistsBinding.inflate(inflater, container, false)
@@ -50,6 +57,7 @@ class PlaylistsFragment : Fragment() {
 
         setupUi()
         setupObservers()
+        setupInteractions()
 
         libraryViewModel.prefetch()
         musicViewModel.loadPlaylistCategories()
@@ -58,6 +66,15 @@ class PlaylistsFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onTabReselected() {
+        val binding = _binding ?: return
+        if (binding.scrollView.scrollY > 0) {
+            binding.scrollView.smoothScrollTo(0, 0)
+            return
+        }
+        refreshContent(userInitiated = true)
     }
 
     private fun setupUi() {
@@ -130,21 +147,38 @@ class PlaylistsFragment : Fragment() {
         }
     }
 
+    private fun setupInteractions() {
+        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
+        binding.swipeRefresh.setOnRefreshListener {
+            refreshContent(userInitiated = true)
+        }
+    }
+
     private fun setupObservers() {
         musicViewModel.languageLoading.observe(viewLifecycleOwner) { loading ->
+            isLangLoading = loading == true
             binding.pbLang.visibility = if (loading == true) View.VISIBLE else View.GONE
+            syncRefreshState()
         }
         musicViewModel.styleLoading.observe(viewLifecycleOwner) { loading ->
+            isStyleLoading = loading == true
             binding.pbStyle.visibility = if (loading == true) View.VISIBLE else View.GONE
+            syncRefreshState()
         }
         musicViewModel.sceneLoading.observe(viewLifecycleOwner) { loading ->
+            isSceneLoading = loading == true
             binding.pbScene.visibility = if (loading == true) View.VISIBLE else View.GONE
+            syncRefreshState()
         }
         musicViewModel.emotionLoading.observe(viewLifecycleOwner) { loading ->
+            isEmotionLoading = loading == true
             binding.pbEmotion.visibility = if (loading == true) View.VISIBLE else View.GONE
+            syncRefreshState()
         }
         musicViewModel.themeLoading.observe(viewLifecycleOwner) { loading ->
+            isThemeLoading = loading == true
             binding.pbTheme.visibility = if (loading == true) View.VISIBLE else View.GONE
+            syncRefreshState()
         }
 
         musicViewModel.languagePlaylists.observe(viewLifecycleOwner) { langAdapter.submitList(it) }
@@ -169,6 +203,7 @@ class PlaylistsFragment : Fragment() {
             categoriesReady = true
             for (i in groupLoaded.indices) groupLoaded[i] = false
             binding.scrollView.post { maybeLoadVisibleSections() }
+            syncRefreshState()
         }
 
         musicViewModel.error.observe(viewLifecycleOwner) { msg ->
@@ -176,6 +211,21 @@ class PlaylistsFragment : Fragment() {
             if (text.isBlank()) return@observe
             Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun refreshContent(userInitiated: Boolean) {
+        categoriesReady = false
+        for (i in groupLoaded.indices) groupLoaded[i] = false
+        if (userInitiated) {
+            isUserRefreshing = true
+            binding.swipeRefresh.isRefreshing = true
+            binding.swipeRefresh.postDelayed({
+                if (_binding != null && isUserRefreshing) {
+                    stopRefreshIndicator()
+                }
+            }, 3000L)
+        }
+        musicViewModel.loadPlaylistCategories()
     }
 
     private fun pickDefaultCategory(all: List<PlaylistCategory>, groupId: Int): String {
@@ -231,5 +281,17 @@ class PlaylistsFragment : Fragment() {
             groupLoaded[4] = true
             musicViewModel.loadGroupPlaylists(groupId = 4, category = themeCat, limit = 12)
         }
+    }
+
+    private fun syncRefreshState() {
+        if (!isUserRefreshing) return
+        val anySectionLoading = isLangLoading || isStyleLoading || isSceneLoading || isEmotionLoading || isThemeLoading
+        if (!categoriesReady || anySectionLoading) return
+        stopRefreshIndicator()
+    }
+
+    private fun stopRefreshIndicator() {
+        isUserRefreshing = false
+        binding.swipeRefresh.isRefreshing = false
     }
 }

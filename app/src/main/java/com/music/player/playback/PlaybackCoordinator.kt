@@ -12,6 +12,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import com.music.player.data.model.Song
 import com.music.player.data.repository.MusicRepository
+import com.music.player.data.settings.AudioQualityPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -120,6 +122,59 @@ object PlaybackCoordinator {
 
     fun playSong(song: Song) {
         startPlayback(song, recordHistory = true)
+    }
+
+    fun reloadCurrentSongForAudioQualityChange() {
+        val song = _currentSong.value ?: return
+        val activePlayer = player
+        val resumePositionMs = activePlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        val shouldAutoPlay = activePlayer?.playWhenReady ?: true
+
+        prepareJob?.cancel()
+        lyricsJob?.cancel()
+
+        val token = ++prepareToken
+        lastStartElapsedMs = SystemClock.elapsedRealtime()
+        prepareJob = scope.launch {
+            _isLoading.value = true
+            try {
+                ensureServiceRunning()
+
+                val refreshedSong = song.copy(url = null)
+                val urlStart = SystemClock.elapsedRealtime()
+                val urlResult = withContext(Dispatchers.IO) {
+                    resolveSongUrl(refreshedSong, forceRefresh = true)
+                }
+                val urlCost = SystemClock.elapsedRealtime() - urlStart
+                val refreshedUrl = urlResult.getOrNull()?.trim().orEmpty()
+
+                if (prepareToken != token) return@launch
+
+                if (urlResult.isSuccess && refreshedUrl.isNotBlank()) {
+                    val previousSong = song
+                    val prepared = song.copy(url = refreshedUrl)
+                    _currentSong.value = prepared
+                    Log.d(TAG, "reloaded url in ${urlCost}ms, songId=${song.id}")
+                    playPreparedSongWithFallback(
+                        previousSong = previousSong,
+                        nextSong = prepared,
+                        startPositionMs = resumePositionMs,
+                        shouldAutoPlay = shouldAutoPlay,
+                        token = token
+                    )
+                    if (prepared.lyric.isNullOrBlank()) {
+                        fetchLyricsInBackground(prepared, token)
+                    }
+                    prefetchNextUrl(token)
+                } else {
+                    _error.tryEmit(urlResult.exceptionOrNull()?.message ?: "切换音质失败")
+                }
+            } finally {
+                if (prepareToken == token) {
+                    _isLoading.value = false
+                }
+            }
+        }
     }
 
     fun playStandaloneSong(song: Song) {
@@ -316,14 +371,14 @@ object PlaybackCoordinator {
         }
     }
 
-    private suspend fun resolveSongUrl(song: Song): Result<String> {
+    private suspend fun resolveSongUrl(song: Song, forceRefresh: Boolean = false): Result<String> {
         val existing = song.url?.trim().orEmpty()
-        if (existing.isNotBlank()) return Result.success(existing)
+        if (!forceRefresh && existing.isNotBlank()) return Result.success(existing)
 
         val cached = getCachedUrl(song.id)
-        if (cached != null) return Result.success(cached)
+        if (!forceRefresh && cached != null) return Result.success(cached)
 
-        val fetched = repository.getSongUrl(song.id)
+        val fetched = repository.getSongUrl(song.id, forceRefresh = forceRefresh)
         fetched.getOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { putCachedUrl(song.id, it) }
         return fetched
     }
@@ -353,14 +408,82 @@ object PlaybackCoordinator {
     }
 
     @Synchronized
-    private fun getCachedUrl(songId: String): String? = songUrlCache[songId]
+    private fun getCachedUrl(songId: String): String? = songUrlCache[currentUrlCacheKey(songId)]
 
     @Synchronized
     private fun putCachedUrl(songId: String, url: String) {
-        songUrlCache[songId] = url
+        songUrlCache[currentUrlCacheKey(songId)] = url
     }
 
-    private fun playPreparedSong(song: Song) {
+    private fun currentUrlCacheKey(songId: String): String {
+        val level = appContext
+            ?.let { AudioQualityPreferences.getPreferredLevel(it) }
+            ?: AudioQualityPreferences.getPreferredLevel()
+        return "$songId|${level.storageValue}"
+    }
+
+    private fun playPreparedSongWithFallback(
+        previousSong: Song,
+        nextSong: Song,
+        startPositionMs: Long,
+        shouldAutoPlay: Boolean,
+        token: Long,
+        timeoutMs: Long = 5000L
+    ) {
+        val activePlayer = player
+        if (activePlayer == null) {
+            playPreparedSong(nextSong, startPositionMs, shouldAutoPlay)
+            return
+        }
+
+        var settled = false
+        lateinit var listener: Player.Listener
+
+        fun settleSuccess() {
+            if (settled) return
+            settled = true
+            activePlayer.removeListener(listener)
+        }
+
+        fun settleFailure() {
+            if (settled) return
+            settled = true
+            activePlayer.removeListener(listener)
+            _currentSong.value = previousSong
+            playPreparedSong(previousSong, startPositionMs, shouldAutoPlay)
+            _error.tryEmit("新音质播放失败，已恢复原音质")
+        }
+
+        listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (prepareToken == token && playbackState == Player.STATE_READY) {
+                    settleSuccess()
+                }
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                if (prepareToken == token) {
+                    settleFailure()
+                }
+            }
+        }
+
+        activePlayer.addListener(listener)
+        playPreparedSong(nextSong, startPositionMs, shouldAutoPlay)
+
+        scope.launch {
+            delay(timeoutMs)
+            if (prepareToken == token && !settled && activePlayer.playbackState != Player.STATE_READY) {
+                settleFailure()
+            }
+        }
+    }
+
+    private fun playPreparedSong(
+        song: Song,
+        startPositionMs: Long = 0L,
+        shouldAutoPlay: Boolean = true
+    ) {
         val mediaUrl = song.url?.trim().orEmpty()
         if (mediaUrl.isBlank()) {
             _error.tryEmit("播放地址为空")
@@ -380,10 +503,9 @@ object PlaybackCoordinator {
         // Avoid crashing on playback start.
         val title = song.name.ifBlank { "Unknown" }
         val artist = song.artists.orEmpty().joinToString(", ") { it.name }.ifBlank { "Unknown" }
-        val artwork = song.album
-            ?.picUrl
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val artwork = song.album.picUrl
+            .trim()
+            .takeIf { it.isNotBlank() }
             ?.let { Uri.parse(it) }
 
         val metadata = MediaMetadata.Builder()
@@ -405,7 +527,15 @@ object PlaybackCoordinator {
 
         activePlayer.setMediaItem(mediaItem)
         activePlayer.prepare()
-        activePlayer.play()
+        if (startPositionMs > 0L) {
+            activePlayer.seekTo(startPositionMs)
+        }
+        activePlayer.playWhenReady = shouldAutoPlay
+        if (shouldAutoPlay) {
+            activePlayer.play()
+        } else {
+            activePlayer.pause()
+        }
     }
 
     private fun ensureServiceRunning() {

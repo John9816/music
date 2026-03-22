@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#FFE28A60</color>
-    <color name="brand_primary_dark">#FFBE5A31</color>
-    <color name="brand_primary_light">#FF4E2F23</color>
-    <color name="brand_secondary">#FF58B6A8</color>
-    <color name="page_background">#FF100C0A</color>
-    <color name="surface">#FF261E1A</color>
-    <color name="surface_alt">#FF352A26</color>
-    <color name="text_primary">#FFF8EEE7</color>
-    <color name="text_secondary">#FFD1BCAD</color>
-    <color name="divider">#40F8EEE7</color>
-    <color name="danger">#FFE77E77</color>
+    <color name="brand_primary">#FFFF756C</color>
+    <color name="brand_primary_dark">#FFE54F47</color>
+    <color name="brand_primary_light">#FF643A3A</color>
+    <color name="brand_secondary">#FF34DCA2</color>
+    <color name="page_background">#FF101217</color>
+    <color name="surface">#FF171B22</color>
+    <color name="surface_alt">#FF202630</color>
+    <color name="text_primary">#FFF8F0F0</color>
+    <color name="text_secondary">#FFB9ADB0</color>
+    <color name="divider">#26FFFFFF</color>
+    <color name="danger">#FFFF8C83</color>
+    <color name="glass_surface">#402B3440</color>
+    <color name="glass_surface_strong">#66323C49</color>
+    <color name="glass_surface_soft">#3337414D</color>
+    <color name="glass_stroke">#59FFFFFF</color>
+    <color name="glass_stroke_soft">#24FFFFFF</color>
+    <color name="glass_highlight">#6EFFFFFF</color>
+    <color name="glass_shadow">#66000000</color>
+    <color name="glass_overlay_tint">#2636FFC9</color>
 </resources>

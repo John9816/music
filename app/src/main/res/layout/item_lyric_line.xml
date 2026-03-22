@@ -7,6 +7,7 @@
     android:lineSpacingExtra="6dp"
     android:paddingVertical="@dimen/spacing_sm"
     android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-    android:textColor="@color/text_secondary"
+    android:textColor="?attr/textSecondary"
     android:textSize="14sp" />
+
 

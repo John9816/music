@@ -2,8 +2,10 @@ package com.music.player.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Base64
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 
 class AuthSessionManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -17,6 +19,16 @@ class AuthSessionManager(context: Context) {
 
     fun cacheUserId(userId: String) {
         prefs.edit().putString(KEY_USER_ID, userId).apply()
+    }
+
+    fun syncUserIdFromAccessToken(accessToken: String): String? {
+        val tokenUserId = extractUserIdFromJwt(accessToken)?.trim().orEmpty()
+        if (tokenUserId.isBlank()) return null
+
+        if (getCachedUserId() != tokenUserId) {
+            cacheUserId(tokenUserId)
+        }
+        return tokenUserId
     }
 
     fun clear() {
@@ -79,13 +91,32 @@ class AuthSessionManager(context: Context) {
                 accessToken = newAccess,
                 refreshToken = body.refresh_token ?: refreshToken,
                 expiresInSeconds = body.expires_in,
-                userId = getCachedUserId()
+                userId = syncUserIdFromAccessToken(newAccess) ?: getCachedUserId()
             )
 
             newAccess
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun extractUserIdFromJwt(accessToken: String): String? {
+        return runCatching {
+            val parts = accessToken.split('.')
+            if (parts.size < 2) return null
+
+            val payload = parts[1]
+            val normalizedPayload = buildString(payload.length + 4) {
+                append(payload)
+                repeat((4 - payload.length % 4) % 4) { append('=') }
+            }
+
+            val decoded = Base64.decode(
+                normalizedPayload,
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+            )
+            JSONObject(String(decoded, Charsets.UTF_8)).optString("sub").takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     private fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
@@ -107,4 +138,3 @@ class AuthSessionManager(context: Context) {
         private const val EXPIRY_SAFETY_WINDOW_MS = 60_000L
     }
 }
-

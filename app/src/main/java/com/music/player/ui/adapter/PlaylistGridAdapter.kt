@@ -34,7 +34,7 @@ class PlaylistGridAdapter(
             val context = binding.root.context
             binding.tvPlaylistName.text = playlist.name
 
-            val desc = playlist.description.trim()
+            val desc = playlist.description.replace(Regex("\\s+"), " ").trim()
             binding.tvPlaylistDesc.text = desc
             binding.tvPlaylistDesc.visibility = if (desc.isBlank()) View.GONE else View.VISIBLE
 
@@ -42,7 +42,9 @@ class PlaylistGridAdapter(
             binding.tvPlayCountBadge.text = playCountText
             binding.tvPlayCountBadge.visibility = if (playlist.playCount > 0) View.VISIBLE else View.GONE
 
-            binding.tvPlaylistMeta.visibility = View.GONE
+            val meta = buildMeta(context, playlist, playCountText)
+            binding.tvPlaylistMeta.text = meta
+            binding.tvPlaylistMeta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
 
             Glide.with(binding.ivCover)
                 .load(ImageUrl.bestQuality(playlist.coverImgUrl))
@@ -61,6 +63,15 @@ class PlaylistGridAdapter(
                 playCount >= 10_000 -> context.getString(R.string.play_count_wan, playCount / 10_000f)
                 else -> context.getString(R.string.play_count_plain, playCount)
             }
+        }
+
+        private fun buildMeta(context: Context, playlist: Playlist, playCountText: String): String {
+            if (playlist.trackCount <= 0 && playlist.playCount <= 0) return ""
+            return context.getString(
+                R.string.playlist_meta,
+                playlist.trackCount.coerceAtLeast(0),
+                playCountText
+            )
         }
     }
 

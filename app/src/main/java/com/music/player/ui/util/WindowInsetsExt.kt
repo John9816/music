@@ -5,6 +5,16 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 
+fun WindowInsetsCompat.safeDrawingInsets() =
+    getInsetsIgnoringVisibility(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+    )
+
+fun WindowInsetsCompat.safeStatusBarInsets() =
+    getInsetsIgnoringVisibility(
+        WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+    )
+
 fun View.applySystemBarInsetPadding(
     applyLeft: Boolean = false,
     applyTop: Boolean = false,
@@ -17,7 +27,7 @@ fun View.applySystemBarInsetPadding(
     val initialBottom = paddingBottom
 
     ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
-        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        val bars = insets.safeDrawingInsets()
         v.updatePadding(
             left = initialLeft + if (applyLeft) bars.left else 0,
             top = initialTop + if (applyTop) bars.top else 0,
@@ -40,7 +50,7 @@ fun View.applyNavigationBarInsetPadding() {
 fun View.applyStatusBarInsetHeight() {
     val initialHeight = layoutParams?.height ?: 0
     ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
-        val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+        val top = insets.safeStatusBarInsets().top
         v.layoutParams = v.layoutParams.apply { height = initialHeight + top }
         insets
     }

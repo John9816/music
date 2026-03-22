@@ -9,21 +9,37 @@
         android:id="@+id/content"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:padding="@dimen/spacing_m"
+        android:paddingStart="@dimen/spacing_m"
+        android:paddingTop="@dimen/spacing_l"
+        android:paddingEnd="@dimen/spacing_m"
+        android:paddingBottom="@dimen/spacing_m"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
+        <TextView
+            android:id="@+id/tvHeaderEyebrow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/nav_profile"
+            android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+            android:textColor="?attr/brandPrimary"
+            android:textStyle="bold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/headerCoverContainer"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            app:cardBackgroundColor="@color/surface_alt"
-            app:cardCornerRadius="0dp"
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            app:cardBackgroundColor="?attr/surfaceColor"
+            app:cardCornerRadius="24dp"
             app:cardElevation="0dp"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:strokeColor="?attr/dividerColor"
+            app:strokeWidth="1dp">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -33,11 +49,11 @@
                     android:id="@+id/ivHeaderCover"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:background="@color/surface_alt"
+                    android:background="@android:color/transparent"
                     android:contentDescription="@string/current_playing_title"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_music_note_24"
-                    android:tint="@color/brand_primary" />
+                    android:tint="?attr/brandPrimary" />
 
                 <TextView
                     android:id="@+id/tvHeaderPlayCount"
@@ -58,12 +74,15 @@
 
                 <ImageView
                     android:id="@+id/ivHeaderOverlay"
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:layout_gravity="center"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_toolbar_action_button"
                     android:contentDescription="@string/action_favorite"
+                    android:padding="6dp"
                     android:src="@drawable/ic_favorite_24"
-                    android:tint="@color/white" />
+                    android:tint="?attr/textPrimary" />
             </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -71,71 +90,100 @@
             android:id="@+id/tvHeaderTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/spacing_m"
+            android:layout_marginTop="@dimen/spacing_s"
+            android:layout_marginEnd="@dimen/spacing_l"
             android:ellipsize="end"
-            android:maxLines="2"
+            android:maxLines="3"
             android:text="@string/profile_liked_title"
-            android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
-            android:textColor="@color/text_primary"
+            android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+            android:textColor="?attr/textPrimary"
             android:textStyle="bold"
-            app:layout_constraintBottom_toBottomOf="@id/headerCoverContainer"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/headerCoverContainer"
-            app:layout_constraintTop_toTopOf="@id/headerCoverContainer" />
+            app:layout_constraintEnd_toStartOf="@id/headerCoverContainer"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvHeaderEyebrow" />
 
         <TextView
             android:id="@+id/tvHeaderDescription"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
+            android:layout_marginTop="@dimen/spacing_s"
+            android:layout_marginEnd="@dimen/spacing_l"
             android:ellipsize="end"
             android:maxLines="3"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/textSecondary"
             android:visibility="gone"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/headerCoverContainer"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/headerCoverContainer" />
+            app:layout_constraintTop_toBottomOf="@id/tvHeaderTitle" />
+
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/headerBottomBarrier"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="headerCoverContainer,tvHeaderEyebrow,tvHeaderTitle,tvHeaderDescription" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPlayAll"
-            style="@style/Widget.MusicPlayer.Button.Primary"
-            android:layout_width="0dp"
-            android:layout_height="@dimen/control_height_l"
-            android:layout_marginTop="@dimen/spacing_m"
+            style="@style/Widget.MusicPlayer.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_l"
+            android:minWidth="0dp"
             android:text="@string/action_play_all"
-            android:textSize="16sp"
+            android:textColor="?attr/textPrimary"
+            android:textSize="14sp"
             android:textStyle="bold"
-            app:cornerRadius="@dimen/radius_m"
+            app:cornerRadius="24dp"
+            app:icon="@drawable/ic_play_24"
+            app:iconGravity="textStart"
+            app:iconPadding="10dp"
+            app:iconTint="?attr/textPrimary"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/headerBottomBarrier"
+            app:layout_goneMarginTop="@dimen/spacing_l"
+            app:strokeColor="?attr/dividerColor"
+            app:strokeWidth="1dp" />
+
+        <View
+            android:id="@+id/headerDivider"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_marginTop="@dimen/spacing_l"
+            android:alpha="0.72"
+            android:background="?attr/colorOutline"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvHeaderDescription"
-            app:layout_goneMarginTop="@dimen/spacing_m" />
+            app:layout_constraintTop_toBottomOf="@id/btnPlayAll" />
 
         <TextView
             android:id="@+id/tvEmpty"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_l"
+            android:layout_marginTop="@dimen/spacing_xxl"
             android:gravity="center"
+            android:paddingHorizontal="@dimen/spacing_xl"
             android:text="@string/profile_liked_empty"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/textSecondary"
             android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnPlayAll" />
+            app:layout_constraintTop_toBottomOf="@id/headerDivider" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:layout_marginTop="@dimen/spacing_m"
+            android:clipToPadding="false"
             android:overScrollMode="never"
+            android:paddingBottom="@dimen/spacing_xxl"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnPlayAll" />
+            app:layout_constraintTop_toBottomOf="@id/headerDivider" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

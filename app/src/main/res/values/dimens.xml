@@ -7,16 +7,29 @@
     <dimen name="spacing_l">24dp</dimen>
     <dimen name="spacing_xl">32dp</dimen>
     <dimen name="spacing_xxl">40dp</dimen>
+    <dimen name="spacing_3xl">48dp</dimen>
 
     <dimen name="radius_s">12dp</dimen>
     <dimen name="radius_m">16dp</dimen>
     <dimen name="radius_l">20dp</dimen>
     <dimen name="radius_xl">24dp</dimen>
+    <dimen name="radius_2xl">30dp</dimen>
 
     <dimen name="control_height_m">48dp</dimen>
     <dimen name="control_height_l">56dp</dimen>
+    <dimen name="control_height_xl">60dp</dimen>
 
-    <dimen name="toolbar_min_height">40dp</dimen>
+    <dimen name="toolbar_min_height">56dp</dimen>
+    <dimen name="toolbar_action_size">40dp</dimen>
+    <dimen name="toolbar_action_icon_size">20dp</dimen>
+    <dimen name="toolbar_action_padding">10dp</dimen>
+    <dimen name="toolbar_action_spacing">8dp</dimen>
+    <dimen name="toolbar_content_padding_start">12dp</dimen>
+    <dimen name="toolbar_content_padding_end">12dp</dimen>
+    <dimen name="toolbar_search_height">46dp</dimen>
+    <dimen name="toolbar_search_badge_size">32dp</dimen>
+    <dimen name="toolbar_search_trailing_size">28dp</dimen>
+    <dimen name="immersive_root_content_top_offset">40dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
     <dimen name="immersive_top_scrim_height">200dp</dimen>
 </resources>

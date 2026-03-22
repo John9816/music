@@ -3,13 +3,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/page_background">
+    android:background="?attr/pageBackground">
 
     <ImageView
         android:id="@+id/ivBlurBackground"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:alpha="0.25"
+        android:alpha="0.5"
         android:contentDescription="@string/current_playing_title"
         android:scaleType="centerCrop"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -21,8 +21,8 @@
         android:id="@+id/viewScrim"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="@color/page_background"
-        android:alpha="0.88"
+        android:background="?attr/pageBackground"
+        android:alpha="0.72"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -34,7 +34,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:paddingStart="@dimen/spacing_m"
-        android:paddingTop="@dimen/spacing_s"
+        android:paddingTop="@dimen/spacing_m"
         android:paddingEnd="@dimen/spacing_s"
         android:paddingBottom="@dimen/spacing_s"
         app:layout_constraintEnd_toEndOf="parent"
@@ -49,7 +49,7 @@
             android:contentDescription="@string/content_desc_close"
             android:padding="@dimen/spacing_s"
             android:src="@drawable/ic_chevron_down_24"
-            android:tint="@color/text_secondary" />
+            android:tint="?attr/textSecondary" />
 
         <View
             android:layout_width="0dp"
@@ -73,7 +73,10 @@
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:padding="@dimen/spacing_m">
+            android:paddingStart="@dimen/spacing_m"
+            android:paddingTop="@dimen/spacing_s"
+            android:paddingEnd="@dimen/spacing_m"
+            android:paddingBottom="@dimen/spacing_m">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -81,27 +84,37 @@
                 android:layout_weight="1"
                 android:gravity="center">
 
-                <ImageView
-                    android:id="@+id/ivCoverBig"
-                    android:layout_width="280dp"
-                    android:layout_height="280dp"
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardCoverBig"
+                    android:layout_width="308dp"
+                    android:layout_height="308dp"
                     android:layout_gravity="center"
-                    android:contentDescription="@string/current_playing_title"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/ic_music_note_24"
-                    android:tint="@color/brand_primary" />
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:cardCornerRadius="28dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <ImageView
+                        android:id="@+id/ivCoverBig"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@string/current_playing_title"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_music_note_24"
+                        android:tint="?attr/brandPrimary" />
+                </com.google.android.material.card.MaterialCardView>
             </FrameLayout>
 
             <TextView
                 android:id="@+id/tvTitleBig"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_m"
+                android:layout_marginTop="@dimen/spacing_l"
                 android:ellipsize="end"
                 android:maxLines="2"
                 android:text="@string/current_playing_empty"
-                android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
-                android:textColor="@color/text_primary"
+                android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+                android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
 
             <TextView
@@ -113,7 +126,7 @@
                 android:maxLines="1"
                 android:text="@string/current_playing_hint"
                 android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                android:textColor="@color/text_secondary" />
+                android:textColor="?attr/textSecondary" />
         </LinearLayout>
 
         <LinearLayout
@@ -133,7 +146,7 @@
                 android:contentDescription="@string/current_playing_title"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_note_24"
-                android:tint="@color/brand_primary" />
+                android:tint="?attr/brandPrimary" />
 
             <TextView
                 android:id="@+id/tvTitleSmall"
@@ -145,8 +158,8 @@
                 android:maxLines="2"
                 android:text="@string/current_playing_empty"
                 android:textAlignment="center"
-                android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
-                android:textColor="@color/text_primary"
+                android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
 
             <TextView
@@ -160,7 +173,7 @@
                 android:text="@string/current_playing_hint"
                 android:textAlignment="center"
                 android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                android:textColor="@color/text_secondary" />
+                android:textColor="?attr/textSecondary" />
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -187,59 +200,94 @@
                     android:text="@string/lyrics_placeholder"
                     android:textAlignment="center"
                     android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/textSecondary"
                     android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>
     </ViewFlipper>
 
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/progressContainer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/spacing_m"
         android:layout_marginBottom="@dimen/spacing_s"
-        android:orientation="vertical"
         app:layout_constraintBottom_toTopOf="@id/controlsBar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/tvCurrentTime"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="00:00"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                android:textColor="@color/text_secondary" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/tvTotalTime"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="00:00"
-                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                android:textColor="@color/text_secondary" />
-        </LinearLayout>
+        <ImageButton
+            android:id="@+id/btnFavorite"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_favorite"
+            android:padding="5dp"
+            android:src="@drawable/ic_favorite_24"
+            android:tint="?attr/textSecondary"
+            app:layout_constraintBottom_toTopOf="@id/sliderProgress"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <com.google.android.material.slider.Slider
             android:id="@+id/sliderProgress"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:value="0"
             android:valueFrom="0"
             android:valueTo="1"
-            android:value="0"
-            app:labelBehavior="gone" />
-    </LinearLayout>
+            app:labelBehavior="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnFavorite" />
+
+        <TextView
+            android:id="@+id/tvCurrentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="00:00"
+            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+            android:textColor="?attr/textSecondary"
+            app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/btnAudioQuality" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAudioQuality"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginTop="2dp"
+            android:minWidth="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="超清母带"
+            android:textAllCaps="false"
+            android:textColor="?attr/textPrimary"
+            android:textSize="12sp"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="17dp"
+            app:icon="@drawable/ic_settings_24"
+            app:iconGravity="textStart"
+            app:iconPadding="4dp"
+            app:iconTint="?attr/textPrimary"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/sliderProgress"
+            app:strokeWidth="0dp" />
+
+        <TextView
+            android:id="@+id/tvTotalTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="00:00"
+            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+            android:textColor="?attr/textSecondary"
+            app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/btnAudioQuality" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/controlsBar"
@@ -249,7 +297,6 @@
         android:layout_marginBottom="@dimen/spacing_m"
         app:cardBackgroundColor="@android:color/transparent"
         app:cardElevation="0dp"
-        app:strokeColor="@android:color/transparent"
         app:strokeWidth="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -257,44 +304,43 @@
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="@dimen/spacing_m">
+            android:layout_height="wrap_content">
 
             <ImageButton
                 android:id="@+id/btnPlayMode"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/content_desc_shuffle"
-                android:padding="6dp"
+                android:padding="5dp"
                 android:src="@drawable/ic_shuffle_24"
-                android:tint="@color/text_secondary"
+                android:tint="?attr/textSecondary"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 
             <ImageButton
                 android:id="@+id/btnPrev"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/content_desc_previous"
-                android:padding="6dp"
+                android:padding="5dp"
                 android:src="@drawable/ic_skip_previous_24"
-                android:tint="@color/text_secondary"
+                android:tint="?attr/textSecondary"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toStartOf="@id/btnPlayPause"
                 app:layout_constraintTop_toTopOf="parent" />
 
             <ImageButton
                 android:id="@+id/btnPlayPause"
-                android:layout_width="68dp"
-                android:layout_height="68dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:background="@drawable/bg_toolbar_action_button"
                 android:contentDescription="@string/content_desc_play_pause"
                 android:padding="10dp"
                 android:src="@drawable/ic_pause_24"
-                android:tint="@color/text_primary"
+                android:tint="?attr/textPrimary"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -302,27 +348,28 @@
 
             <ImageButton
                 android:id="@+id/btnNext"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/content_desc_next"
-                android:padding="6dp"
+                android:padding="5dp"
                 android:src="@drawable/ic_skip_next_24"
-                android:tint="@color/text_secondary"
+                android:tint="?attr/textSecondary"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toEndOf="@id/btnPlayPause"
                 app:layout_constraintTop_toTopOf="parent" />
 
             <ImageButton
                 android:id="@+id/btnQueue"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/content_desc_queue"
-                android:padding="6dp"
+                android:padding="5dp"
                 android:src="@drawable/ic_queue_24"
-                android:tint="@color/text_secondary"
+                android:tint="?attr/textSecondary"
                 app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toEndOf="@id/btnNext"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent" />
 
@@ -330,3 +377,4 @@
     </com.google.android.material.card.MaterialCardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

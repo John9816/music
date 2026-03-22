@@ -19,8 +19,8 @@
         android:id="@+id/appBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
-        android:elevation="8dp"
+        android:background="@drawable/bg_toolbar_overlay_scrim"
+        android:elevation="0dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
@@ -32,8 +32,9 @@
             android:background="@android:color/transparent"
             android:elevation="0dp"
             android:minHeight="@dimen/toolbar_min_height"
-            android:paddingStart="@dimen/spacing_m"
-            android:paddingEnd="@dimen/spacing_s"
+            android:paddingStart="@dimen/toolbar_content_padding_start"
+            android:paddingEnd="@dimen/toolbar_content_padding_end"
+            app:contentInsetStartWithNavigation="0dp"
             app:itemIconTint="?attr/colorOnSurfaceVariant"
             app:navigationIconTint="?attr/colorOnSurfaceVariant"
             app:subtitleTextColor="?attr/colorOnSurfaceVariant"
@@ -56,7 +57,7 @@
         android:layout_height="wrap_content"
         app:barrierAllowsGoneWidgets="true"
         app:barrierDirection="top"
-        app:constraint_referenced_ids="miniPlayer,bottomNav" />
+        app:constraint_referenced_ids="miniPlayer,bottomNavContainer" />
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/miniPlayer"
@@ -70,27 +71,30 @@
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/surface"
+        app:cardBackgroundColor="?attr/surfaceColor"
         app:cardElevation="0dp"
-        app:layout_constraintBottom_toTopOf="@id/bottomNav"
+        app:layout_constraintBottom_toTopOf="@id/bottomNavContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:strokeColor="@color/divider"
+        app:strokeColor="?attr/dividerColor"
         app:strokeWidth="1dp">
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="@dimen/spacing_sm">
+            android:paddingStart="@dimen/spacing_sm"
+            android:paddingTop="@dimen/spacing_s"
+            android:paddingEnd="@dimen/spacing_sm"
+            android:paddingBottom="@dimen/spacing_s">
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/coverContainer"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                app:cardBackgroundColor="@color/surface_alt"
-                app:cardCornerRadius="22dp"
+                app:cardBackgroundColor="?attr/surfaceColor"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/divider"
+                app:strokeColor="?attr/dividerColor"
                 app:strokeWidth="1dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -103,7 +107,7 @@
                     android:contentDescription="@string/current_playing_title"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_music_note_24"
-                    android:tint="@color/brand_primary" />
+                    android:tint="?attr/brandPrimary" />
             </com.google.android.material.card.MaterialCardView>
 
             <TextView
@@ -114,9 +118,8 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="@string/current_playing_empty"
-                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-                android:textColor="@color/text_primary"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                android:textColor="?attr/textPrimary"
                 app:layout_constraintEnd_toStartOf="@id/miniPlayPauseContainer"
                 app:layout_constraintStart_toEndOf="@id/coverContainer"
                 app:layout_constraintBottom_toBottomOf="@id/coverContainer"
@@ -124,8 +127,8 @@
 
             <FrameLayout
                 android:id="@+id/miniPlayPauseContainer"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 app:layout_constraintBottom_toBottomOf="@id/coverContainer"
                 android:layout_marginEnd="@dimen/spacing_xs"
                 app:layout_constraintEnd_toStartOf="@id/btnMiniQueue"
@@ -139,10 +142,10 @@
                     android:focusable="false"
                     android:indeterminate="false"
                     android:importantForAccessibility="no"
-                    app:indicatorColor="@color/brand_primary_dark"
+                    app:indicatorColor="?attr/brandPrimary"
                     app:indicatorInset="0dp"
-                    app:indicatorSize="40dp"
-                    app:trackColor="@color/brand_primary_light"
+                    app:indicatorSize="36dp"
+                    app:trackColor="?attr/colorOutline"
                     app:trackThickness="2dp" />
 
                 <ImageButton
@@ -152,20 +155,20 @@
                     android:layout_gravity="center"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/content_desc_play_pause"
-                    android:padding="@dimen/spacing_s"
+                    android:padding="6dp"
                     android:src="@drawable/ic_pause_24"
-                    android:tint="@color/text_primary" />
+                    android:tint="?attr/textPrimary" />
             </FrameLayout>
 
             <ImageButton
                 android:id="@+id/btnMiniQueue"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/content_desc_queue"
-                android:padding="@dimen/spacing_s"
+                android:padding="6dp"
                 android:src="@drawable/ic_queue_24"
-                android:tint="@color/text_primary"
+                android:tint="?attr/textPrimary"
                 app:layout_constraintBottom_toBottomOf="@id/coverContainer"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="@id/coverContainer" />
@@ -173,24 +176,29 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottomNav"
-        style="@style/Widget.Material3.BottomNavigationView"
+    <FrameLayout
+        android:id="@+id/bottomNavContainer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/spacing_m"
-        android:layout_marginEnd="@dimen/spacing_m"
-        android:layout_marginBottom="@dimen/spacing_m"
-        android:background="@drawable/bg_floating_nav"
-        android:elevation="6dp"
-        android:paddingHorizontal="@dimen/spacing_s"
-        android:paddingTop="@dimen/spacing_s"
-        app:labelVisibilityMode="labeled"
-        app:itemIconTint="@color/navigation_item_color"
-        app:itemTextColor="@color/navigation_item_color"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:menu="@menu/bottom_nav" />
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottomNav"
+            style="@style/Widget.Material3.BottomNavigationView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:background="@drawable/bg_floating_nav"
+            android:elevation="0dp"
+            android:paddingHorizontal="@dimen/spacing_m"
+            app:labelVisibilityMode="labeled"
+            app:itemIconTint="@color/navigation_item_color"
+            app:itemTextColor="@color/navigation_item_color"
+            app:menu="@menu/bottom_nav" />
+
+    </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

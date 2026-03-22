@@ -16,6 +16,7 @@ import com.music.player.data.model.Song
 import com.music.player.databinding.BottomSheetQueueBinding
 import com.music.player.databinding.ItemQueueSongBinding
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
+import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.MusicViewModel
 
 class QueueBottomSheetFragment : BottomSheetDialogFragment() {
@@ -160,16 +161,16 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
             ) {
                 val isPlaying = currentSongId != null && currentSongId == song.id
                 binding.ivPlaying.visibility = if (isPlaying) View.VISIBLE else View.GONE
-                binding.root.setBackgroundColor(
-                    binding.root.context.getColor(if (isPlaying) R.color.surface_alt else android.R.color.transparent)
+                binding.root.setBackgroundResource(
+                    if (isPlaying) R.drawable.bg_queue_item_active else R.drawable.bg_queue_item
                 )
                 binding.tvSong.text = song.name
                 binding.tvArtist.text = song.artists.joinToString(", ") { it.name }
 
                 val context = binding.root.context
-                val playingColor = context.getColor(android.R.color.holo_red_light)
-                val songColor = context.getColor(R.color.text_primary)
-                val artistColor = context.getColor(R.color.text_secondary)
+                val playingColor = context.resolveThemeColor(R.attr.brandPrimary)
+                val songColor = context.resolveThemeColor(R.attr.textPrimary)
+                val artistColor = context.resolveThemeColor(R.attr.textSecondary)
                 binding.tvSong.setTextColor(if (isPlaying) playingColor else songColor)
                 binding.tvArtist.setTextColor(if (isPlaying) playingColor else artistColor)
                 binding.tvDot.setTextColor(if (isPlaying) playingColor else artistColor)

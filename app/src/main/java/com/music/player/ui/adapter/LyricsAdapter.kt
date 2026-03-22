@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.music.player.R
 import com.music.player.data.model.LyricLine
 import com.music.player.databinding.ItemLyricLineBinding
+import com.music.player.ui.util.resolveThemeColor
 
 class LyricsAdapter : RecyclerView.Adapter<LyricsAdapter.LyricViewHolder>() {
 
@@ -47,7 +48,7 @@ class LyricsAdapter : RecyclerView.Adapter<LyricsAdapter.LyricViewHolder>() {
             binding.tvLine.text = line.text
             val context = binding.root.context
             binding.tvLine.setTextColor(
-                context.getColor(if (isActive) R.color.brand_primary_dark else R.color.text_secondary)
+                context.resolveThemeColor(if (isActive) R.attr.brandPrimaryDark else R.attr.textSecondary)
             )
             binding.tvLine.alpha = if (isActive) 1f else 0.5f
             binding.tvLine.setTypeface(binding.tvLine.typeface, if (isActive) Typeface.BOLD else Typeface.NORMAL)

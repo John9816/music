@@ -179,4 +179,6 @@
     <string name="update_install_permission_required">请允许当前应用安装更新包</string>
     <string name="update_install_permission_denied">未授予安装权限，无法继续更新</string>
     <string name="update_install_failed">无法打开安装界面</string>
+    <string name="settings_audio_quality">首选音质 level</string>
+    <string name="settings_audio_quality_dialog_title">选择首选音质</string>
 </resources>

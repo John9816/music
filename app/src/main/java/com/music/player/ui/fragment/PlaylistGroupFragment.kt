@@ -60,6 +60,7 @@ class PlaylistGroupFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         listViewModel = ViewModelProvider(this)[PlaylistCategoryAllViewModel::class.java]
+        binding.tvPlaylistPageTitle.text = groupTitle.ifBlank { getString(R.string.nav_playlists) }
 
         categoryAdapter = PlaylistCategoryChipAdapter { category ->
             if (category.apiName.isBlank()) return@PlaylistCategoryChipAdapter
@@ -112,7 +113,9 @@ class PlaylistGroupFragment : Fragment() {
 
         listViewModel.playlists.observe(viewLifecycleOwner) { playlists ->
             playlistAdapter.submitList(playlists)
-            binding.tvEmpty.visibility = if (playlists.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = playlists.isEmpty()
+            binding.tvEmpty.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
 
         listViewModel.isLoading.observe(viewLifecycleOwner) { loading ->

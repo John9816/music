@@ -1,5 +1,6 @@
 package com.music.player.ui.adapter
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -8,6 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.music.player.R
 import com.music.player.data.model.PlaylistCategory
 import com.music.player.databinding.ItemPlaylistCategoryChipBinding
+import com.music.player.ui.util.resolveThemeColor
 
 class PlaylistCategoryChipAdapter(
     private val onClick: (PlaylistCategory) -> Unit
@@ -40,8 +42,15 @@ class PlaylistCategoryChipAdapter(
         fun bind(item: PlaylistCategory, selectedApiName: String?) {
             binding.tvName.text = item.name
             val selected = selectedApiName == item.apiName
-            binding.root.strokeColor = binding.root.context.getColor(
-                if (selected) R.color.brand_primary else R.color.divider
+            val context = binding.root.context
+            binding.root.strokeColor = binding.root.context.resolveThemeColor(
+                if (selected) R.attr.brandPrimary else R.attr.dividerColor
+            )
+            binding.root.setCardBackgroundColor(
+                if (selected) context.resolveThemeColor(R.attr.brandPrimaryLight) else Color.TRANSPARENT
+            )
+            binding.tvName.setTextColor(
+                context.resolveThemeColor(if (selected) R.attr.brandPrimaryDark else R.attr.textSecondary)
             )
             binding.root.setOnClickListener { onClick(item) }
         }
@@ -57,4 +66,3 @@ class PlaylistCategoryChipAdapter(
         }
     }
 }
-

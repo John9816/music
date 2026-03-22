@@ -12,7 +12,9 @@ import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
 class MusicViewModel : ViewModel() {
 
@@ -110,53 +112,103 @@ class MusicViewModel : ViewModel() {
         viewModelScope.launch { PlaybackCoordinator.error.collect { _error.value = it } }
     }
 
-    fun loadDailyRecommend() {
+    fun prefetchDiscover(limit: Int = 10, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.getDailyRecommend()
+            _weeklyHotLoading.value = true
+            try {
+                supervisorScope {
+                    val dailyDeferred = async { repository.getDailyRecommend(forceRefresh = forceRefresh) }
+                    val weeklyDeferred = async {
+                        repository.getWeeklyHotNewSongs(
+                            limit = limit,
+                            device = "mobile",
+                            forceRefresh = forceRefresh
+                        )
+                    }
+                    val newestDeferred = async { albumRepository.getNewestAlbums(forceRefresh = forceRefresh) }
+
+                    dailyDeferred.await()
+                        .onSuccess { _dailyRecommend.value = it }
+                        .onFailure { _error.value = it.message ?: "获取每日推荐失败" }
+
+                    weeklyDeferred.await()
+                        .onSuccess { _weeklyHotSongs.value = it }
+                        .onFailure { _error.value = it.message ?: "获取本周热门失败" }
+
+                    newestDeferred.await()
+                        .onSuccess { _newestAlbums.value = it }
+                        .onFailure { _error.value = it.message ?: "获取最新专辑失败" }
+                }
+            } finally {
+                _isLoading.value = false
+                _weeklyHotLoading.value = false
+            }
+        }
+    }
+
+    fun loadDailyRecommend(forceRefresh: Boolean = false) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            repository.getDailyRecommend(forceRefresh = forceRefresh)
                 .onSuccess { _dailyRecommend.value = it }
                 .onFailure { _error.value = it.message ?: "获取每日推荐失败" }
             _isLoading.value = false
         }
     }
 
-    fun loadWeeklyHotSongs(limit: Int = 10) {
+    fun loadWeeklyHotSongs(limit: Int = 10, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _weeklyHotLoading.value = true
-            repository.getWeeklyHotNewSongs(limit = limit)
+            repository.getWeeklyHotNewSongs(
+                limit = limit,
+                device = "mobile",
+                forceRefresh = forceRefresh
+            )
                 .onSuccess { _weeklyHotSongs.value = it }
-                .onFailure { _error.value = it.message ?: "获取本周最热失败" }
+                .onFailure { _error.value = it.message ?: "获取本周热门失败" }
             _weeklyHotLoading.value = false
         }
     }
 
-    fun loadNewestAlbums() {
+    fun loadNewestAlbums(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            albumRepository.getNewestAlbums()
+            albumRepository.getNewestAlbums(forceRefresh = forceRefresh)
                 .onSuccess { _newestAlbums.value = it }
                 .onFailure { _error.value = it.message ?: "获取最新专辑失败" }
         }
     }
 
-    fun loadTopLists() {
+    fun loadTopLists(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            repository.getTopLists()
+            repository.getTopLists(forceRefresh = forceRefresh)
                 .onSuccess { _topLists.value = it }
                 .onFailure { _error.value = it.message ?: "获取榜单失败" }
         }
     }
 
-    fun loadTopPlaylists(category: String? = "", limit: Int = 42, offset: Int = 0) {
+    fun loadTopPlaylists(
+        category: String? = "",
+        limit: Int = 42,
+        offset: Int = 0,
+        forceRefresh: Boolean = false
+    ) {
         viewModelScope.launch {
-            repository.getTopPlaylists(category = category, limit = limit, offset = offset)
+            repository.getTopPlaylists(
+                category = category,
+                limit = limit,
+                offset = offset,
+                device = "mobile",
+                forceRefresh = forceRefresh
+            )
                 .onSuccess { _topPlaylists.value = it }
                 .onFailure { _error.value = it.message ?: "获取歌单失败" }
         }
     }
 
-    fun loadPlaylistCategories(device: String = "mobile") {
+    fun loadPlaylistCategories(device: String = "mobile", forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            repository.getPlaylistCategories(device = device)
+            repository.getPlaylistCategories(device = device, forceRefresh = forceRefresh)
                 .onSuccess { catalog ->
                     _playlistCategories.value = listOf(PlaylistCategory.All) + catalog.categories
                 }
@@ -164,45 +216,54 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    fun loadSectionPlaylists(categoriesByGroupId: Map<Int, String>, limit: Int = 12) {
+    fun loadSectionPlaylists(
+        categoriesByGroupId: Map<Int, String>,
+        limit: Int = 12,
+        forceRefresh: Boolean = false
+    ) {
         viewModelScope.launch {
-            // no-op: use per-section loading states
             try {
-                categoriesByGroupId[0]?.let { cat ->
-                    repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
-                        .onSuccess { _languagePlaylists.value = it }
-                        .onFailure { _error.value = it.message ?: "获取语种歌单失败" }
-                }
-                categoriesByGroupId[1]?.let { cat ->
-                    repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
-                        .onSuccess { _stylePlaylists.value = it }
-                        .onFailure { _error.value = it.message ?: "获取风格歌单失败" }
-                }
-                categoriesByGroupId[2]?.let { cat ->
-                    repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
-                        .onSuccess { _scenePlaylists.value = it }
-                        .onFailure { _error.value = it.message ?: "获取场景歌单失败" }
-                }
-                categoriesByGroupId[3]?.let { cat ->
-                    repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
-                        .onSuccess { _emotionPlaylists.value = it }
-                        .onFailure { _error.value = it.message ?: "获取情绪歌单失败" }
-                }
-                categoriesByGroupId[4]?.let { cat ->
-                    repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
-                        .onSuccess { _themePlaylists.value = it }
-                        .onFailure { _error.value = it.message ?: "获取主题歌单失败" }
+                setAllGroupLoading(true)
+                supervisorScope {
+                    val tasks = categoriesByGroupId
+                        .filterValues { it.isNotBlank() }
+                        .map { (groupId, category) ->
+                            async {
+                                groupId to repository.getTopPlaylists(
+                                    category = category,
+                                    limit = limit,
+                                    offset = 0,
+                                    device = "mobile",
+                                    forceRefresh = forceRefresh
+                                )
+                            }
+                        }
+
+                    tasks.forEach { deferred ->
+                        val (groupId, result) = deferred.await()
+                        result
+                            .onSuccess { playlists ->
+                                when (groupId) {
+                                    0 -> _languagePlaylists.value = playlists
+                                    1 -> _stylePlaylists.value = playlists
+                                    2 -> _scenePlaylists.value = playlists
+                                    3 -> _emotionPlaylists.value = playlists
+                                    4 -> _themePlaylists.value = playlists
+                                }
+                            }
+                            .onFailure { _error.value = it.message ?: "获取歌单失败" }
+                    }
                 }
             } finally {
-                // no-op: use per-section loading states
+                setAllGroupLoading(false)
             }
         }
     }
 
-    fun loadPlaylistDetail(playlist: Playlist) {
+    fun loadPlaylistDetail(playlist: Playlist, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.getPlaylistDetail(playlist.id)
+            repository.getPlaylistDetail(playlist.id, forceRefresh = forceRefresh)
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs
@@ -212,10 +273,10 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    fun loadPlaylistDetailById(playlistId: String) {
+    fun loadPlaylistDetailById(playlistId: String, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.getPlaylistDetail(playlistId)
+            repository.getPlaylistDetail(playlistId, forceRefresh = forceRefresh)
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs
@@ -225,14 +286,25 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    fun loadGroupPlaylists(groupId: Int, category: String, limit: Int = 12) {
+    fun loadGroupPlaylists(
+        groupId: Int,
+        category: String,
+        limit: Int = 12,
+        forceRefresh: Boolean = false
+    ) {
         val cat = category.trim()
         if (cat.isBlank()) return
 
         viewModelScope.launch {
             setGroupLoading(groupId, true)
             try {
-                repository.getTopPlaylists(category = cat, limit = limit, offset = 0)
+                repository.getTopPlaylists(
+                    category = cat,
+                    limit = limit,
+                    offset = 0,
+                    device = "mobile",
+                    forceRefresh = forceRefresh
+                )
                     .onSuccess { playlists ->
                         when (groupId) {
                             0 -> _languagePlaylists.value = playlists
@@ -247,6 +319,14 @@ class MusicViewModel : ViewModel() {
                 setGroupLoading(groupId, false)
             }
         }
+    }
+
+    private fun setAllGroupLoading(loading: Boolean) {
+        _languageLoading.value = loading
+        _styleLoading.value = loading
+        _sceneLoading.value = loading
+        _emotionLoading.value = loading
+        _themeLoading.value = loading
     }
 
     private fun setGroupLoading(groupId: Int, loading: Boolean) {
@@ -290,6 +370,10 @@ class MusicViewModel : ViewModel() {
             }
             onResult(repository.getSongUrl(song.id))
         }
+    }
+
+    fun reloadCurrentSongForAudioQualityChange() {
+        PlaybackCoordinator.reloadCurrentSongForAudioQualityChange()
     }
 
     fun skipNext(): Boolean = PlaybackCoordinator.skipNext()

@@ -9,7 +9,10 @@ import androidx.lifecycle.viewModelScope
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.data.repository.SupabaseMusicRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -23,6 +26,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val pinnedHistoryOrder = mutableListOf<String>().apply {
         addAll(loadPinnedHistory())
     }
+
+    private var prefetchJob: Job? = null
+    private var lastPrefetchAtMs: Long = 0L
 
     private val _favorites = MutableLiveData<List<Song>>(emptyList())
     val favorites: LiveData<List<Song>> = _favorites
@@ -56,11 +62,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (songId.isBlank()) return
         if (pinnedFavoritesOrder.contains(songId)) {
             pinnedFavoritesOrder.removeAll { it == songId }
-            _message.value = "已取消置顶"
+            _message.value = "已取消置顶收藏"
         } else {
             pinnedFavoritesOrder.removeAll { it == songId }
             pinnedFavoritesOrder.add(0, songId)
-            _message.value = "已置顶"
+            _message.value = "已置顶收藏"
         }
         persistPinnedFavorites(pinnedFavoritesOrder)
         _favorites.value = applyPinnedFavoritesOrder(_favorites.value.orEmpty())
@@ -70,29 +76,55 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (songId.isBlank()) return
         if (pinnedHistoryOrder.contains(songId)) {
             pinnedHistoryOrder.removeAll { it == songId }
-            _message.value = "已取消置顶"
+            _message.value = "已取消置顶历史"
         } else {
             pinnedHistoryOrder.removeAll { it == songId }
             pinnedHistoryOrder.add(0, songId)
-            _message.value = "已置顶"
+            _message.value = "已置顶历史"
         }
         persistPinnedHistory(pinnedHistoryOrder)
         _history.value = applyPinnedHistoryOrder(_history.value.orEmpty())
     }
 
-    fun prefetch() {
-        refreshFavorites(silent = true)
-        refreshHistory(silent = true)
+    fun prefetch(forceRefresh: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val hasSnapshot = _favorites.value.orEmpty().isNotEmpty() || _history.value.orEmpty().isNotEmpty()
+        if (!forceRefresh) {
+            if (prefetchJob?.isActive == true) return
+            if (hasSnapshot && now - lastPrefetchAtMs < PREFETCH_COOLDOWN_MS) return
+        }
+
+        prefetchJob = viewModelScope.launch {
+            _isLoading.value = true
+            lastPrefetchAtMs = System.currentTimeMillis()
+            try {
+                supervisorScope {
+                    val bootstrapDeferred = async { repository.fetchLibraryBootstrap(forceRefresh = forceRefresh) }
+
+                    bootstrapDeferred.await()
+                        .onSuccess { payload ->
+                            _favorites.value = applyPinnedFavoritesOrder(payload.favorites)
+                            _favoriteIds.value = payload.favorites.mapTo(mutableSetOf()) { it.id }
+                            _latestHistorySong.value = payload.history.firstOrNull()
+                            _history.value = applyPinnedHistoryOrder(payload.history)
+                            _playlists.value = payload.playlists
+                        }
+                        .onFailure { _message.value = it.message ?: "获取音乐库失败" }
+                }
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
-    fun refreshFavorites(silent: Boolean = false) {
+    fun refreshFavorites(silent: Boolean = false, forceRefresh: Boolean = true) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.listFavorites()
+            repository.listFavorites(forceRefresh = forceRefresh)
                 .onSuccess { songs ->
                     _favorites.value = applyPinnedFavoritesOrder(songs)
                     _favoriteIds.value = songs.mapTo(mutableSetOf()) { it.id }
-                    if (!silent) _message.value = "已同步云端收藏"
+                    if (!silent) _message.value = "收藏已同步"
                 }
                 .onFailure { _message.value = it.message ?: "获取收藏失败" }
             _isLoading.value = false
@@ -122,7 +154,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
                     _favorites.value = applyPinnedFavoritesOrder(updated)
                 }
-                .onFailure { _message.value = it.message ?: if (favorite) "收藏失败" else "取消收藏失败" }
+                .onFailure {
+                    _message.value = it.message ?: if (favorite) "收藏失败" else "取消收藏失败"
+                }
             _isLoading.value = false
         }
     }
@@ -133,13 +167,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun refreshHistory(silent: Boolean = false) {
+    fun refreshHistory(silent: Boolean = false, forceRefresh: Boolean = true) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.listPlayHistory()
-                .onSuccess {
-                    _latestHistorySong.value = it.firstOrNull()
-                    _history.value = applyPinnedHistoryOrder(it)
+            repository.listPlayHistory(forceRefresh = forceRefresh)
+                .onSuccess { songs ->
+                    _latestHistorySong.value = songs.firstOrNull()
+                    _history.value = applyPinnedHistoryOrder(songs)
+                    if (!silent) _message.value = "播放历史已同步"
                 }
                 .onFailure { _message.value = it.message ?: "获取播放历史失败" }
             _isLoading.value = false
@@ -160,7 +195,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 .onSuccess { _message.value = "已删除播放记录" }
                 .onFailure { t ->
                     _message.value = t.message ?: "删除播放记录失败"
-                    refreshHistory()
+                    refreshHistory(forceRefresh = true)
                 }
         }
     }
@@ -178,9 +213,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun refreshPlaylists(silent: Boolean = false) {
-        // “获取我的歌单”接口已移除：保持本地会话内状态。
-        if (!silent) _message.value = "已停用云端歌单同步"
+    fun refreshPlaylists(silent: Boolean = false, forceRefresh: Boolean = true) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            repository.listUserPlaylists(forceRefresh = forceRefresh)
+                .onSuccess { playlists ->
+                    _playlists.value = playlists
+                    if (!silent) _message.value = "歌单已同步"
+                }
+                .onFailure { _message.value = it.message ?: "获取歌单失败" }
+            _isLoading.value = false
+        }
     }
 
     fun createPlaylist(name: String, description: String?) {
@@ -210,10 +253,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun loadPlaylistSongs(playlistId: String) {
+    fun loadPlaylistSongs(playlistId: String, forceRefresh: Boolean = true) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.listPlaylistSongs(playlistId)
+            repository.listPlaylistSongs(playlistId, forceRefresh = forceRefresh)
                 .onSuccess { _playlistSongs.value = it }
                 .onFailure { _message.value = it.message ?: "获取歌单歌曲失败" }
             _isLoading.value = false
@@ -298,5 +341,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private companion object {
         private const val KEY_PINNED_FAVORITES = "pinned_favorites_order"
         private const val KEY_PINNED_HISTORY = "pinned_history_order"
+        private const val PREFETCH_COOLDOWN_MS = 15 * 1000L
     }
 }

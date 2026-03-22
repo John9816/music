@@ -15,9 +15,9 @@ import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
-import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
+import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
@@ -25,9 +25,9 @@ import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.UpdateState
 import com.music.player.ui.viewmodel.UpdateViewModel
+import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
-import com.music.player.update.showAppUpdateDialog
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -43,12 +43,18 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
     private lateinit var insetsController: WindowInsetsControllerCompat
     private var currentUser: UserProfile? = null
+    private var shouldRecreateMain: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.applySavedNightMode(this)
+        ThemeManager.prepareActivity(this)
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        shouldRecreateMain = savedInstanceState?.getBoolean(EXTRA_SHOULD_RECREATE_MAIN)
+            ?: intent.getBooleanExtra(EXTRA_SHOULD_RECREATE_MAIN, false)
+        if (shouldRecreateMain) {
+            markMainNeedsRecreate()
+        }
 
         val isNightMode =
             (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
@@ -76,28 +82,29 @@ class SettingsActivity : AppCompatActivity() {
         authViewModel.refreshProfile()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::insetsController.isInitialized) {
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     private fun setupUi() {
         binding.toolbar.setNavigationOnClickListener { finish() }
-        binding.toolbar.inflateMenu(R.menu.toolbar_search)
-        binding.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_search_tab -> {
-                    openSongSearch()
-                    true
-                }
-                else -> false
-            }
-        }
 
         binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
         binding.btnCheckUpdate.setOnClickListener {
             updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = true)
         }
+        binding.btnNightMode.setOnClickListener { showNightModeDialog() }
         binding.btnTheme.setOnClickListener { showThemeDialog() }
+        binding.btnPlayerStyle.setOnClickListener { showPlayerStyleDialog() }
+        binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
         binding.btnLogout.setOnClickListener {
             authViewModel.signOut()
             navigateToLogin()
         }
+        refreshAppearanceSummaries()
     }
 
     private fun setupObservers() {
@@ -136,7 +143,8 @@ class SettingsActivity : AppCompatActivity() {
                         return@observe
                     }
 
-                    showAppUpdateDialog(
+                    AppUpdateDialogs.show(
+                        activity = this,
                         currentVersion = BuildConfig.VERSION_NAME,
                         currentBuildNumber = BuildConfig.VERSION_CODE,
                         latest = state.latest,
@@ -145,9 +153,9 @@ class SettingsActivity : AppCompatActivity() {
                             val url = state.latest.downloadUrl?.trim().orEmpty()
                             if (url.isBlank()) {
                                 Toast.makeText(this, getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
-                                return@showAppUpdateDialog
+                            } else {
+                                appUpdateInstaller.downloadAndInstall(url, state.latest.version)
                             }
-                            appUpdateInstaller.downloadAndInstall(url, state.latest.version)
                         },
                         onLater = {
                             appUpdatePreferences.markSkipped(state.latest.buildNumber)
@@ -192,6 +200,25 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showThemeDialog() {
+        val skins = ThemeManager.AppThemeSkin.entries.toList()
+        val items = skins.map { skin ->
+            "${getString(skin.titleResId)}\n${getString(skin.summaryResId)}"
+        }.toTypedArray()
+        val checked = skins.indexOf(ThemeManager.getAppThemeSkin(this)).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.theme_dialog_title)
+            .setSingleChoiceItems(items, checked) { dialog, which ->
+                ThemeManager.setAppThemeSkin(this, skins[which])
+                markMainNeedsRecreate()
+                dialog.dismiss()
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showNightModeDialog() {
         val items = arrayOf(
             getString(R.string.theme_follow_system),
             getString(R.string.theme_light),
@@ -206,20 +233,75 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.profile_theme)
+            .setTitle(R.string.night_mode_dialog_title)
             .setSingleChoiceItems(items, checked) { dialog, which ->
                 val mode = when (which) {
                     1 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
                     2 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
                     else -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
                 }
+                markMainNeedsRecreate()
                 ThemeManager.setNightMode(this, mode)
-                setResult(RESULT_OK, Intent().putExtra(EXTRA_SHOULD_RECREATE_MAIN, true))
                 dialog.dismiss()
-                finish()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun showPlayerStyleDialog() {
+        val styles = ThemeManager.PlayerStyle.entries.toList()
+        val items = styles.map { style ->
+            "${getString(style.titleResId)}\n${getString(style.summaryResId)}"
+        }.toTypedArray()
+        val checked = styles.indexOf(ThemeManager.getPlayerStyle(this)).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.player_style_dialog_title)
+            .setSingleChoiceItems(items, checked) { dialog, which ->
+                ThemeManager.setPlayerStyle(this, styles[which])
+                markMainNeedsRecreate()
+                refreshAppearanceSummaries()
+                Toast.makeText(this, getString(R.string.settings_restart_hint), Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showAudioQualityDialog() {
+        val levels = AudioQualityPreferences.Level.entries.toList()
+        val items = levels.map { it.displayName }.toTypedArray()
+        val checked = levels.indexOf(AudioQualityPreferences.getPreferredLevel(this)).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_audio_quality_dialog_title)
+            .setSingleChoiceItems(items, checked) { dialog, which ->
+                AudioQualityPreferences.setPreferredLevel(this, levels[which])
+                refreshAppearanceSummaries()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun refreshAppearanceSummaries() {
+        val themeSkin = ThemeManager.getAppThemeSkin(this)
+        val playerStyle = ThemeManager.getPlayerStyle(this)
+        val audioQualityLevel = AudioQualityPreferences.getPreferredLevel(this)
+        binding.tvThemeSummary.text = getString(themeSkin.summaryResId)
+        binding.tvPlayerStyleSummary.text = getString(playerStyle.summaryResId)
+        binding.tvAudioQualitySummary.text = audioQualityLevel.displayName
+        binding.tvNightModeSummary.text = when (ThemeManager.getNightMode(this)) {
+            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO -> getString(R.string.theme_light)
+            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES -> getString(R.string.theme_dark)
+            else -> getString(R.string.theme_follow_system)
+        }
+    }
+
+    private fun markMainNeedsRecreate() {
+        shouldRecreateMain = true
+        intent.putExtra(EXTRA_SHOULD_RECREATE_MAIN, true)
+        setResult(RESULT_OK, android.content.Intent().putExtra(EXTRA_SHOULD_RECREATE_MAIN, true))
     }
 
     private fun navigateToLogin() {
@@ -227,16 +309,6 @@ class SettingsActivity : AppCompatActivity() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
-    }
-
-    private fun openSongSearch() {
-        startActivity(
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(MainActivity.EXTRA_INITIAL_TAB_ID, R.id.nav_library)
-                putExtra(MainActivity.EXTRA_FOCUS_LIBRARY_SEARCH, true)
-            }
-        )
     }
 
     private fun showEditProfileDialog() {
@@ -279,6 +351,11 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(EXTRA_SHOULD_RECREATE_MAIN, shouldRecreateMain)
+        super.onSaveInstanceState(outState)
+    }
+
     private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
@@ -291,6 +368,9 @@ class SettingsActivity : AppCompatActivity() {
         return WindowInsetsControllerCompat(window, rootView).apply {
             isAppearanceLightStatusBars = lightSystemBars
             isAppearanceLightNavigationBars = lightSystemBars
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
         }
     }
 
@@ -309,7 +389,9 @@ class SettingsActivity : AppCompatActivity() {
         val initialTop = paddingTop
         val initialBottom = paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
             view.updatePadding(
                 top = initialTop + if (applyTop) bars.top else 0,
                 bottom = initialBottom + if (applyBottom) bars.bottom else 0

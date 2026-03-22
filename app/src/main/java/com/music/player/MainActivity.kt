@@ -1,23 +1,18 @@
 package com.music.player
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
-import android.view.Gravity
-import android.view.LayoutInflater
+import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
@@ -36,23 +31,26 @@ import com.bumptech.glide.Glide
 import com.music.player.databinding.ActivityMainBinding
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.activity.LoginActivity
-import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.fragment.DiscoverFragment
 import com.music.player.ui.fragment.LibraryFragment
 import com.music.player.ui.fragment.NowPlayingBottomSheetFragment
 import com.music.player.ui.fragment.PlaylistsFragment
 import com.music.player.ui.fragment.ProfileFragment
 import com.music.player.ui.fragment.QueueBottomSheetFragment
+import com.music.player.ui.fragment.RootTabInteraction
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.UpdateState
 import com.music.player.ui.viewmodel.UpdateViewModel
+import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
-import com.music.player.update.showAppUpdateDialog
 import com.music.player.ui.util.ImmersiveHeaderBackground
+import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.safeDrawingInsets
+import com.music.player.ui.util.resolveThemeColorStateList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
@@ -85,22 +83,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appUpdatePreferences: AppUpdatePreferences
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
     private lateinit var insetsController: WindowInsetsControllerCompat
-    private var discoverSearchView: View? = null
 
     private var suppressNavCallback = false
     private var currentTabId: Int = R.id.nav_discover
+    private var topSystemBarInset: Int = 0
     private var miniProgressJob: Job? = null
     private var miniCoverAnimator: ObjectAnimator? = null
     private var hasRestoredRecentSong = false
-
-    private val settingsLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val shouldRecreate = result.resultCode == Activity.RESULT_OK &&
-                result.data?.getBooleanExtra(SettingsActivity.EXTRA_SHOULD_RECREATE_MAIN, false) == true
-            if (shouldRecreate) {
-                recreate()
-            }
-        }
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -124,10 +113,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        ThemeManager.applySavedNightMode(this)
+        ThemeManager.prepareActivity(this)
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        PlayerUiStyler.applyMiniPlayer(binding, this)
 
         setupEdgeToEdge()
 
@@ -209,8 +199,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        PlayerUiStyler.applyMiniPlayer(binding, this)
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
         attachPlayerListener()
         startMiniProgressUpdates()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::insetsController.isInitialized) {
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     private fun attachPlayerListener() {
@@ -257,7 +256,8 @@ class MainActivity : AppCompatActivity() {
                         return@observe
                     }
 
-                    showAppUpdateDialog(
+                    AppUpdateDialogs.show(
+                        activity = this,
                         currentVersion = BuildConfig.VERSION_NAME,
                         currentBuildNumber = BuildConfig.VERSION_CODE,
                         latest = state.latest,
@@ -266,9 +266,9 @@ class MainActivity : AppCompatActivity() {
                             val url = state.latest.downloadUrl?.trim().orEmpty()
                             if (url.isBlank()) {
                                 Toast.makeText(this, getString(R.string.update_no_url), Toast.LENGTH_SHORT).show()
-                                return@showAppUpdateDialog
+                            } else {
+                                appUpdateInstaller.downloadAndInstall(url, state.latest.version)
                             }
-                            appUpdateInstaller.downloadAndInstall(url, state.latest.version)
                         },
                         onLater = {
                             appUpdatePreferences.markSkipped(state.latest.buildNumber)
@@ -299,22 +299,28 @@ class MainActivity : AppCompatActivity() {
         insetsController = WindowInsetsControllerCompat(window, binding.root).apply {
             isAppearanceLightStatusBars = !isNightMode()
             isAppearanceLightNavigationBars = !isNightMode()
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.safeDrawingInsets()
+            topSystemBarInset = bars.top
             view.updatePadding(top = bars.top)
+            binding.root.post { updateMainContentPadding() }
             insets
         }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = bars.bottom)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNavContainer) { view, insets ->
+            val bars = insets.safeDrawingInsets()
+            val floatingOffset = resources.getDimensionPixelSize(R.dimen.spacing_s)
+            view.updatePadding(bottom = (bars.bottom - floatingOffset).coerceAtLeast(0))
             insets
         }
         binding.toolbar.requestApplyInsets()
-        binding.bottomNav.requestApplyInsets()
+        binding.bottomNavContainer.requestApplyInsets()
         binding.root.doOnLayout { updateMainContentPadding() }
         binding.appBar.doOnLayout { updateMainContentPadding() }
-        binding.bottomNav.doOnLayout { updateMainContentPadding() }
+        binding.bottomNavContainer.doOnLayout { updateMainContentPadding() }
         binding.miniPlayer.doOnLayout { updateMainContentPadding() }
     }
 
@@ -337,6 +343,10 @@ class MainActivity : AppCompatActivity() {
             }
             true
         }
+        binding.bottomNav.setOnItemReselectedListener { item ->
+            val fragment = supportFragmentManager.findFragmentByTag(tagForTab(item.itemId))
+            (fragment as? RootTabInteraction)?.onTabReselected()
+        }
 
         val initialTab = if (savedInstanceState == null) {
             intent.getIntExtra(EXTRA_INITIAL_TAB_ID, R.id.nav_discover)
@@ -350,22 +360,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupTopAppBar() {
-        binding.toolbar.menu.clear()
-        binding.toolbar.inflateMenu(R.menu.top_app_bar)
-        binding.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_search_tab -> {
-                    openSongSearch()
-                    true
-                }
-                R.id.action_settings -> {
-                    settingsLauncher.launch(Intent(this, SettingsActivity::class.java))
-                    true
-                }
-                else -> false
-            }
-        }
-        ensureDiscoverSearchView()
         updateToolbar()
     }
 
@@ -378,13 +372,11 @@ class MainActivity : AppCompatActivity() {
         intent.removeExtra(EXTRA_INITIAL_TAB_ID)
     }
 
-    private fun openSongSearch() {
-        intent.putExtra(EXTRA_FOCUS_LIBRARY_SEARCH, true)
-        if (binding.bottomNav.selectedItemId != R.id.nav_library) {
-            binding.bottomNav.selectedItemId = R.id.nav_library
-        } else {
-            (supportFragmentManager.findFragmentByTag(TAG_LIBRARY) as? LibraryFragment)?.requestSearchFocus()
-        }
+    private fun tagForTab(tabId: Int): String = when (tabId) {
+        R.id.nav_library -> TAG_LIBRARY
+        R.id.nav_playlists -> TAG_PLAYLISTS
+        R.id.nav_profile -> TAG_PROFILE
+        else -> TAG_DISCOVER
     }
 
     private fun switchToTab(tabId: Int) {
@@ -405,12 +397,7 @@ class MainActivity : AppCompatActivity() {
             .filter { it.id == R.id.fragmentContainer }
             .forEach { transaction.hide(it) }
 
-        val tag = when (tabId) {
-            R.id.nav_library -> TAG_LIBRARY
-            R.id.nav_playlists -> TAG_PLAYLISTS
-            R.id.nav_profile -> TAG_PROFILE
-            else -> TAG_DISCOVER
-        }
+        val tag = tagForTab(tabId)
 
         val existing = fm.findFragmentByTag(tag)
         if (existing == null) {
@@ -470,50 +457,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun setBottomNavVisible(visible: Boolean) {
-        binding.bottomNav.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.bottomNavContainer.visibility = if (visible) View.VISIBLE else View.GONE
         binding.root.post { updateMainContentPadding() }
     }
 
     private fun updateToolbar() {
-        // Keep the top bar minimal and consistent (like the lyrics page).
         binding.toolbar.title = ""
         binding.toolbar.subtitle = null
         updateToolbarForVisiblePage(showBack = binding.toolbar.navigationIcon != null)
     }
 
-    private fun ensureDiscoverSearchView() {
-        if (discoverSearchView != null) return
-        val searchView = LayoutInflater.from(this)
-            .inflate(R.layout.view_discover_toolbar_search, binding.toolbar, false)
-        val reservedActionWidth =
-            resources.getDimensionPixelSize(R.dimen.control_height_l) +
-                resources.getDimensionPixelSize(R.dimen.spacing_s)
-        searchView.layoutParams = Toolbar.LayoutParams(
-            Toolbar.LayoutParams.MATCH_PARENT,
-            Toolbar.LayoutParams.WRAP_CONTENT,
-            Gravity.START or Gravity.CENTER_VERTICAL
-        ).apply {
-            marginEnd = reservedActionWidth
-        }
-        searchView.findViewById<View>(R.id.cardDiscoverSearch).setOnClickListener {
-            openSongSearch()
-        }
-        discoverSearchView = searchView
-    }
-
     private fun updateToolbarForVisiblePage(showBack: Boolean) {
-        val isDiscoverRoot = currentTabId == R.id.nav_discover && !showBack
-        val searchMenuItem = binding.toolbar.menu.findItem(R.id.action_search_tab)
-        searchMenuItem?.isVisible = !isDiscoverRoot
-
-        val existingSearchView = discoverSearchView
-        if (isDiscoverRoot) {
-            if (existingSearchView != null && existingSearchView.parent == null) {
-                binding.toolbar.addView(existingSearchView, 0)
-            }
-        } else if (existingSearchView?.parent === binding.toolbar) {
-            binding.toolbar.removeView(existingSearchView)
-        }
+        binding.appBar.visibility = if (showBack) View.VISIBLE else View.GONE
+        binding.root.post { updateMainContentPadding() }
     }
 
     private fun setupObservers() {
@@ -537,9 +493,7 @@ class MainActivity : AppCompatActivity() {
             val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
             if (coverUrl == null) {
                 binding.ivMiniCover.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivMiniCover.imageTintList = android.content.res.ColorStateList.valueOf(
-                    getColor(R.color.brand_primary)
-                )
+                binding.ivMiniCover.imageTintList = resolveThemeColorStateList(R.attr.brandPrimary)
             } else {
                 binding.ivMiniCover.imageTintList = null
                 Glide.with(this)
@@ -684,12 +638,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMainContentPadding() {
-        val topInset = binding.appBar.bottom.coerceAtLeast(0)
+        val topInset = if (isRootTabVisible()) {
+            topSystemBarInset + resources.getDimensionPixelSize(R.dimen.immersive_root_content_top_offset)
+        } else {
+            binding.appBar.bottom.coerceAtLeast(0)
+        }
         val bottomInset = (binding.root.height - binding.bottomContentBarrier.top).coerceAtLeast(0)
         binding.fragmentContainer.updatePadding(
             top = topInset,
             bottom = bottomInset
         )
+    }
+
+    private fun isRootTabVisible(): Boolean {
+        val top = supportFragmentManager.fragments
+            .lastOrNull { it.id == R.id.fragmentContainer && it.isVisible }
+        return when (top) {
+            is DiscoverFragment, is LibraryFragment, is PlaylistsFragment, is ProfileFragment -> true
+            else -> false
+        }
     }
 
     override fun onStop() {
@@ -723,6 +690,9 @@ class MainActivity : AppCompatActivity() {
         return WindowInsetsControllerCompat(window, rootView).apply {
             isAppearanceLightStatusBars = lightSystemBars
             isAppearanceLightNavigationBars = lightSystemBars
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
         }
     }
 
@@ -741,7 +711,7 @@ class MainActivity : AppCompatActivity() {
         val initialTop = paddingTop
         val initialBottom = paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.safeDrawingInsets()
             view.updatePadding(
                 top = initialTop + if (applyTop) bars.top else 0,
                 bottom = initialBottom + if (applyBottom) bars.bottom else 0
