@@ -91,116 +91,46 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEditProfile"
-                style="@style/Widget.MusicPlayer.Button.Outlined"
+                style="@style/Widget.MusicPlayer.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
-                android:layout_marginTop="@dimen/spacing_s"
+                android:layout_height="@dimen/control_height_l"
+                android:layout_marginTop="@dimen/spacing_m"
                 android:text="@string/profile_edit_button"
                 android:textAllCaps="false"
                 android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
+                android:textStyle="bold" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCheckUpdate"
                 style="@style/Widget.MusicPlayer.Button.Outlined"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
+                android:layout_height="@dimen/control_height_l"
                 android:layout_marginTop="@dimen/spacing_s"
                 android:text="@string/profile_check_update"
                 android:textAllCaps="false"
                 android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnNightMode"
-                style="@style/Widget.MusicPlayer.Button.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
-                android:layout_marginTop="@dimen/spacing_s"
-                android:text="@string/settings_night_mode"
-                android:textAllCaps="false"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
-
-            <TextView
-                android:id="@+id/tvNightModeSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
-                android:textColor="?attr/textSecondary"
-                android:textSize="13sp" />
+                android:textStyle="bold" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnTheme"
                 style="@style/Widget.MusicPlayer.Button.Outlined"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
+                android:layout_height="@dimen/control_height_l"
                 android:layout_marginTop="@dimen/spacing_s"
-                android:text="@string/settings_color_theme"
+                android:text="@string/profile_theme"
                 android:textAllCaps="false"
                 android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
-
-            <TextView
-                android:id="@+id/tvThemeSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
-                android:textColor="?attr/textSecondary"
-                android:textSize="13sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPlayerStyle"
-                style="@style/Widget.MusicPlayer.Button.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
-                android:layout_marginTop="@dimen/spacing_s"
-                android:text="@string/settings_player_style"
-                android:textAllCaps="false"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
-
-            <TextView
-                android:id="@+id/tvPlayerStyleSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
-                android:textColor="?attr/textSecondary"
-                android:textSize="13sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAudioQuality"
-                style="@style/Widget.MusicPlayer.Button.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
-                android:layout_marginTop="@dimen/spacing_s"
-                android:text="@string/settings_audio_quality"
-                android:textAllCaps="false"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/brandPrimary" />
-
-            <TextView
-                android:id="@+id/tvAudioQualitySummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xs"
-                android:textColor="?attr/textSecondary"
-                android:textSize="13sp" />
+                android:textStyle="bold" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLogout"
                 style="@style/Widget.MusicPlayer.Button.Outlined"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_m"
+                android:layout_height="@dimen/control_height_l"
                 android:layout_marginTop="@dimen/spacing_s"
                 android:text="@string/profile_logout"
                 android:textAllCaps="false"
+                android:textColor="?attr/dangerColor"
                 android:textSize="15sp"
                 android:textStyle="bold"
                 app:strokeColor="?attr/dangerColor" />

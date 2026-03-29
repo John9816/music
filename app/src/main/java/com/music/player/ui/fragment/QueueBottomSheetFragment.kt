@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.music.player.R
 import com.music.player.data.model.Song
@@ -64,6 +65,18 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Set peek height to half screen
+        dialog?.let { dlg ->
+            val sheet = dlg.findViewById<android.widget.FrameLayout>(com.google.android.material.R.id.design_bottom_sheet)
+            if (sheet != null) {
+                val behavior = BottomSheetBehavior.from(sheet)
+                val peekH = resources.displayMetrics.heightPixels / 2
+                behavior.peekHeight = peekH
+                behavior.state = BottomSheetBehavior.STATE_COLLAPSED
+            }
+        }
+
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())

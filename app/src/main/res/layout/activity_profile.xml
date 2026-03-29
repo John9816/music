@@ -69,7 +69,9 @@
                         android:layout_height="88dp"
                         app:cardBackgroundColor="?attr/brandPrimaryLight"
                         app:cardCornerRadius="44dp"
-                        app:cardElevation="0dp">
+                        app:cardElevation="0dp"
+                        app:strokeColor="?attr/glassStrokeSoft"
+                        app:strokeWidth="1dp">
 
                         <ImageView
                             android:id="@+id/ivAvatar"

@@ -11,7 +11,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -309,65 +308,39 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         val favoriteIds = libraryViewModel.favoriteIds.value.orEmpty()
         val isFavorite = favoriteIds.contains(song.id)
 
-        val items = mutableListOf<String>()
-        val actions = mutableListOf<() -> Unit>()
-
-        items += getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
-        actions += { libraryViewModel.setFavorite(song, !isFavorite) }
-
-        items += getString(R.string.action_add_to_playlist)
-        actions += { showAddToPlaylistDialog(song) }
-
-        items += getString(R.string.action_play_next)
-        actions += {
+        val options = mutableListOf<SongOption>()
+        options += SongOption(getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)) {
+            libraryViewModel.setFavorite(song, !isFavorite)
+        }
+        options += SongOption(getString(R.string.action_add_to_playlist)) {
+            showAddToPlaylistDialog(song)
+        }
+        options += SongOption(getString(R.string.action_play_next)) {
             musicViewModel.enqueueNext(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
         }
-
-        items += getString(R.string.action_add_to_queue)
-        actions += {
+        options += SongOption(getString(R.string.action_add_to_queue)) {
             musicViewModel.enqueue(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
         }
 
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(song.name)
-            .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
-            .show()
+        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
     }
 
     private fun showDailyRecommendMenu(anchor: View, song: Song) {
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
-        val popup = PopupMenu(requireContext(), anchor).apply {
-            menuInflater.inflate(R.menu.song_discover_more_menu, menu)
+        val options = mutableListOf<SongOption>()
+        options += SongOption(getString(if (isFavorite) R.string.action_unlike else R.string.action_like)) {
+            libraryViewModel.setFavorite(song, !isFavorite)
         }
-
-        popup.menu.findItem(R.id.action_like)?.title =
-            getString(if (isFavorite) R.string.action_unlike else R.string.action_like)
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_play_next -> {
-                    musicViewModel.enqueueNext(song)
-                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-                    true
-                }
-
-                R.id.action_like -> {
-                    libraryViewModel.setFavorite(song, !isFavorite)
-                    true
-                }
-
-                R.id.action_download_song -> {
-                    startSongDownload(song)
-                    true
-                }
-
-                else -> false
-            }
+        options += SongOption(getString(R.string.action_play_next)) {
+            musicViewModel.enqueueNext(song)
+            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
         }
-
-        popup.show()
+        options += SongOption(getString(R.string.action_download_song)) {
+            startSongDownload(song)
+        }
+        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
     }
 
     private fun startSongDownload(song: Song) {
@@ -437,7 +410,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         }
 
         val names = playlists.map { it.name }.toTypedArray()
-        MaterialAlertDialogBuilder(requireContext())
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.user_playlist_pick_title)
             .setItems(names) { _, which ->
                 libraryViewModel.addSongToPlaylist(playlists[which].id, song)
@@ -446,25 +419,8 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun showCreatePlaylistDialog() {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_create_playlist, null)
-        val nameInput =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPlaylistName)
-        val descInput =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etPlaylistDesc)
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.user_playlist_create_title)
-            .setView(dialogView)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.user_playlist_create_confirm) { _, _ ->
-                val name = nameInput.text?.toString()?.trim().orEmpty()
-                val desc = descInput.text?.toString()?.trim().orEmpty()
-                if (name.isBlank()) {
-                    Toast.makeText(requireContext(), getString(R.string.user_playlist_name_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                libraryViewModel.createPlaylist(name, desc)
-            }
-            .show()
+        CreatePlaylistBottomSheet().apply {
+            onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+        }.show(parentFragmentManager, "create_playlist")
     }
 }

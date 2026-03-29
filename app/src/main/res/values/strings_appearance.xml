@@ -22,4 +22,8 @@
     <string name="player_style_vinyl_summary">强化封面与主播放键，控制区更像舞台中央。</string>
     <string name="player_style_minimal_title">极简平板</string>
     <string name="player_style_minimal_summary">去掉多余发光和描边，信息密度更高、更克制。</string>
+    <string name="app_theme_light_title">浅色模式</string>
+    <string name="app_theme_light_summary">浅色背景，深色文字与图标。</string>
+    <string name="app_theme_dark_title">深色模式</string>
+    <string name="app_theme_dark_summary">纯黑背景，白色文字、图标与选中态。</string>
 </resources>

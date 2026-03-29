@@ -9,11 +9,11 @@
     <dimen name="spacing_xxl">40dp</dimen>
     <dimen name="spacing_3xl">48dp</dimen>
 
-    <dimen name="radius_s">12dp</dimen>
-    <dimen name="radius_m">16dp</dimen>
-    <dimen name="radius_l">20dp</dimen>
-    <dimen name="radius_xl">24dp</dimen>
-    <dimen name="radius_2xl">30dp</dimen>
+    <dimen name="radius_s">14dp</dimen>
+    <dimen name="radius_m">18dp</dimen>
+    <dimen name="radius_l">22dp</dimen>
+    <dimen name="radius_xl">28dp</dimen>
+    <dimen name="radius_2xl">36dp</dimen>
 
     <dimen name="control_height_m">48dp</dimen>
     <dimen name="control_height_l">56dp</dimen>
@@ -26,10 +26,15 @@
     <dimen name="toolbar_action_spacing">8dp</dimen>
     <dimen name="toolbar_content_padding_start">12dp</dimen>
     <dimen name="toolbar_content_padding_end">12dp</dimen>
-    <dimen name="toolbar_search_height">46dp</dimen>
+    <dimen name="toolbar_search_height">48dp</dimen>
     <dimen name="toolbar_search_badge_size">32dp</dimen>
     <dimen name="toolbar_search_trailing_size">28dp</dimen>
-    <dimen name="immersive_root_content_top_offset">40dp</dimen>
+    <dimen name="immersive_root_content_top_offset">0dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
     <dimen name="immersive_top_scrim_height">200dp</dimen>
+    <dimen name="discover_hero_height">300dp</dimen>
+    <dimen name="library_hero_height">248dp</dimen>
+    <dimen name="hero_content_bottom_spacing">132dp</dimen>
+    <dimen name="hero_compact_content_bottom_spacing">114dp</dimen>
+    <dimen name="discover_album_carousel_height">168dp</dimen>
 </resources>

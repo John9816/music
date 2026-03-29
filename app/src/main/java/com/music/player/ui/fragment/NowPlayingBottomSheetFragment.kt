@@ -28,6 +28,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
+import androidx.viewpager2.widget.ViewPager2
 import com.bumptech.glide.Glide
 import com.music.player.MainActivity
 import com.music.player.R
@@ -39,7 +40,6 @@ import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.ui.util.StackBlur
@@ -60,6 +60,17 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private lateinit var musicViewModel: MusicViewModel
     private lateinit var libraryViewModel: LibraryViewModel
     private lateinit var lyricsAdapter: LyricsAdapter
+    private lateinit var nowPlayingPagerAdapter: NowPlayingPagerAdapter
+
+    // Page views - available after ViewPager2 creates them
+    private var ivCoverBig: android.widget.ImageView? = null
+    private var ivCoverSmall: android.widget.ImageView? = null
+    private var tvTitleBig: android.widget.TextView? = null
+    private var tvArtistBig: android.widget.TextView? = null
+    private var tvTitleSmall: android.widget.TextView? = null
+    private var tvArtistSmall: android.widget.TextView? = null
+    private var rvLyrics: androidx.recyclerview.widget.RecyclerView? = null
+    private var tvLyricsPlain: android.widget.TextView? = null
 
     private var lyricLines: List<LyricLine> = emptyList()
     private var lyricJob: Job? = null
@@ -156,25 +167,64 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         lyricsAdapter = LyricsAdapter()
-        binding.rvLyrics.layoutManager = LinearLayoutManager(requireContext())
-        binding.rvLyrics.adapter = lyricsAdapter
         PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
+
+        // Setup ViewPager2 for cover/lyrics swipe
+        nowPlayingPagerAdapter = NowPlayingPagerAdapter()
+        binding.vpContent.adapter = nowPlayingPagerAdapter
+        binding.vpContent.offscreenPageLimit = 1
+        binding.vpContent.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                updatePageIndicator(position)
+                if (position == 1) {
+                    startLyricUpdates()
+                } else {
+                    lyricJob?.cancel()
+                    lyricJob = null
+                }
+                startProgressUpdates()
+                syncCoverRotation()
+            }
+        })
+
+        // Wire up page views once ViewPager2 has inflated them
+        binding.vpContent.post {
+            val coverView = nowPlayingPagerAdapter.coverPage
+            val lyricsView = nowPlayingPagerAdapter.lyricsPage
+            if (coverView != null) {
+                ivCoverBig = coverView.findViewById(R.id.ivCoverBig)
+                tvTitleBig = coverView.findViewById(R.id.tvTitleBig)
+                tvArtistBig = coverView.findViewById(R.id.tvArtistBig)
+                ivCoverBig?.setOnClickListener { binding.vpContent.currentItem = 1 }
+            }
+            if (lyricsView != null) {
+                ivCoverSmall = lyricsView.findViewById(R.id.ivCoverSmall)
+                tvTitleSmall = lyricsView.findViewById(R.id.tvTitleSmall)
+                tvArtistSmall = lyricsView.findViewById(R.id.tvArtistSmall)
+                rvLyrics = lyricsView.findViewById(R.id.rvLyrics)
+                tvLyricsPlain = lyricsView.findViewById(R.id.tvLyricsPlain)
+                tvTitleSmall?.setOnClickListener { binding.vpContent.currentItem = 0 }
+                tvArtistSmall?.setOnClickListener { binding.vpContent.currentItem = 0 }
+                rvLyrics?.layoutManager = LinearLayoutManager(requireContext())
+                rvLyrics?.adapter = lyricsAdapter
+                rvLyrics?.doOnLayout {
+                    val minInset = dp(24)
+                    val inset = (it.height / 2 - minInset).coerceAtLeast(minInset)
+                    (it as? androidx.recyclerview.widget.RecyclerView)?.setPadding(
+                        it.paddingLeft, inset, it.paddingRight, inset
+                    )
+                }
+            }
+            // Apply any pending song data
+            musicViewModel.currentSong.value?.let { applySongToPageViews(it) }
+        }
+
         binding.root.doOnLayout { updateFullscreenContentPadding() }
         binding.topBar.doOnLayout { updateFullscreenContentPadding() }
         binding.progressContainer.doOnLayout { updateFullscreenContentPadding() }
         binding.controlsBar.doOnLayout { updateFullscreenContentPadding() }
-        binding.rvLyrics.doOnLayout {
-            val minInset = dp(24)
-            val inset = (it.height / 2 - minInset).coerceAtLeast(minInset)
-            binding.rvLyrics.setPadding(
-                binding.rvLyrics.paddingLeft,
-                inset,
-                binding.rvLyrics.paddingRight,
-                inset
-            )
-        }
 
         binding.btnClose.setOnClickListener { dismiss() }
         binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
@@ -242,9 +292,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             syncPlayModeIcon()
         }
 
-        binding.ivCoverBig.setOnClickListener { showLyrics() }
-        binding.tvTitleSmall.setOnClickListener { showCover() }
-        binding.tvArtistSmall.setOnClickListener { showCover() }
+        ivCoverBig?.setOnClickListener { binding.vpContent.currentItem = 1 }
+        tvTitleSmall?.setOnClickListener { binding.vpContent.currentItem = 0 }
+        tvArtistSmall?.setOnClickListener { binding.vpContent.currentItem = 0 }
 
         musicViewModel.queue.observe(viewLifecycleOwner) {
             syncSkipButtons()
@@ -261,105 +311,33 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             updateAudioQualityButton()
             updateFavoriteButton()
             if (song == null) {
-                binding.tvTitleBig.text = getString(R.string.current_playing_empty)
-                binding.tvArtistBig.text = getString(R.string.current_playing_hint)
-                binding.tvTitleSmall.text = getString(R.string.current_playing_empty)
-                binding.tvArtistSmall.text = getString(R.string.current_playing_hint)
-
                 lyricLines = emptyList()
                 lyricsAdapter.submitList(emptyList())
-                binding.tvLyricsPlain.visibility = View.VISIBLE
-                binding.rvLyrics.visibility = View.GONE
-                binding.tvLyricsPlain.text = getString(R.string.lyrics_placeholder)
                 currentActiveIndex = -1
-
-                binding.ivCoverBig.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
-                binding.ivCoverSmall.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverSmall.imageTintList =
-                    ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
-
                 binding.ivBlurBackground.setImageDrawable(null)
                 blurredCoverBitmap = null
-
+                applySongToPageViews(null)
                 showCover()
                 return@observe
             }
-
-            binding.tvTitleBig.text = song.name
-            binding.tvArtistBig.text = song.artists.joinToString(", ") { it.name }
-            binding.tvTitleSmall.text = song.name
-            binding.tvArtistSmall.text = song.artists.joinToString(", ") { it.name }
-
-            val parsed = LyricsParser.parse(song.lyric)
-            lyricLines = parsed
-            currentActiveIndex = -1
-            if (parsed.isNotEmpty()) {
-                lyricsAdapter.submitList(parsed)
-                binding.tvLyricsPlain.visibility = View.GONE
-                binding.rvLyrics.visibility = View.VISIBLE
-                binding.rvLyrics.scrollToPosition(0)
-            } else {
-                lyricsAdapter.submitList(emptyList())
-                binding.tvLyricsPlain.visibility = View.VISIBLE
-                binding.rvLyrics.visibility = View.GONE
-                binding.tvLyricsPlain.text = song.lyric?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.lyrics_placeholder)
-            }
-
-            val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
-            if (coverUrl == null) {
-                binding.ivCoverBig.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverBig.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
-                binding.ivCoverSmall.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivCoverSmall.imageTintList =
-                    ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
-                binding.ivBlurBackground.setImageDrawable(null)
-                blurredCoverBitmap = null
-            } else {
-                binding.ivCoverBig.imageTintList = null
-                binding.ivCoverSmall.imageTintList = null
-                Glide.with(this)
-                    .load(coverUrl)
-                    .placeholder(R.drawable.ic_music_note_24)
-                    .circleCrop()
-                    .into(binding.ivCoverBig)
-
-                loadBlurBackground(coverUrl)
-            }
-
-            if (binding.vfContent.displayedChild == 1) {
-                startLyricUpdates()
-                syncCoverRotation()
-            }
+            applySongToPageViews(song)
         }
     }
 
     private fun showAudioQualityDialog() {
-        val levels = AudioQualityPreferences.Level.entries.toList()
-        val currentLevel = AudioQualityPreferences.getPreferredLevel(requireContext())
-        val checked = levels.indexOf(currentLevel).coerceAtLeast(0)
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.settings_audio_quality_dialog_title)
-            .setSingleChoiceItems(levels.map { it.displayName }.toTypedArray(), checked) { dialog, which ->
-                val selectedLevel = levels[which]
-                if (selectedLevel != currentLevel) {
-                    AudioQualityPreferences.setPreferredLevel(requireContext(), selectedLevel)
-                    updateAudioQualityButton()
-                    if (musicViewModel.currentSong.value != null) {
-                        musicViewModel.reloadCurrentSongForAudioQualityChange()
-                    }
-                    Toast.makeText(
-                        requireContext(),
-                        "已切换音质：${selectedLevel.displayName}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                dialog.dismiss()
+        val sheet = AudioQualityBottomSheet()
+        sheet.onQualitySelected = { selectedLevel ->
+            updateAudioQualityButton()
+            if (musicViewModel.currentSong.value != null) {
+                musicViewModel.reloadCurrentSongForAudioQualityChange()
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            android.widget.Toast.makeText(
+                requireContext(),
+                "已切换音质：${selectedLevel.displayName}",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+        sheet.show(parentFragmentManager, "audio_quality")
     }
 
     private fun updateAudioQualityButton() {
@@ -417,14 +395,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             if (_binding != null) {
                 blurredCoverBitmap = blurred
                 binding.ivBlurBackground.setImageBitmap(blurred)
-                binding.ivCoverSmall.imageTintList = null
-                binding.ivCoverSmall.setImageBitmap(blurred)
+                ivCoverSmall?.imageTintList = null
+                ivCoverSmall?.setImageBitmap(blurred)
             }
         }
     }
 
     private fun showCover() {
-        binding.vfContent.displayedChild = 0
+        binding.vpContent.currentItem = 0
         lyricJob?.cancel()
         lyricJob = null
         startProgressUpdates()
@@ -432,10 +410,83 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun showLyrics() {
-        binding.vfContent.displayedChild = 1
+        binding.vpContent.currentItem = 1
         startLyricUpdates()
         startProgressUpdates()
         syncCoverRotation()
+    }
+
+    private fun updatePageIndicator(position: Int) {
+        if (_binding == null) return
+        val alpha = if (position == 0) 1f else 0.4f
+        val alphaInv = if (position == 1) 1f else 0.4f
+        binding.indicatorCover.alpha = alpha
+        binding.indicatorLyrics.alpha = alphaInv
+    }
+
+    private fun applySongToPageViews(song: com.music.player.data.model.Song?) {
+        if (song == null) {
+            tvTitleBig?.text = getString(R.string.current_playing_empty)
+            tvArtistBig?.text = getString(R.string.current_playing_hint)
+            tvTitleSmall?.text = getString(R.string.current_playing_empty)
+            tvArtistSmall?.text = getString(R.string.current_playing_hint)
+            lyricsAdapter.submitList(emptyList())
+            tvLyricsPlain?.visibility = View.VISIBLE
+            rvLyrics?.visibility = View.GONE
+            tvLyricsPlain?.text = getString(R.string.lyrics_placeholder)
+            ivCoverBig?.setImageResource(R.drawable.ic_music_note_24)
+            ivCoverBig?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+            ivCoverSmall?.setImageResource(R.drawable.ic_music_note_24)
+            ivCoverSmall?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+            return
+        }
+
+        tvTitleBig?.text = song.name
+        tvArtistBig?.text = song.artists.joinToString(", ") { it.name }
+        tvTitleSmall?.text = song.name
+        tvArtistSmall?.text = song.artists.joinToString(", ") { it.name }
+
+        val parsed = LyricsParser.parse(song.lyric)
+        lyricLines = parsed
+        currentActiveIndex = -1
+        if (parsed.isNotEmpty()) {
+            lyricsAdapter.submitList(parsed)
+            tvLyricsPlain?.visibility = View.GONE
+            rvLyrics?.visibility = View.VISIBLE
+            rvLyrics?.scrollToPosition(0)
+        } else {
+            lyricsAdapter.submitList(emptyList())
+            tvLyricsPlain?.visibility = View.VISIBLE
+            rvLyrics?.visibility = View.GONE
+            tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.lyrics_placeholder)
+        }
+
+        val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
+        if (coverUrl == null) {
+            ivCoverBig?.setImageResource(R.drawable.ic_music_note_24)
+            ivCoverBig?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+            ivCoverSmall?.setImageResource(R.drawable.ic_music_note_24)
+            ivCoverSmall?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+            binding.ivBlurBackground.setImageDrawable(null)
+            blurredCoverBitmap = null
+        } else {
+            ivCoverBig?.imageTintList = null
+            ivCoverSmall?.imageTintList = null
+            ivCoverBig?.let { iv ->
+                Glide.with(this)
+                    .load(coverUrl)
+                    .placeholder(R.drawable.ic_music_note_24)
+                    .circleCrop()
+                    .into(iv)
+            }
+            loadBlurBackground(coverUrl)
+        }
+
+        if (binding.vpContent.currentItem == 1) {
+            startLyricUpdates()
+            syncCoverRotation()
+        }
     }
 
     private fun syncPlayPauseIcon(isPlaying: Boolean) {
@@ -450,7 +501,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         if (_binding == null) return
         val topInset = binding.topBar.bottom.coerceAtLeast(0)
         val bottomInset = (binding.root.height - binding.progressContainer.top).coerceAtLeast(0)
-        binding.vfContent.updatePadding(
+        binding.vpContent.updatePadding(
             top = topInset,
             bottom = bottomInset
         )
@@ -469,7 +520,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun startCoverRotation() {
-        val target = if (binding.vfContent.displayedChild == 1) binding.ivCoverSmall else binding.ivCoverBig
+        val target = if (binding.vpContent.currentItem == 1) ivCoverSmall else ivCoverBig
+        if (target == null) return
         val animator = coverRotateAnimator
         if (animator != null && animator.target !== target) {
             animator.cancel()
@@ -501,8 +553,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         coverRotateAnimator?.cancel()
         coverRotateAnimator = null
         if (_binding != null) {
-            binding.ivCoverSmall.rotation = 0f
-            binding.ivCoverBig.rotation = 0f
+            ivCoverSmall?.rotation = 0f
+            ivCoverBig?.rotation = 0f
         }
     }
 
@@ -561,7 +613,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         lyricJob?.cancel()
         lyricJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
-                if (binding.rvLyrics.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
+                if (rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty() && binding.vpContent.currentItem == 1) {
                     val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
                     if (index != currentActiveIndex) {
                         currentActiveIndex = index
@@ -577,7 +629,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun smoothScrollLyricToCenter(position: Int) {
-        val layoutManager = binding.rvLyrics.layoutManager as? LinearLayoutManager ?: return
+        val layoutManager = rvLyrics?.layoutManager as? LinearLayoutManager ?: return
         val scroller = object : LinearSmoothScroller(requireContext()) {
             override fun getVerticalSnapPreference(): Int = SNAP_TO_START
 
@@ -694,5 +746,30 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         stopCoverRotation()
         _binding = null
         super.onDestroyView()
+    }
+
+    inner class NowPlayingPagerAdapter : androidx.recyclerview.widget.RecyclerView.Adapter<NowPlayingPagerAdapter.PageVH>() {
+        var coverPage: View? = null
+            private set
+        var lyricsPage: View? = null
+            private set
+
+        inner class PageVH(val view: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(view)
+
+        override fun getItemCount() = 2
+
+        override fun getItemViewType(position: Int) = position
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageVH {
+            val inflater = LayoutInflater.from(parent.context)
+            val view = if (viewType == 0) {
+                inflater.inflate(R.layout.page_now_playing_cover, parent, false).also { coverPage = it }
+            } else {
+                inflater.inflate(R.layout.page_now_playing_lyrics, parent, false).also { lyricsPage = it }
+            }
+            return PageVH(view)
+        }
+
+        override fun onBindViewHolder(holder: PageVH, position: Int) = Unit
     }
 }

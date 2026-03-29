@@ -98,6 +98,7 @@
     <string name="current_playing_hint">选择一首歌开始播放</string>
     <string name="lyrics_title">歌词</string>
     <string name="lyrics_placeholder">歌词将在播放歌曲后显示</string>
+    <string name="lyrics_not_available">暂无歌词</string>
 
     <string name="login_title">欢迎回来</string>
     <string name="login_subtitle">登录后即可同步收藏、切换歌单并继续播放</string>

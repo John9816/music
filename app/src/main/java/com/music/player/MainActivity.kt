@@ -639,7 +639,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateMainContentPadding() {
         val topInset = if (isRootTabVisible()) {
-            topSystemBarInset + resources.getDimensionPixelSize(R.dimen.immersive_root_content_top_offset)
+            0
         } else {
             binding.appBar.bottom.coerceAtLeast(0)
         }
@@ -690,9 +690,7 @@ class MainActivity : AppCompatActivity() {
         return WindowInsetsControllerCompat(window, rootView).apply {
             isAppearanceLightStatusBars = lightSystemBars
             isAppearanceLightNavigationBars = lightSystemBars
-            systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
+            hide(WindowInsetsCompat.Type.navigationBars())
         }
     }
 

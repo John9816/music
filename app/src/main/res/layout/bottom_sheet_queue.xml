@@ -18,7 +18,16 @@
         android:paddingTop="@dimen/spacing_s"
         android:paddingEnd="@dimen/spacing_s"
         android:paddingBottom="@dimen/spacing_s"
-        android:background="?attr/surfaceColor">
+        android:background="?attr/glassSurfaceStrong"
+        android:backgroundTintMode="src_over">
+
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="@dimen/spacing_s"
+            android:background="?attr/colorOutline"
+            android:alpha="0.4" />
 
         <TextView
             android:id="@+id/tvTitle"

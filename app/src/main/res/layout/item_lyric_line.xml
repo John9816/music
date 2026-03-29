@@ -4,10 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center"
-    android:lineSpacingExtra="6dp"
-    android:paddingVertical="@dimen/spacing_sm"
+    android:lineSpacingExtra="8dp"
+    android:paddingVertical="@dimen/spacing_m"
     android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
     android:textColor="?attr/textSecondary"
-    android:textSize="14sp" />
+    android:textSize="15sp" />
 
 

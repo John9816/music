@@ -10,9 +10,9 @@
         android:layout_height="match_parent"
         android:background="@android:color/transparent"
         android:paddingStart="@dimen/spacing_m"
-        android:paddingTop="@dimen/spacing_l"
+        android:paddingTop="0dp"
         android:paddingEnd="@dimen/spacing_m"
-        android:paddingBottom="@dimen/spacing_m">
+        android:paddingBottom="@dimen/spacing_s">
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardSearch"
@@ -27,7 +27,7 @@
 
             <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="304dp">
+                android:layout_height="@dimen/library_hero_height">
 
                 <ImageView
                     android:layout_width="match_parent"
@@ -49,7 +49,7 @@
                     android:paddingStart="@dimen/spacing_l"
                     android:paddingTop="@dimen/spacing_l"
                     android:paddingEnd="@dimen/spacing_l"
-                    android:paddingBottom="122dp">
+                    android:paddingBottom="@dimen/hero_compact_content_bottom_spacing">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -120,7 +120,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:hint="@string/search_hint"
-                                app:boxBackgroundColor="?attr/surfaceColor"
+                                app:boxBackgroundColor="?attr/glassSurfaceStrong"
                                 app:startIconDrawable="@drawable/ic_search_24">
 
                                 <com.google.android.material.textfield.TextInputEditText
@@ -136,7 +136,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnSearch"
-                                style="@style/Widget.MusicPlayer.Button.Outlined"
+                                style="@style/Widget.MusicPlayer.Button.Primary"
                                 android:layout_width="52dp"
                                 android:layout_height="52dp"
                                 android:layout_marginStart="@dimen/spacing_sm"
@@ -160,19 +160,20 @@
             style="@style/Widget.MusicPlayer.Card.Outlined"
             android:layout_width="0dp"
             android:layout_height="0dp"
-            android:layout_marginTop="@dimen/spacing_l"
-            app:cardBackgroundColor="@android:color/transparent"
+            android:layout_marginTop="@dimen/spacing_m"
+            app:cardBackgroundColor="?attr/glassSurfaceStrong"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cardSearch"
-            app:strokeWidth="0dp">
+            app:strokeColor="?attr/glassStrokeSoft"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:paddingTop="@dimen/spacing_l">
+                android:padding="@dimen/spacing_l">
 
                 <TextView
                     android:id="@+id/tvSectionTitle"
@@ -196,6 +197,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginTop="@dimen/spacing_m"
+                    android:alpha="0.4"
                     android:background="?attr/colorOutline" />
 
                 <FrameLayout
@@ -209,7 +211,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:clipToPadding="false"
-                        android:paddingBottom="@dimen/spacing_xl"
+                        android:paddingBottom="@dimen/spacing_xxl"
                         android:scrollbars="vertical" />
 
                     <TextView

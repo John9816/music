@@ -5,7 +5,7 @@
     android:layout_height="156dp"
     android:layout_marginEnd="@dimen/spacing_sm"
     app:cardBackgroundColor="?attr/surfaceColor"
-    app:cardCornerRadius="24dp"
+    app:cardCornerRadius="@dimen/radius_2xl"
     app:cardElevation="0dp"
     app:strokeColor="?attr/dividerColor"
     app:strokeWidth="1dp">

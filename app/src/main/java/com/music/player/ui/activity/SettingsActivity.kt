@@ -17,7 +17,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
-import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
@@ -96,15 +95,11 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnCheckUpdate.setOnClickListener {
             updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = true)
         }
-        binding.btnNightMode.setOnClickListener { showNightModeDialog() }
-        binding.btnTheme.setOnClickListener { showThemeDialog() }
-        binding.btnPlayerStyle.setOnClickListener { showPlayerStyleDialog() }
-        binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
+        binding.btnTheme.setOnClickListener { showSkinDialog() }
         binding.btnLogout.setOnClickListener {
             authViewModel.signOut()
             navigateToLogin()
         }
-        refreshAppearanceSummaries()
     }
 
     private fun setupObservers() {
@@ -199,6 +194,24 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun showSkinDialog() {
+        val items = arrayOf(
+            getString(R.string.settings_color_theme),
+            getString(R.string.settings_player_style)
+        )
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.profile_theme)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showThemeDialog()
+                    1 -> showPlayerStyleDialog()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun showThemeDialog() {
         val skins = ThemeManager.AppThemeSkin.entries.toList()
         val items = skins.map { skin ->
@@ -218,36 +231,6 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showNightModeDialog() {
-        val items = arrayOf(
-            getString(R.string.theme_follow_system),
-            getString(R.string.theme_light),
-            getString(R.string.theme_dark)
-        )
-
-        val currentMode = ThemeManager.getNightMode(this)
-        val checked = when (currentMode) {
-            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO -> 1
-            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES -> 2
-            else -> 0
-        }
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.night_mode_dialog_title)
-            .setSingleChoiceItems(items, checked) { dialog, which ->
-                val mode = when (which) {
-                    1 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
-                    2 -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
-                    else -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                }
-                markMainNeedsRecreate()
-                ThemeManager.setNightMode(this, mode)
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
     private fun showPlayerStyleDialog() {
         val styles = ThemeManager.PlayerStyle.entries.toList()
         val items = styles.map { style ->
@@ -260,42 +243,11 @@ class SettingsActivity : AppCompatActivity() {
             .setSingleChoiceItems(items, checked) { dialog, which ->
                 ThemeManager.setPlayerStyle(this, styles[which])
                 markMainNeedsRecreate()
-                refreshAppearanceSummaries()
                 Toast.makeText(this, getString(R.string.settings_restart_hint), Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun showAudioQualityDialog() {
-        val levels = AudioQualityPreferences.Level.entries.toList()
-        val items = levels.map { it.displayName }.toTypedArray()
-        val checked = levels.indexOf(AudioQualityPreferences.getPreferredLevel(this)).coerceAtLeast(0)
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.settings_audio_quality_dialog_title)
-            .setSingleChoiceItems(items, checked) { dialog, which ->
-                AudioQualityPreferences.setPreferredLevel(this, levels[which])
-                refreshAppearanceSummaries()
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun refreshAppearanceSummaries() {
-        val themeSkin = ThemeManager.getAppThemeSkin(this)
-        val playerStyle = ThemeManager.getPlayerStyle(this)
-        val audioQualityLevel = AudioQualityPreferences.getPreferredLevel(this)
-        binding.tvThemeSummary.text = getString(themeSkin.summaryResId)
-        binding.tvPlayerStyleSummary.text = getString(playerStyle.summaryResId)
-        binding.tvAudioQualitySummary.text = audioQualityLevel.displayName
-        binding.tvNightModeSummary.text = when (ThemeManager.getNightMode(this)) {
-            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO -> getString(R.string.theme_light)
-            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES -> getString(R.string.theme_dark)
-            else -> getString(R.string.theme_follow_system)
-        }
     }
 
     private fun markMainNeedsRecreate() {

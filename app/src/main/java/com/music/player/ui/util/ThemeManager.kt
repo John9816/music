@@ -9,7 +9,6 @@ import com.music.player.R
 object ThemeManager {
 
     private const val PREFS = "ui_prefs"
-    private const val KEY_NIGHT_MODE = "night_mode"
     private const val KEY_APP_THEME = "app_theme"
     private const val KEY_PLAYER_STYLE = "player_style"
 
@@ -19,28 +18,22 @@ object ThemeManager {
         @StringRes val titleResId: Int,
         @StringRes val summaryResId: Int
     ) {
-        SUNSET(
-            storageValue = "sunset",
-            themeResId = R.style.Theme_MusicPlayer_Sunset,
-            titleResId = R.string.app_theme_sunset_title,
-            summaryResId = R.string.app_theme_sunset_summary
+        LIGHT(
+            storageValue = "light",
+            themeResId = R.style.Theme_MusicPlayer_Light,
+            titleResId = R.string.app_theme_light_title,
+            summaryResId = R.string.app_theme_light_summary
         ),
-        OCEAN(
-            storageValue = "ocean",
-            themeResId = R.style.Theme_MusicPlayer_Ocean,
-            titleResId = R.string.app_theme_ocean_title,
-            summaryResId = R.string.app_theme_ocean_summary
-        ),
-        GRAPHITE(
-            storageValue = "graphite",
-            themeResId = R.style.Theme_MusicPlayer_Graphite,
-            titleResId = R.string.app_theme_graphite_title,
-            summaryResId = R.string.app_theme_graphite_summary
+        DARK(
+            storageValue = "dark",
+            themeResId = R.style.Theme_MusicPlayer_Dark,
+            titleResId = R.string.app_theme_dark_title,
+            summaryResId = R.string.app_theme_dark_summary
         );
 
         companion object {
             fun fromStorage(value: String?): AppThemeSkin {
-                return entries.firstOrNull { it.storageValue == value } ?: SUNSET
+                return entries.firstOrNull { it.storageValue == value } ?: LIGHT
             }
         }
     }
@@ -74,14 +67,13 @@ object ThemeManager {
     }
 
     fun prepareActivity(activity: Activity) {
-        activity.setTheme(getAppThemeSkin(activity).themeResId)
-        AppCompatDelegate.setDefaultNightMode(getNightMode(activity))
+        val themeSkin = getAppThemeSkin(activity)
+        AppCompatDelegate.setDefaultNightMode(getNightModeForSkin(themeSkin))
+        activity.setTheme(themeSkin.themeResId)
     }
 
     fun getNightMode(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (!prefs.contains(KEY_NIGHT_MODE)) return AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-        return prefs.getInt(KEY_NIGHT_MODE, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        return getNightModeForSkin(getAppThemeSkin(context))
     }
 
     fun applySavedNightMode(context: Context) {
@@ -89,11 +81,11 @@ object ThemeManager {
     }
 
     fun setNightMode(context: Context, mode: Int) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putInt(KEY_NIGHT_MODE, mode)
-            .apply()
-        AppCompatDelegate.setDefaultNightMode(mode)
+        val theme = when (mode) {
+            AppCompatDelegate.MODE_NIGHT_YES -> AppThemeSkin.DARK
+            else -> AppThemeSkin.LIGHT
+        }
+        setAppThemeSkin(context, theme)
     }
 
     fun getAppThemeSkin(context: Context): AppThemeSkin {
@@ -106,6 +98,7 @@ object ThemeManager {
             .edit()
             .putString(KEY_APP_THEME, skin.storageValue)
             .apply()
+        AppCompatDelegate.setDefaultNightMode(getNightModeForSkin(skin))
     }
 
     fun getPlayerStyle(context: Context): PlayerStyle {
@@ -118,5 +111,12 @@ object ThemeManager {
             .edit()
             .putString(KEY_PLAYER_STYLE, style.storageValue)
             .apply()
+    }
+
+    private fun getNightModeForSkin(skin: AppThemeSkin): Int {
+        return when (skin) {
+            AppThemeSkin.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            AppThemeSkin.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+        }
     }
 }

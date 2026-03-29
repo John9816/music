@@ -76,7 +76,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_m"
                         android:hint="@string/email_hint"
-                        app:boxBackgroundColor="?attr/surfaceColor"
+                        app:boxBackgroundColor="?attr/glassSurfaceStrong"
                         app:startIconDrawable="@drawable/ic_email_24">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -97,7 +97,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_m"
                         android:hint="@string/password_hint"
-                        app:boxBackgroundColor="?attr/surfaceColor"
+                        app:boxBackgroundColor="?attr/glassSurfaceStrong"
                         app:startIconDrawable="@drawable/ic_lock_24">
 
                         <com.google.android.material.textfield.TextInputEditText

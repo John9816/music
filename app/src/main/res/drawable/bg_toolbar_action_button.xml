@@ -8,5 +8,15 @@
                 android:color="?attr/glassStrokeSoft" />
         </shape>
     </item>
+
+    <item
+        android:left="6dp"
+        android:top="4dp"
+        android:right="6dp"
+        android:bottom="10dp">
+        <shape android:shape="oval">
+            <solid android:color="?attr/glassHighlight" />
+        </shape>
+    </item>
 </layer-list>
 

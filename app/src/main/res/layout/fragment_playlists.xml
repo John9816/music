@@ -10,7 +10,7 @@
         android:layout_height="match_parent"
         android:background="@android:color/transparent"
         android:paddingStart="@dimen/spacing_m"
-        android:paddingTop="@dimen/spacing_l"
+        android:paddingTop="0dp"
         android:paddingEnd="@dimen/spacing_m"
         android:paddingBottom="@dimen/spacing_s">
 

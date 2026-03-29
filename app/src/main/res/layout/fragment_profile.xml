@@ -48,7 +48,7 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
-                            android:alpha="0.74"
+                            android:alpha="0.60"
                             android:background="@drawable/bg_header_top_scrim" />
 
                         <LinearLayout

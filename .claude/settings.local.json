@@ -3,7 +3,12 @@
     "allow": [
       "Bash(./gradlew clean:*)",
       "Bash(./gradlew.bat clean:*)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(./gradlew assembleDebug:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files/Eclipse Adoptium//**)",
+      "Read(//c/Program Files/Android/Android Studio/jbr//**)",
+      "Bash(./gradlew :app:compileDebugKotlin:*)"
     ]
   }
 }

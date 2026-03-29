@@ -20,7 +20,7 @@
         android:id="@+id/viewHeaderScrim"
         android:layout_width="0dp"
         android:layout_height="@dimen/immersive_top_scrim_height"
-        android:alpha="0.14"
+        android:alpha="0.20"
         android:background="@drawable/bg_header_top_scrim"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

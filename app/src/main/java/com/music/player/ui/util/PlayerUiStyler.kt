@@ -124,10 +124,6 @@ object PlayerUiStyler {
         binding.viewScrim.setBackgroundColor(pageBackground)
         binding.viewScrim.alpha = 0.72f
         binding.ivBlurBackground.alpha = 0.5f
-        binding.cardCoverBig.radius = context.dp(42f).toFloat()
-        binding.cardCoverBig.strokeWidth = 0
-        binding.cardCoverBig.strokeColor = 0
-        binding.cardCoverBig.setCardBackgroundColor(Color.TRANSPARENT)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(binding.controlsBar, glassSurface, 0, 28f, 0f, context)
@@ -153,10 +149,6 @@ object PlayerUiStyler {
         binding.viewScrim.setBackgroundColor(ColorUtils.blendARGB(surface, brandPrimaryDark, 0.22f))
         binding.viewScrim.alpha = 0.60f
         binding.ivBlurBackground.alpha = 0.7f
-        binding.cardCoverBig.radius = context.dp(36f).toFloat()
-        binding.cardCoverBig.strokeWidth = 0
-        binding.cardCoverBig.strokeColor = 0
-        binding.cardCoverBig.setCardBackgroundColor(Color.TRANSPARENT)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(
@@ -196,10 +188,6 @@ object PlayerUiStyler {
         binding.viewScrim.setBackgroundColor(pageBackground)
         binding.viewScrim.alpha = 0.88f
         binding.ivBlurBackground.alpha = 0.28f
-        binding.cardCoverBig.radius = context.dp(24f).toFloat()
-        binding.cardCoverBig.strokeWidth = 0
-        binding.cardCoverBig.strokeColor = 0
-        binding.cardCoverBig.setCardBackgroundColor(Color.TRANSPARENT)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(binding.controlsBar, surface, 0, 22f, 0f, context)
