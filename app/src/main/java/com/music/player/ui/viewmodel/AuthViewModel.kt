@@ -1,6 +1,7 @@
 package com.music.player.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -76,6 +77,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 is AuthResult.Success -> {
                     _currentUser.value = result.user
                     _authState.value = AuthState.Success("更新成功")
+                }
+                is AuthResult.Error -> {
+                    _authState.value = AuthState.Error(result.message)
+                }
+            }
+        }
+    }
+
+    fun uploadAvatar(imageUri: Uri) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            when (val result = authRepository.uploadAvatarImage(imageUri)) {
+                is AuthResult.Success -> {
+                    _currentUser.value = result.user
+                    _authState.value = AuthState.Success("头像已更新")
                 }
                 is AuthResult.Error -> {
                     _authState.value = AuthState.Error(result.message)

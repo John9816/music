@@ -24,6 +24,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
@@ -65,8 +66,6 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private var lyricsStage: View? = null
     private var discContainer: View? = null
     private var ivCoverBig: ImageView? = null
-    private var tvTitleBig: TextView? = null
-    private var tvArtistBig: TextView? = null
     private var rvLyrics: RecyclerView? = null
     private var tvLyricsPlain: TextView? = null
     private var contentPaddingStart: Int = 0
@@ -178,8 +177,6 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         lyricsStage = contentRoot.findViewById(R.id.lyricsStage)
         discContainer = contentRoot.findViewById(R.id.discContainer)
         ivCoverBig = contentRoot.findViewById(R.id.ivCoverBig)
-        tvTitleBig = contentRoot.findViewById(R.id.tvTitleBig)
-        tvArtistBig = contentRoot.findViewById(R.id.tvArtistBig)
         rvLyrics = contentRoot.findViewById(R.id.rvLyrics)
         tvLyricsPlain = contentRoot.findViewById(R.id.tvLyricsPlain)
 
@@ -369,8 +366,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private fun applySongToViews(song: com.music.player.data.model.Song?) {
         if (song == null) {
-            tvTitleBig?.text = getString(R.string.current_playing_empty)
-            tvArtistBig?.text = getString(R.string.current_playing_hint)
+            binding.tvSheetTitle.text = getString(R.string.current_playing_empty)
+            binding.tvSheetSubtitle.text = getString(R.string.current_playing_hint)
+            binding.tvSheetSubtitle.isVisible = true
             lyricsAdapter.submitList(emptyList())
             tvLyricsPlain?.visibility = View.VISIBLE
             rvLyrics?.visibility = View.GONE
@@ -381,8 +379,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             return
         }
 
-        tvTitleBig?.text = song.name
-        tvArtistBig?.text = song.artists.joinToString(", ") { it.name }
+        val artistText = song.artists.joinToString(", ") { it.name }
+        binding.tvSheetTitle.text = song.name
+        binding.tvSheetSubtitle.text = artistText
+        binding.tvSheetSubtitle.isVisible = artistText.isNotBlank()
 
         // Parse and display lyrics
         val parsed = LyricsParser.parse(song.lyric)

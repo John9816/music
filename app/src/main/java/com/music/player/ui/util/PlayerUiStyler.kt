@@ -312,10 +312,9 @@ object PlayerUiStyler {
         binding.playerContent.tvLyricsPlain.background = null
         binding.playerContent.cardCoverBig.strokeWidth = 0
         binding.playerContent.cardCoverBig.strokeColor = 0
-        binding.playerContent.tvTitleBig.setTextColor(primaryText)
-        binding.playerContent.tvArtistBig.setTextColor(secondaryText)
         binding.playerContent.tvLyricsPlain.setTextColor(secondaryText)
         binding.tvSheetTitle.setTextColor(primaryText)
+        binding.tvSheetSubtitle.setTextColor(secondaryText)
     }
 
     private fun roundedPanelDrawable(

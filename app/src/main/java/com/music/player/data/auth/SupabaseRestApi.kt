@@ -1,5 +1,6 @@
 package com.music.player.data.auth
 
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -27,6 +28,15 @@ interface SupabaseRestApi {
         @Header("Prefer") prefer: String = "return=minimal",
         @Body updates: Map<String, Any?>
     ): Response<List<Map<String, Any?>>>
+
+    @PUT
+    suspend fun uploadStorageObject(
+        @Url url: String,
+        @Header("Authorization") token: String,
+        @Header("x-upsert") upsert: String = "true",
+        @Header("Content-Type") contentType: String,
+        @Body body: RequestBody
+    ): Response<Unit>
 
     @GET("rest/v1/app_version")
     suspend fun listAppVersions(

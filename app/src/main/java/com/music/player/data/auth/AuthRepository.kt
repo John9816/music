@@ -1,8 +1,12 @@
 package com.music.player.data.auth
 
 import android.content.Context
+import android.net.Uri
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 
 data class UserProfile(
     val id: String,
@@ -21,6 +25,7 @@ sealed class AuthResult {
 }
 
 class AuthRepository(context: Context) {
+    private val contentResolver = context.applicationContext.contentResolver
     private val sessionManager = AuthSessionManager(context.applicationContext)
     private val authApi = SupabaseClient.authApi
     private val restApi = SupabaseClient.restApi
@@ -38,7 +43,7 @@ class AuthRepository(context: Context) {
                     return@withContext AuthResult.Error(
                         when {
                             errorBody.contains("Invalid login credentials") -> "账号或密码错误"
-                            errorBody.contains("Email not confirmed") -> "账号未验证，请查收邮件"
+                            errorBody.contains("Email not confirmed") -> "账号未验证，请检查邮箱"
                             else -> "登录失败，请检查网络连接"
                         }
                     )
@@ -48,7 +53,7 @@ class AuthRepository(context: Context) {
                     return@withContext AuthResult.Error(
                         when {
                             authResponse.error.contains("Invalid") -> "账号或密码错误"
-                            authResponse.error.contains("Email not confirmed") -> "账号未验证，请查收邮件"
+                            authResponse.error.contains("Email not confirmed") -> "账号未验证，请检查邮箱"
                             else -> authResponse.error_description ?: authResponse.error
                         }
                     )
@@ -188,6 +193,79 @@ class AuthRepository(context: Context) {
 
     fun isUserLoggedIn(): Boolean = sessionManager.isLoggedIn()
 
+    suspend fun updateUserProfile(
+        username: String?,
+        nickname: String?,
+        signature: String?,
+        avatarUrl: String?
+    ): AuthResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = sessionManager.getValidAccessToken(authApi)
+                    ?: return@withContext AuthResult.Error("未登录")
+                val user = getCurrentUser()
+                    ?: return@withContext AuthResult.Error("未登录")
+
+                applyUserProfileUpdates(
+                    token = token,
+                    user = user,
+                    username = username,
+                    nickname = nickname,
+                    signature = signature,
+                    avatarUrl = avatarUrl
+                )
+            } catch (e: Exception) {
+                AuthResult.Error(e.message ?: "更新失败")
+            }
+        }
+    }
+
+    suspend fun uploadAvatarImage(imageUri: Uri): AuthResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = sessionManager.getValidAccessToken(authApi)
+                    ?: return@withContext AuthResult.Error("未登录")
+                val user = getCurrentUser()
+                    ?: return@withContext AuthResult.Error("未登录")
+
+                val mimeType = contentResolver.getType(imageUri)
+                    ?.takeIf { it.startsWith("image/") }
+                    ?: "image/jpeg"
+                val extension = MimeTypeMap.getSingleton()
+                    .getExtensionFromMimeType(mimeType)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "jpg"
+                val imageBytes = contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    ?: return@withContext AuthResult.Error("读取图片失败")
+                if (imageBytes.isEmpty()) {
+                    return@withContext AuthResult.Error("读取图片失败")
+                }
+
+                val objectPath = "${user.id}/avatar_${System.currentTimeMillis()}.$extension"
+                val uploadResponse = restApi.uploadStorageObject(
+                    url = "storage/v1/object/${SupabaseClient.AVATAR_BUCKET}/$objectPath",
+                    token = "Bearer $token",
+                    contentType = mimeType,
+                    body = imageBytes.toRequestBody(mimeType.toMediaTypeOrNull())
+                )
+                if (!uploadResponse.isSuccessful) {
+                    return@withContext AuthResult.Error(avatarUploadErrorMessage(uploadResponse.code()))
+                }
+
+                applyUserProfileUpdates(
+                    token = token,
+                    user = user,
+                    username = null,
+                    nickname = null,
+                    signature = null,
+                    avatarUrl = SupabaseClient.publicStorageUrl(SupabaseClient.AVATAR_BUCKET, objectPath)
+                )
+            } catch (e: Exception) {
+                AuthResult.Error(e.message ?: "头像上传失败")
+            }
+        }
+    }
+
     private suspend fun createUserProfile(
         token: String,
         userId: String,
@@ -209,6 +287,43 @@ class AuthRepository(context: Context) {
         }
     }
 
+    private suspend fun applyUserProfileUpdates(
+        token: String,
+        user: UserProfile,
+        username: String?,
+        nickname: String?,
+        signature: String?,
+        avatarUrl: String?
+    ): AuthResult {
+        val updates = mutableMapOf<String, Any?>()
+        username?.let { updates["username"] = it }
+        nickname?.let { updates["nickname"] = it }
+        signature?.let { updates["signature"] = it }
+        avatarUrl?.let { updates["avatar_url"] = it }
+
+        if (updates.isEmpty()) {
+            return AuthResult.Success(user)
+        }
+
+        val response = restApi.updateUser(
+            token = "Bearer $token",
+            id = "eq.${user.id}",
+            updates = updates
+        )
+        if (!response.isSuccessful) {
+            return AuthResult.Error("更新失败")
+        }
+
+        return AuthResult.Success(
+            user.copy(
+                username = username ?: user.username,
+                nickname = nickname ?: user.nickname,
+                signature = signature ?: user.signature,
+                avatar_url = avatarUrl ?: user.avatar_url
+            )
+        )
+    }
+
     private fun buildFallbackProfile(user: UserData, authAvatarUrl: String?): UserProfile {
         return UserProfile(
             id = user.id,
@@ -218,52 +333,23 @@ class AuthRepository(context: Context) {
         )
     }
 
-    suspend fun updateUserProfile(
-        username: String?,
-        nickname: String?,
-        signature: String?,
-        avatarUrl: String?
-    ): AuthResult {
-        return withContext(Dispatchers.IO) {
-            try {
-                val token = sessionManager.getValidAccessToken(authApi)
-                    ?: return@withContext AuthResult.Error("未登录")
-                val user = getCurrentUser()
-                    ?: return@withContext AuthResult.Error("未登录")
-
-                val updates = mutableMapOf<String, Any?>()
-                username?.let { updates["username"] = it }
-                nickname?.let { updates["nickname"] = it }
-                signature?.let { updates["signature"] = it }
-                avatarUrl?.let { updates["avatar_url"] = it }
-
-                restApi.updateUser(
-                    token = "Bearer $token",
-                    id = "eq.${user.id}",
-                    updates = updates
-                )
-
-                val updatedUser = getCurrentUser()
-                if (updatedUser != null) {
-                    AuthResult.Success(updatedUser)
-                } else {
-                    AuthResult.Error("更新失败")
-                }
-            } catch (e: Exception) {
-                AuthResult.Error(e.message ?: "更新失败")
-            }
-        }
-    }
-
     private fun handleAuthError(e: Exception): AuthResult.Error {
         val message = when {
             e.message?.contains("Invalid login credentials") == true -> "账号或密码错误"
-            e.message?.contains("Email not confirmed") == true -> "账号未验证，请查收邮件"
+            e.message?.contains("Email not confirmed") == true -> "账号未验证，请检查邮箱"
             e.message?.contains("User already registered") == true -> "该邮箱已被注册"
-            e.message?.contains("Password should be at least") == true -> "密码长度至少为 6 位"
+            e.message?.contains("Password should be at least") == true -> "密码长度至少 6 位"
             else -> e.message ?: "操作失败，请重试"
         }
         return AuthResult.Error(message)
+    }
+
+    private fun avatarUploadErrorMessage(code: Int): String {
+        return if (code == 404) {
+            "头像上传失败，请检查 avatars 存储桶配置"
+        } else {
+            "头像上传失败"
+        }
     }
 
     private fun extractAvatarUrl(user: UserData): String? {

@@ -13,6 +13,7 @@ import com.music.player.data.repository.MusicRepository
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
 import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 
@@ -75,7 +76,7 @@ class MusicViewModel : ViewModel() {
     private val _newestAlbums = MutableLiveData<List<NewestAlbum>>(emptyList())
     val newestAlbums: LiveData<List<NewestAlbum>> = _newestAlbums
 
-    private val _searchResults = MutableLiveData<List<Song>>()
+    private val _searchResults = MutableLiveData<List<Song>>(emptyList())
     val searchResults: LiveData<List<Song>> = _searchResults
 
     private val _isSearchLoading = MutableLiveData(false)
@@ -90,6 +91,9 @@ class MusicViewModel : ViewModel() {
     private var currentSearchKeywords: String = ""
     private var searchOffset = 0
     private var hasMoreSearchResults = true
+    private var searchRequestVersion = 0L
+    private var searchJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     private val _currentPlaylist = MutableLiveData<Playlist?>()
     val currentPlaylist: LiveData<Playlist?> = _currentPlaylist
@@ -356,32 +360,68 @@ class MusicViewModel : ViewModel() {
         currentSearchKeywords = keywords
         searchOffset = 0
         hasMoreSearchResults = true
-        viewModelScope.launch {
+        val requestVersion = ++searchRequestVersion
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        searchJob = viewModelScope.launch {
             _isSearchLoading.value = true
+            _isLoadingMore.value = false
             _searchError.value = null
-            repository.searchSongs(keywords)
-                .onSuccess { _searchResults.value = it; hasMoreSearchResults = it.size >= 30 }
-                .onFailure { _searchError.value = it.message ?: "搜索歌曲失败" }
-            _isSearchLoading.value = false
+            try {
+                repository.searchSongs(keywords)
+                    .onSuccess { songs ->
+                        if (requestVersion != searchRequestVersion || keywords != currentSearchKeywords) {
+                            return@onSuccess
+                        }
+                        _searchResults.value = songs
+                        hasMoreSearchResults = songs.size >= 30
+                    }
+                    .onFailure { error ->
+                        if (requestVersion != searchRequestVersion || keywords != currentSearchKeywords) {
+                            return@onFailure
+                        }
+                        _searchError.value = error.message ?: "搜索歌曲失败"
+                    }
+            } finally {
+                if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                    _isSearchLoading.value = false
+                }
+            }
         }
     }
 
     fun loadMoreSearchResults() {
         if (!hasMoreSearchResults || _isLoadingMore.value == true || currentSearchKeywords.isBlank()) return
-        viewModelScope.launch {
+        val requestVersion = searchRequestVersion
+        val query = currentSearchKeywords
+        val nextOffset = searchOffset + 30
+        loadMoreJob?.cancel()
+        loadMoreJob = viewModelScope.launch {
             _isLoadingMore.value = true
-            searchOffset += 30
-            repository.searchSongs(currentSearchKeywords, limit = 30, offset = searchOffset)
-                .onSuccess { newSongs ->
-                    if (newSongs.isEmpty()) {
-                        hasMoreSearchResults = false
-                    } else {
-                        _searchResults.value = _searchResults.value.orEmpty() + newSongs
-                        hasMoreSearchResults = newSongs.size >= 30
+            try {
+                repository.searchSongs(query, limit = 30, offset = nextOffset)
+                    .onSuccess { newSongs ->
+                        if (requestVersion != searchRequestVersion || query != currentSearchKeywords) {
+                            return@onSuccess
+                        }
+                        searchOffset = nextOffset
+                        if (newSongs.isEmpty()) {
+                            hasMoreSearchResults = false
+                        } else {
+                            _searchResults.value = _searchResults.value.orEmpty() + newSongs
+                            hasMoreSearchResults = newSongs.size >= 30
+                        }
                     }
+                    .onFailure {
+                        if (requestVersion != searchRequestVersion || query != currentSearchKeywords) {
+                            return@onFailure
+                        }
+                    }
+            } finally {
+                if (requestVersion == searchRequestVersion && query == currentSearchKeywords) {
+                    _isLoadingMore.value = false
                 }
-                .onFailure { searchOffset -= 30 }
-            _isLoadingMore.value = false
+            }
         }
     }
 

@@ -19,8 +19,10 @@ import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
+import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
+import android.widget.Toast
 
 class ProfileFragment : Fragment(), RootTabInteraction {
 
@@ -34,6 +36,11 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private var awaitingUserRefresh: Boolean = false
     private var awaitingFavoritesRefresh: Boolean = false
     private var awaitingHistoryRefresh: Boolean = false
+    private val avatarPicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri ?: return@registerForActivityResult
+            authViewModel.uploadAvatar(uri)
+        }
 
     private val settingsLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -61,12 +68,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         binding.layoutHeroContent.applyStatusBarInsetPadding()
         setupUi()
         setupObservers()
-        refresh()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        refresh()
+        warmProfileData()
     }
 
     override fun onDestroyView() {
@@ -87,26 +89,38 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         refresh(userInitiated = false)
     }
 
-    private fun refresh(userInitiated: Boolean) {
-        if (userInitiated) {
-            awaitingUserRefresh = true
-            awaitingFavoritesRefresh = true
-            awaitingHistoryRefresh = true
-            binding.swipeRefresh.isRefreshing = true
-            binding.swipeRefresh.postDelayed({
-                if (_binding != null && binding.swipeRefresh.isRefreshing) {
-                    stopRefreshIndicator()
-                }
-            }, 3000L)
+    private fun warmProfileData() {
+        if (authViewModel.currentUser.value == null) {
+            authViewModel.refreshProfile()
         }
+    }
+
+    private fun refresh(userInitiated: Boolean) {
+        if (!userInitiated) {
+            warmProfileData()
+            return
+        }
+
+        awaitingUserRefresh = true
+        awaitingFavoritesRefresh = true
+        awaitingHistoryRefresh = true
+        binding.swipeRefresh.isRefreshing = true
+        binding.swipeRefresh.postDelayed({
+            if (_binding != null && binding.swipeRefresh.isRefreshing) {
+                stopRefreshIndicator()
+            }
+        }, 3000L)
         authViewModel.refreshProfile()
-        libraryViewModel.refreshFavorites(silent = true)
-        libraryViewModel.refreshHistory()
+        libraryViewModel.refreshFavorites(silent = true, forceRefresh = true)
+        libraryViewModel.refreshHistory(silent = true, forceRefresh = true)
     }
 
     private fun setupUi() {
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.swipeRefresh.setOnRefreshListener { refresh(userInitiated = true) }
+        binding.ivAvatar.setOnClickListener {
+            avatarPicker.launch("image/*")
+        }
         binding.btnSettings.setOnClickListener {
             settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
         }
@@ -137,6 +151,23 @@ class ProfileFragment : Fragment(), RootTabInteraction {
             renderUser(user)
             awaitingUserRefresh = false
             syncRefreshState()
+        }
+
+        authViewModel.authState.observe(viewLifecycleOwner) { state ->
+            when (state) {
+                is AuthState.Loading -> setProfileActionsEnabled(false)
+                is AuthState.Success -> {
+                    setProfileActionsEnabled(true)
+                    Toast.makeText(requireContext(), state.message, Toast.LENGTH_SHORT).show()
+                    authViewModel.resetAuthState()
+                }
+                is AuthState.Error -> {
+                    setProfileActionsEnabled(true)
+                    Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                    authViewModel.resetAuthState()
+                }
+                is AuthState.Idle -> setProfileActionsEnabled(true)
+            }
         }
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
@@ -250,6 +281,12 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         awaitingFavoritesRefresh = false
         awaitingHistoryRefresh = false
         binding.swipeRefresh.isRefreshing = false
+    }
+
+    private fun setProfileActionsEnabled(enabled: Boolean) {
+        binding.ivAvatar.isEnabled = enabled
+        binding.ivAvatar.alpha = if (enabled) 1f else 0.6f
+        binding.btnSettings.isEnabled = enabled
     }
 
     private fun buildProfileMeta(user: UserProfile): String {
