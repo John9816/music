@@ -107,7 +107,7 @@
                     android:contentDescription="@string/current_playing_title"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_music_note_24"
-                    android:tint="?attr/brandPrimary" />
+                    app:tint="?attr/brandPrimary" />
             </com.google.android.material.card.MaterialCardView>
 
             <TextView
@@ -157,7 +157,7 @@
                     android:contentDescription="@string/content_desc_play_pause"
                     android:padding="6dp"
                     android:src="@drawable/ic_pause_24"
-                    android:tint="?attr/textPrimary" />
+                    app:tint="?attr/textPrimary" />
             </FrameLayout>
 
             <ImageButton
@@ -168,7 +168,7 @@
                 android:contentDescription="@string/content_desc_queue"
                 android:padding="6dp"
                 android:src="@drawable/ic_queue_24"
-                android:tint="?attr/textPrimary"
+                app:tint="?attr/textPrimary"
                 app:layout_constraintBottom_toBottomOf="@id/coverContainer"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="@id/coverContainer" />
@@ -206,4 +206,3 @@
     </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-

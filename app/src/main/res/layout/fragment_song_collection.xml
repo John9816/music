@@ -53,7 +53,7 @@
                     android:contentDescription="@string/current_playing_title"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_music_note_24"
-                    android:tint="?attr/brandPrimary" />
+                    app:tint="?attr/brandPrimary" />
 
                 <TextView
                     android:id="@+id/tvHeaderPlayCount"
@@ -82,7 +82,7 @@
                     android:contentDescription="@string/action_favorite"
                     android:padding="6dp"
                     android:src="@drawable/ic_favorite_24"
-                    android:tint="?attr/textPrimary" />
+                    app:tint="?attr/textPrimary" />
             </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 

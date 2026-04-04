@@ -34,7 +34,7 @@
                 android:contentDescription="@string/item_song_name_placeholder"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_note_24"
-                android:tint="?attr/brandPrimary" />
+                app:tint="?attr/brandPrimary" />
         </com.google.android.material.card.MaterialCardView>
 
         <TextView
@@ -94,7 +94,7 @@
             android:contentDescription="@string/content_desc_more"
             android:padding="8dp"
             android:src="@drawable/ic_more_vert_24"
-            android:tint="?attr/textPrimary"
+            app:tint="?attr/textPrimary"
             app:layout_constraintBottom_toBottomOf="@id/iconContainer"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="@id/iconContainer" />
@@ -107,4 +107,3 @@
         android:alpha="0.5"
         android:background="?attr/colorOutline" />
 </LinearLayout>
-

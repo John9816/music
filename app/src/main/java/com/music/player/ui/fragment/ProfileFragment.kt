@@ -2,7 +2,6 @@ package com.music.player.ui.fragment
 
 import android.app.Activity
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -17,6 +16,7 @@ import com.music.player.data.auth.UserProfile
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.ui.activity.SettingsActivity
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.AuthViewModel
@@ -34,7 +34,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private var awaitingUserRefresh: Boolean = false
     private var awaitingFavoritesRefresh: Boolean = false
     private var awaitingHistoryRefresh: Boolean = false
-    private var awaitingPlaylistsRefresh: Boolean = false
 
     private val settingsLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -59,6 +58,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         authViewModel = ViewModelProvider(requireActivity())[AuthViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
+        binding.layoutHeroContent.applyStatusBarInsetPadding()
         setupUi()
         setupObservers()
         refresh()
@@ -92,7 +92,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
             awaitingUserRefresh = true
             awaitingFavoritesRefresh = true
             awaitingHistoryRefresh = true
-            awaitingPlaylistsRefresh = true
             binding.swipeRefresh.isRefreshing = true
             binding.swipeRefresh.postDelayed({
                 if (_binding != null && binding.swipeRefresh.isRefreshing) {
@@ -103,7 +102,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         authViewModel.refreshProfile()
         libraryViewModel.refreshFavorites(silent = true)
         libraryViewModel.refreshHistory()
-        libraryViewModel.refreshPlaylists(silent = true)
     }
 
     private fun setupUi() {
@@ -152,16 +150,9 @@ class ProfileFragment : Fragment(), RootTabInteraction {
             awaitingHistoryRefresh = false
             syncRefreshState()
         }
-
-        libraryViewModel.playlists.observe(viewLifecycleOwner) { playlists ->
-            binding.tvPlaylistCount.text = playlists.size.toString()
-            awaitingPlaylistsRefresh = false
-            syncRefreshState()
-        }
     }
 
     private fun updateLikedSection(songs: List<Song>) {
-        binding.tvLikedCount.text = songs.size.toString()
         updateLikedCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvLikedMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_liked_empty)
@@ -171,7 +162,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateHistorySection(songs: List<Song>) {
-        binding.tvHistoryCount.text = songs.size.toString()
         updateHistoryCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvHistoryMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_history_empty)
@@ -251,7 +241,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun syncRefreshState() {
-        if (awaitingUserRefresh || awaitingFavoritesRefresh || awaitingHistoryRefresh || awaitingPlaylistsRefresh) return
+        if (awaitingUserRefresh || awaitingFavoritesRefresh || awaitingHistoryRefresh) return
         stopRefreshIndicator()
     }
 
@@ -259,7 +249,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         awaitingUserRefresh = false
         awaitingFavoritesRefresh = false
         awaitingHistoryRefresh = false
-        awaitingPlaylistsRefresh = false
         binding.swipeRefresh.isRefreshing = false
     }
 

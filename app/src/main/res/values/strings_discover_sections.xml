@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="newest_albums_title">最新专辑</string>
+    <string name="newest_albums_subtitle">刚刚上架的专辑新作</string>
+</resources>

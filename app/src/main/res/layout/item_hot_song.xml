@@ -26,7 +26,7 @@
             android:contentDescription="@string/item_song_name_placeholder"
             android:scaleType="centerCrop"
             android:src="@drawable/ic_music_note_24"
-            android:tint="?attr/brandPrimary" />
+            app:tint="?attr/brandPrimary" />
     </com.google.android.material.card.MaterialCardView>
 
     <TextView
@@ -53,4 +53,3 @@
         android:textColor="?attr/textSecondary"
         android:textSize="12sp" />
 </LinearLayout>
-

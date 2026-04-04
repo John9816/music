@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/spacing_s">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="@dimen/spacing_sm">
+
+        <!-- Cover placeholder -->
+        <com.music.player.ui.view.ShimmerView
+            android:layout_width="48dp"
+            android:layout_height="48dp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_m"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- Title placeholder -->
+            <com.music.player.ui.view.ShimmerView
+                android:layout_width="180dp"
+                android:layout_height="16dp" />
+
+            <!-- Subtitle placeholder -->
+            <com.music.player.ui.view.ShimmerView
+                android:layout_width="120dp"
+                android:layout_height="12dp"
+                android:layout_marginTop="@dimen/spacing_s" />
+        </LinearLayout>
+
+        <!-- Duration placeholder -->
+        <com.music.player.ui.view.ShimmerView
+            android:layout_width="44dp"
+            android:layout_height="20dp"
+            android:layout_marginStart="@dimen/spacing_s" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="64dp"
+        android:alpha="0.3"
+        android:background="?attr/colorOutline" />
+</LinearLayout>

@@ -78,6 +78,19 @@ class MusicViewModel : ViewModel() {
     private val _searchResults = MutableLiveData<List<Song>>()
     val searchResults: LiveData<List<Song>> = _searchResults
 
+    private val _isSearchLoading = MutableLiveData(false)
+    val isSearchLoading: LiveData<Boolean> = _isSearchLoading
+
+    private val _searchError = MutableLiveData<String?>()
+    val searchError: LiveData<String?> = _searchError
+
+    private val _isLoadingMore = MutableLiveData(false)
+    val isLoadingMore: LiveData<Boolean> = _isLoadingMore
+
+    private var currentSearchKeywords: String = ""
+    private var searchOffset = 0
+    private var hasMoreSearchResults = true
+
     private val _currentPlaylist = MutableLiveData<Playlist?>()
     val currentPlaylist: LiveData<Playlist?> = _currentPlaylist
 
@@ -340,12 +353,35 @@ class MusicViewModel : ViewModel() {
     }
 
     fun searchSongs(keywords: String) {
+        currentSearchKeywords = keywords
+        searchOffset = 0
+        hasMoreSearchResults = true
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSearchLoading.value = true
+            _searchError.value = null
             repository.searchSongs(keywords)
-                .onSuccess { _searchResults.value = it }
-                .onFailure { _error.value = it.message ?: "搜索歌曲失败" }
-            _isLoading.value = false
+                .onSuccess { _searchResults.value = it; hasMoreSearchResults = it.size >= 30 }
+                .onFailure { _searchError.value = it.message ?: "搜索歌曲失败" }
+            _isSearchLoading.value = false
+        }
+    }
+
+    fun loadMoreSearchResults() {
+        if (!hasMoreSearchResults || _isLoadingMore.value == true || currentSearchKeywords.isBlank()) return
+        viewModelScope.launch {
+            _isLoadingMore.value = true
+            searchOffset += 30
+            repository.searchSongs(currentSearchKeywords, limit = 30, offset = searchOffset)
+                .onSuccess { newSongs ->
+                    if (newSongs.isEmpty()) {
+                        hasMoreSearchResults = false
+                    } else {
+                        _searchResults.value = _searchResults.value.orEmpty() + newSongs
+                        hasMoreSearchResults = newSongs.size >= 30
+                    }
+                }
+                .onFailure { searchOffset -= 30 }
+            _isLoadingMore.value = false
         }
     }
 

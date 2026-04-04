@@ -24,6 +24,7 @@ import com.music.player.databinding.FragmentDiscoverBinding
 import com.music.player.ui.adapter.HotSongAdapter
 import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -83,6 +84,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
+        binding.layoutHeroContent.applyStatusBarInsetPadding()
         setupRecyclerViews()
         setupObservers()
         setupInteractions()

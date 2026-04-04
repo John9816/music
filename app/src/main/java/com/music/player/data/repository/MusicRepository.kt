@@ -33,6 +33,7 @@ class MusicRepository {
         private const val CATEGORY_TTL_MS = 30 * 60 * 1000L
         private const val LYRICS_TTL_MS = 24 * 60 * 60 * 1000L
         private const val URL_TTL_MS = 20 * 60 * 1000L
+        private const val SEARCH_TTL_MS = 5 * 60 * 1000L
 
         private val dailyRecommendCache = TimedMemoryCache<String, List<Song>>()
         private val topListsCache = TimedMemoryCache<String, List<Playlist>>()
@@ -42,12 +43,14 @@ class MusicRepository {
         private val playlistDetailCache = TimedMemoryCache<String, Pair<Playlist, List<Song>>>()
         private val lyricsCache = TimedMemoryCache<String, String>()
         private val songUrlCache = TimedMemoryCache<String, String>()
+        private val searchCache = TimedMemoryCache<String, List<Song>>()
 
         private val songListRequests = RequestCoalescer<String, Result<List<Song>>>()
         private val playlistListRequests = RequestCoalescer<String, Result<List<Playlist>>>()
         private val categoryRequests = RequestCoalescer<String, Result<PlaylistCategoryCatalog>>()
         private val playlistDetailRequests = RequestCoalescer<String, Result<Pair<Playlist, List<Song>>>>()
         private val stringRequests = RequestCoalescer<String, Result<String>>()
+        private val searchRequests = RequestCoalescer<String, Result<List<Song>>>()
     }
 
     suspend fun getDailyRecommend(): Result<List<Song>> {
@@ -380,16 +383,25 @@ class MusicRepository {
     }
 
     suspend fun searchSongs(keywords: String, limit: Int = 30, offset: Int = 0): Result<List<Song>> {
-        return try {
-            val response = api.searchSongs(keywords = keywords, limit = limit, offset = offset)
-            if (response.isSuccessful && response.body()?.code == 200) {
-                val songs = response.body()?.result?.songs?.map { it.toSong() } ?: emptyList()
-                Result.success(songs)
-            } else {
-                Result.failure(Exception("搜索歌曲失败"))
+        val cacheKey = "search_${keywords}_${limit}_${offset}"
+
+        searchCache.get(cacheKey, SEARCH_TTL_MS)?.let { return Result.success(it) }
+
+        return searchRequests.run(cacheKey) {
+            try {
+                val response = api.searchSongs(keywords = keywords, limit = limit, offset = offset)
+                if (response.isSuccessful && response.body()?.code == 200) {
+                    val songs = response.body()?.result?.songs?.map { it.toSong() } ?: emptyList()
+                    searchCache.put(cacheKey, songs)
+                    Result.success(songs)
+                } else {
+                    Result.failure(Exception("搜索歌曲失败"))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 

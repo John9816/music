@@ -9,9 +9,9 @@
         android:id="@+id/ivBlurBackground"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:alpha="0.5"
         android:contentDescription="@string/current_playing_title"
         android:scaleType="centerCrop"
+        android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -22,20 +22,18 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:background="?attr/pageBackground"
-        android:alpha="0.65"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/topBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
         android:paddingStart="@dimen/spacing_m"
         android:paddingTop="@dimen/spacing_m"
-        android:paddingEnd="@dimen/spacing_s"
+        android:paddingEnd="@dimen/spacing_m"
         android:paddingBottom="@dimen/spacing_s"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -49,138 +47,41 @@
             android:contentDescription="@string/content_desc_close"
             android:padding="8dp"
             android:src="@drawable/ic_chevron_down_24"
-            android:tint="?attr/textPrimary" />
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?attr/textPrimary" />
+
+        <TextView
+            android:id="@+id/tvSheetTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/current_playing_title"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+            android:textColor="?attr/textPrimary"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="@id/btnClose"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/btnClose" />
 
         <View
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-    </LinearLayout>
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <androidx.viewpager2.widget.ViewPager2
-        android:id="@+id/vpContent"
+    <include
+        android:id="@+id/playerContent"
+        layout="@layout/page_now_playing_cover"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:orientation="horizontal"
-        app:layout_constraintBottom_toTopOf="@id/progressContainer"
+        app:layout_constraintBottom_toTopOf="@id/controlsBar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/topBar" />
-
-    <LinearLayout
-        android:id="@+id/pageIndicatorBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/spacing_xs"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:padding="@dimen/spacing_xs"
-        app:layout_constraintBottom_toTopOf="@id/progressContainer"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <View
-            android:id="@+id/indicatorCover"
-            android:layout_width="6dp"
-            android:layout_height="6dp"
-            android:layout_marginEnd="4dp"
-            android:background="?attr/brandPrimary"
-            android:backgroundTint="?attr/textPrimary" />
-
-        <View
-            android:id="@+id/indicatorLyrics"
-            android:layout_width="6dp"
-            android:layout_height="6dp"
-            android:layout_marginStart="4dp"
-            android:background="?attr/brandPrimary"
-            android:backgroundTint="?attr/textSecondary"
-            android:alpha="0.4" />
-    </LinearLayout>
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:id="@+id/progressContainer"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:paddingStart="@dimen/spacing_l"
-        android:paddingEnd="@dimen/spacing_l"
-        android:paddingBottom="@dimen/spacing_xs"
-        app:layout_constraintBottom_toTopOf="@id/controlsBar"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <ImageButton
-            android:id="@+id/btnFavorite"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/action_favorite"
-            android:padding="5dp"
-            android:src="@drawable/ic_favorite_24"
-            android:tint="?attr/textSecondary"
-            app:layout_constraintBottom_toTopOf="@id/sliderProgress"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
-
-        <com.google.android.material.slider.Slider
-            android:id="@+id/sliderProgress"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:value="0"
-            android:valueFrom="0"
-            android:valueTo="1"
-            app:labelBehavior="floating"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnFavorite" />
-
-        <TextView
-            android:id="@+id/tvCurrentTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="00:00"
-            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-            android:textColor="?attr/textSecondary"
-            app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="@id/btnAudioQuality" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAudioQuality"
-            android:layout_width="wrap_content"
-            android:layout_height="34dp"
-            android:layout_marginTop="2dp"
-            android:minWidth="0dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="超清母带"
-            android:textAllCaps="false"
-            android:textColor="?attr/textPrimary"
-            android:textSize="12sp"
-            app:backgroundTint="@android:color/transparent"
-            app:cornerRadius="17dp"
-            app:icon="@drawable/ic_settings_24"
-            app:iconGravity="textStart"
-            app:iconPadding="4dp"
-            app:iconTint="?attr/textPrimary"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/sliderProgress"
-            app:strokeWidth="0dp" />
-
-        <TextView
-            android:id="@+id/tvTotalTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="00:00"
-            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-            android:textColor="?attr/textSecondary"
-            app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/btnAudioQuality" />
-
-    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/controlsBar"
@@ -190,88 +91,196 @@
         android:layout_marginStart="@dimen/spacing_m"
         android:layout_marginEnd="@dimen/spacing_m"
         android:layout_marginBottom="@dimen/spacing_m"
-        app:cardBackgroundColor="?attr/glassSurfaceStrong"
+        app:cardBackgroundColor="?attr/surfaceColor"
         app:cardElevation="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        app:layout_constraintStart_toStartOf="parent"
+        app:strokeColor="?attr/dividerColor"
+        app:strokeWidth="1dp">
 
         <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/progressContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingStart="@dimen/spacing_m"
-            android:paddingTop="@dimen/spacing_sm"
+            android:paddingTop="@dimen/spacing_m"
             android:paddingEnd="@dimen/spacing_m"
-            android:paddingBottom="@dimen/spacing_sm">
+            android:paddingBottom="@dimen/spacing_m">
 
-            <ImageButton
-                android:id="@+id/btnPlayMode"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/content_desc_shuffle"
-                android:padding="5dp"
-                android:src="@drawable/ic_shuffle_24"
-                android:tint="?attr/textSecondary"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/btnPrev"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAudioQuality"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:text="超清母带"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                app:backgroundTint="@android:color/transparent"
+                app:cornerRadius="17dp"
+                app:icon="@drawable/ic_settings_24"
+                app:iconGravity="textStart"
+                app:iconPadding="4dp"
+                app:iconTint="?attr/textPrimary"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toTopOf="parent"
+                app:strokeWidth="0dp" />
 
             <ImageButton
-                android:id="@+id/btnPrev"
+                android:id="@+id/btnFavorite"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/content_desc_previous"
-                android:padding="5dp"
-                android:src="@drawable/ic_skip_previous_24"
-                android:tint="?attr/textSecondary"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/btnPlayPause"
-                app:layout_constraintTop_toTopOf="parent" />
+                android:contentDescription="@string/action_favorite"
+                android:padding="6dp"
+                android:src="@drawable/ic_favorite_24"
+                app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@id/btnAudioQuality"
+                app:tint="?attr/textSecondary" />
 
-            <ImageButton
-                android:id="@+id/btnPlayPause"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:background="@drawable/bg_toolbar_action_button"
-                android:contentDescription="@string/content_desc_play_pause"
-                android:padding="10dp"
-                android:src="@drawable/ic_pause_24"
-                android:tint="?attr/textPrimary"
-                app:layout_constraintBottom_toBottomOf="parent"
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderProgress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:value="0"
+                android:valueFrom="0"
+                android:valueTo="1"
+                app:haloRadius="18dp"
+                app:labelBehavior="floating"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toBottomOf="@id/btnAudioQuality"
+                app:thumbRadius="7dp"
+                app:trackHeight="4dp" />
 
-            <ImageButton
-                android:id="@+id/btnNext"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/content_desc_next"
-                android:padding="5dp"
-                android:src="@drawable/ic_skip_next_24"
-                android:tint="?attr/textSecondary"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toEndOf="@id/btnPlayPause"
-                app:layout_constraintTop_toTopOf="parent" />
+            <TextView
+                android:id="@+id/tvCurrentTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="00:00"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="?attr/textSecondary"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/sliderProgress" />
 
-            <ImageButton
-                android:id="@+id/btnQueue"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/content_desc_queue"
-                android:padding="5dp"
-                android:src="@drawable/ic_queue_24"
-                android:tint="?attr/textSecondary"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintStart_toEndOf="@id/btnNext"
+            <TextView
+                android:id="@+id/tvTotalTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="00:00"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="?attr/textSecondary"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toBottomOf="@id/sliderProgress" />
 
+            <LinearLayout
+                android:id="@+id/controlRow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:weightSum="5"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvCurrentTime">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:foregroundGravity="center">
+
+                    <ImageButton
+                        android:id="@+id/btnPlayMode"
+                        android:layout_width="@dimen/now_playing_secondary_control_size"
+                        android:layout_height="@dimen/now_playing_secondary_control_size"
+                        android:layout_gravity="center"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/content_desc_shuffle"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_shuffle_24"
+                        app:tint="?attr/textSecondary" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:foregroundGravity="center">
+
+                    <ImageButton
+                        android:id="@+id/btnPrev"
+                        android:layout_width="@dimen/now_playing_secondary_control_size"
+                        android:layout_height="@dimen/now_playing_secondary_control_size"
+                        android:layout_gravity="center"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/content_desc_previous"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_skip_previous_24"
+                        app:tint="?attr/textSecondary" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:foregroundGravity="center">
+
+                    <ImageButton
+                        android:id="@+id/btnPlayPause"
+                        android:layout_width="@dimen/now_playing_primary_control_size"
+                        android:layout_height="@dimen/now_playing_primary_control_size"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_toolbar_action_button"
+                        android:contentDescription="@string/content_desc_play_pause"
+                        android:padding="14dp"
+                        android:src="@drawable/ic_pause_24"
+                        app:tint="?attr/textPrimary" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:foregroundGravity="center">
+
+                    <ImageButton
+                        android:id="@+id/btnNext"
+                        android:layout_width="@dimen/now_playing_secondary_control_size"
+                        android:layout_height="@dimen/now_playing_secondary_control_size"
+                        android:layout_gravity="center"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/content_desc_next"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_skip_next_24"
+                        app:tint="?attr/textSecondary" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:foregroundGravity="center">
+
+                    <ImageButton
+                        android:id="@+id/btnQueue"
+                        android:layout_width="@dimen/now_playing_secondary_control_size"
+                        android:layout_height="@dimen/now_playing_secondary_control_size"
+                        android:layout_gravity="center"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/content_desc_queue"
+                        android:padding="10dp"
+                        android:src="@drawable/ic_queue_24"
+                        app:tint="?attr/textSecondary" />
+                </FrameLayout>
+            </LinearLayout>
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 

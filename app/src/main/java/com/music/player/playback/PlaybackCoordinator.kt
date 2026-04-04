@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import com.music.player.data.model.Song
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AudioQualityPreferences
@@ -87,6 +88,7 @@ object PlaybackCoordinator {
     @Volatile
     private var pendingPreparedSong: Song? = null
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     fun init(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
@@ -538,6 +540,7 @@ object PlaybackCoordinator {
         }
     }
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     private fun ensureServiceRunning() {
         val context = appContext ?: return
         PlaybackService.start(context)

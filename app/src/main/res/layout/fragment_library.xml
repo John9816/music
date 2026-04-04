@@ -19,97 +19,83 @@
             style="@style/Widget.MusicPlayer.Card.Outlined"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="@android:color/transparent"
+            app:cardBackgroundColor="?attr/surfaceColor"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            app:strokeWidth="0dp">
+            app:strokeColor="?attr/dividerColor">
 
             <FrameLayout
+                android:id="@+id/heroFrame"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/library_hero_height">
-
-                <ImageView
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:contentDescription="@string/nav_library"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/bg_header_default" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:alpha="0.76"
-                    android:background="@drawable/bg_header_top_scrim" />
+                android:layout_height="wrap_content"
+                android:clipChildren="true"
+                android:minHeight="@dimen/library_hero_height">
 
                 <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="@dimen/spacing_l"
-                    android:paddingTop="@dimen/spacing_l"
-                    android:paddingEnd="@dimen/spacing_l"
-                    android:paddingBottom="@dimen/hero_compact_content_bottom_spacing">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/nav_library"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
-                        android:textColor="?attr/brandPrimary"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_m"
-                        android:text="@string/search_result_title"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_xs"
-                        android:text="@string/search_hint"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textSecondary" />
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom"
-                    android:layout_marginStart="@dimen/spacing_m"
-                    android:layout_marginEnd="@dimen/spacing_m"
-                    android:layout_marginBottom="@dimen/spacing_m"
+                    android:layout_height="match_parent"
                     android:orientation="vertical">
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:alpha="0.82"
-                        android:background="?attr/colorOutline" />
-
                     <LinearLayout
+                        android:id="@+id/layoutHeroContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:paddingTop="@dimen/spacing_m">
+                        android:paddingStart="@dimen/spacing_l"
+                        android:paddingTop="@dimen/spacing_l"
+                        android:paddingEnd="@dimen/spacing_l">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/nav_library"
+                            android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+                            android:textColor="?attr/brandPrimary"
+                            android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_m"
+                            android:text="@string/search_result_title"
+                            android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+                            android:textColor="?attr/textPrimary"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/search_hint"
-                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                             android:textColor="?attr/textSecondary" />
+                    </LinearLayout>
+
+                    <Space
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutSearchPanel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingStart="@dimen/spacing_l"
+                        android:paddingTop="@dimen/spacing_m"
+                        android:paddingEnd="@dimen/spacing_l"
+                        android:paddingBottom="@dimen/spacing_l">
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="?attr/colorOutline" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:layout_marginTop="@dimen/spacing_m"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
@@ -120,7 +106,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:hint="@string/search_hint"
-                                app:boxBackgroundColor="?attr/glassSurfaceStrong"
+                                app:boxBackgroundColor="?attr/surfaceAltColor"
                                 app:startIconDrawable="@drawable/ic_search_24">
 
                                 <com.google.android.material.textfield.TextInputEditText
@@ -161,12 +147,12 @@
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:layout_marginTop="@dimen/spacing_m"
-            app:cardBackgroundColor="?attr/glassSurfaceStrong"
+            app:cardBackgroundColor="?attr/surfaceColor"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cardSearch"
-            app:strokeColor="?attr/glassStrokeSoft"
+            app:strokeColor="?attr/dividerColor"
             app:strokeWidth="1dp">
 
             <LinearLayout
@@ -193,11 +179,68 @@
                     android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                     android:textColor="?attr/textSecondary" />
 
+                <LinearLayout
+                    android:id="@+id/scrollHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="18dp"
+                                android:layout_height="18dp"
+                                android:contentDescription="@string/search_history_title"
+                                android:src="@drawable/ic_history_24"
+                                app:tint="?attr/textSecondary" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/spacing_s"
+                                android:text="@string/search_history_title"
+                                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <ImageButton
+                            android:id="@+id/btnClearHistory"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/search_history_clear"
+                            android:padding="4dp"
+                            android:src="@drawable/ic_close_24"
+                            app:tint="?attr/textSecondary" />
+                    </LinearLayout>
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupHistory"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_s"
+                        app:chipSpacingHorizontal="@dimen/spacing_s"
+                        app:chipSpacingVertical="@dimen/spacing_s" />
+                </LinearLayout>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginTop="@dimen/spacing_m"
-                    android:alpha="0.4"
                     android:background="?attr/colorOutline" />
 
                 <FrameLayout
@@ -214,15 +257,96 @@
                         android:paddingBottom="@dimen/spacing_xxl"
                         android:scrollbars="vertical" />
 
-                    <TextView
-                        android:id="@+id/tvEmptyState"
+                    <LinearLayout
+                        android:id="@+id/layoutSkeleton"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <include layout="@layout/item_song_skeleton" />
+                        <include layout="@layout/item_song_skeleton" />
+                        <include layout="@layout/item_song_skeleton" />
+                        <include layout="@layout/item_song_skeleton" />
+                        <include layout="@layout/item_song_skeleton" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/layoutEmpty"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:gravity="center"
+                        android:orientation="vertical"
                         android:paddingHorizontal="@dimen/spacing_xl"
-                        android:text="@string/song_list_empty_search"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textSecondary"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            android:alpha="0.4"
+                            android:contentDescription="@string/search_not_found"
+                            android:src="@drawable/ic_search_24"
+                            app:tint="?attr/textSecondary" />
+
+                        <TextView
+                            android:id="@+id/tvEmptyTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_m"
+                            android:text="@string/search_not_found"
+                            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                            android:textColor="?attr/textPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="@string/song_list_empty_search"
+                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                            android:textColor="?attr/textSecondary" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/layoutError"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/spacing_xl"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:contentDescription="@string/search_error_generic"
+                            android:src="@drawable/ic_error_outline_24"
+                            app:tint="?attr/textSecondary" />
+
+                        <TextView
+                            android:id="@+id/tvErrorMessage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_m"
+                            android:gravity="center"
+                            android:text="@string/search_error_generic"
+                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                            android:textColor="?attr/textSecondary" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRetry"
+                            style="@style/Widget.MusicPlayer.Button.Outlined"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="@dimen/spacing_m"
+                            android:text="@string/search_retry" />
+                    </LinearLayout>
+
+                    <ProgressBar
+                        android:id="@+id/progressLoadMore"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_gravity="center_horizontal|bottom"
+                        android:layout_marginBottom="@dimen/spacing_l"
                         android:visibility="gone" />
 
                     <ProgressBar
@@ -238,4 +362,3 @@
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-

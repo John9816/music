@@ -37,4 +37,9 @@
     <dimen name="hero_content_bottom_spacing">132dp</dimen>
     <dimen name="hero_compact_content_bottom_spacing">114dp</dimen>
     <dimen name="discover_album_carousel_height">168dp</dimen>
+    <dimen name="now_playing_disc_size">216dp</dimen>
+    <dimen name="now_playing_disc_rim_size">196dp</dimen>
+    <dimen name="now_playing_disc_inner_size">176dp</dimen>
+    <dimen name="now_playing_primary_control_size">64dp</dimen>
+    <dimen name="now_playing_secondary_control_size">44dp</dimen>
 </resources>

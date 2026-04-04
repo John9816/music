@@ -18,11 +18,11 @@
             android:id="@+id/tvTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:visibility="gone"
             android:text="@string/nav_playlists"
             android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
             android:textColor="?attr/textPrimary"
             android:textStyle="bold"
+            android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -43,271 +43,319 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <FrameLayout
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:strokeColor="?attr/dividerColor">
 
-                    <ImageView
+                    <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="156dp"
-                        android:contentDescription="@string/nav_playlists"
-                        android:scaleType="centerCrop"
-                        android:src="@drawable/bg_header_default" />
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:alpha="0.76"
-                        android:background="@drawable/bg_header_top_scrim" />
+                        <LinearLayout
+                            android:id="@+id/layoutHeroContent"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingStart="@dimen/spacing_l"
+                            android:paddingTop="@dimen/spacing_l"
+                            android:paddingEnd="@dimen/spacing_l"
+                            android:paddingBottom="@dimen/spacing_l">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/nav_playlists"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+                                android:textColor="?attr/brandPrimary"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_m"
+                                android:text="@string/nav_playlists"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="?attr/colorOutline" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="@dimen/spacing_l">
+
+                            <androidx.constraintlayout.widget.ConstraintLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content">
+
+                                <TextView
+                                    android:id="@+id/tvLangTitle"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/playlist_group_language"
+                                    android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                                    android:textColor="?attr/textPrimary"
+                                    android:textStyle="bold"
+                                    app:layout_constraintBottom_toBottomOf="parent"
+                                    app:layout_constraintEnd_toStartOf="@id/pbLang"
+                                    app:layout_constraintStart_toStartOf="parent"
+                                    app:layout_constraintTop_toTopOf="parent" />
+
+                                <ProgressBar
+                                    android:id="@+id/pbLang"
+                                    style="?android:attr/progressBarStyleSmall"
+                                    android:layout_width="20dp"
+                                    android:layout_height="20dp"
+                                    android:visibility="gone"
+                                    app:layout_constraintBottom_toBottomOf="@id/tvLangTitle"
+                                    app:layout_constraintEnd_toEndOf="parent"
+                                    app:layout_constraintTop_toTopOf="@id/tvLangTitle" />
+                            </androidx.constraintlayout.widget.ConstraintLayout>
+
+                            <androidx.recyclerview.widget.RecyclerView
+                                android:id="@+id/rvLangPlaylists"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_sm"
+                                android:clipToPadding="false"
+                                android:nestedScrollingEnabled="false"
+                                android:overScrollMode="never"
+                                android:paddingEnd="@dimen/spacing_xs"
+                                android:scrollbars="none" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_m"
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:strokeColor="?attr/dividerColor">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:paddingStart="@dimen/spacing_l"
-                        android:paddingTop="@dimen/spacing_l"
-                        android:paddingEnd="@dimen/spacing_l"
-                        android:paddingBottom="@dimen/spacing_xl">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/nav_playlists"
-                            android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
-                            android:textColor="?attr/brandPrimary"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_m"
-                            android:text="@string/nav_playlists"
-                            android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
-                            android:textColor="?attr/textPrimary"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="按语种、风格、场景与情绪挑选歌单"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                            android:textColor="?attr/textSecondary" />
+                        android:padding="@dimen/spacing_l">
 
                         <androidx.constraintlayout.widget.ConstraintLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_m">
+                            android:layout_height="wrap_content">
 
                             <TextView
-                                android:id="@+id/tvLangTitle"
+                                android:id="@+id/tvStyleTitle"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:text="@string/playlist_group_language"
+                                android:text="@string/playlist_group_style"
                                 android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
                                 android:textColor="?attr/textPrimary"
                                 android:textStyle="bold"
                                 app:layout_constraintBottom_toBottomOf="parent"
-                                app:layout_constraintEnd_toStartOf="@id/pbLang"
+                                app:layout_constraintEnd_toStartOf="@id/pbStyle"
                                 app:layout_constraintStart_toStartOf="parent"
                                 app:layout_constraintTop_toTopOf="parent" />
 
                             <ProgressBar
-                                android:id="@+id/pbLang"
+                                android:id="@+id/pbStyle"
                                 style="?android:attr/progressBarStyleSmall"
                                 android:layout_width="20dp"
                                 android:layout_height="20dp"
                                 android:visibility="gone"
-                                app:layout_constraintBottom_toBottomOf="@id/tvLangTitle"
+                                app:layout_constraintBottom_toBottomOf="@id/tvStyleTitle"
                                 app:layout_constraintEnd_toEndOf="parent"
-                                app:layout_constraintTop_toTopOf="@id/tvLangTitle" />
+                                app:layout_constraintTop_toTopOf="@id/tvStyleTitle" />
                         </androidx.constraintlayout.widget.ConstraintLayout>
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvStylePlaylists"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:clipToPadding="false"
+                            android:nestedScrollingEnabled="false"
+                            android:overScrollMode="never"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:scrollbars="none" />
                     </LinearLayout>
-                </FrameLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvLangPlaylists"
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_s"
-                    android:clipToPadding="false"
-                    android:nestedScrollingEnabled="false"
-                    android:overScrollMode="never"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    android:scrollbars="none" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
                     android:layout_marginTop="@dimen/spacing_m"
-                    android:alpha="0.72"
-                    android:background="?attr/colorOutline" />
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:strokeColor="?attr/dividerColor">
 
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_l">
-
-                    <TextView
-                        android:id="@+id/tvStyleTitle"
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/playlist_group_style"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@id/pbStyle"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
+                        android:orientation="vertical"
+                        android:padding="@dimen/spacing_l">
 
-                    <ProgressBar
-                        android:id="@+id/pbStyle"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:visibility="gone"
-                        app:layout_constraintBottom_toBottomOf="@id/tvStyleTitle"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/tvStyleTitle" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvStylePlaylists"
+                            <TextView
+                                android:id="@+id/tvSceneTitle"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/playlist_group_scene"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintEnd_toStartOf="@id/pbScene"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <ProgressBar
+                                android:id="@+id/pbScene"
+                                style="?android:attr/progressBarStyleSmall"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:visibility="gone"
+                                app:layout_constraintBottom_toBottomOf="@id/tvSceneTitle"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintTop_toTopOf="@id/tvSceneTitle" />
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvScenePlaylists"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:clipToPadding="false"
+                            android:nestedScrollingEnabled="false"
+                            android:overScrollMode="never"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:scrollbars="none" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
-                    android:clipToPadding="false"
-                    android:nestedScrollingEnabled="false"
-                    android:overScrollMode="never"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    android:scrollbars="none" />
+                    android:layout_marginTop="@dimen/spacing_m"
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:strokeColor="?attr/dividerColor">
 
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm">
-
-                    <TextView
-                        android:id="@+id/tvSceneTitle"
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/playlist_group_scene"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@id/pbScene"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
+                        android:orientation="vertical"
+                        android:padding="@dimen/spacing_l">
 
-                    <ProgressBar
-                        android:id="@+id/pbScene"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:visibility="gone"
-                        app:layout_constraintBottom_toBottomOf="@id/tvSceneTitle"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/tvSceneTitle" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvScenePlaylists"
+                            <TextView
+                                android:id="@+id/tvEmotionTitle"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/playlist_group_emotion"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintEnd_toStartOf="@id/pbEmotion"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <ProgressBar
+                                android:id="@+id/pbEmotion"
+                                style="?android:attr/progressBarStyleSmall"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:visibility="gone"
+                                app:layout_constraintBottom_toBottomOf="@id/tvEmotionTitle"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintTop_toTopOf="@id/tvEmotionTitle" />
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvEmotionPlaylists"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:clipToPadding="false"
+                            android:nestedScrollingEnabled="false"
+                            android:overScrollMode="never"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:scrollbars="none" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
-                    android:clipToPadding="false"
-                    android:nestedScrollingEnabled="false"
-                    android:overScrollMode="never"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    android:scrollbars="none" />
-
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm">
-
-                    <TextView
-                        android:id="@+id/tvEmotionTitle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/playlist_group_emotion"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@id/pbEmotion"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
-
-                    <ProgressBar
-                        android:id="@+id/pbEmotion"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:visibility="gone"
-                        app:layout_constraintBottom_toBottomOf="@id/tvEmotionTitle"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/tvEmotionTitle" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvEmotionPlaylists"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
-                    android:clipToPadding="false"
-                    android:nestedScrollingEnabled="false"
-                    android:overScrollMode="never"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    android:scrollbars="none" />
-
-                <androidx.constraintlayout.widget.ConstraintLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm">
-
-                    <TextView
-                        android:id="@+id/tvThemeTitle"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/playlist_group_theme"
-                        android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold"
-                        app:layout_constraintBottom_toBottomOf="parent"
-                        app:layout_constraintEnd_toStartOf="@id/pbTheme"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
-
-                    <ProgressBar
-                        android:id="@+id/pbTheme"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:visibility="gone"
-                        app:layout_constraintBottom_toBottomOf="@id/tvThemeTitle"
-                        app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintTop_toTopOf="@id/tvThemeTitle" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvThemePlaylists"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
+                    android:layout_marginTop="@dimen/spacing_m"
                     android:layout_marginBottom="@dimen/spacing_m"
-                    android:clipToPadding="false"
-                    android:nestedScrollingEnabled="false"
-                    android:overScrollMode="never"
-                    android:paddingStart="0dp"
-                    android:paddingEnd="0dp"
-                    android:scrollbars="none" />
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:strokeColor="?attr/dividerColor">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/spacing_l">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:id="@+id/tvThemeTitle"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/playlist_group_theme"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintEnd_toStartOf="@id/pbTheme"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <ProgressBar
+                                android:id="@+id/pbTheme"
+                                style="?android:attr/progressBarStyleSmall"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:visibility="gone"
+                                app:layout_constraintBottom_toBottomOf="@id/tvThemeTitle"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintTop_toTopOf="@id/tvThemeTitle" />
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/rvThemePlaylists"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:clipToPadding="false"
+                            android:nestedScrollingEnabled="false"
+                            android:overScrollMode="never"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:scrollbars="none" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
 

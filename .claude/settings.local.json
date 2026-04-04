@@ -8,7 +8,13 @@
       "Read(//c/Program Files/**)",
       "Read(//c/Program Files/Eclipse Adoptium//**)",
       "Read(//c/Program Files/Android/Android Studio/jbr//**)",
-      "Bash(./gradlew :app:compileDebugKotlin:*)"
+      "Bash(./gradlew :app:compileDebugKotlin:*)",
+      "Bash(node -v && npm -v)",
+      "Bash(npm install -g @openai/codex)",
+      "Bash(codex --version)",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(./gradlew compileDebugKotlin)"
     ]
   }
 }

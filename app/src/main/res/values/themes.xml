@@ -9,9 +9,6 @@
         <item name="android:windowBackground">?attr/pageBackground</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
     <style name="Theme.MusicPlayer.Sunset" parent="Theme.MusicPlayer.Base">
@@ -117,71 +114,71 @@
     </style>
 
     <style name="Theme.MusicPlayer.Light" parent="Theme.MusicPlayer.Base">
-        <item name="colorPrimary">#FFB86F46</item>
-        <item name="colorPrimaryContainer">#FFF3DCCB</item>
-        <item name="colorOnPrimaryContainer">#FF6E3F24</item>
-        <item name="colorSecondary">#FF2F8A7C</item>
+        <item name="colorPrimary">#FF2563EB</item>
+        <item name="colorPrimaryContainer">#FFDCE8FF</item>
+        <item name="colorOnPrimaryContainer">#FF1E3A8A</item>
+        <item name="colorSecondary">#FF14B8A6</item>
         <item name="colorOnSecondary">@color/white</item>
-        <item name="colorSurface">#FFFFFBF7</item>
-        <item name="colorOnSurface">#FF1B1714</item>
-        <item name="colorSurfaceVariant">#FFF3EBE1</item>
-        <item name="colorOnSurfaceVariant">#FF73665C</item>
-        <item name="colorOutline">#1F5E4638</item>
-        <item name="android:colorBackground">#FFF6F0E8</item>
-        <item name="colorOnBackground">#FF1B1714</item>
-        <item name="brandPrimary">#FFB86F46</item>
-        <item name="brandPrimaryDark">#FF7A4628</item>
-        <item name="brandPrimaryLight">#FFF3DCCB</item>
-        <item name="brandSecondary">#FF2F8A7C</item>
-        <item name="pageBackground">#FFF6F0E8</item>
-        <item name="surfaceColor">#FFFFFBF7</item>
-        <item name="surfaceAltColor">#FFF3EBE1</item>
-        <item name="textPrimary">#FF1B1714</item>
-        <item name="textSecondary">#FF73665C</item>
-        <item name="dividerColor">#1F5E4638</item>
-        <item name="dangerColor">#FFD16361</item>
-        <item name="glassSurface">#CFFFFAF5</item>
-        <item name="glassSurfaceStrong">#F2FFFDF9</item>
-        <item name="glassSurfaceSoft">#D8F6EDE4</item>
-        <item name="glassStroke">#335E4638</item>
-        <item name="glassStrokeSoft">#1F5E4638</item>
-        <item name="glassHighlight">#99FFFFFF</item>
-        <item name="glassShadow">#121B1714</item>
-        <item name="glassOverlayTint">#14B86F46</item>
+        <item name="colorSurface">#FFFFFFFF</item>
+        <item name="colorOnSurface">#FF0F172A</item>
+        <item name="colorSurfaceVariant">#FFEDF2FA</item>
+        <item name="colorOnSurfaceVariant">#FF5F6B7C</item>
+        <item name="colorOutline">#14283C5A</item>
+        <item name="android:colorBackground">#FFF4F7FB</item>
+        <item name="colorOnBackground">#FF0F172A</item>
+        <item name="brandPrimary">#FF2563EB</item>
+        <item name="brandPrimaryDark">#FF1E40AF</item>
+        <item name="brandPrimaryLight">#FFDCE8FF</item>
+        <item name="brandSecondary">#FF14B8A6</item>
+        <item name="pageBackground">#FFF4F7FB</item>
+        <item name="surfaceColor">#FFFFFFFF</item>
+        <item name="surfaceAltColor">#FFEDF2FA</item>
+        <item name="textPrimary">#FF0F172A</item>
+        <item name="textSecondary">#FF5F6B7C</item>
+        <item name="dividerColor">#14283C5A</item>
+        <item name="dangerColor">#FFDC2626</item>
+        <item name="glassSurface">#FFF7FAFF</item>
+        <item name="glassSurfaceStrong">#FFFFFFFF</item>
+        <item name="glassSurfaceSoft">#FFF1F5FB</item>
+        <item name="glassStroke">#1F7C93B5</item>
+        <item name="glassStrokeSoft">#14283C5A</item>
+        <item name="glassHighlight">#FFEEF5FF</item>
+        <item name="glassShadow">#120F172A</item>
+        <item name="glassOverlayTint">#122563EB</item>
     </style>
 
     <style name="Theme.MusicPlayer.Dark" parent="Theme.MusicPlayer.Base">
-        <item name="colorPrimary">#FFF0A46F</item>
-        <item name="colorPrimaryContainer">#FF573421</item>
-        <item name="colorOnPrimaryContainer">#FFFCDCC6</item>
-        <item name="colorSecondary">#FF6ED8C8</item>
+        <item name="colorPrimary">#FF60A5FA</item>
+        <item name="colorPrimaryContainer">#FF1B3358</item>
+        <item name="colorOnPrimaryContainer">#FFDCEAFE</item>
+        <item name="colorSecondary">#FF2DD4BF</item>
         <item name="colorOnSecondary">@color/black</item>
-        <item name="colorSurface">#FF171A1F</item>
-        <item name="colorOnSurface">#FFF7F1EA</item>
-        <item name="colorSurfaceVariant">#FF20262D</item>
-        <item name="colorOnSurfaceVariant">#FFB9ADA0</item>
-        <item name="colorOutline">#33E0B28F</item>
-        <item name="android:colorBackground">#FF0F1217</item>
-        <item name="colorOnBackground">#FFF7F1EA</item>
-        <item name="brandPrimary">#FFF0A46F</item>
-        <item name="brandPrimaryDark">#FFB86A3A</item>
-        <item name="brandPrimaryLight">#FF5A3A2A</item>
-        <item name="brandSecondary">#FF6ED8C8</item>
-        <item name="pageBackground">#FF0F1217</item>
-        <item name="surfaceColor">#FF171A1F</item>
-        <item name="surfaceAltColor">#FF20262D</item>
-        <item name="textPrimary">#FFF7F1EA</item>
-        <item name="textSecondary">#FFB9ADA0</item>
-        <item name="dividerColor">#2EE0B28F</item>
-        <item name="dangerColor">#FFFF8E81</item>
-        <item name="glassSurface">#80212A35</item>
-        <item name="glassSurfaceStrong">#A828323D</item>
-        <item name="glassSurfaceSoft">#66242D37</item>
-        <item name="glassStroke">#70E8C9B0</item>
-        <item name="glassStrokeSoft">#3DE8C9B0</item>
-        <item name="glassHighlight">#80FFFFFF</item>
+        <item name="colorSurface">#FF111827</item>
+        <item name="colorOnSurface">#FFE5EDF8</item>
+        <item name="colorSurfaceVariant">#FF182235</item>
+        <item name="colorOnSurfaceVariant">#FF9AA8BD</item>
+        <item name="colorOutline">#223D4F6A</item>
+        <item name="android:colorBackground">#FF0B1220</item>
+        <item name="colorOnBackground">#FFE5EDF8</item>
+        <item name="brandPrimary">#FF60A5FA</item>
+        <item name="brandPrimaryDark">#FF2563EB</item>
+        <item name="brandPrimaryLight">#FF1B3358</item>
+        <item name="brandSecondary">#FF2DD4BF</item>
+        <item name="pageBackground">#FF0B1220</item>
+        <item name="surfaceColor">#FF111827</item>
+        <item name="surfaceAltColor">#FF182235</item>
+        <item name="textPrimary">#FFE5EDF8</item>
+        <item name="textSecondary">#FF9AA8BD</item>
+        <item name="dividerColor">#223D4F6A</item>
+        <item name="dangerColor">#FFF87171</item>
+        <item name="glassSurface">#FF111B2A</item>
+        <item name="glassSurfaceStrong">#FF141F31</item>
+        <item name="glassSurfaceSoft">#FF1A2840</item>
+        <item name="glassStroke">#335E7CA5</item>
+        <item name="glassStrokeSoft">#223D4F6A</item>
+        <item name="glassHighlight">#FF1D2C45</item>
         <item name="glassShadow">#80000000</item>
-        <item name="glassOverlayTint">#22F0A46F</item>
+        <item name="glassOverlayTint">#183B82F6</item>
     </style>
 
     <style name="Theme.MusicPlayer" parent="Theme.MusicPlayer.Light" />

@@ -5,10 +5,11 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
+import android.view.View
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import androidx.annotation.AttrRes
 import androidx.core.graphics.ColorUtils
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.music.player.R
 import com.music.player.databinding.ActivityMainBinding
@@ -115,65 +116,108 @@ object PlayerUiStyler {
 
     private fun applyGlassNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
         val pageBackground = context.resolveThemeColor(R.attr.pageBackground)
-        val glassSurface = context.resolveThemeColor(R.attr.glassSurface)
-        val glassStroke = context.resolveThemeColor(R.attr.glassStroke)
+        val surface = context.resolveThemeColor(R.attr.surfaceColor)
+        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
+        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
         val brandPrimary = context.resolveThemeColor(R.attr.brandPrimary)
 
         binding.root.setBackgroundColor(pageBackground)
+        binding.ivBlurBackground.visibility = View.GONE
         binding.viewScrim.setBackgroundColor(pageBackground)
-        binding.viewScrim.alpha = 0.72f
-        binding.ivBlurBackground.alpha = 0.5f
+        binding.viewScrim.alpha = 1f
 
         binding.progressContainer.background = null
-        stylePlayerControlsBar(binding.controlsBar, glassSurface, 0, 28f, 0f, context)
+        stylePlayerControlsBar(
+            binding.controlsBar,
+            ColorUtils.setAlphaComponent(surface, 250),
+            0,
+            24f,
+            0f,
+            context
+        )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
-            backgroundColor = context.resolveThemeColor(R.attr.glassSurfaceStrong),
-            strokeColor = glassStroke,
-            tintColor = textSecondary,
+            buttons = listOf(binding.btnClose, binding.btnFavorite),
+            backgroundColor = surfaceAlt,
+            strokeColor = 0,
+            tintColor = textPrimary
+        )
+        styleSecondaryButtons(
+            buttons = listOf(binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            backgroundColor = surfaceAlt,
+            strokeColor = 0,
+            tintColor = textSecondary
+        )
+        binding.btnPlayPause.background = circleDrawable(brandPrimary, 0)
+        binding.btnPlayPause.imageTintList =
+            context.resolveThemeColorStateList(com.google.android.material.R.attr.colorOnPrimary)
+        stylePillButton(
+            button = binding.btnAudioQuality,
+            backgroundColor = surfaceAlt,
+            strokeColor = 0,
+            textColor = textPrimary,
+            iconTintColor = brandPrimary,
             context = context
         )
-        binding.btnPlayPause.background = glowCircleDrawable(brandPrimary, context.resolveThemeColor(R.attr.brandPrimaryDark))
+        binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
+        binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.dividerColor)
+        binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
+        binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
+        binding.tvCurrentTime.setTextColor(textSecondary)
+        binding.tvTotalTime.setTextColor(textSecondary)
+        styleNowPlayingContent(binding, textPrimary, textSecondary)
     }
 
     private fun applyVinylNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
         val surface = context.resolveThemeColor(R.attr.surfaceColor)
         val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
         val brandPrimary = context.resolveThemeColor(R.attr.brandPrimary)
-        val brandPrimaryDark = context.resolveThemeColor(R.attr.brandPrimaryDark)
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
 
         binding.root.setBackgroundColor(surface)
-        binding.viewScrim.setBackgroundColor(ColorUtils.blendARGB(surface, brandPrimaryDark, 0.22f))
-        binding.viewScrim.alpha = 0.60f
-        binding.ivBlurBackground.alpha = 0.7f
+        binding.ivBlurBackground.visibility = View.GONE
+        binding.viewScrim.setBackgroundColor(surface)
+        binding.viewScrim.alpha = 1f
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(
             binding.controlsBar,
             backgroundColor = ColorUtils.setAlphaComponent(surfaceAlt, 248),
             strokeColor = 0,
-            radiusDp = 32f,
+            radiusDp = 26f,
             strokeWidthDp = 0f,
             context = context
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnClose, binding.btnFavorite),
+            backgroundColor = ColorUtils.setAlphaComponent(surface, 252),
+            strokeColor = 0,
+            tintColor = textPrimary
+        )
+        styleSecondaryButtons(
+            buttons = listOf(binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = ColorUtils.setAlphaComponent(surfaceAlt, 250),
-            strokeColor = ColorUtils.setAlphaComponent(brandPrimary, 96),
-            tintColor = textPrimary,
+            strokeColor = 0,
+            tintColor = textPrimary
+        )
+        binding.btnPlayPause.background = circleDrawable(brandPrimary, 0)
+        binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(com.google.android.material.R.attr.colorOnPrimary)
+        stylePillButton(
+            button = binding.btnAudioQuality,
+            backgroundColor = ColorUtils.setAlphaComponent(surface, 252),
+            strokeColor = 0,
+            textColor = textPrimary,
+            iconTintColor = brandPrimary,
             context = context
         )
-        binding.btnPlayPause.background = glowCircleDrawable(brandPrimary, brandPrimaryDark)
-        binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(com.google.android.material.R.attr.colorOnPrimary)
         binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
         binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
         binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
         binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
         binding.tvCurrentTime.setTextColor(textSecondary)
         binding.tvTotalTime.setTextColor(textSecondary)
+        styleNowPlayingContent(binding, textPrimary, textSecondary)
     }
 
     private fun applyMinimalNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
@@ -185,27 +229,35 @@ object PlayerUiStyler {
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
 
         binding.root.setBackgroundColor(pageBackground)
+        binding.ivBlurBackground.visibility = View.GONE
         binding.viewScrim.setBackgroundColor(pageBackground)
-        binding.viewScrim.alpha = 0.88f
-        binding.ivBlurBackground.alpha = 0.28f
+        binding.viewScrim.alpha = 1f
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(binding.controlsBar, surface, 0, 22f, 0f, context)
         styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnClose, binding.btnFavorite, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = surfaceAlt,
             strokeColor = 0,
-            tintColor = textPrimary,
-            context = context
+            tintColor = textPrimary
         )
         binding.btnPlayPause.background = circleDrawable(brandPrimary, 0)
         binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(com.google.android.material.R.attr.colorOnPrimary)
+        stylePillButton(
+            button = binding.btnAudioQuality,
+            backgroundColor = surfaceAlt,
+            strokeColor = 0,
+            textColor = textPrimary,
+            iconTintColor = brandPrimary,
+            context = context
+        )
         binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
         binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.dividerColor)
         binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
         binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
         binding.tvCurrentTime.setTextColor(textSecondary)
         binding.tvTotalTime.setTextColor(textSecondary)
+        styleNowPlayingContent(binding, textPrimary, textSecondary)
     }
 
     private fun stylePlayerControlsBar(
@@ -226,14 +278,44 @@ object PlayerUiStyler {
         buttons: List<ImageButton>,
         backgroundColor: Int,
         strokeColor: Int,
-        tintColor: Int,
-        context: Context
+        tintColor: Int
     ) {
         val background = circleDrawable(backgroundColor, strokeColor)
         buttons.forEach { button ->
             button.background = background.constantState?.newDrawable()?.mutate()
             button.imageTintList = android.content.res.ColorStateList.valueOf(tintColor)
         }
+    }
+
+    private fun stylePillButton(
+        button: MaterialButton,
+        backgroundColor: Int,
+        strokeColor: Int,
+        textColor: Int,
+        iconTintColor: Int,
+        context: Context
+    ) {
+        button.backgroundTintList = ColorStateList.valueOf(backgroundColor)
+        button.strokeWidth = if (strokeColor == 0) 0 else context.dp(1f)
+        button.strokeColor = if (strokeColor == 0) null else ColorStateList.valueOf(strokeColor)
+        button.setTextColor(textColor)
+        button.iconTint = ColorStateList.valueOf(iconTintColor)
+    }
+
+    private fun styleNowPlayingContent(
+        binding: BottomSheetNowPlayingBinding,
+        primaryText: Int,
+        secondaryText: Int
+    ) {
+        binding.playerContent.lyricsStage.background = null
+        binding.playerContent.rvLyrics.background = null
+        binding.playerContent.tvLyricsPlain.background = null
+        binding.playerContent.cardCoverBig.strokeWidth = 0
+        binding.playerContent.cardCoverBig.strokeColor = 0
+        binding.playerContent.tvTitleBig.setTextColor(primaryText)
+        binding.playerContent.tvArtistBig.setTextColor(secondaryText)
+        binding.playerContent.tvLyricsPlain.setTextColor(secondaryText)
+        binding.tvSheetTitle.setTextColor(primaryText)
     }
 
     private fun roundedPanelDrawable(

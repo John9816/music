@@ -13,6 +13,7 @@ import com.music.player.data.model.Playlist
 import com.music.player.data.model.PlaylistCategory
 import com.music.player.databinding.FragmentPlaylistsBinding
 import com.music.player.ui.adapter.PlaylistAdapter
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -55,6 +56,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
+        binding.layoutHeroContent.applyStatusBarInsetPadding()
         setupUi()
         setupObservers()
         setupInteractions()

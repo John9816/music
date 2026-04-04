@@ -21,6 +21,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerNotificationManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
@@ -28,6 +29,7 @@ import com.bumptech.glide.request.transition.Transition
 import com.music.player.MainActivity
 import com.music.player.R
 
+@UnstableApi
 class PlaybackService : Service() {
 
     companion object {

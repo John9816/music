@@ -2,7 +2,9 @@ package com.music.player.playback
 
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 
+@UnstableApi
 internal class QueueAwarePlayer(player: Player) : ForwardingPlayer(player) {
 
     // Keep actions visible on the notification card; coordinator decides what to do.

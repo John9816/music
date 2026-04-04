@@ -80,7 +80,7 @@
                             android:contentDescription="@string/content_desc_avatar"
                             android:padding="22dp"
                             android:src="@drawable/ic_person_24"
-                            android:tint="?attr/brandPrimary" />
+                            app:tint="?attr/brandPrimary" />
                     </com.google.android.material.card.MaterialCardView>
 
                     <TextView
@@ -204,4 +204,3 @@
     </ScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-

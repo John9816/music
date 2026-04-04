@@ -174,7 +174,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 .onSuccess { songs ->
                     _latestHistorySong.value = songs.firstOrNull()
                     _history.value = applyPinnedHistoryOrder(songs)
-                    if (!silent) _message.value = "播放历史已同步"
+                    if (silent) {
+                        // History refresh success stays silent.
+                    }
                 }
                 .onFailure { _message.value = it.message ?: "获取播放历史失败" }
             _isLoading.value = false
