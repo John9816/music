@@ -285,7 +285,7 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) return
         if (hasCheckedForUpdatesThisProcess) return
         hasCheckedForUpdatesThisProcess = true
-        updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = false)
+        updateViewModel.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, userInitiated = false)
     }
 
     private fun setupEdgeToEdge() {
@@ -312,8 +312,7 @@ class MainActivity : AppCompatActivity() {
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNavContainer) { view, insets ->
             val bars = insets.safeDrawingInsets()
-            val floatingOffset = resources.getDimensionPixelSize(R.dimen.spacing_s)
-            view.updatePadding(bottom = (bars.bottom - floatingOffset).coerceAtLeast(0))
+            view.updatePadding(bottom = bars.bottom.coerceAtLeast(0))
             insets
         }
         binding.toolbar.requestApplyInsets()
@@ -533,6 +532,9 @@ class MainActivity : AppCompatActivity() {
         binding.miniProgress.max = 1000
 
         binding.btnMiniPlayPause.setOnClickListener {
+            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }.start()
             val p = player ?: return@setOnClickListener
             val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {
@@ -549,12 +551,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnMiniQueue.setOnClickListener {
+            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }.start()
             if (musicViewModel.currentSong.value != null) {
                 QueueBottomSheetFragment().show(supportFragmentManager, "queue")
             }
         }
 
         binding.miniPlayer.setOnClickListener {
+            it.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }.start()
             if (musicViewModel.currentSong.value != null) {
                 NowPlayingBottomSheetFragment().show(supportFragmentManager, "now_playing")
             }
@@ -678,44 +686,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        if (Build.VERSION.SDK_INT >= 29) {
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
-        }
-
-        return WindowInsetsControllerCompat(window, rootView).apply {
-            isAppearanceLightStatusBars = lightSystemBars
-            isAppearanceLightNavigationBars = lightSystemBars
-            hide(WindowInsetsCompat.Type.navigationBars())
-        }
-    }
-
-    private fun View.applyStatusBarInsetPadding() {
-        applySystemBarInsetPadding(applyTop = true)
-    }
-
-    private fun View.applyNavigationBarInsetPadding() {
-        applySystemBarInsetPadding(applyBottom = true)
-    }
-
-    private fun View.applySystemBarInsetPadding(
-        applyTop: Boolean = false,
-        applyBottom: Boolean = false
-    ) {
-        val initialTop = paddingTop
-        val initialBottom = paddingBottom
-        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.safeDrawingInsets()
-            view.updatePadding(
-                top = initialTop + if (applyTop) bars.top else 0,
-                bottom = initialBottom + if (applyBottom) bars.bottom else 0
-            )
-            insets
-        }
-        ViewCompat.requestApplyInsets(this)
-    }
 }

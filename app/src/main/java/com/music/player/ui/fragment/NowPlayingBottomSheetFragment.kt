@@ -38,6 +38,7 @@ import com.music.player.R
 import com.music.player.data.model.LyricLine
 import com.music.player.databinding.BottomSheetNowPlayingBinding
 import com.music.player.ui.adapter.LyricsAdapter
+import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -81,6 +82,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private var coverRotateAnimator: ObjectAnimator? = null
     private var favoriteIds: Set<String> = emptySet()
     private var showingLyrics: Boolean = false
+    private var viewGlowHalo: View? = null
+    private var glowAnimator: ObjectAnimator? = null
+    private var immersiveBackground: ImmersiveHeaderBackground? = null
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -153,6 +157,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         progressJob?.cancel()
         progressJob = null
         stopCoverRotation()
+        stopGlowAnimation()
         super.onStop()
     }
 
@@ -165,6 +170,18 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
+        binding.ivBlurBackground.visibility = View.VISIBLE
+        immersiveBackground = ImmersiveHeaderBackground(
+            lifecycleOwner = viewLifecycleOwner,
+            imageView = binding.ivBlurBackground
+        ) { suggestion ->
+            binding.viewScrim.alpha = suggestion.topScrimAlpha.coerceIn(0.16f, 0.42f)
+            dialog?.window?.let { window ->
+                val controller = WindowInsetsControllerCompat(window, binding.root)
+                controller.isAppearanceLightStatusBars = suggestion.lightSystemBars
+                controller.isAppearanceLightNavigationBars = suggestion.lightSystemBars
+            }
+        }
 
         // Direct view references — no ViewPager2
         // playerContent is an included layout binding (PageNowPlayingCoverBinding)
@@ -179,6 +196,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         ivCoverBig = contentRoot.findViewById(R.id.ivCoverBig)
         rvLyrics = contentRoot.findViewById(R.id.rvLyrics)
         tvLyricsPlain = contentRoot.findViewById(R.id.tvLyricsPlain)
+        viewGlowHalo = contentRoot.findViewById(R.id.viewGlowHalo)
 
         coverStage?.setOnClickListener { showLyricsStage() }
         lyricsStage?.setOnClickListener { showCoverStage() }
@@ -252,9 +270,22 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             }
         }
 
-        binding.btnPrev.setOnClickListener { musicViewModel.skipPrevious() }
-        binding.btnNext.setOnClickListener { musicViewModel.skipNext() }
+        binding.btnPrev.setOnClickListener {
+            it.animate().scaleX(0.8f).scaleY(0.8f).setDuration(60).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+            }.start()
+            musicViewModel.skipPrevious()
+        }
+        binding.btnNext.setOnClickListener {
+            it.animate().scaleX(0.8f).scaleY(0.8f).setDuration(60).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+            }.start()
+            musicViewModel.skipNext()
+        }
         binding.btnPlayPause.setOnClickListener {
+            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
+                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }.start()
             val p = (activity as? MainActivity)?.player ?: return@setOnClickListener
             val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {
@@ -284,6 +315,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         musicViewModel.queue.observe(viewLifecycleOwner) {
             syncSkipButtons()
+            updatePlaybackMeta()
         }
         musicViewModel.canSkipPrevious.observe(viewLifecycleOwner) {
             syncSkipButtons()
@@ -329,6 +361,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private fun updateAudioQualityButton() {
         if (_binding == null) return
         binding.btnAudioQuality.text = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
+        updatePlaybackMeta()
     }
 
     private fun toggleFavoriteForCurrentSong() {
@@ -369,6 +402,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             binding.tvSheetTitle.text = getString(R.string.current_playing_empty)
             binding.tvSheetSubtitle.text = getString(R.string.current_playing_hint)
             binding.tvSheetSubtitle.isVisible = true
+            binding.tvSheetMetaDetail.text = getString(R.string.now_playing_meta_no_song)
+            immersiveBackground?.setImageUrl(null)
             lyricsAdapter.submitList(emptyList())
             tvLyricsPlain?.visibility = View.VISIBLE
             rvLyrics?.visibility = View.GONE
@@ -383,6 +418,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.tvSheetTitle.text = song.name
         binding.tvSheetSubtitle.text = artistText
         binding.tvSheetSubtitle.isVisible = artistText.isNotBlank()
+        updatePlaybackMeta()
 
         // Parse and display lyrics
         val parsed = LyricsParser.parse(song.lyric)
@@ -403,6 +439,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         // Load cover image
         val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
+        immersiveBackground?.setImageUrl(coverUrl)
         if (coverUrl == null) {
             ivCoverBig?.setImageResource(R.drawable.ic_music_note_24)
             ivCoverBig?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
@@ -431,6 +468,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             lyricsStage?.alpha = 1f
         }
         syncCoverRotation()
+        val player = (activity as? MainActivity)?.player
+        syncGlowWithPlayback(player?.isPlaying == true, true)
     }
 
     private fun showLyricsStage() {
@@ -440,6 +479,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         lyricsStage?.alpha = 1f
         coverStage?.alpha = 1f
         pauseCoverRotation()
+        syncGlowWithPlayback(false, false)
     }
 
     private fun syncPlayPauseIcon(isPlaying: Boolean) {
@@ -448,6 +488,24 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnPlayPause.setImageResource(icon)
         binding.btnPlayPause.contentDescription = getString(contentDesc)
         syncCoverRotation()
+        syncGlowWithPlayback(isPlaying, !showingLyrics)
+    }
+
+    private fun updatePlaybackMeta() {
+        if (_binding == null) return
+        val quality = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
+        val currentSong = musicViewModel.currentSong.value
+        val nextSongTitle = musicViewModel.queue.value.orEmpty()
+            .firstOrNull()
+            ?.name
+            ?.trim()
+            .orEmpty()
+        binding.tvSheetMetaDetail.text = when {
+            currentSong == null -> getString(R.string.now_playing_meta_no_song)
+            nextSongTitle.isNotBlank() -> getString(R.string.now_playing_meta_with_next, quality, nextSongTitle)
+            !currentSong.lyric.isNullOrBlank() -> getString(R.string.now_playing_meta_with_lyrics, quality)
+            else -> getString(R.string.now_playing_meta_without_queue, quality)
+        }
     }
 
     private fun updateFullscreenContentPadding() {
@@ -511,6 +569,38 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
     }
 
+    // ── Glow Animation ─────────────────────────────────────────────
+
+    private fun startGlowAnimation() {
+        val halo = viewGlowHalo ?: return
+        glowAnimator?.cancel()
+        glowAnimator = ObjectAnimator.ofFloat(halo, "alpha", 0.3f, 0.9f, 0.3f).apply {
+            duration = 2000L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.RESTART
+        }.also { glowAnimator = it }
+        halo.visibility = View.VISIBLE
+        glowAnimator?.start()
+    }
+
+    private fun stopGlowAnimation() {
+        glowAnimator?.cancel()
+        glowAnimator = null
+        viewGlowHalo?.visibility = View.INVISIBLE
+    }
+
+    private fun syncGlowWithPlayback(isPlaying: Boolean, showingCover: Boolean) {
+        if (!showingCover) {
+            stopGlowAnimation()
+            return
+        }
+        if (isPlaying) {
+            startGlowAnimation()
+        } else {
+            stopGlowAnimation()
+        }
+    }
+
     // ── Play mode ─────────────────────────────────────────────────
 
     private enum class PlayMode {
@@ -560,11 +650,11 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     // ── Lyrics sync ───────────────────────────────────────────────
 
     private fun startLyricUpdates() {
-        val player = (activity as? MainActivity)?.player ?: return
         lyricJob?.cancel()
         lyricJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
-                if (rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
+                val player = (activity as? MainActivity)?.player
+                if (player != null && rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
                     val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
                     if (index != currentActiveIndex) {
                         currentActiveIndex = index
@@ -603,10 +693,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     // ── Progress updates ──────────────────────────────────────────
 
     private fun startProgressUpdates() {
-        val player = (activity as? MainActivity)?.player ?: return
         progressJob?.cancel()
         progressJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
+                val player = (activity as? MainActivity)?.player
+                if (player == null) {
+                    delay(250)
+                    continue
+                }
                 val durationMs = player.duration
                 val hasDuration = durationMs > 0L && durationMs != C.TIME_UNSET
                 val safeDuration = if (hasDuration) durationMs else 1L
@@ -703,6 +797,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         progressJob?.cancel()
         progressJob = null
         stopCoverRotation()
+        stopGlowAnimation()
+        immersiveBackground?.clear()
+        immersiveBackground = null
         _binding = null
         super.onDestroyView()
     }

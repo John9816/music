@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  歌曲流媒体地址由第三方音乐 API 动态返回，部分主机仅提供 http，
+  因此默认允许明文流量以保证播放可用。
+  但自有后端与登录服务强制 https，避免被降级或中间人攻击。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.751152.xyz</domain>
+        <domain includeSubdomains="true">api.github.com</domain>
+        <domain includeSubdomains="true">duckmusic.app</domain>
+        <domain includeSubdomains="true">api.dicebear.com</domain>
+    </domain-config>
+</network-security-config>

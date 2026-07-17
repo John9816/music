@@ -14,6 +14,22 @@ if (hasReleaseSigning) {
     }
 }
 
+// Secrets are read from local.properties (git-ignored) or environment variables (CI),
+// never hardcoded in source. Falls back to empty string if unset so the build still runs.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { stream ->
+        localProperties.load(stream)
+    }
+}
+def resolveSecret = { String key, String defaultValue ->
+    def value = localProperties.getProperty(key) ?: System.getenv(key)
+    return value ?: defaultValue
+}
+def supabaseUrl = resolveSecret('SUPABASE_URL', 'https://api.751152.xyz')
+def supabaseAnonKey = resolveSecret('SUPABASE_ANON_KEY', '')
+
 android {
     namespace 'com.music.player'
     compileSdk 34
@@ -24,14 +40,18 @@ android {
         targetSdk 34
         versionCode 3
         versionName "1.0.2"
+        resConfigs "zh", "en"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
+        buildConfigField "String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\""
     }
 
     signingConfigs {
         if (hasReleaseSigning) {
             release {
-                storeFile file(keystoreProperties['storeFile'])
+                storeFile rootProject.file(keystoreProperties['storeFile'])
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
@@ -40,8 +60,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
@@ -58,6 +85,20 @@ android {
     buildFeatures {
         buildConfig true
         viewBinding true
+    }
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/license.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/notice.txt',
+                'META-INF/*.kotlin_module'
+            ]
+        }
     }
 }
 
@@ -84,6 +125,8 @@ dependencies {
     // ExoPlayer for audio playback
     implementation 'androidx.media3:media3-exoplayer:1.2.1'
     implementation 'androidx.media3:media3-ui:1.2.1'
+    // MediaSession: lock screen / bluetooth / headset media controls, system media panel
+    implementation 'androidx.media3:media3-session:1.2.1'
 
     // Glide for image loading
     implementation 'com.github.bumptech.glide:glide:4.16.0'
@@ -97,6 +140,9 @@ dependencies {
 
     // DataStore for preferences
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
+
+    // Encrypted storage for auth tokens
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

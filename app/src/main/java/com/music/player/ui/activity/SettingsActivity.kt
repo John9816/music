@@ -13,11 +13,15 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
+import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
+import com.music.player.data.settings.AudioQualityPreferences
+import com.music.player.data.settings.AppSettings
 import com.music.player.databinding.ActivitySettingsBinding
+import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.viewmodel.AuthState
@@ -55,9 +59,8 @@ class SettingsActivity : AppCompatActivity() {
             markMainNeedsRecreate()
         }
 
-        val isNightMode =
-            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val isNightMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
         insetsController = applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
         binding.toolbar.applyStatusBarInsetPadding()
         binding.scrollView.applyNavigationBarInsetPadding()
@@ -77,7 +80,11 @@ class SettingsActivity : AppCompatActivity() {
 
         setupUi()
         setupObservers()
-        binding.tvAppVersion.text = "Local version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        updateAudioQualitySummary()
+        updateSleepTimerSummary(AppSettings.remainingSleepMinutes(this))
+        updateStreamQualitySummary(AppSettings.mobileStreamQuality(this))
+        updateCacheSize()
+        updateDownloadedSize()
         authViewModel.refreshProfile()
     }
 
@@ -92,13 +99,48 @@ class SettingsActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
 
         binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
-        binding.btnCheckUpdate.setOnClickListener {
-            updateViewModel.check(BuildConfig.VERSION_CODE, userInitiated = true)
+        binding.btnLogout.setOnClickListener { showLogoutConfirmation() }
+
+        // Playback
+        binding.layoutAudioQuality.setOnClickListener { showAudioQualityDialog() }
+        binding.layoutSleepTimer.setOnClickListener { showSleepTimerDialog() }
+
+        // Network
+        binding.layoutStreamQuality.setOnClickListener { showStreamQualityDialog() }
+        binding.switchDownloadWifiOnly.isChecked = AppSettings.isDownloadWifiOnly(this)
+        binding.switchDownloadWifiOnly.setOnCheckedChangeListener { _, isChecked ->
+            AppSettings.setDownloadWifiOnly(this, isChecked)
         }
-        binding.btnTheme.setOnClickListener { showSkinDialog() }
-        binding.btnLogout.setOnClickListener {
-            authViewModel.signOut()
-            navigateToLogin()
+
+        // Cache
+        binding.layoutManageDownloads.setOnClickListener {
+            startActivity(Intent(this, DownloadsActivity::class.java))
+        }
+        binding.layoutClearCache.setOnClickListener { clearCache() }
+
+        // Theme & Update
+        binding.layoutTheme.setOnClickListener { showSkinDialog() }
+        binding.layoutCheckUpdate.setOnClickListener {
+            updateViewModel.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, userInitiated = true)
+        }
+
+        // About
+        binding.layoutAbout.setOnClickListener {
+            startActivity(Intent(this, AboutActivity::class.java))
+        }
+        binding.layoutHelpFeedback.setOnClickListener {
+            startActivity(Intent(this, HelpFeedbackActivity::class.java))
+        }
+        binding.layoutUserAgreement.setOnClickListener {
+            // Open user agreement URL
+            openUrl("https://duckmusic.app/agreement")
+        }
+        binding.layoutPrivacyPolicy.setOnClickListener {
+            // Open privacy policy URL
+            openUrl("https://duckmusic.app/privacy")
+        }
+        binding.layoutOpenSourceLicenses.setOnClickListener {
+            showOpenSourceLicenses()
         }
     }
 
@@ -113,11 +155,7 @@ class SettingsActivity : AppCompatActivity() {
                 is UpdateState.Idle -> Unit
                 is UpdateState.Loading -> {
                     if (state.userInitiated) {
-                        Toast.makeText(
-                            this,
-                            getString(R.string.profile_check_update) + "...",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(this, getString(R.string.profile_check_update) + "...", Toast.LENGTH_SHORT).show()
                     }
                 }
                 is UpdateState.Latest -> {
@@ -129,15 +167,11 @@ class SettingsActivity : AppCompatActivity() {
                 is UpdateState.UpdateAvailable -> {
                     appUpdatePreferences.clearSkippedIfOlderThan(state.latest.buildNumber)
                     if (!state.userInitiated &&
-                        appUpdatePreferences.shouldSuppressAutoPrompt(
-                            buildNumber = state.latest.buildNumber,
-                            force = state.force
-                        )
+                        appUpdatePreferences.shouldSuppressAutoPrompt(state.latest.buildNumber, force = state.force)
                     ) {
                         updateViewModel.reset()
                         return@observe
                     }
-
                     AppUpdateDialogs.show(
                         activity = this,
                         currentVersion = BuildConfig.VERSION_NAME,
@@ -194,6 +228,112 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun showLogoutConfirmation() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.profile_logout)
+            .setMessage("确定要退出当前账号吗？")
+            .setPositiveButton(R.string.profile_logout) { _, _ ->
+                authViewModel.signOut()
+                navigateToLogin()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEditProfileDialog() {
+        val user = currentUser ?: return
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_profile, null)
+
+        val etUsername = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etUsername)
+        val etNickname = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etNickname)
+        val etSignature = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etSignature)
+        val etAvatarUrl = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etAvatarUrl)
+
+        etUsername.setText(user.username.orEmpty())
+        etNickname.setText(user.nickname.orEmpty())
+        etSignature.setText(user.signature.orEmpty())
+        etAvatarUrl.setText(user.avatar_url.orEmpty())
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.profile_edit_title)
+            .setView(dialogView)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.profile_edit_confirm) { _, _ ->
+                authViewModel.updateProfile(
+                    username = etUsername.text?.toString()?.trim(),
+                    nickname = etNickname.text?.toString()?.trim(),
+                    signature = etSignature.text?.toString()?.trim(),
+                    avatarUrl = etAvatarUrl.text?.toString()?.trim()
+                )
+            }
+            .show()
+    }
+
+    private fun showAudioQualityDialog() {
+        val levels = AudioQualityPreferences.Level.entries.toTypedArray()
+        val names: Array<String> = levels.map { it.displayName }.toTypedArray()
+        val current = levels.indexOf(AudioQualityPreferences.getPreferredLevel(this)).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_audio_quality_dialog_title)
+            .setSingleChoiceItems(names, current) { dialog, which ->
+                AudioQualityPreferences.setPreferredLevel(this@SettingsActivity, levels[which])
+                updateAudioQualitySummary()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showSleepTimerDialog() {
+        val options = arrayOf(
+            getString(R.string.sleep_timer_off),
+            getString(R.string.sleep_timer_15min),
+            getString(R.string.sleep_timer_30min),
+            getString(R.string.sleep_timer_45min),
+            getString(R.string.sleep_timer_60min)
+        )
+        val durations = arrayOf(0L, 15L, 30L, 45L, 60L)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.sleep_timer_dialog_title)
+            .setItems(options) { _, which ->
+                val minutes = durations[which]
+                if (minutes == 0L) {
+                    PlaybackCoordinator.cancelSleepTimer()
+                    Toast.makeText(this, R.string.sleep_timer_cancelled, Toast.LENGTH_SHORT).show()
+                } else {
+                    PlaybackCoordinator.setSleepTimer(minutes)
+                    Toast.makeText(this, getString(R.string.sleep_timer_set, options[which]), Toast.LENGTH_SHORT).show()
+                }
+                updateSleepTimerSummary(minutes)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showStreamQualityDialog() {
+        val options = arrayOf(
+            getString(R.string.settings_stream_quality_wifi_only),
+            "标准音质",
+            "高品质",
+            "极高音质"
+        )
+        val values = AppSettings.MobileStreamQuality.entries.toTypedArray()
+        val current = values.indexOf(AppSettings.mobileStreamQuality(this)).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_stream_quality)
+            .setSingleChoiceItems(options, current) { dialog, which ->
+                AppSettings.setMobileStreamQuality(this, values[which])
+                updateStreamQualitySummary(values[which])
+                PlaybackCoordinator.reloadCurrentSongForAudioQualityChange()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun showSkinDialog() {
         val items = arrayOf(
             getString(R.string.settings_color_theme),
@@ -214,9 +354,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showThemeDialog() {
         val skins = ThemeManager.AppThemeSkin.entries.toList()
-        val items = skins.map { skin ->
-            "${getString(skin.titleResId)}\n${getString(skin.summaryResId)}"
-        }.toTypedArray()
+        val items = skins.map { s -> "${getString(s.titleResId)}\n${getString(s.summaryResId)}" }.toTypedArray()
         val checked = skins.indexOf(ThemeManager.getAppThemeSkin(this)).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(this)
@@ -233,9 +371,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showPlayerStyleDialog() {
         val styles = ThemeManager.PlayerStyle.entries.toList()
-        val items = styles.map { style ->
-            "${getString(style.titleResId)}\n${getString(style.summaryResId)}"
-        }.toTypedArray()
+        val items = styles.map { s -> "${getString(s.titleResId)}\n${getString(s.summaryResId)}" }.toTypedArray()
         val checked = styles.indexOf(ThemeManager.getPlayerStyle(this)).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(this)
@@ -250,6 +386,93 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showOpenSourceLicenses() {
+        val licenses = buildString {
+            appendLine("Duck Music 使用以下开源项目：")
+            appendLine()
+            appendLine("Retrofit — Apache 2.0")
+            appendLine("OkHttp — Apache 2.0")
+            appendLine("Glide — Apache 2.0")
+            appendLine("ExoPlayer (Media3) — Apache 2.0")
+            appendLine("Kotlin Coroutines — Apache 2.0")
+            appendLine("Material Components — Apache 2.0")
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_open_source_licenses)
+            .setMessage(licenses)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateAudioQualitySummary() {
+        binding.tvAudioQualitySummary.text = AudioQualityPreferences.getPreferredLevel(this).displayName
+    }
+
+    private fun updateSleepTimerSummary(minutes: Long) {
+        binding.tvSleepTimerSummary.text = when (minutes) {
+            0L -> getString(R.string.settings_sleep_timer_summary)
+            else -> getString(R.string.sleep_timer_set, "$minutes ${getString(R.string.sleep_timer_15min).replace("15 ", "")}")
+        }
+    }
+
+    private fun updateStreamQualitySummary(quality: AppSettings.MobileStreamQuality) {
+        binding.tvStreamQualitySummary.text = when (quality) {
+            AppSettings.MobileStreamQuality.WIFI_ONLY -> getString(R.string.settings_stream_quality_summary)
+            AppSettings.MobileStreamQuality.STANDARD -> "标准音质（省流量）"
+            AppSettings.MobileStreamQuality.HIGH -> "高品质"
+            AppSettings.MobileStreamQuality.EXTREME -> "极高音质（消耗流量）"
+        }
+    }
+
+    private fun updateCacheSize() {
+        val cacheDir = Glide.getPhotoCacheDir(this)
+        val size = cacheDir?.let { calculateDirSize(it) } ?: 0L
+        binding.tvCacheSize.text = getString(R.string.settings_cache_size, formatSize(size))
+    }
+
+    private fun updateDownloadedSize() {
+        val downloadDir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_MUSIC), "Duck Music")
+        val size = if (downloadDir.exists()) calculateDirSize(downloadDir) else 0L
+        binding.tvDownloadedSize.text = getString(R.string.settings_downloaded_size, formatSize(size))
+    }
+
+    private fun clearCache() {
+        Thread {
+            Glide.getPhotoCacheDir(this)?.delete()
+            runOnUiThread {
+                Toast.makeText(this, R.string.settings_cache_cleared, Toast.LENGTH_SHORT).show()
+                updateCacheSize()
+            }
+        }.start()
+    }
+
+    private fun calculateDirSize(dir: java.io.File): Long {
+        var size = 0L
+        dir.listFiles()?.forEach { file ->
+            size += if (file.isDirectory) calculateDirSize(file) else file.length()
+        }
+        return size
+    }
+
+    private fun formatSize(bytes: Long): String {
+        return when {
+            bytes >= 1024 * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
+            bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
+            bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
+            else -> "$bytes B"
+        }
+    }
+
     private fun markMainNeedsRecreate() {
         shouldRecreateMain = true
         intent.putExtra(EXTRA_SHOULD_RECREATE_MAIN, true)
@@ -261,39 +484,6 @@ class SettingsActivity : AppCompatActivity() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
-    }
-
-    private fun showEditProfileDialog() {
-        val user = currentUser ?: return
-        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_profile, null)
-
-        val etUsername =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etUsername)
-        val etNickname =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etNickname)
-        val etSignature =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etSignature)
-        val etAvatarUrl =
-            dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etAvatarUrl)
-
-        etUsername.setText(user.username.orEmpty())
-        etNickname.setText(user.nickname.orEmpty())
-        etSignature.setText(user.signature.orEmpty())
-        etAvatarUrl.setText(user.avatar_url.orEmpty())
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.profile_edit_title)
-            .setView(dialogView)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.profile_edit_confirm) { _, _ ->
-                authViewModel.updateProfile(
-                    username = etUsername.text?.toString()?.trim(),
-                    nickname = etNickname.text?.toString()?.trim(),
-                    signature = etSignature.text?.toString()?.trim(),
-                    avatarUrl = etAvatarUrl.text?.toString()?.trim()
-                )
-            }
-            .show()
     }
 
     override fun onDestroy() {
@@ -316,40 +506,30 @@ class SettingsActivity : AppCompatActivity() {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
         }
-
         return WindowInsetsControllerCompat(window, rootView).apply {
             isAppearanceLightStatusBars = lightSystemBars
             isAppearanceLightNavigationBars = lightSystemBars
-            systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
         }
     }
 
     private fun View.applyStatusBarInsetPadding() {
-        applySystemBarInsetPadding(applyTop = true)
+        val initialTop = (layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams)?.topMargin ?: 0
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = initialTop + bars.top)
+            insets
+        }
+        requestApplyInsets()
     }
 
     private fun View.applyNavigationBarInsetPadding() {
-        applySystemBarInsetPadding(applyBottom = true)
-    }
-
-    private fun View.applySystemBarInsetPadding(
-        applyTop: Boolean = false,
-        applyBottom: Boolean = false
-    ) {
-        val initialTop = paddingTop
-        val initialBottom = paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.getInsetsIgnoringVisibility(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            view.updatePadding(
-                top = initialTop + if (applyTop) bars.top else 0,
-                bottom = initialBottom + if (applyBottom) bars.bottom else 0
-            )
+            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = bars.bottom)
             insets
         }
-        ViewCompat.requestApplyInsets(this)
+        requestApplyInsets()
     }
 }

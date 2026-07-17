@@ -1,42 +1,35 @@
 package com.music.player.playback
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.os.Build
-import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.app.TaskStackBuilder
 import androidx.core.content.ContextCompat
-import androidx.core.content.PermissionChecker
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.PlayerNotificationManager
-import com.bumptech.glide.Glide
-import com.bumptech.glide.request.target.CustomTarget
-import com.bumptech.glide.request.transition.Transition
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
 import com.music.player.MainActivity
-import com.music.player.R
 
+/**
+ * 基于 Media3 的媒体会话服务。通知、前台服务、锁屏控制、蓝牙/有线耳机媒体按键、
+ * Android Auto 与系统媒体面板全部由 [MediaSessionService] + [MediaSession] 托管，
+ * 无需再手动维护 PlayerNotificationManager 与 startForeground。
+ */
 @UnstableApi
-class PlaybackService : Service() {
+class PlaybackService : MediaSessionService() {
 
     companion object {
         private const val TAG = "PlaybackService"
-        private const val NOTIFICATION_ID = 1101
-        private const val CHANNEL_ID = "playback"
-        private const val CHANNEL_NAME = "音乐播放"
 
         fun intent(context: Context): Intent = Intent(context, PlaybackService::class.java)
 
@@ -54,13 +47,11 @@ class PlaybackService : Service() {
 
     private lateinit var player: ExoPlayer
     private lateinit var notificationPlayer: QueueAwarePlayer
-    private lateinit var notificationManager: PlayerNotificationManager
+    private var mediaSession: MediaSession? = null
     private var lastStateChangeElapsedMs: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        startForegroundPlaceholder()
 
         val loadControl = DefaultLoadControl.Builder()
             // Start faster (less initial buffering) while keeping a reasonable steady-state buffer.
@@ -82,9 +73,17 @@ class PlaybackService : Service() {
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
         player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setHandleAudioBecomingNoisy(true)
             .build()
         PlaybackCoordinator.attachPlayer(this, player)
         notificationPlayer = QueueAwarePlayer(player)
@@ -103,144 +102,67 @@ class PlaybackService : Service() {
                 }
                 Log.d(TAG, "player state=$stateName (+${delta}ms)")
                 if (playbackState == Player.STATE_ENDED) {
-                    PlaybackCoordinator.onPlaybackEndedAutoAdvance()
+                    val durationMs = player.duration
+                    val positionMs = player.currentPosition.coerceAtLeast(0L)
+                    val looksUnexpectedEnd =
+                        durationMs != C.TIME_UNSET &&
+                            durationMs > 0L &&
+                            positionMs in 10_000L until (durationMs - 5_000L)
+
+                    if (looksUnexpectedEnd) {
+                        Log.w(TAG, "unexpected ended at ${positionMs}ms / ${durationMs}ms, trying to recover")
+                        PlaybackCoordinator.recoverCurrentPlayback(
+                            resumePositionMs = positionMs,
+                            reason = "播放中断，正在继续"
+                        )
+                    } else {
+                        PlaybackCoordinator.onPlaybackEndedAutoAdvance()
+                    }
                 }
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 Log.e(TAG, "player error: ${error.errorCodeName}: ${error.message}", error)
+                PlaybackCoordinator.recoverCurrentPlayback(
+                    resumePositionMs = player.currentPosition.coerceAtLeast(0L),
+                    reason = "播放异常，正在重连"
+                )
             }
         })
 
-        notificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
-            .setMediaDescriptionAdapter(descriptionAdapter)
-            .setNotificationListener(notificationListener)
-            .setSmallIconResourceId(R.drawable.ic_music_note_24)
+        mediaSession = MediaSession.Builder(this, notificationPlayer)
+            .setSessionActivity(buildContentIntent())
             .build()
-
-        notificationManager.setPlayer(notificationPlayer)
-        notificationManager.setUseChronometer(false)
-        notificationManager.setUseNextAction(true)
-        notificationManager.setUsePreviousAction(true)
-        notificationManager.setUseNextActionInCompactView(true)
-        notificationManager.setUsePreviousActionInCompactView(true)
-
-        notificationManager.setUseFastForwardAction(false)
-        notificationManager.setUseRewindAction(false)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
-    }
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
-    override fun onDestroy() {
-        notificationManager.setPlayer(null)
-        player.release()
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private val descriptionAdapter = object : PlayerNotificationManager.MediaDescriptionAdapter {
-        override fun getCurrentContentTitle(player: Player): CharSequence {
-            return player.mediaMetadata.title ?: getString(R.string.app_name)
-        }
-
-        override fun createCurrentContentIntent(player: Player) =
-            TaskStackBuilder.create(this@PlaybackService)
-                .addNextIntentWithParentStack(Intent(this@PlaybackService, MainActivity::class.java))
-                .getPendingIntent(
-                    0,
-                    (if (Build.VERSION.SDK_INT >= 23) android.app.PendingIntent.FLAG_IMMUTABLE else 0) or
-                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                )
-
-        override fun getCurrentContentText(player: Player): CharSequence? {
-            return player.mediaMetadata.artist
-        }
-
-        override fun getCurrentLargeIcon(
-            player: Player,
-            callback: PlayerNotificationManager.BitmapCallback
-        ): Bitmap? {
-            val uri = player.mediaMetadata.artworkUri ?: return null
-            Glide.with(this@PlaybackService)
-                .asBitmap()
-                .load(uri)
-                .into(object : CustomTarget<Bitmap>(240, 240) {
-                    override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
-                        callback.onBitmap(resource)
-                    }
-
-                    override fun onLoadCleared(placeholder: android.graphics.drawable.Drawable?) = Unit
-                })
-            return null
-        }
-    }
-
-    private val notificationListener = object : PlayerNotificationManager.NotificationListener {
-        override fun onNotificationPosted(
-            notificationId: Int,
-            notification: Notification,
-            ongoing: Boolean
-        ) {
-            if (ongoing) {
-                runCatching {
-                    if (canPostNotifications()) {
-                        startForeground(notificationId, notification)
-                    } else {
-                        Log.w(TAG, "notifications disabled; skip startForeground()")
-                    }
-                }.onFailure { t ->
-                    Log.e(TAG, "startForeground failed", t)
-                }
-            } else {
-                runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
-            }
-        }
-
-        override fun onNotificationCancelled(notificationId: Int, dismissedByUser: Boolean) {
-            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-            PlaybackCoordinator.resetPlayback()
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // 用户从最近任务划掉应用时，若未在播放则停止服务，避免残留通知。
+        val p = mediaSession?.player
+        if (p == null || !p.playWhenReady || p.mediaItemCount == 0) {
             stopSelf()
         }
     }
 
-    private fun canPostNotifications(): Boolean {
-        if (Build.VERSION.SDK_INT < 33) return true
-        return PermissionChecker.checkSelfPermission(
-            this,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) == PermissionChecker.PERMISSION_GRANTED
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < 26) return
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        val existing = manager.getNotificationChannel(CHANNEL_ID)
-        if (existing != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = CHANNEL_NAME
-            setShowBadge(false)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+    override fun onDestroy() {
+        mediaSession?.run {
+            release()
         }
-        manager.createNotificationChannel(channel)
+        mediaSession = null
+        if (::player.isInitialized) {
+            PlaybackCoordinator.detachPlayer(player)
+            player.release()
+        }
+        super.onDestroy()
     }
 
-    private fun startForegroundPlaceholder() {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_music_note_24)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.app_name))
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
-
-        runCatching { startForeground(NOTIFICATION_ID, notification) }
+    private fun buildContentIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val flags = (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0) or
+            PendingIntent.FLAG_UPDATE_CURRENT
+        return PendingIntent.getActivity(this, 0, intent, flags)
     }
 }

@@ -7,7 +7,7 @@
     <string name="menu_favorites">我的收藏</string>
     <string name="menu_history">播放历史</string>
     <string name="menu_my_playlists">我的歌单</string>
-    <string name="menu_create_playlist">新建歌单</string>
+    <string name="menu_create_playlist">导入歌单</string>
     <string name="menu_clear_history">清空历史</string>
 
     <string name="nav_discover">发现</string>
@@ -48,21 +48,29 @@
     <string name="history_loaded_count">已加载 %1$d 条记录</string>
 
     <string name="user_playlist_title">我的歌单</string>
-    <string name="user_playlist_hint">点击歌单查看歌曲，长按可删除</string>
-    <string name="user_playlist_empty">还没有歌单，先新建一个吧</string>
+    <string name="user_playlist_hint">点击查看歌曲，长按可删除歌单</string>
+    <string name="user_playlist_empty">还没有歌单，输入名称创建，或粘贴网易云/QQ 音乐歌单链接导入</string>
     <string name="user_playlist_loading">正在加载歌单歌曲…</string>
+    <string name="user_playlist_loaded_count">已有 %1$d 个歌单 · 最近：%2$s</string>
     <string name="user_playlist_public">公开歌单</string>
     <string name="user_playlist_private">私密歌单</string>
     <string name="user_playlist_delete_title">删除“%1$s”吗？</string>
     <string name="user_playlist_delete_message">删除后将无法恢复。</string>
     <string name="user_playlist_delete_confirm">删除</string>
-    <string name="user_playlist_pick_title">选择要添加的歌单</string>
-    <string name="user_playlist_create_first">请先创建一个歌单再添加</string>
-    <string name="user_playlist_create_title">新建歌单</string>
-    <string name="user_playlist_create_confirm">创建</string>
-    <string name="user_playlist_name_required">请输入歌单名称</string>
-    <string name="user_playlist_name_hint">歌单名称</string>
-    <string name="user_playlist_desc_hint">描述（可选）</string>
+    <string name="user_playlist_pick_title">选择歌单</string>
+    <string name="user_playlist_create_first">先创建一个歌单，再把歌曲加入进去</string>
+    <string name="user_playlist_create_title">创建/导入歌单</string>
+    <string name="user_playlist_create_confirm">保存</string>
+    <string name="user_playlist_name_required">请输入歌单名称或歌单分享链接</string>
+    <string name="user_playlist_name_hint">歌单名称或分享链接</string>
+    <string name="user_playlist_desc_hint">可填写描述；粘贴链接时会自动导入</string>
+    <string name="user_playlist_url_invalid">请输入歌单名称，或以 http:// / https:// 开头的链接</string>
+    <string name="user_playlist_local">自建歌单</string>
+    <string name="user_playlist_source_qq">QQ 音乐</string>
+    <string name="user_playlist_source_netease">网易云音乐</string>
+    <plurals name="user_playlist_track_count">
+        <item quantity="other">%1$d 首</item>
+    </plurals>
 
     <string name="action_favorite">收藏</string>
     <string name="action_unfavorite">取消收藏</string>
@@ -108,7 +116,7 @@
     <string name="login_title">欢迎回来</string>
     <string name="login_subtitle">登录后即可同步收藏、切换歌单并继续播放</string>
     <string name="signup_title">创建账号</string>
-    <string name="signup_subtitle">只需邮箱和密码，就能开始你的音乐空间</string>
+    <string name="signup_subtitle">使用 5-11 位数字 QQ 邮箱注册，收藏和历史会同步到云端</string>
     <string name="auth_mode_label">邮箱登录</string>
     <string name="email_hint">邮箱</string>
     <string name="password_hint">密码</string>
@@ -118,7 +126,7 @@
     <string name="toggle_to_login">已有账号？点击登录</string>
     <string name="auth_helper">首次注册成功后可直接返回登录，或自动进入首页。</string>
     <string name="email_required">请输入邮箱</string>
-    <string name="email_invalid">请输入有效的邮箱地址</string>
+    <string name="email_invalid">注册需要 5-11 位数字 QQ 邮箱，例如 123456@qq.com</string>
     <string name="password_required">请输入密码</string>
     <string name="password_too_short">密码长度至少 6 位</string>
 
@@ -185,6 +193,83 @@
     <string name="update_install_permission_required">请允许当前应用安装更新包</string>
     <string name="update_install_permission_denied">未授予安装权限，无法继续更新</string>
     <string name="update_install_failed">无法打开安装界面</string>
-    <string name="settings_audio_quality">首选音质 level</string>
+    <string name="settings_audio_quality">首选音质</string>
     <string name="settings_audio_quality_dialog_title">选择首选音质</string>
+
+    <!-- Settings: Playback -->
+    <string name="settings_category_playback">播放设置</string>
+    <string name="settings_auto_play_next">自动播放下一首</string>
+    <string name="settings_auto_play_next_summary">歌曲播放完毕后自动播放队列中的下一首</string>
+    <string name="settings_crossfade">歌曲交叉淡入淡出</string>
+    <string name="settings_crossfade_summary">切换歌曲时平滑过渡，减少突兀感</string>
+    <string name="settings_sleep_timer">睡眠定时器</string>
+    <string name="settings_sleep_timer_summary">定时停止播放，适合入睡使用</string>
+
+    <!-- Settings: Network -->
+    <string name="settings_category_network">网络与数据</string>
+    <string name="settings_stream_quality">移动网络播放音质</string>
+    <string name="settings_stream_quality_wifi_only">仅 Wi-Fi 下播放高清</string>
+    <string name="settings_stream_quality_summary">节省移动流量，自动降级至较低音质</string>
+    <string name="settings_download_wifi_only">仅 Wi-Fi 下下载</string>
+    <string name="settings_download_wifi_only_summary">关闭时，移动网络也可下载歌曲</string>
+
+    <!-- Settings: Cache -->
+    <string name="settings_category_cache">存储与缓存</string>
+    <string name="settings_clear_cache">清除图片缓存</string>
+    <string name="settings_clear_cache_summary">释放存储空间，已下载歌曲不受影响</string>
+    <string name="settings_cache_cleared">缓存已清除</string>
+    <string name="settings_cache_size">缓存大小：%1$s</string>
+    <string name="settings_downloaded_size">已下载歌曲：%1$s</string>
+    <string name="settings_manage_downloads">管理已下载歌曲</string>
+    <string name="settings_manage_downloads_summary">查看、删除已下载的歌曲</string>
+
+    <!-- Settings: Theme & Update -->
+    <string name="settings_category_theme_update">主题与更新</string>
+
+    <!-- Settings: About -->
+    <string name="settings_category_about">关于与帮助</string>
+    <string name="settings_about">关于 Duck Music</string>
+    <string name="settings_help_feedback">帮助与反馈</string>
+    <string name="settings_user_agreement">用户协议</string>
+    <string name="settings_privacy_policy">隐私政策</string>
+    <string name="settings_open_source_licenses">开源许可</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer_off">关闭</string>
+    <string name="sleep_timer_15min">15 分钟后</string>
+    <string name="sleep_timer_30min">30 分钟后</string>
+    <string name="sleep_timer_45min">45 分钟后</string>
+    <string name="sleep_timer_60min">60 分钟后</string>
+    <string name="sleep_timer_dialog_title">睡眠定时器</string>
+    <string name="sleep_timer_set">已设置 %1$s 后停止播放</string>
+    <string name="sleep_timer_cancelled">睡眠定时器已取消</string>
+
+    <!-- About -->
+    <string name="about_version">版本 %1$s (%2$d)</string>
+    <string name="about_description">Duck Music 是一款专注于简洁体验的音乐播放器，为你发现和播放喜欢的音乐。</string>
+    <string name="about_copyright">© 2024 Duck Music. 保留所有权利。</string>
+
+    <!-- Help -->
+    <string name="help_title">帮助与反馈</string>
+    <string name="help_feedback_email">意见反馈邮箱</string>
+    <string name="help_feedback_email_summary">遇到问题或有好建议？告诉我们</string>
+    <string name="help_faq">常见问题</string>
+    <string name="help_faq_1_q">如何下载歌曲到本地？</string>
+    <string name="help_faq_1_a">在歌曲列表中点击右侧「更多」按钮，选择「下载」。下载完成后可在「设置 → 管理已下载歌曲」中查看。</string>
+    <string name="help_faq_2_q">如何创建和管理歌单？</string>
+    <string name="help_faq_2_a">在「我的」页面点击「新建歌单」即可创建。在歌单页面长按歌曲可添加至歌单。</string>
+    <string name="help_faq_3_q">音乐无法播放怎么办？</string>
+    <string name="help_faq_3_a">请检查网络连接，或尝试在设置中切换音质。如问题持续，请通过反馈邮箱联系我们。</string>
+
+    <!-- Downloads -->
+    <string name="downloads_title">已下载歌曲</string>
+    <string name="downloads_empty">还没有下载任何歌曲</string>
+    <string name="downloads_delete_confirm">确定删除「%1$s」吗？</string>
+    <string name="downloads_deleted">已删除「%1$s」</string>
+    <string name="downloads_delete_all">清空所有下载</string>
+    <string name="downloads_delete_all_confirm">确定清空所有已下载歌曲吗？此操作不可恢复。</string>
+    <string name="downloads_total_size">共 %1$d 首歌曲，占用 %2$s</string>
+    <string name="discover_hero_eyebrow">发现</string>
+    <string name="discover_hero_title">发现好音乐</string>
+    <string name="discover_hero_subtitle">为你精选的每日推荐与本周热歌</string>
 </resources>

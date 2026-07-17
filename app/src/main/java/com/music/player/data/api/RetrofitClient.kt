@@ -14,10 +14,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
-    private const val ALGER_BASE_URL = "http://mc.alger.fun/"
-    private const val GDSTUDIO_BASE_URL = "https://music-api.gdstudio.xyz/"
-    private const val CHKSZ_BASE_URL = "https://api.chksz.top/"
-    private const val LYRICS_BASE_URL = "https://node.api.xfabe.com/"
+    private const val MUSIC_BASE_URL = "https://api.751152.xyz/"
     private const val HTTP_CACHE_SIZE_BYTES = 32L * 1024L * 1024L
     private val connectionPool: ConnectionPool = NetworkRuntime.connectionPool()
 
@@ -27,15 +24,18 @@ object RetrofitClient {
         } else {
             HttpLoggingInterceptor.Level.NONE
         }
+        // Guard: keep secrets out of logs if the level is ever raised for debugging.
+        redactHeader("Authorization")
+        redactHeader("apikey")
     }
 
     private val algerHeadersInterceptor = Interceptor { chain ->
         val request = chain.request()
-        if (request.url.host == "mc.alger.fun") {
+        if (request.url.host == "api.751152.xyz") {
             val updated = request.newBuilder()
                 .header("Accept", "application/json, text/plain, */*")
                 .header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-                .header("Referer", "http://mc.alger.fun/")
+                .header("Referer", MUSIC_BASE_URL)
                 .header(
                     "User-Agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -73,13 +73,13 @@ object RetrofitClient {
         }
 
         val maxAgeSeconds = when (request.url.encodedPath) {
-            "/api/lyric" -> 7 * 24 * 60 * 60
-            "/api/song/detail" -> 30 * 60
-            "/api/playlist/detail" -> 10 * 60
-            "/api/top/playlist" -> 10 * 60
-            "/api/personalized/newsong" -> 5 * 60
-            "/api/album/newest" -> 10 * 60
-            "/api/toplist" -> 10 * 60
+            "/api/v1/music/lyric" -> 7 * 24 * 60 * 60
+            "/api/v1/music/play" -> 20 * 60
+            "/api/v1/music/playlist/detail" -> 10 * 60
+            "/api/v1/music/playlist" -> 10 * 60
+            "/api/v1/music/new" -> 5 * 60
+            "/api/v1/music/toplist" -> 10 * 60
+            "/api/v1/music/toplist/detail" -> 10 * 60
             else -> 5 * 60
         }
 
@@ -112,10 +112,7 @@ object RetrofitClient {
             .build()
     }
 
-    val musicApi: MusicApiService = createRetrofit(ALGER_BASE_URL).create(MusicApiService::class.java)
-    val gdStudioApi: GdStudioApiService = createRetrofit(GDSTUDIO_BASE_URL).create(GdStudioApiService::class.java)
-    val chkSzApi: ChkSzApiService = createRetrofit(CHKSZ_BASE_URL).create(ChkSzApiService::class.java)
-    val lyricsApi: LyricsApiService = createRetrofit(LYRICS_BASE_URL).create(LyricsApiService::class.java)
+    val musicApi: MusicApiService = createRetrofit(MUSIC_BASE_URL).create(MusicApiService::class.java)
 }
 
 private class InMemoryCookieJar : CookieJar {
@@ -124,21 +121,30 @@ private class InMemoryCookieJar : CookieJar {
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (cookies.isEmpty()) return
         val host = url.host
-        val existing = store.getOrPut(host) { mutableListOf() }
         val now = System.currentTimeMillis()
         val incoming = cookies.filter { it.expiresAt >= now }
-        incoming.forEach { cookie ->
-            existing.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
-            existing.add(cookie)
+        if (incoming.isEmpty()) return
+        synchronized(this) {
+            val existing = store.getOrPut(host) { mutableListOf() }
+            incoming.forEach { cookie ->
+                existing.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
+                existing.add(cookie)
+            }
         }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val host = url.host
         val now = System.currentTimeMillis()
-        val cookies = store[host].orEmpty()
-            .filter { it.expiresAt >= now && it.matches(url) }
-        store[host] = cookies.toMutableList()
-        return cookies
+        return synchronized(this) {
+            val cookies = store[host].orEmpty()
+                .filter { it.expiresAt >= now && it.matches(url) }
+            if (cookies.isEmpty()) {
+                store.remove(host)
+            } else {
+                store[host] = cookies.toMutableList()
+            }
+            cookies
+        }
     }
 }
