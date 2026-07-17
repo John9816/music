@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
-import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -34,13 +33,13 @@ class PlaybackService : MediaSessionService() {
         fun intent(context: Context): Intent = Intent(context, PlaybackService::class.java)
 
         fun start(context: Context) {
+            // 注意：MediaSessionService 仅在真正开始播放时才会自行进入前台并发通知。
+            // 因此这里必须用普通 startService 而非 startForegroundService——否则会向系统
+            // 承诺 5 秒内 startForeground，而启动时并无播放内容，导致
+            // ForegroundServiceDidNotStartInTimeException 崩溃。
+            // init() 在 MainActivity.onCreate（应用处于前台）调用，普通 startService 不受后台启动限制。
             runCatching {
-                val i = intent(context)
-                if (Build.VERSION.SDK_INT >= 26) {
-                    ContextCompat.startForegroundService(context, i)
-                } else {
-                    context.startService(i)
-                }
+                context.startService(intent(context))
             }
         }
     }
