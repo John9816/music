@@ -46,6 +46,7 @@ import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
 import com.google.android.material.slider.Slider
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.data.settings.AudioQualityPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -255,7 +256,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 SongDownloader.download(requireContext(), musicViewModel, song)
             }
         }
-        binding.menuAddPlaylist.setOnClickListener { binding.layoutSongMenu.isVisible = false }
+        binding.menuAddPlaylist.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            musicViewModel.currentSong.value?.let(::showAddToPlaylistDialog)
+        }
         binding.menuShowAlbum.setOnClickListener { binding.layoutSongMenu.isVisible = false }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
@@ -344,6 +348,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             favoriteIds = ids.orEmpty()
             updateFavoriteButton()
         }
+        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
+            if (!message.isNullOrBlank() && isAdded) {
+                Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+                libraryViewModel.consumeMessage()
+            }
+        }
 
         musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
             updateAudioQualityButton()
@@ -390,6 +400,44 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         libraryViewModel.setFavorite(song, willFavorite)
     }
 
+    private fun showAddToPlaylistDialog(song: com.music.player.data.model.Song) {
+        val playlists = libraryViewModel.playlists.value.orEmpty()
+        if (playlists.isEmpty()) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.user_playlist_pick_title)
+                .setMessage(R.string.user_playlist_create_first)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.user_playlist_create_title) { _, _ ->
+                    CreatePlaylistBottomSheet().apply {
+                        onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                    }.show(parentFragmentManager, "create_playlist")
+                }
+                .show()
+            libraryViewModel.refreshPlaylists(silent = true)
+            return
+        }
+
+        val names = playlists.map { playlist ->
+            val count = resources.getQuantityString(
+                R.plurals.user_playlist_track_count,
+                playlist.trackCount,
+                playlist.trackCount
+            )
+            "${playlist.name} · $count"
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.user_playlist_pick_title)
+            .setItems(names) { _, which ->
+                libraryViewModel.addSongToPlaylist(playlists[which].id, song)
+            }
+            .setNeutralButton(R.string.user_playlist_create_title) { _, _ ->
+                CreatePlaylistBottomSheet().apply {
+                    onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                }.show(parentFragmentManager, "create_playlist")
+            }
+            .show()
+    }
+
     private fun updateFavoriteButton() {
         if (_binding == null) return
         val song = musicViewModel.currentSong.value
@@ -425,6 +473,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             binding.tvSheetTitle.text = getString(R.string.current_playing_empty)
             binding.tvSheetSubtitle.text = getString(R.string.current_playing_hint)
             binding.tvSheetSubtitle.isVisible = true
+            binding.tvControlSongTitle.text = getString(R.string.current_playing_empty)
+            binding.tvControlSongArtist.text = getString(R.string.current_playing_hint)
+            binding.tvControlSongArtist.isVisible = true
             binding.tvSheetMetaDetail.text = getString(R.string.now_playing_meta_no_song)
             immersiveBackground?.setImageUrl(null)
             lyricsAdapter.submitList(emptyList())
@@ -441,6 +492,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.tvSheetTitle.text = song.name
         binding.tvSheetSubtitle.text = artistText
         binding.tvSheetSubtitle.isVisible = artistText.isNotBlank()
+        binding.tvControlSongTitle.text = song.name
+        binding.tvControlSongArtist.text = artistText
+        binding.tvControlSongArtist.isVisible = artistText.isNotBlank()
         updatePlaybackMeta()
 
         // Parse and display lyrics

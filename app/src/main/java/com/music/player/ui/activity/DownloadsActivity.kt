@@ -12,7 +12,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.R
 import com.music.player.data.model.Album
@@ -42,6 +46,11 @@ class DownloadsActivity : AppCompatActivity() {
         setupEdgeToEdge()
         setupToolbar()
         setupRecyclerView()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                SongDownloader.progress.collect { renderDownloadProgress(it) }
+            }
+        }
         loadDownloads()
     }
 
@@ -125,6 +134,16 @@ class DownloadsActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderDownloadProgress(progress: List<SongDownloader.DownloadProgress>) {
+        val active = progress.firstOrNull()
+        binding.downloadProgress.visibility = if (active == null) View.GONE else View.VISIBLE
+        if (active != null) {
+            binding.downloadProgressBar.isIndeterminate = active.totalBytes <= 0L
+            binding.downloadProgressBar.progress = active.percent
+            binding.tvDownloadProgress.text = if (active.totalBytes > 0L) "${active.percent}%" else "下载中"
+        }
+    }
+
     private fun queryDownloads(): List<DownloadInfo> {
         return SongDownloader.downloadDirs(this)
             .flatMap { dir -> dir.listFiles().orEmpty().toList() }
@@ -137,16 +156,28 @@ class DownloadsActivity : AppCompatActivity() {
             .sortedByDescending { it.lastModified() }
             .map { file ->
                 val rawTitle = file.nameWithoutExtension
+                val metadata = readMetadata(file)
                 val hasArtist = " - " in rawTitle
                 DownloadInfo(
                     id = file.absolutePath.hashCode().toLong(),
-                    title = if (hasArtist) rawTitle.substringBeforeLast(" - ") else rawTitle,
-                    artist = if (hasArtist) rawTitle.substringAfterLast(" - ") else "",
+                    title = metadata?.get("title")?.asString?.takeIf { it.isNotBlank() }
+                        ?: if (hasArtist) rawTitle.substringBeforeLast(" - ") else rawTitle,
+                    artist = metadata?.get("artist")?.asString?.takeIf { it.isNotBlank() }
+                        ?: if (hasArtist) rawTitle.substringAfterLast(" - ") else "",
                     filePath = file.absolutePath,
-                    size = file.length().coerceAtLeast(0L)
+                    size = file.length().coerceAtLeast(0L),
+                    coverPath = File(file.parentFile, "${file.name}.cover").takeIf { it.isFile }?.absolutePath,
+                    lyric = metadata?.get("lyric")?.asString.orEmpty(),
+                    duration = metadata?.get("duration")?.asLong ?: 0L
                 )
             }
     }
+
+    private fun readMetadata(file: File): JsonObject? = runCatching {
+        File(file.parentFile, "${file.name}.json")
+            .takeIf { it.isFile }
+            ?.let { JsonParser.parseString(it.readText(Charsets.UTF_8)).asJsonObject }
+    }.getOrNull()
 
     override fun onDestroy() {
         loadJob?.cancel()
@@ -168,10 +199,15 @@ class DownloadsActivity : AppCompatActivity() {
                 .takeIf { it.isNotBlank() }
                 ?.let { listOf(Artist(id = "", name = it)) }
                 .orEmpty(),
-            album = Album(id = "", name = getString(R.string.downloads_title), picUrl = ""),
-            duration = 0L,
+            album = Album(
+                id = "",
+                name = getString(R.string.downloads_title),
+                picUrl = download.coverPath.orEmpty()
+            ),
+            duration = download.duration,
             url = Uri.fromFile(file).toString(),
-            source = "local"
+            source = "local",
+            lyric = download.lyric.takeIf { it.isNotBlank() }
         )
         PlaybackCoordinator.playStandaloneSong(localSong)
         Toast.makeText(this, getString(R.string.downloads_playing, download.title), Toast.LENGTH_SHORT).show()
@@ -181,7 +217,7 @@ class DownloadsActivity : AppCompatActivity() {
         MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.downloads_delete_confirm, download.title))
             .setPositiveButton(R.string.downloads_delete) { _, _ ->
-                val deleted = runCatching { File(download.filePath).delete() }.getOrDefault(false)
+                val deleted = deleteDownloadFiles(File(download.filePath))
                 Toast.makeText(
                     this,
                     if (deleted) getString(R.string.downloads_deleted, download.title)
@@ -202,7 +238,7 @@ class DownloadsActivity : AppCompatActivity() {
             .setTitle(R.string.downloads_delete_all_confirm)
             .setPositiveButton(R.string.downloads_delete) { _, _ ->
                 val deletedCount = downloads.count { download ->
-                    runCatching { File(download.filePath).delete() }.getOrDefault(false)
+                    deleteDownloadFiles(File(download.filePath))
                 }
                 Toast.makeText(
                     this,
@@ -224,12 +260,22 @@ class DownloadsActivity : AppCompatActivity() {
         }
     }
 
+    private fun deleteDownloadFiles(audioFile: File): Boolean {
+        val deletedAudio = runCatching { audioFile.delete() }.getOrDefault(false)
+        runCatching { File(audioFile.parentFile, "${audioFile.name}.json").delete() }
+        runCatching { File(audioFile.parentFile, "${audioFile.name}.cover").delete() }
+        return deletedAudio
+    }
+
     data class DownloadInfo(
         val id: Long,
         val title: String,
         val artist: String,
         val filePath: String,
-        val size: Long
+        val size: Long,
+        val coverPath: String?,
+        val lyric: String,
+        val duration: Long
     )
 
     private companion object {

@@ -44,6 +44,14 @@ interface MusicApiService {
         @Query("pageSize") pageSize: Int = 300
     ): Response<ResponseBody>
 
+    @GET("api/v1/music/toplist/detail")
+    suspend fun getTopListDetail(
+        @Query("source") source: String = "qq",
+        @Query("id") id: String,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 300
+    ): Response<ResponseBody>
+
     @GET("api/v1/music/search")
     suspend fun searchSongs(
         @Query("source") source: String = "netease",

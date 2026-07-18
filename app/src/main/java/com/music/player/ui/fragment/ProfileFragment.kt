@@ -245,9 +245,13 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private fun updateLikedCover(coverUrl: String?) {
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
+            binding.ivLikedCover.setPadding(coverPlaceholderPadding())
+            binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER
             binding.ivLikedCover.setImageResource(R.drawable.ic_music_note_24)
             binding.ivLikedCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
         } else {
+            binding.ivLikedCover.setPadding(0, 0, 0, 0)
+            binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER_CROP
             binding.ivLikedCover.imageTintList = null
             Glide.with(binding.ivLikedCover)
                 .load(url)
@@ -260,9 +264,13 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private fun updateHistoryCover(coverUrl: String?) {
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
+            binding.ivHistoryCover.setPadding(coverPlaceholderPadding())
+            binding.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER
             binding.ivHistoryCover.setImageResource(R.drawable.ic_music_note_24)
             binding.ivHistoryCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
         } else {
+            binding.ivHistoryCover.setPadding(0, 0, 0, 0)
+            binding.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER_CROP
             binding.ivHistoryCover.imageTintList = null
             Glide.with(binding.ivHistoryCover)
                 .load(url)
@@ -275,12 +283,14 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private fun updatePlaylistCover(coverUrl: String?) {
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
+            binding.ivPlaylistCover.setPadding(coverPlaceholderPadding())
             binding.ivPlaylistCover.setImageResource(R.drawable.ic_playlist_24)
             binding.ivPlaylistCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
             binding.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER
             return
         }
 
+        binding.ivPlaylistCover.setPadding(0, 0, 0, 0)
         binding.ivPlaylistCover.imageTintList = null
         binding.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER_CROP
         Glide.with(binding.ivPlaylistCover)
@@ -289,6 +299,13 @@ class ProfileFragment : Fragment(), RootTabInteraction {
             .centerCrop()
             .into(binding.ivPlaylistCover)
     }
+
+    private fun ImageView.setPadding(padding: Int) {
+        setPadding(padding, padding, padding, padding)
+    }
+
+    private fun coverPlaceholderPadding(): Int =
+        resources.getDimensionPixelSize(R.dimen.profile_cover_placeholder_padding)
 
     private fun renderUser(user: UserProfile?) {
         user ?: return

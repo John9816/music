@@ -13,11 +13,12 @@
     android:paddingBottom="@dimen/spacing_m">
 
     <ImageView
+        android:id="@+id/ivCover"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:layout_gravity="center_vertical"
+        android:scaleType="centerCrop"
         android:src="@drawable/ic_music_note_24"
-        app:tint="?attr/brandPrimary"
         android:contentDescription="@null" />
 
     <LinearLayout

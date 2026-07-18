@@ -356,7 +356,11 @@ class MusicRepository(context: Context? = null) {
                 }
 
                 try {
-                    val response = api.getPlaylistDetail(source = source, id = normalizedId)
+                    val response = if (source == MusicSourcePreferences.Source.QQ.storageValue) {
+                        api.getTopListDetail(source = source, id = normalizedId)
+                    } else {
+                        api.getPlaylistDetail(source = source, id = normalizedId)
+                    }
                     if (!response.isSuccessful) {
                         return@run Result.failure(Exception("获取歌单详情失败"))
                     }

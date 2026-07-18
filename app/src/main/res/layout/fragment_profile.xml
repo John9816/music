@@ -23,7 +23,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingStart="@dimen/spacing_m"
-                android:paddingTop="@dimen/spacing_l"
+                android:paddingTop="@dimen/spacing_s"
                 android:paddingEnd="@dimen/spacing_m"
                 android:paddingBottom="@dimen/spacing_3xl">
 
@@ -95,20 +95,19 @@
                     android:paddingBottom="@dimen/spacing_s">
 
                     <com.google.android.material.card.MaterialCardView
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
+                        android:layout_width="@dimen/profile_cover_size"
+                        android:layout_height="@dimen/profile_cover_size"
                         app:cardBackgroundColor="?attr/surfaceAltColor"
                         app:cardCornerRadius="8dp"
                         app:cardElevation="0dp"
-                        app:strokeColor="?attr/dividerColor"
-                        app:strokeWidth="1dp">
+                        app:strokeWidth="0dp">
 
                         <ImageView
                             android:id="@+id/ivLikedCover"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:contentDescription="@string/favorites_title"
-                            android:padding="18dp"
+                            android:padding="@dimen/profile_cover_placeholder_padding"
                             android:scaleType="center"
                             android:src="@drawable/ic_favorite_24"
                             app:tint="?attr/brandPrimary" />
@@ -171,20 +170,19 @@
                     android:paddingBottom="@dimen/spacing_s">
 
                     <com.google.android.material.card.MaterialCardView
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
+                        android:layout_width="@dimen/profile_cover_size"
+                        android:layout_height="@dimen/profile_cover_size"
                         app:cardBackgroundColor="?attr/surfaceAltColor"
                         app:cardCornerRadius="8dp"
                         app:cardElevation="0dp"
-                        app:strokeColor="?attr/dividerColor"
-                        app:strokeWidth="1dp">
+                        app:strokeWidth="0dp">
 
                         <ImageView
                             android:id="@+id/ivHistoryCover"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:contentDescription="@string/history_title"
-                            android:padding="18dp"
+                            android:padding="@dimen/profile_cover_placeholder_padding"
                             android:scaleType="center"
                             android:src="@drawable/ic_history_24"
                             app:tint="?attr/brandPrimary" />
@@ -247,20 +245,19 @@
                     android:paddingBottom="@dimen/spacing_s">
 
                     <com.google.android.material.card.MaterialCardView
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
+                        android:layout_width="@dimen/profile_cover_size"
+                        android:layout_height="@dimen/profile_cover_size"
                         app:cardBackgroundColor="?attr/surfaceAltColor"
                         app:cardCornerRadius="8dp"
                         app:cardElevation="0dp"
-                        app:strokeColor="?attr/dividerColor"
-                        app:strokeWidth="1dp">
+                        app:strokeWidth="0dp">
 
                         <ImageView
                             android:id="@+id/ivPlaylistCover"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent"
                             android:contentDescription="@string/user_playlist_title"
-                            android:padding="18dp"
+                            android:padding="@dimen/profile_cover_placeholder_padding"
                             android:scaleType="center"
                             android:src="@drawable/ic_playlist_24"
                             app:tint="?attr/brandPrimary" />

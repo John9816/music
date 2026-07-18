@@ -6,8 +6,11 @@ import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import android.widget.Toast
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.music.player.R
 import com.music.player.data.model.Song
+import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AppSettings
 import com.music.player.ui.viewmodel.MusicViewModel
 import java.io.File
@@ -17,6 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -26,6 +32,9 @@ object SongDownloader {
     const val DOWNLOAD_SUBDIR = "DuckMusic"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _progress = MutableStateFlow<List<DownloadProgress>>(emptyList())
+    val progress: StateFlow<List<DownloadProgress>> = _progress.asStateFlow()
+    private val gson = Gson()
     private val httpClient = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
@@ -104,6 +113,8 @@ object SongDownloader {
                     val extension = inferExtension(response.header("Content-Type"), url)
                     val targetFile = File(targetDir, "${buildBaseFileName(song)}.$extension")
                     val tempFile = File(targetDir, "${targetFile.name}.part")
+                    val totalBytes = body.contentLength()
+                    updateProgress(targetFile, 0L, totalBytes)
 
                     if (tempFile.exists() && !tempFile.delete()) {
                         throw IllegalStateException("无法清理临时文件")
@@ -111,7 +122,15 @@ object SongDownloader {
 
                     body.byteStream().use { input ->
                         tempFile.outputStream().use { output ->
-                            input.copyTo(output)
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var downloadedBytes = 0L
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                                downloadedBytes += count
+                                updateProgress(targetFile, downloadedBytes, totalBytes)
+                            }
                         }
                     }
 
@@ -122,12 +141,24 @@ object SongDownloader {
                         throw IllegalStateException("无法保存下载文件")
                     }
 
+                    val metadataSong = if (song.lyric.isNullOrBlank()) {
+                        song.copy(
+                            lyric = runCatching {
+                                MusicRepository().getLyrics(song.id, source = song.source).getOrNull()
+                            }.getOrNull()
+                        )
+                    } else song
+                    writeMetadata(targetFile, metadataSong)
+                    downloadCover(targetFile, metadataSong.album.picUrl)
+                    removeProgress(targetFile)
+
                     targetFile
                 }
             }.onSuccess { file ->
                 Log.d(TAG, "download success file=${file.absolutePath}")
                 toastOnMain(context, context.getString(R.string.msg_song_download_complete, file.name))
             }.onFailure { t ->
+                removeProgress(File(targetDir, "${buildBaseFileName(song)}.mp3"))
                 Log.e(TAG, "download failed for ${song.name}", t)
                 toastOnMain(
                     context,
@@ -138,6 +169,55 @@ object SongDownloader {
                 )
             }
         }
+    }
+
+    private fun writeMetadata(file: File, song: Song) {
+        val metadata = JsonObject().apply {
+            addProperty("id", song.id)
+            addProperty("title", song.name)
+            addProperty("artist", song.artists.joinToString(", ") { it.name })
+            addProperty("album", song.album.name)
+            addProperty("coverUrl", song.album.picUrl)
+            addProperty("lyric", song.lyric.orEmpty())
+            addProperty("duration", song.duration)
+            addProperty("source", song.source)
+        }
+        File(file.parentFile, "${file.name}.json").writeText(gson.toJson(metadata), Charsets.UTF_8)
+    }
+
+    private fun downloadCover(audioFile: File, coverUrl: String) {
+        val normalized = coverUrl.trim()
+        if (normalized.isBlank()) return
+        runCatching {
+            val request = Request.Builder().url(normalized).header("User-Agent", "DuckMusic/1.0 Android").build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return
+                val body = response.body ?: return
+                File(audioFile.parentFile, "${audioFile.name}.cover").outputStream().use { output ->
+                    body.byteStream().use { input -> input.copyTo(output) }
+                }
+            }
+        }.onFailure { Log.w(TAG, "cover download failed for ${audioFile.name}", it) }
+    }
+
+    private fun updateProgress(file: File, downloadedBytes: Long, totalBytes: Long) {
+        val item = DownloadProgress(file.absolutePath, downloadedBytes, totalBytes)
+        _progress.value = (_progress.value.filterNot { it.filePath == item.filePath } + item)
+    }
+
+    private fun removeProgress(file: File) {
+        _progress.value = _progress.value.filterNot {
+            it.filePath == file.absolutePath || it.filePath.startsWith(file.absolutePath.substringBeforeLast('.', file.absolutePath))
+        }
+    }
+
+    data class DownloadProgress(
+        val filePath: String,
+        val downloadedBytes: Long,
+        val totalBytes: Long
+    ) {
+        val percent: Int
+            get() = if (totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100) else 0
     }
 
     private fun isActiveNetworkMetered(context: Context): Boolean {

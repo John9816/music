@@ -16,7 +16,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="@dimen/spacing_l"
-            android:paddingTop="@dimen/spacing_l"
+            android:paddingTop="@dimen/spacing_s"
             android:paddingEnd="@dimen/spacing_l"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"

@@ -65,6 +65,7 @@
             android:layout_marginEnd="@dimen/spacing_s"
             android:gravity="center"
             android:orientation="vertical"
+            android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/btnClose"
             app:layout_constraintEnd_toStartOf="@id/topBarSpacer"
             app:layout_constraintStart_toEndOf="@id/btnClose"
@@ -127,17 +128,16 @@
 
     <LinearLayout
         android:id="@+id/layoutSongMenu"
-        android:layout_width="220dp"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_cymusic_menu"
         android:elevation="16dp"
         android:orientation="vertical"
-        android:paddingStart="@dimen/spacing_m"
-        android:paddingTop="@dimen/spacing_s"
-        android:paddingEnd="@dimen/spacing_m"
-        android:paddingBottom="@dimen/spacing_s"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintWidth_percent="0.66"
         app:layout_constraintTop_toTopOf="@id/playerContent">
 
         <TextView
@@ -151,9 +151,14 @@
         <TextView
             android:id="@+id/menuShareSong"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_share_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="分享歌曲"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -161,9 +166,14 @@
         <TextView
             android:id="@+id/menuDownloadSong"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_download_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="下载"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -171,9 +181,14 @@
         <TextView
             android:id="@+id/menuAddPlaylist"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_playlist_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="添加到歌单"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -181,9 +196,14 @@
         <TextView
             android:id="@+id/menuShowLyrics"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_queue_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="查看歌词"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -191,9 +211,14 @@
         <TextView
             android:id="@+id/menuShowAlbum"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_music_note_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="显示专辑"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -201,9 +226,14 @@
         <TextView
             android:id="@+id/menuFavoriteSong"
             android:layout_width="match_parent"
-            android:layout_height="38dp"
+            android:layout_height="56dp"
             android:background="?attr/selectableItemBackground"
             android:gravity="center_vertical"
+            android:drawableEnd="@drawable/ic_favorite_24"
+            android:drawableTint="?attr/textPrimary"
+            android:drawablePadding="16dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
             android:text="取消喜欢"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary" />
@@ -234,11 +264,42 @@
             android:paddingEnd="@dimen/spacing_m"
             android:paddingBottom="@dimen/spacing_m">
 
+            <LinearLayout
+                android:id="@+id/nowPlayingSongInfo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/btnFavorite"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="@id/btnFavorite">
+
+                <TextView
+                    android:id="@+id/tvControlSongTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+                    android:textColor="?attr/textPrimary"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvControlSongArtist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/textSecondary" />
+            </LinearLayout>
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAudioQuality"
                 android:layout_width="wrap_content"
                 android:layout_height="44dp"
-                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginTop="0dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:minWidth="0dp"
@@ -260,14 +321,14 @@
                 android:id="@+id/btnFavorite"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginTop="0dp"
                 android:background="@drawable/ripple_circular_primary"
                 android:contentDescription="@string/action_favorite"
                 android:padding="10dp"
                 android:src="@drawable/ic_more_vert_24"
-                app:layout_constraintBottom_toBottomOf="@id/btnAudioQuality"
+                app:layout_constraintBottom_toBottomOf="@id/nowPlayingSongInfo"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@id/btnAudioQuality"
+                app:layout_constraintTop_toTopOf="@id/nowPlayingSongInfo"
                 app:tint="?attr/textPrimary" />
 
             <com.google.android.material.slider.Slider
@@ -282,7 +343,7 @@
                 app:labelBehavior="floating"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/nowPlayingSongInfo"
                 app:thumbRadius="7dp"
                 app:trackHeight="4dp" />
 

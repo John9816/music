@@ -95,6 +95,13 @@
     <string name="action_unpin">取消置顶</string>
     <string name="action_delete_history_record">删除这条听歌记录</string>
     <string name="action_add_to_playlist">添加到歌单</string>
+    <string name="player_song_options">歌曲选项</string>
+    <string name="player_share_song">分享歌曲</string>
+    <string name="player_download_song">下载</string>
+    <string name="player_add_to_playlist">添加到歌单</string>
+    <string name="player_show_lyrics">查看歌词</string>
+    <string name="player_show_album">显示专辑</string>
+    <string name="player_unfavorite">取消喜欢</string>
     <string name="action_remove_from_playlist">从歌单移除</string>
     <string name="action_play_all">播放全部</string>
 

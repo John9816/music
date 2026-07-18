@@ -5,6 +5,8 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.music.player.R
 import com.music.player.databinding.ItemDownloadedSongBinding
 import com.music.player.ui.activity.DownloadsActivity
 import java.io.File
@@ -33,6 +35,12 @@ class DownloadedSongAdapter(
 
         fun bind(download: DownloadsActivity.DownloadInfo) {
             binding.tvTitle.text = download.title
+            Glide.with(binding.ivCover)
+                .load(download.coverPath?.let(::File))
+                .placeholder(R.drawable.ic_music_note_24)
+                .error(R.drawable.ic_music_note_24)
+                .centerCrop()
+                .into(binding.ivCover)
             binding.tvSize.text = listOf(download.artist, formatSize(download.size))
                 .filter { it.isNotBlank() }
                 .joinToString(" · ")
