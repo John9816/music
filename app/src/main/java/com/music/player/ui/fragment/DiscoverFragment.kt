@@ -1,10 +1,6 @@
 package com.music.player.ui.fragment
 
-import android.app.DownloadManager
-import android.content.Context
-import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.LayoutInflater
@@ -19,11 +15,14 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.R
+import com.music.player.MainActivity
+import com.music.player.data.model.NewestAlbum
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentDiscoverBinding
 import com.music.player.ui.adapter.HotSongAdapter
 import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -90,37 +89,31 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         setupInteractions()
 
         binding.tvSongListSubtitle.text = getString(R.string.daily_recommend_subtitle)
+        updateSummaryChips(
+            recommendCount = musicViewModel.dailyRecommend.value.orEmpty().size,
+            weeklyCount = musicViewModel.weeklyHotSongs.value.orEmpty().size,
+            albumCount = musicViewModel.newestAlbums.value.orEmpty().size
+        )
 
-        val shouldWarmDiscover = musicViewModel.dailyRecommend.value.isNullOrEmpty() ||
-            musicViewModel.weeklyHotSongs.value.isNullOrEmpty() ||
-            musicViewModel.newestAlbums.value.isNullOrEmpty()
+        val shouldWarmDiscover = musicViewModel.dailyRecommend.value.isNullOrEmpty()
 
         if (shouldWarmDiscover) {
-            musicViewModel.prefetchDiscover(limit = 10)
+            musicViewModel.loadDailyRecommend()
         } else {
             renderSongs(musicViewModel.dailyRecommend.value.orEmpty())
-            weeklyHotAdapter.submitList(musicViewModel.weeklyHotSongs.value.orEmpty())
-            newestAlbumAdapter.submitList(musicViewModel.newestAlbums.value.orEmpty())
-            binding.rvNewestAlbums.visibility =
-                if (newestAlbumAdapter.currentList.isEmpty()) View.GONE else View.VISIBLE
-            syncWeeklyHotCardVisibility()
-            maybeStartNewestAlbumCarousel()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        maybeStartNewestAlbumCarousel()
     }
 
     override fun onPause() {
         super.onPause()
-        stopNewestAlbumCarousel()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        stopNewestAlbumCarousel()
         _binding = null
     }
 
@@ -134,11 +127,25 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         refreshContent(userInitiated = true)
     }
 
+    override fun onMusicSourceChanged() {
+        val binding = _binding ?: return
+        binding.appBar.setExpanded(true, false)
+        binding.swipeRefresh.isRefreshing = true
+        isUserRefreshing = true
+        awaitingRecommendRefresh = true
+        awaitingWeeklyHotRefresh = false
+        awaitingNewestAlbumRefresh = false
+        songAdapter.submitList(emptyList())
+        syncEmptyState(forceEmpty = false)
+        libraryViewModel.prefetch(forceRefresh = true)
+        musicViewModel.loadDailyRecommend(forceRefresh = true)
+    }
+
     private fun setupRecyclerViews() {
         songAdapter = SongAdapter(
             onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
             onSongLongClick = { song -> showSongActions(song) },
-            onMoreClick = { anchor, song -> showDailyRecommendMenu(anchor, song) }
+            onMoreClick = { _, song -> showDailyRecommendMenu(song) }
         )
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
@@ -155,22 +162,14 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         binding.rvWeeklyHot.adapter = weeklyHotAdapter
         binding.rvWeeklyHot.setHasFixedSize(true)
 
-        newestAlbumAdapter = NewestAlbumBannerAdapter()
+        newestAlbumAdapter = NewestAlbumBannerAdapter(
+            onAlbumClick = { album -> openNewestAlbum(album) }
+        )
         binding.rvNewestAlbums.apply {
             layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
             adapter = newestAlbumAdapter
             setHasFixedSize(true)
-            addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
-                        maybeStartNewestAlbumCarousel()
-                    } else {
-                        stopNewestAlbumCarousel()
-                    }
-                }
-            })
         }
-        newestAlbumSnapHelper.attachToRecyclerView(binding.rvNewestAlbums)
     }
 
     private fun setupInteractions() {
@@ -184,6 +183,21 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         binding.swipeRefresh.setOnRefreshListener {
             refreshContent(userInitiated = true)
         }
+        binding.cardSongsSearch.setOnClickListener {
+            (activity as? MainActivity)?.selectRootTab(R.id.nav_library)
+        }
+        binding.btnPlayAllSongs.setOnClickListener {
+            val songs = songAdapter.currentList
+            if (songs.isNotEmpty()) {
+                musicViewModel.playFromList(songs, songs.first())
+            }
+        }
+        binding.btnShuffleSongs.setOnClickListener {
+            val songs = songAdapter.currentList.shuffled()
+            if (songs.isNotEmpty()) {
+                musicViewModel.playFromList(songs, songs.first())
+            }
+        }
         binding.appBar.addOnOffsetChangedListener(AppBarLayout.OnOffsetChangedListener { _, verticalOffset ->
             appBarVerticalOffset = verticalOffset
         })
@@ -193,22 +207,19 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         musicViewModel.dailyRecommend.observe(viewLifecycleOwner) { songs ->
             renderSongs(songs)
             binding.tvSongListSubtitle.text = getString(R.string.recommend_loaded_count, songs.size)
+            updateSummaryChips(recommendCount = songs.size)
             awaitingRecommendRefresh = false
             syncRefreshState()
         }
 
         musicViewModel.weeklyHotSongs.observe(viewLifecycleOwner) { songs ->
-            weeklyHotAdapter.submitList(songs)
-            syncWeeklyHotCardVisibility()
+            updateSummaryChips(weeklyCount = songs.size)
             awaitingWeeklyHotRefresh = false
             syncRefreshState()
         }
 
         musicViewModel.newestAlbums.observe(viewLifecycleOwner) { albums ->
-            newestAlbumAdapter.submitList(albums)
-            binding.rvNewestAlbums.visibility = if (albums.isEmpty()) View.GONE else View.VISIBLE
-            syncWeeklyHotCardVisibility()
-            maybeStartNewestAlbumCarousel()
+            updateSummaryChips(albumCount = albums.size)
             awaitingNewestAlbumRefresh = false
             syncRefreshState()
         }
@@ -235,8 +246,8 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         if (userInitiated) {
             isUserRefreshing = true
             awaitingRecommendRefresh = true
-            awaitingWeeklyHotRefresh = true
-            awaitingNewestAlbumRefresh = true
+            awaitingWeeklyHotRefresh = false
+            awaitingNewestAlbumRefresh = false
             binding.swipeRefresh.isRefreshing = true
             binding.swipeRefresh.postDelayed({
                 if (_binding != null && isUserRefreshing) {
@@ -245,16 +256,11 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             }, 3000L)
         }
         libraryViewModel.prefetch(forceRefresh = userInitiated)
-        musicViewModel.prefetchDiscover(limit = 10, forceRefresh = userInitiated)
+        musicViewModel.loadDailyRecommend(forceRefresh = userInitiated)
     }
 
     private fun maybeStartNewestAlbumCarousel() {
-        val binding = _binding ?: return
-        if (!isResumed) return
-        if (binding.rvNewestAlbums.visibility != View.VISIBLE) return
-        if ((binding.rvNewestAlbums.adapter?.itemCount ?: 0) <= 1) return
-        newestAlbumHandler.removeCallbacks(newestAlbumAutoScroll)
-        newestAlbumHandler.postDelayed(newestAlbumAutoScroll, newestAlbumIntervalMs)
+        // Cymusic-style Songs page has no album carousel; keep method for old callers.
     }
 
     private fun stopNewestAlbumCarousel() {
@@ -263,10 +269,18 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
 
     private fun syncWeeklyHotCardVisibility() {
         val binding = _binding ?: return
-        val hasWeeklyHot = weeklyHotAdapter.currentList.isNotEmpty()
-        val hasNewestAlbums = newestAlbumAdapter.currentList.isNotEmpty()
-        binding.cardWeeklyHot.visibility =
-            if (isWeeklyHotLoading || hasWeeklyHot || hasNewestAlbums) View.VISIBLE else View.GONE
+        binding.cardWeeklyHot.visibility = View.VISIBLE
+    }
+
+    private fun updateSummaryChips(
+        recommendCount: Int = songAdapter.currentList.size,
+        weeklyCount: Int = weeklyHotAdapter.currentList.size,
+        albumCount: Int = newestAlbumAdapter.currentList.size
+    ) {
+        val binding = _binding ?: return
+        binding.tvRecommendSummary.text = getString(R.string.discover_summary_recommend_count, recommendCount)
+        binding.tvWeeklySummary.text = getString(R.string.discover_summary_weekly_count, weeklyCount)
+        binding.tvAlbumSummary.text = getString(R.string.discover_summary_album_count, albumCount)
     }
 
     private fun renderSongs(songs: List<Song>) {
@@ -314,9 +328,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         options += SongOption(getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)) {
             libraryViewModel.setFavorite(song, !isFavorite)
         }
-        options += SongOption(getString(R.string.action_add_to_playlist)) {
-            showAddToPlaylistDialog(song)
-        }
         options += SongOption(getString(R.string.action_play_next)) {
             musicViewModel.enqueueNext(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
@@ -325,11 +336,17 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             musicViewModel.enqueue(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
         }
+        options += SongOption(getString(R.string.action_add_to_playlist)) {
+            showAddToPlaylistDialog(song)
+        }
+        options += SongOption(getString(R.string.action_download_song)) {
+            startSongDownload(song)
+        }
 
         SongOptionsBottomSheet.show(parentFragmentManager, song, options)
     }
 
-    private fun showDailyRecommendMenu(anchor: View, song: Song) {
+    private fun showDailyRecommendMenu(song: Song) {
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
         val options = mutableListOf<SongOption>()
         options += SongOption(getString(if (isFavorite) R.string.action_unlike else R.string.action_like)) {
@@ -339,90 +356,65 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             musicViewModel.enqueueNext(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
         }
+        options += SongOption(getString(R.string.action_add_to_playlist)) {
+            showAddToPlaylistDialog(song)
+        }
         options += SongOption(getString(R.string.action_download_song)) {
             startSongDownload(song)
         }
         SongOptionsBottomSheet.show(parentFragmentManager, song, options)
     }
 
-    private fun startSongDownload(song: Song) {
-        musicViewModel.resolveSongUrl(song) { result ->
-            val context = context ?: return@resolveSongUrl
-            result
-                .onSuccess { url ->
-                    if (url.isBlank()) {
-                        Toast.makeText(context, getString(R.string.msg_song_download_unavailable), Toast.LENGTH_SHORT).show()
-                        return@onSuccess
-                    }
-                    enqueueSongDownload(song, url)
-                }
-                .onFailure {
-                    Toast.makeText(context, getString(R.string.msg_song_download_unavailable), Toast.LENGTH_SHORT).show()
-                }
-        }
-    }
-
-    private fun enqueueSongDownload(song: Song, url: String) {
-        val context = context ?: return
-        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-        if (downloadManager == null) {
-            Toast.makeText(context, getString(R.string.msg_song_download_failed), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        runCatching {
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setTitle(song.name)
-                setDescription(
-                    getString(
-                        R.string.download_song_description,
-                        song.name,
-                        song.artists.joinToString(", ") { it.name }
-                    )
-                )
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setAllowedOverMetered(true)
-                setAllowedOverRoaming(true)
-                setMimeType("audio/mpeg")
-                setDestinationInExternalPublicDir(
-                    Environment.DIRECTORY_MUSIC,
-                    "Duck Music/${buildDownloadFileName(song)}"
-                )
-            }
-            downloadManager.enqueue(request)
-        }.onSuccess {
-            Toast.makeText(context, getString(R.string.msg_song_download_started), Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, getString(R.string.msg_song_download_failed), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun buildDownloadFileName(song: Song): String {
-        val artistNames = song.artists.joinToString(", ") { it.name }.ifBlank { "Unknown Artist" }
-        val rawName = "${song.name} - $artistNames.mp3"
-        return rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-    }
-
     private fun showAddToPlaylistDialog(song: Song) {
         val playlists = libraryViewModel.playlists.value.orEmpty()
         if (playlists.isEmpty()) {
-            Toast.makeText(requireContext(), getString(R.string.user_playlist_create_first), Toast.LENGTH_SHORT).show()
-            showCreatePlaylistDialog()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.user_playlist_pick_title)
+                .setMessage(R.string.user_playlist_create_first)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.user_playlist_create_title) { _, _ ->
+                    CreatePlaylistBottomSheet().apply {
+                        onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                    }.show(parentFragmentManager, "create_playlist")
+                }
+                .show()
             return
         }
 
-        val names = playlists.map { it.name }.toTypedArray()
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+        val names = playlists.map { playlist ->
+            val count = resources.getQuantityString(
+                R.plurals.user_playlist_track_count,
+                playlist.trackCount,
+                playlist.trackCount
+            )
+            "${playlist.name} · $count"
+        }.toTypedArray()
+
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.user_playlist_pick_title)
             .setItems(names) { _, which ->
                 libraryViewModel.addSongToPlaylist(playlists[which].id, song)
             }
+            .setNeutralButton(R.string.user_playlist_create_title) { _, _ ->
+                CreatePlaylistBottomSheet().apply {
+                    onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                }.show(parentFragmentManager, "create_playlist")
+            }
             .show()
     }
 
-    private fun showCreatePlaylistDialog() {
-        CreatePlaylistBottomSheet().apply {
-            onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
-        }.show(parentFragmentManager, "create_playlist")
+    private fun startSongDownload(song: Song) {
+        SongDownloader.download(requireContext(), musicViewModel, song)
+    }
+
+    private fun openNewestAlbum(album: NewestAlbum) {
+        (activity as? MainActivity)?.pushDetail(
+            AlbumSongsFragment.newInstance(
+                albumId = album.album.id,
+                albumName = album.album.name,
+                artistNames = album.artistNames,
+                coverUrl = album.album.picUrl
+            )
+        )
     }
 }

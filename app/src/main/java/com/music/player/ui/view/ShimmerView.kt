@@ -1,6 +1,5 @@
 package com.music.player.ui.view
 
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
@@ -30,16 +29,16 @@ class ShimmerView @JvmOverloads constructor(
     private val highlightColor = context.resolveThemeColor(R.attr.glassHighlight)
     private val cornerRadius = resources.getDimension(R.dimen.radius_s)
 
-    var shimmerTranslate: Float = -1f
-        set(value) {
-            field = value
-            invalidate()
-        }
+    private var shimmerTranslate: Float = -1f
 
-    private val shimmerAnimator = ObjectAnimator.ofFloat(this, "shimmerTranslate", -1f, 2f).apply {
+    private val shimmerAnimator = ValueAnimator.ofFloat(-1f, 2f).apply {
         duration = 1200L
         repeatCount = ValueAnimator.INFINITE
         interpolator = LinearInterpolator()
+        addUpdateListener { animator ->
+            shimmerTranslate = animator.animatedValue as Float
+            invalidate()
+        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

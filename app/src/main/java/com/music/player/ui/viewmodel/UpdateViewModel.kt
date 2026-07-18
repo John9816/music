@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.music.player.data.repository.AppVersionInfo
 import com.music.player.data.repository.AppVersionRepository
+import com.music.player.data.repository.VersionComparator
 import kotlinx.coroutines.launch
 
 sealed class UpdateState {
@@ -32,7 +33,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = UpdateState.Idle
     }
 
-    fun check(currentBuildNumber: Int, userInitiated: Boolean = true) {
+    fun check(currentVersion: String, currentBuildNumber: Int, userInitiated: Boolean = true) {
         viewModelScope.launch {
             _state.value = UpdateState.Loading(userInitiated)
             repository.getLatestVersion()
@@ -45,10 +46,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         return@onSuccess
                     }
 
-                    val shouldUpdate = currentBuildNumber < latest.buildNumber
+                    val shouldUpdate = VersionComparator.isNewer(currentVersion, latest.version)
                     val isBelowMin = currentBuildNumber < latest.minBuildNumber
                     val force = latest.forceUpdate || isBelowMin
-                    _state.value = if (shouldUpdate) {
+                    _state.value = if (shouldUpdate && latest.downloadUrl.isNullOrBlank()) {
+                        UpdateState.Error("新版本没有适用于当前构建的安装包。", userInitiated)
+                    } else if (shouldUpdate) {
                         UpdateState.UpdateAvailable(
                             latest = latest,
                             force = force,

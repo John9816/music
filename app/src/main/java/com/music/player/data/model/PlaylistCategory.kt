@@ -14,4 +14,3 @@ data class PlaylistCategory(
         val All = PlaylistCategory(apiName = "", name = "全部", groupId = null, groupName = null, hot = true)
     }
 }
-

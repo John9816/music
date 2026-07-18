@@ -14,6 +14,7 @@ import androidx.media3.common.util.UnstableApi
 import com.music.player.data.model.Song
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AudioQualityPreferences
+import com.music.player.data.settings.AppSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,10 @@ object PlaybackCoordinator {
     private const val MAX_HISTORY = 100
     private const val EXTRA_SONG_ID = "song_id"
     private const val MAX_URL_CACHE_SIZE = 200
+    private const val RECOVERY_WINDOW_MS = 45_000L
+    private const val MAX_RECOVERY_ATTEMPTS = 1
+    private const val LYRICS_FETCH_DELAY_MS = 8_000L
+    private const val NEXT_URL_PREFETCH_DELAY_MS = 15_000L
 
     private val repository = MusicRepository()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -46,8 +51,12 @@ object PlaybackCoordinator {
     private val navigationHistory = ArrayDeque<Song>()
     private var prepareJob: Job? = null
     private var lyricsJob: Job? = null
+    private var sleepTimerJob: Job? = null
     private var prepareToken: Long = 0L
     private var lastStartElapsedMs: Long = 0L
+    private var lastRecoverySongId: String? = null
+    private var lastRecoveryAtMs: Long = 0L
+    private var recoveryAttemptsForSong: Int = 0
 
     private val songUrlCache = object : LinkedHashMap<String, String>(MAX_URL_CACHE_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
@@ -92,13 +101,17 @@ object PlaybackCoordinator {
     fun init(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
+        MusicRepository.setApplicationContext(appContext!!)
         PlaybackService.start(appContext!!)
+        restoreSleepTimer()
     }
 
     fun attachPlayer(context: Context, player: Player) {
         appContext = context.applicationContext
+        MusicRepository.setApplicationContext(appContext!!)
         this.player = player
         _playerAttached.value = true
+        restoreSleepTimer()
 
         // Apply recommended attributes even if caller didn't.
         if (player is androidx.media3.exoplayer.ExoPlayer) {
@@ -113,6 +126,19 @@ object PlaybackCoordinator {
         pendingPreparedSong?.let {
             pendingPreparedSong = null
             playPreparedSong(it)
+        }
+    }
+
+    /**
+     * Detaches the current player. Called when the owning service is being destroyed and the
+     * player is about to be released, so the coordinator stops referencing a released instance.
+     */
+    fun detachPlayer(player: Player) {
+        // Only clear if the released player is still the one we hold; a newer service may have
+        // already re-attached a fresh player.
+        if (this.player === player) {
+            this.player = null
+            _playerAttached.value = false
         }
     }
 
@@ -164,10 +190,7 @@ object PlaybackCoordinator {
                         shouldAutoPlay = shouldAutoPlay,
                         token = token
                     )
-                    if (prepared.lyric.isNullOrBlank()) {
-                        fetchLyricsInBackground(prepared, token)
-                    }
-                    prefetchNextUrl(token)
+                    schedulePostStartWork(prepared, token)
                 } else {
                     _error.tryEmit(urlResult.exceptionOrNull()?.message ?: "切换音质失败")
                 }
@@ -176,6 +199,43 @@ object PlaybackCoordinator {
                     _isLoading.value = false
                 }
             }
+        }
+    }
+
+    fun setSleepTimer(minutes: Long) {
+        val context = appContext ?: return
+        val endTime = AppSettings.setSleepTimer(context, minutes)
+        scheduleSleepTimer(endTime)
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        appContext?.let(AppSettings::clearSleepTimer)
+    }
+
+    private fun restoreSleepTimer() {
+        val context = appContext ?: return
+        val endTime = AppSettings.sleepTimerEndTime(context)
+        if (endTime <= 0L) return
+        scheduleSleepTimer(endTime)
+    }
+
+    private fun scheduleSleepTimer(endTimeMs: Long) {
+        val context = appContext ?: return
+        sleepTimerJob?.cancel()
+        val remainingMs = endTimeMs - System.currentTimeMillis()
+        if (remainingMs <= 0L) {
+            player?.pause()
+            AppSettings.clearSleepTimer(context)
+            sleepTimerJob = null
+            return
+        }
+        sleepTimerJob = scope.launch {
+            delay(remainingMs)
+            player?.pause()
+            AppSettings.clearSleepTimer(context)
+            sleepTimerJob = null
         }
     }
 
@@ -272,6 +332,11 @@ object PlaybackCoordinator {
         _playlistViewMode.value = PlaylistViewMode.RECENT
     }
 
+    @Synchronized
+    fun clearResolvedUrlCache() {
+        songUrlCache.clear()
+    }
+
     fun removeFromRecentlyPlayed(songId: String) {
         rebuildNavigationHistory(
             navigationHistory.filterNot { it.id == songId }
@@ -313,7 +378,60 @@ object PlaybackCoordinator {
         skipNext()
     }
 
+    fun recoverCurrentPlayback(resumePositionMs: Long, reason: String) {
+        val song = _currentSong.value ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (lastRecoverySongId == song.id && now - lastRecoveryAtMs < RECOVERY_WINDOW_MS) {
+            recoveryAttemptsForSong += 1
+        } else {
+            lastRecoverySongId = song.id
+            lastRecoveryAtMs = now
+            recoveryAttemptsForSong = 1
+        }
+
+        if (recoveryAttemptsForSong > MAX_RECOVERY_ATTEMPTS) {
+            _error.tryEmit("当前歌曲播放不稳定，请切换音质后重试")
+            return
+        }
+
+        prepareJob?.cancel()
+        lyricsJob?.cancel()
+
+        val token = ++prepareToken
+        prepareJob = scope.launch {
+            _isLoading.value = true
+            try {
+                val refreshed = song.copy(url = null)
+                val urlResult = withContext(Dispatchers.IO) {
+                    resolveSongUrl(refreshed, forceRefresh = true)
+                }
+                val refreshedUrl = urlResult.getOrNull()?.trim().orEmpty()
+                if (prepareToken != token) return@launch
+
+                if (urlResult.isSuccess && refreshedUrl.isNotBlank()) {
+                    val prepared = song.copy(url = refreshedUrl)
+                    _currentSong.value = prepared
+                    playPreparedSong(
+                        song = prepared,
+                        startPositionMs = resumePositionMs,
+                        shouldAutoPlay = true
+                    )
+                    _error.tryEmit(reason)
+                } else {
+                    _error.tryEmit(urlResult.exceptionOrNull()?.message ?: "恢复播放失败")
+                }
+            } finally {
+                if (prepareToken == token) {
+                    _isLoading.value = false
+                }
+            }
+        }
+    }
+
     private fun startPlayback(song: Song, recordHistory: Boolean) {
+        lastRecoverySongId = null
+        recoveryAttemptsForSong = 0
+        lastRecoveryAtMs = 0L
         val current = _currentSong.value
         if (recordHistory && current != null && current.id != song.id) {
             navigationHistory.addLast(current)
@@ -346,17 +464,18 @@ object PlaybackCoordinator {
                     Log.d(TAG, "resolved url in ${urlCost}ms (fast path), songId=${song.id}")
                     playPreparedSong(prepared)
 
-                    prefetchNextUrl(token)
-                    fetchLyricsInBackground(prepared, token)
+                    schedulePostStartWork(prepared, token)
                 } else {
                     // Fallback to legacy prepare path (may include additional server-side requirements).
                     Log.d(TAG, "url fast path failed in ${urlCost}ms, fallback prepareSong(), songId=${song.id}")
                     repository.prepareSong(song)
                         .onSuccess { prepared ->
                             if (prepareToken == token) {
-                                prepared.url?.trim()?.takeIf { it.isNotBlank() }?.let { putCachedUrl(prepared.id, it) }
+                                prepared.url?.trim()?.takeIf { it.isNotBlank() }
+                                    ?.let { putCachedUrl(prepared.id, prepared.source, it) }
                                 _currentSong.value = prepared
                                 playPreparedSong(prepared)
+                                schedulePostStartWork(prepared, token)
                             }
                         }
                         .onFailure { throwable ->
@@ -377,18 +496,34 @@ object PlaybackCoordinator {
         val existing = song.url?.trim().orEmpty()
         if (!forceRefresh && existing.isNotBlank()) return Result.success(existing)
 
-        val cached = getCachedUrl(song.id)
+        val cached = getCachedUrl(song.id, song.source)
         if (!forceRefresh && cached != null) return Result.success(cached)
 
-        val fetched = repository.getSongUrl(song.id, forceRefresh = forceRefresh)
-        fetched.getOrNull()?.trim()?.takeIf { it.isNotBlank() }?.let { putCachedUrl(song.id, it) }
+        val fetched = repository.getSongUrl(
+            song.id,
+            source = song.source,
+            forceRefresh = forceRefresh
+        )
+        fetched.getOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { putCachedUrl(song.id, song.source, it) }
         return fetched
+    }
+
+    private fun schedulePostStartWork(prepared: Song, token: Long) {
+        if (prepared.lyric.isNullOrBlank()) {
+            fetchLyricsInBackground(prepared, token)
+        }
+        prefetchNextUrl(token)
     }
 
     private fun fetchLyricsInBackground(prepared: Song, token: Long) {
         lyricsJob?.cancel()
         lyricsJob = scope.launch {
-            val lyric = withContext(Dispatchers.IO) { repository.getLyrics(prepared.id).getOrNull() }
+            delay(LYRICS_FETCH_DELAY_MS)
+            if (prepareToken != token) return@launch
+            val lyric = withContext(Dispatchers.IO) {
+                repository.getLyrics(prepared.id, source = prepared.source).getOrNull()
+            }
                 ?.trim()
                 .orEmpty()
             if (lyric.isBlank()) return@launch
@@ -402,26 +537,28 @@ object PlaybackCoordinator {
 
     private fun prefetchNextUrl(token: Long) {
         val next = _queue.value.firstOrNull() ?: return
-        if (getCachedUrl(next.id) != null) return
+        if (getCachedUrl(next.id, next.source) != null) return
         scope.launch {
+            delay(NEXT_URL_PREFETCH_DELAY_MS)
             if (prepareToken != token) return@launch
             withContext(Dispatchers.IO) { resolveSongUrl(next) }
         }
     }
 
     @Synchronized
-    private fun getCachedUrl(songId: String): String? = songUrlCache[currentUrlCacheKey(songId)]
+    private fun getCachedUrl(songId: String, source: String): String? =
+        songUrlCache[currentUrlCacheKey(songId, source)]
 
     @Synchronized
-    private fun putCachedUrl(songId: String, url: String) {
-        songUrlCache[currentUrlCacheKey(songId)] = url
+    private fun putCachedUrl(songId: String, source: String, url: String) {
+        songUrlCache[currentUrlCacheKey(songId, source)] = url
     }
 
-    private fun currentUrlCacheKey(songId: String): String {
+    private fun currentUrlCacheKey(songId: String, source: String): String {
         val level = appContext
             ?.let { AudioQualityPreferences.getPreferredLevel(it) }
             ?: AudioQualityPreferences.getPreferredLevel()
-        return "$songId|${level.storageValue}"
+        return "$source|$songId|${level.storageValue}"
     }
 
     private fun playPreparedSongWithFallback(
@@ -441,11 +578,16 @@ object PlaybackCoordinator {
         var settled = false
         lateinit var listener: Player.Listener
 
-        fun settleSuccess() {
+        // Detaches the listener without touching playback. Used when this switch has been
+        // superseded by a newer request (token bumped): the newer request owns the player now,
+        // so we must not revert, but we must still remove our listener to avoid leaking it.
+        fun detach() {
             if (settled) return
             settled = true
             activePlayer.removeListener(listener)
         }
+
+        fun settleSuccess() = detach()
 
         fun settleFailure() {
             if (settled) return
@@ -475,8 +617,17 @@ object PlaybackCoordinator {
 
         scope.launch {
             delay(timeoutMs)
-            if (prepareToken == token && !settled && activePlayer.playbackState != Player.STATE_READY) {
-                settleFailure()
+            if (settled) return@launch
+            if (prepareToken == token) {
+                // Still the active switch: revert if it never reached READY.
+                if (activePlayer.playbackState != Player.STATE_READY) {
+                    settleFailure()
+                } else {
+                    settleSuccess()
+                }
+            } else {
+                // Superseded by a newer request; just remove our listener, don't revert.
+                detach()
             }
         }
     }

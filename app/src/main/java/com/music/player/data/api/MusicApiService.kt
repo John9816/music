@@ -1,75 +1,95 @@
 package com.music.player.data.api
 
+import okhttp3.ResponseBody
 import retrofit2.Response
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Query
 
 interface MusicApiService {
 
-    @GET("api/recommend/songs")
-    suspend fun getDailyRecommend(): Response<DailyRecommendResponse>
+    @GET("api/v1/music/new")
+    suspend fun getDailyRecommend(
+        @Query("source") source: String = "netease",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 30
+    ): Response<ResponseBody>
 
-    @GET("api/toplist")
-    suspend fun getTopLists(): Response<TopListResponse>
+    @GET("api/v1/music/toplist")
+    suspend fun getTopLists(@Query("source") source: String = "netease"): Response<ResponseBody>
 
-    @GET("api/top/playlist")
+    @GET("api/v1/music/playlist")
     suspend fun getTopPlaylists(
+        @Query("source") source: String = "netease",
         @Query("cat") category: String? = null,
-        @Query("limit") limit: Int = 42,
-        @Query("offset") offset: Int = 0,
-        @Query("timestamp") timestamp: Long? = null,
-        @Query("device") device: String? = null
-    ): Response<PlaylistResponse>
+        @Query("category") websiteCategory: String? = category,
+        @Query("order") order: String? = "hot",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20
+    ): Response<ResponseBody>
 
-    @GET("api/playlist/catlist")
+    @GET("api/v1/music/playlist")
     suspend fun getPlaylistCatlist(
-        @Query("timestamp") timestamp: Long? = null,
-        @Query("device") device: String? = null
-    ): Response<PlaylistCatlistResponse>
+        @Query("source") source: String = "netease",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 1
+    ): Response<ResponseBody>
 
-    @GET("api/playlist/detail")
-    suspend fun getPlaylistDetail(@Query("id") id: String): Response<PlaylistDetailResponse>
+    @GET("api/v1/music/playlist/detail")
+    suspend fun getPlaylistDetail(
+        @Query("source") source: String = "netease",
+        @Query("id") id: String,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 300
+    ): Response<ResponseBody>
 
-    @GET("api/cloudsearch")
+    @GET("api/v1/music/search")
     suspend fun searchSongs(
-        @Query("keywords") keywords: String,
-        @Query("type") type: Int = 1,
-        @Query("limit") limit: Int = 30,
-        @Query("offset") offset: Int = 0
-    ): Response<SearchResponse>
+        @Query("source") source: String = "netease",
+        @Query("keyword") keyword: String,
+        @Query("type") type: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 30
+    ): Response<ResponseBody>
 
-    @GET("api/song/detail")
-    suspend fun getSongDetail(@Query("ids") ids: String): Response<SongDetailResponse>
+    @GET("api/v1/music/search")
+    suspend fun getSongDetail(
+        @Query("source") source: String = "netease",
+        @Query("keyword") ids: String,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 30
+    ): Response<ResponseBody>
 
-    @GET("api/lyric")
+    @GET("api/v1/music/lyric")
     suspend fun getLyric(
+        @Query("source") source: String = "netease",
         @Query("id") id: String,
         @Query("timestamp") timestamp: Long? = null
-    ): Response<LyricResponse>
+    ): Response<ResponseBody>
 
-    @GET("api/personalized/newsong")
+    @GET("api/v1/music/play")
+    suspend fun getSongUrl(
+        @Header("Authorization") authorization: String? = null,
+        @Query("source") source: String = "netease",
+        @Query("id") id: String,
+        @Query("quality") level: String = "flac"
+    ): Response<ResponseBody>
+
+    @GET("api/v1/music/new")
     suspend fun getWeeklyHotNewSongs(
-        @Query("limit") limit: Int = 10,
-        @Query("timestamp") timestamp: Long? = null,
-        @Query("device") device: String? = null
-    ): Response<WeeklyHotNewSongResponse>
+        @Query("source") source: String = "netease",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 10
+    ): Response<ResponseBody>
 
-    @GET("api/album/newest")
+    @GET("api/v1/music/new")
     suspend fun getNewestAlbums(
-        @Query("timestamp") timestamp: Long? = null,
-        @Query("device") device: String? = null
-    ): Response<NewestAlbumResponse>
+        @Query("source") source: String = "netease",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 10
+    ): Response<ResponseBody>
 }
-
-data class DailyRecommendResponse(
-    val code: Int,
-    val data: DailyRecommendData?
-)
-
-data class DailyRecommendData(
-    val dailySongs: List<SongData>?
-)
 
 data class PlaylistResponse(
     val code: Int,

@@ -12,11 +12,16 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import java.io.IOException
 
 object RetrofitClient {
     private const val MUSIC_BASE_URL = "https://api.751152.xyz/"
     private const val HTTP_CACHE_SIZE_BYTES = 32L * 1024L * 1024L
     private val connectionPool: ConnectionPool = NetworkRuntime.connectionPool()
+    private val httpCache = NetworkRuntime.httpCache(
+        directoryName = "music-http-cache",
+        maxSizeBytes = HTTP_CACHE_SIZE_BYTES
+    )
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) {
@@ -59,7 +64,25 @@ object RetrofitClient {
                 )
                 .build()
         }
-        chain.proceed(request)
+        try {
+            chain.proceed(request)
+        } catch (error: IOException) {
+            if (!request.method.equals("GET", ignoreCase = true)) throw error
+            val cachedRequest = request.newBuilder()
+                .cacheControl(
+                    CacheControl.Builder()
+                        .onlyIfCached()
+                        .maxStale(7, TimeUnit.DAYS)
+                        .build()
+                )
+                .build()
+            val cachedResponse = chain.proceed(cachedRequest)
+            if (cachedResponse.code == 504) {
+                cachedResponse.close()
+                throw error
+            }
+            cachedResponse
+        }
     }
 
     private val responseCacheInterceptor = Interceptor { chain ->
@@ -90,7 +113,7 @@ object RetrofitClient {
     }
 
     private val okHttpClient = OkHttpClient.Builder()
-        .cache(NetworkRuntime.httpCache(directoryName = "music-http-cache", maxSizeBytes = HTTP_CACHE_SIZE_BYTES))
+        .cache(httpCache)
         .connectionPool(connectionPool)
         .retryOnConnectionFailure(true)
         .cookieJar(InMemoryCookieJar())
@@ -113,6 +136,13 @@ object RetrofitClient {
     }
 
     val musicApi: MusicApiService = createRetrofit(MUSIC_BASE_URL).create(MusicApiService::class.java)
+
+    fun httpCacheSizeBytes(): Long = runCatching { httpCache.size() }.getOrDefault(0L)
+
+    fun clearHttpCache() {
+        runCatching { httpCache.evictAll() }
+        connectionPool.evictAll()
+    }
 }
 
 private class InMemoryCookieJar : CookieJar {

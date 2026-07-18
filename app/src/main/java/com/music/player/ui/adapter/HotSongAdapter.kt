@@ -55,8 +55,16 @@ class HotSongAdapter(
                     .into(binding.ivCover)
             }
 
-            binding.root.setOnClickListener { onSongClick(song) }
+            binding.root.setOnClickListener {
+                it.animate().scaleX(0.92f).scaleY(0.92f).setDuration(60).withEndAction {
+                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+                }.start()
+                onSongClick(song)
+            }
             binding.root.setOnLongClickListener {
+                it.animate().scaleX(0.92f).scaleY(0.92f).setDuration(60).withEndAction {
+                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+                }.start()
                 onSongLongClick(song)
                 true
             }

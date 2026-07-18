@@ -49,11 +49,17 @@ object NetworkRuntime {
         if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
             return false
         }
-
         return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)
+    }
+
+    fun isActiveNetworkMetered(): Boolean {
+        val context = appContext ?: return false
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        return manager.isActiveNetworkMetered
     }
 }

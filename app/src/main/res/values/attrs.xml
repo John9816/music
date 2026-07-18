@@ -19,4 +19,6 @@
     <attr name="glassHighlight" format="color" />
     <attr name="glassShadow" format="color" />
     <attr name="glassOverlayTint" format="color" />
+    <attr name="rippleColor" format="color" />
+    <attr name="selectedOverlay" format="color" />
 </resources>

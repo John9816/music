@@ -17,7 +17,7 @@ object AppUpdateDialogs {
     ) {
         val message = buildString {
             append("Local: ").append(currentVersion).append(" (").append(currentBuildNumber).append(")")
-            append("\nRemote: ").append(latest.version).append(" (").append(latest.buildNumber).append(")")
+            append("\nRemote: ").append(latest.version)
             if (!latest.description.isNullOrBlank()) {
                 append("\n\n").append(latest.description.trim())
             }

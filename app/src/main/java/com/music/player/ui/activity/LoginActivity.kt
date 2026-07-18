@@ -159,7 +159,7 @@ class LoginActivity : AppCompatActivity() {
             binding.emailInputLayout.error = getString(R.string.email_required)
             return false
         }
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+        if (!isLoginMode && !QQ_EMAIL_REGEX.matches(email)) {
             binding.emailInputLayout.error = getString(R.string.email_invalid)
             return false
         }
@@ -216,5 +216,9 @@ class LoginActivity : AppCompatActivity() {
             insets
         }
         requestApplyInsets()
+    }
+
+    private companion object {
+        private val QQ_EMAIL_REGEX = Regex("^[1-9]\\d{4,10}@qq\\.com$", RegexOption.IGNORE_CASE)
     }
 }

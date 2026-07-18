@@ -3,562 +3,410 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground">
+    android:background="?attr/pageBackground">
 
     <include
         android:id="@+id/immersiveHeader"
         layout="@layout/include_immersive_header_background"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="1dp"
         android:background="@android:color/transparent"
-        android:minHeight="@dimen/toolbar_min_height"
-        android:paddingStart="@dimen/spacing_m"
-        android:paddingEnd="@dimen/spacing_s"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationIcon="@drawable/ic_arrow_back_24"
-        app:navigationIconTint="?attr/colorOnSurfaceVariant"
-        app:title="@string/settings_title"
-        app:titleTextColor="?attr/colorOnSurface" />
+        app:title="" />
 
     <ScrollView
         android:id="@+id/scrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:clipToPadding="false"
         android:fillViewport="true"
+        android:overScrollMode="never"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/toolbar">
+        app:layout_constraintTop_toTopOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="@dimen/spacing_m"
-            android:paddingTop="@dimen/spacing_s"
+            android:paddingTop="76dp"
             android:paddingEnd="@dimen/spacing_m"
-            android:paddingBottom="@dimen/spacing_m">
+            android:paddingBottom="@dimen/spacing_3xl">
 
-            <!-- Account Info Card -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
+            <TextView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:text="@string/settings_title"
+                android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+                android:textColor="?attr/textPrimary"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_m"
+                android:text="@string/settings_app_info"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="?attr/textPrimary"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:background="@drawable/bg_cymusic_group"
+                android:divider="@drawable/divider_settings"
+                android:orientation="vertical"
+                android:showDividers="middle">
 
                 <LinearLayout
+                    android:id="@+id/btnEditProfile"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_l">
+                    android:layout_height="52dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/profile_info_title"
-                        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                        android:textColor="?attr/textPrimary"
-                        android:textStyle="bold" />
+                    <ImageView
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:background="@drawable/bg_cymusic_group"
+                        android:padding="6dp"
+                        android:src="@drawable/ic_music_note_24"
+                        app:tint="?attr/brandPrimary" />
 
                     <TextView
                         android:id="@+id/tvEmail"
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_m"
-                        android:text="@string/profile_email_placeholder"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+                        android:layout_marginStart="@dimen/spacing_s"
+                        android:layout_weight="1"
+                        android:text="DuckMusic"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                         android:textColor="?attr/textPrimary" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEditProfile"
-                style="@style/Widget.MusicPlayer.Button.Primary"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_version"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvAppVersion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutCheckUpdate"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_check_update"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutClearCache"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_clear_all_cache"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvCacheSize"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_l"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_m"
-                android:text="@string/profile_edit_button"
-                android:textAllCaps="false"
-                android:textSize="15sp"
+                android:text="@string/settings_audio_section"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
 
-            <!-- Playback Settings -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/settings_category_playback"
-                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                android:textColor="?attr/brandPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
+                android:layout_marginTop="@dimen/spacing_s"
+                android:background="@drawable/bg_cymusic_group"
+                android:divider="@drawable/divider_settings"
+                android:orientation="vertical"
+                android:showDividers="middle">
 
                 <LinearLayout
+                    android:id="@+id/layoutManageDownloads"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:divider="@drawable/divider_settings"
-                    android:showDividers="middle">
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
 
-                    <LinearLayout
-                        android:id="@+id/layoutAudioQuality"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
+                        android:layout_weight="1"
+                        android:text="@string/settings_manage_downloads"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
 
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_audio_quality"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:id="@+id/tvAudioQualitySummary"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutSleepTimer"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/tvDownloadedSize"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_sleep_timer"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:id="@+id/tvSleepTimerSummary"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_sleep_timer_summary"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-                    </LinearLayout>
+                        android:text="0 B"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <!-- Network Settings -->
+                <LinearLayout
+                    android:id="@+id/layoutAudioQuality"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_audio_quality"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvAudioQualitySummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutStreamQuality"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_stream_quality"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvStreamQualitySummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/layoutSleepTimer"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_sleep_timer"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
+
+                    <TextView
+                        android:id="@+id/tvSleepTimerSummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
+                </LinearLayout>
+            </LinearLayout>
+
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/settings_category_network"
-                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                android:textColor="?attr/brandPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
+                android:layout_marginTop="@dimen/spacing_m"
+                android:text="@string/settings_custom_source"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="?attr/textPrimary"
+                android:textStyle="bold" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:divider="@drawable/divider_settings"
-                    android:showDividers="middle">
-
-                    <LinearLayout
-                        android:id="@+id/layoutStreamQuality"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_stream_quality"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:id="@+id/tvStreamQualitySummary"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_stream_quality_summary"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_download_wifi_only"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_download_wifi_only_summary"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switchDownloadWifiOnly"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_gravity="center_vertical" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Cache Settings -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/settings_category_cache"
-                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                android:textColor="?attr/brandPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
+                android:layout_marginTop="@dimen/spacing_s"
+                android:background="@drawable/bg_cymusic_group"
+                android:divider="@drawable/divider_settings"
+                android:orientation="vertical"
+                android:showDividers="middle">
 
                 <LinearLayout
+                    android:id="@+id/layoutMusicSource"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:divider="@drawable/divider_settings"
-                    android:showDividers="middle">
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
 
-                    <LinearLayout
-                        android:id="@+id/layoutManageDownloads"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
+                        android:layout_weight="1"
+                        android:text="@string/settings_switch_source"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
 
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_manage_downloads"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:id="@+id/tvDownloadedSize"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutClearCache"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/tvMusicSourceSummary"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/spacing_l">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_clear_cache"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                                android:textColor="?attr/textPrimary" />
-
-                            <TextView
-                                android:id="@+id/tvCacheSize"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
-                        </LinearLayout>
-                    </LinearLayout>
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- About Section -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/settings_category_about"
-                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                android:textColor="?attr/brandPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
 
                 <LinearLayout
+                    android:id="@+id/layoutSourceStatus"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:divider="@drawable/divider_settings"
-                    android:showDividers="middle">
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_m">
 
-                    <LinearLayout
-                        android:id="@+id/layoutAbout"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
+                        android:layout_weight="1"
+                        android:text="@string/settings_source_status"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textPrimary" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_about"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-
-                        <TextView
-                            android:id="@+id/tvAppVersion"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                            android:textColor="?attr/textSecondary" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutHelpFeedback"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:id="@+id/tvSourceStatusSummary"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_help_feedback"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_help_feedback"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                            android:textColor="?attr/textSecondary" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutUserAgreement"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_user_agreement"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutPrivacyPolicy"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_privacy_policy"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutOpenSourceLicenses"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/settings_open_source_licenses"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-                    </LinearLayout>
+                        android:text="@string/settings_source_not_checked"
+                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                        android:textColor="?attr/textSecondary" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <!-- Theme & Update -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/settings_category_theme_update"
-                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
-                android:textColor="?attr/brandPrimary" />
+            </LinearLayout>
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.MusicPlayer.Card.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_s">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <LinearLayout
-                        android:id="@+id/layoutTheme"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/profile_theme"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:id="@+id/layoutCheckUpdate"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_l">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/profile_check_update"
-                            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-                            android:textColor="?attr/textPrimary" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
+            <LinearLayout
+                android:id="@+id/layoutHelpFeedback"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/layoutUserAgreement"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/layoutPrivacyPolicy"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+            <LinearLayout
+                android:id="@+id/layoutOpenSourceLicenses"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:orientation="vertical"
+                android:visibility="gone" />
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switchDownloadWifiOnly"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:visibility="gone" />
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLogout"
-                style="@style/Widget.MusicPlayer.Button.Outlined"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/control_height_l"
-                android:layout_marginTop="@dimen/spacing_l"
-                android:text="@string/profile_logout"
-                android:textAllCaps="false"
-                android:textColor="?attr/dangerColor"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                app:strokeColor="?attr/dangerColor" />
-
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:visibility="gone" />
         </LinearLayout>
     </ScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

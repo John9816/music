@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="album_header_eyebrow">最新专辑</string>
+    <string name="album_header_title_fallback">专辑</string>
+    <string name="album_header_description_fallback">查看这张专辑的歌曲</string>
+    <string name="album_collection_mode">专辑</string>
+    <string name="album_empty">暂时没有加载到这张专辑的歌曲</string>
+</resources>

@@ -41,6 +41,7 @@ import com.music.player.ui.adapter.LyricsAdapter
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
@@ -236,7 +237,26 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         binding.btnClose.setOnClickListener { dismiss() }
         binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
-        binding.btnFavorite.setOnClickListener { toggleFavoriteForCurrentSong() }
+        binding.btnFavorite.setOnClickListener {
+            binding.layoutSongMenu.isVisible = !binding.layoutSongMenu.isVisible
+        }
+        binding.menuShowLyrics.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            showLyricsStage()
+        }
+        binding.menuFavoriteSong.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            toggleFavoriteForCurrentSong()
+        }
+        binding.menuShareSong.setOnClickListener { binding.layoutSongMenu.isVisible = false }
+        binding.menuDownloadSong.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            musicViewModel.currentSong.value?.let { song ->
+                SongDownloader.download(requireContext(), musicViewModel, song)
+            }
+        }
+        binding.menuAddPlaylist.setOnClickListener { binding.layoutSongMenu.isVisible = false }
+        binding.menuShowAlbum.setOnClickListener { binding.layoutSongMenu.isVisible = false }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
@@ -377,9 +397,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnFavorite.isEnabled = song != null
         binding.btnFavorite.alpha = if (song == null) 0.38f else 1f
         binding.btnFavorite.imageTintList = ColorStateList.valueOf(
-            themeColor(if (isFavorite) R.attr.brandPrimary else R.attr.textSecondary)
+            themeColor(R.attr.textPrimary)
         )
         binding.btnFavorite.contentDescription = getString(
+            R.string.content_desc_more
+        )
+        binding.menuFavoriteSong.text = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
         )
     }
@@ -449,7 +472,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 Glide.with(this)
                     .load(coverUrl)
                     .placeholder(R.drawable.ic_music_note_24)
-                    .circleCrop()
+                    .centerCrop()
                     .into(iv)
             }
         }
@@ -521,43 +544,15 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     // ── Cover Rotation (disc style) ──────────────────────────────
 
     private fun syncCoverRotation() {
-        if (_binding == null) return
-        val player = (activity as? MainActivity)?.player ?: return
-        if (!player.isPlaying) {
-            pauseCoverRotation()
-            return
-        }
-        startCoverRotation()
+        stopCoverRotation()
     }
 
     private fun startCoverRotation() {
-        val target = discContainer ?: ivCoverBig ?: return
-
-        val animator = coverRotateAnimator
-        if (animator != null && animator.target !== target) {
-            animator.cancel()
-            coverRotateAnimator = null
-        }
-
-        val newAnimator = coverRotateAnimator ?: ObjectAnimator.ofFloat(target, View.ROTATION, 0f, 360f).apply {
-            duration = 12000L
-            interpolator = LinearInterpolator()
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.RESTART
-        }.also { coverRotateAnimator = it }
-
-        if (!newAnimator.isStarted) {
-            target.rotation = 0f
-            newAnimator.start()
-        } else {
-            newAnimator.resume()
-        }
+        stopCoverRotation()
     }
 
     private fun pauseCoverRotation() {
-        coverRotateAnimator?.let { animator ->
-            if (animator.isStarted) animator.pause()
-        }
+        stopCoverRotation()
     }
 
     private fun stopCoverRotation() {
@@ -589,16 +584,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         viewGlowHalo?.visibility = View.INVISIBLE
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun syncGlowWithPlayback(isPlaying: Boolean, showingCover: Boolean) {
-        if (!showingCover) {
-            stopGlowAnimation()
-            return
-        }
-        if (isPlaying) {
-            startGlowAnimation()
-        } else {
-            stopGlowAnimation()
-        }
+        stopGlowAnimation()
     }
 
     // ── Play mode ─────────────────────────────────────────────────

@@ -75,7 +75,6 @@ class LyricsAdapter : RecyclerView.Adapter<LyricsAdapter.LyricViewHolder>() {
             val targetTypeface = if (isActive) Typeface.BOLD else Typeface.NORMAL
 
             if (animate) {
-                // Animate color change
                 binding.tvLine.animate()
                     .alpha(targetAlpha)
                     .scaleX(targetScale)
@@ -85,17 +84,14 @@ class LyricsAdapter : RecyclerView.Adapter<LyricsAdapter.LyricViewHolder>() {
                     .withStartAction {
                         binding.tvLine.setTextColor(targetColor)
                         binding.tvLine.setTypeface(binding.tvLine.typeface, targetTypeface)
-                        binding.tvLine.textSize = if (isActive) 18f else 14f
                     }
                     .start()
             } else {
-                // Immediate bind (no animation)
                 binding.tvLine.setTextColor(targetColor)
                 binding.tvLine.alpha = targetAlpha
                 binding.tvLine.scaleX = targetScale
                 binding.tvLine.scaleY = targetScale
                 binding.tvLine.setTypeface(binding.tvLine.typeface, targetTypeface)
-                binding.tvLine.textSize = if (isActive) 18f else 14f
             }
         }
     }

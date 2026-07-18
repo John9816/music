@@ -31,9 +31,14 @@ class AppUpdateInstaller(
 
     companion object {
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+        private const val PREFS_NAME = "app_update_download"
+        private const val KEY_DOWNLOAD_ID = "download_id"
+        private const val KEY_DOWNLOAD_FILE = "download_file"
+        private const val KEY_PENDING_INSTALL_FILE = "pending_install_file"
     }
 
     private val downloadManager = activity.getSystemService(DownloadManager::class.java)
+    private val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private var receiverRegistered = false
     private var activeDownloadId = -1L
     private var activeDownloadFile: File? = null
@@ -45,6 +50,7 @@ class AppUpdateInstaller(
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.packageManager.canRequestPackageInstalls()) {
                 launchInstaller(file)
             } else {
+                clearPendingInstall()
                 toast(R.string.update_install_permission_denied)
             }
         }
@@ -53,13 +59,16 @@ class AppUpdateInstaller(
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
             val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-            if (downloadId != activeDownloadId) return
+            if (downloadId != prefs.getLong(KEY_DOWNLOAD_ID, -1L)) return
+            activeDownloadId = downloadId
+            activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)?.let(::File)
             handleDownloadComplete(downloadId)
         }
     }
 
     init {
         registerReceiver()
+        restorePendingState()
     }
 
     fun dispose() {
@@ -94,8 +103,9 @@ class AppUpdateInstaller(
         val targetFileName = buildDownloadFileName(uri, versionName)
         val targetFile = File(downloadsDir, targetFileName)
 
-        if (activeDownloadId != -1L) {
-            manager.remove(activeDownloadId)
+        val previousDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, activeDownloadId)
+        if (previousDownloadId != -1L) {
+            manager.remove(previousDownloadId)
         }
         if (targetFile.exists()) {
             targetFile.delete()
@@ -112,14 +122,17 @@ class AppUpdateInstaller(
 
         activeDownloadFile = targetFile
         activeDownloadId = manager.enqueue(request)
+        prefs.edit()
+            .putLong(KEY_DOWNLOAD_ID, activeDownloadId)
+            .putString(KEY_DOWNLOAD_FILE, targetFile.absolutePath)
+            .apply()
         toast(R.string.update_start_download)
     }
 
     private fun handleDownloadComplete(downloadId: Long) {
         val manager = downloadManager ?: return
         val file = activeDownloadFile
-        activeDownloadId = -1L
-        activeDownloadFile = null
+        clearActiveDownload()
 
         val query = DownloadManager.Query().setFilterById(downloadId)
         val cursor = manager.query(query)
@@ -154,6 +167,7 @@ class AppUpdateInstaller(
         when (validateDownloadedPackage(file)) {
             PackageValidationResult.Valid -> {
                 pendingInstallFile = file
+                prefs.edit().putString(KEY_PENDING_INSTALL_FILE, file.absolutePath).apply()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                     !activity.packageManager.canRequestPackageInstalls()
                 ) {
@@ -187,6 +201,7 @@ class AppUpdateInstaller(
 
         runCatching {
             activity.startActivity(installIntent)
+            clearPendingInstall()
         }.onFailure {
             if (it is ActivityNotFoundException) {
                 toast(R.string.update_install_failed)
@@ -230,7 +245,7 @@ class AppUpdateInstaller(
             return PackageValidationResult.InvalidApk
         }
 
-        return if (archiveSigners == installedSigners) {
+        return if (archiveSigners.intersect(installedSigners).isNotEmpty()) {
             PackageValidationResult.Valid
         } else {
             PackageValidationResult.SignatureMismatch
@@ -278,6 +293,54 @@ class AppUpdateInstaller(
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         receiverRegistered = true
+    }
+
+    private fun restorePendingState() {
+        pendingInstallFile = prefs.getString(KEY_PENDING_INSTALL_FILE, null)
+            ?.let(::File)
+            ?.takeIf(File::exists)
+
+        activeDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)
+            ?.let(::File)
+
+        if (activeDownloadId != -1L) {
+            resumeDownloadIfFinished(activeDownloadId)
+            return
+        }
+
+        val pending = pendingInstallFile ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.packageManager.canRequestPackageInstalls()) {
+            launchInstaller(pending)
+        }
+    }
+
+    private fun resumeDownloadIfFinished(downloadId: Long) {
+        val manager = downloadManager ?: return
+        val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
+        cursor.use {
+            if (it == null || !it.moveToFirst()) {
+                clearActiveDownload()
+                return
+            }
+            val statusIndex = it.getColumnIndex(DownloadManager.COLUMN_STATUS)
+            val status = if (statusIndex >= 0) it.getInt(statusIndex) else DownloadManager.STATUS_FAILED
+            when (status) {
+                DownloadManager.STATUS_SUCCESSFUL -> handleDownloadComplete(downloadId)
+                DownloadManager.STATUS_FAILED -> clearActiveDownload()
+            }
+        }
+    }
+
+    private fun clearActiveDownload() {
+        activeDownloadId = -1L
+        activeDownloadFile = null
+        prefs.edit().remove(KEY_DOWNLOAD_ID).remove(KEY_DOWNLOAD_FILE).apply()
+    }
+
+    private fun clearPendingInstall() {
+        pendingInstallFile = null
+        prefs.edit().remove(KEY_PENDING_INSTALL_FILE).apply()
     }
 
     private fun toast(messageRes: Int) {

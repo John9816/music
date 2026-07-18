@@ -9,18 +9,21 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object SupabaseClient {
-    const val SUPABASE_URL = "https://vtvzpdupygvtytunrpdw.supabase.co"
+    // Sourced from BuildConfig (local.properties / CI env), never hardcoded here.
+    val SUPABASE_URL: String = com.music.player.BuildConfig.SUPABASE_URL
     const val AVATAR_BUCKET = "avatars"
 
-    // 从 daohangv2 项目获取的真实 anon key
-    private const val SUPABASE_ANON_KEY = "sb_publishable_DWdy6_bOXKnHO5aKG7cM0A__mo-PjT8"
+    private val SUPABASE_ANON_KEY: String = com.music.player.BuildConfig.SUPABASE_ANON_KEY
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (com.music.player.BuildConfig.DEBUG) {
-            HttpLoggingInterceptor.Level.BODY
+            HttpLoggingInterceptor.Level.BASIC
         } else {
             HttpLoggingInterceptor.Level.NONE
         }
+        // Guard: if the level is ever raised to HEADERS/BODY for debugging, keep secrets out of logs.
+        redactHeader("Authorization")
+        redactHeader("apikey")
     }
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -35,11 +38,6 @@ object SupabaseClient {
                 requestBuilder.addHeader("Content-Type", "application/json")
             }
             val request = requestBuilder.build()
-
-            if (com.music.player.BuildConfig.DEBUG) {
-                Log.d("SupabaseClient", "Request URL: ${request.url}")
-            }
-
             chain.proceed(request)
         }
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -55,10 +53,5 @@ object SupabaseClient {
         .build()
 
     val authApi: SupabaseAuthApi = retrofit.create(SupabaseAuthApi::class.java)
-    val restApi: SupabaseRestApi = retrofit.create(SupabaseRestApi::class.java)
     val musicApi: SupabaseMusicApi = retrofit.create(SupabaseMusicApi::class.java)
-
-    fun publicStorageUrl(bucket: String, objectPath: String): String {
-        return "$SUPABASE_URL/storage/v1/object/public/$bucket/$objectPath"
-    }
 }

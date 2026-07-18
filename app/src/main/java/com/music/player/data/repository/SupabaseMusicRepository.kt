@@ -2,14 +2,10 @@ package com.music.player.data.repository
 
 import android.content.Context
 import com.music.player.data.auth.AuthSessionManager
-import com.music.player.data.auth.LegacyMusicFavoriteInsert
-import com.music.player.data.auth.LegacyMusicPlayHistoryInsert
-import com.music.player.data.auth.MusicFavoriteInsert
-import com.music.player.data.auth.MusicLibraryBootstrapRequest
-import com.music.player.data.auth.MusicPlaylistInsert
-import com.music.player.data.auth.MusicPlaylistRow
-import com.music.player.data.auth.MusicPlaylistSongInsert
-import com.music.player.data.auth.MusicPlayHistoryInsert
+import com.music.player.data.auth.MusicFavoriteRequest
+import com.music.player.data.auth.PlaylistCreateRequest
+import com.music.player.data.auth.PlaylistImportRequest
+import com.music.player.data.auth.PlaylistItemRequest
 import com.music.player.data.auth.SupabaseClient
 import com.music.player.data.common.RequestCoalescer
 import com.music.player.data.common.TimedMemoryCache
@@ -17,15 +13,15 @@ import com.music.player.data.model.Album
 import com.music.player.data.model.Artist
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.LinkedHashMap
-import java.util.Locale
-import java.util.TimeZone
+import okhttp3.ResponseBody
+import org.json.JSONArray
+import org.json.JSONObject
+import retrofit2.Response
 
 data class MusicLibraryBootstrap(
     val favorites: List<Song>,
@@ -55,6 +51,9 @@ class SupabaseMusicRepository(context: Context) {
         private val playlistRequests = RequestCoalescer<String, Result<List<UserPlaylist>>>()
         private val playlistSongsRequests = RequestCoalescer<String, Result<List<Song>>>()
         private val bootstrapRequests = RequestCoalescer<String, Result<MusicLibraryBootstrap>>()
+
+        private val historyRecordIds = mutableMapOf<String, Map<String, Long>>()
+        private val playlistItemIds = mutableMapOf<String, Map<String, Long>>()
     }
 
     private suspend fun requireSession(): Pair<String, String> {
@@ -71,14 +70,49 @@ class SupabaseMusicRepository(context: Context) {
             }
         }
 
-        val userId = response.body()?.id ?: throw IllegalStateException("Failed to load user info")
+        val userId = parseUserId(response.body()?.string().orEmpty()) ?: throw IllegalStateException("Failed to load user info")
         sessionManager.cacheUserId(userId)
         return token to userId
     }
 
+    /**
+     * 获取会话，失败时转为 [Result.failure] 而非抛出，避免异常绕过 Result 包装直接崩溃。
+     * 协程取消（[CancellationException]）必须原样传播，不能吞掉。
+     */
+    private suspend fun sessionOrFailure(): Result<Pair<String, String>> {
+        return try {
+            Result.success(requireSession())
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Result.failure(t)
+        }
+    }
+
+    private fun parseUserId(raw: String): String? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            JSONObject(raw)
+                .optJSONObject("data")
+                ?.optString("id")
+                ?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+    }
+
+    private suspend fun executeAuthorized(
+        token: String,
+        request: suspend (String) -> Response<ResponseBody>
+    ): Response<ResponseBody> {
+        val first = request("Bearer $token")
+        if (first.code() != 401) return first
+        val refreshed = sessionManager.forceRefresh(authApi) ?: return first
+        return request("Bearer $refreshed")
+    }
+
     suspend fun fetchLibraryBootstrap(forceRefresh: Boolean = false): Result<MusicLibraryBootstrap> =
         withContext(Dispatchers.IO) {
-            val (token, userId) = requireSession()
+            val (_, userId) = sessionOrFailure()
+                .getOrElse { return@withContext Result.failure(it) }
             val favoritesKey = "favorites|$userId"
             val historyKey = "history|$userId|100"
             val playlistsKey = "playlists|$userId"
@@ -88,72 +122,17 @@ class SupabaseMusicRepository(context: Context) {
                 val history = historyCache.get(historyKey, HISTORY_TTL_MS)
                 val playlists = playlistsCache.get(playlistsKey, PLAYLISTS_TTL_MS)
                 if (favorites != null && history != null && playlists != null) {
-                    return@withContext Result.success(
-                        MusicLibraryBootstrap(
-                            favorites = favorites,
-                            history = history,
-                            playlists = playlists
-                        )
-                    )
+                    return@withContext Result.success(MusicLibraryBootstrap(favorites, history, playlists))
                 }
             }
 
             bootstrapRequests.run("bootstrap|$userId") {
-                if (!forceRefresh) {
-                    val favorites = favoritesCache.get(favoritesKey, FAVORITES_TTL_MS)
-                    val history = historyCache.get(historyKey, HISTORY_TTL_MS)
-                    val playlists = playlistsCache.get(playlistsKey, PLAYLISTS_TTL_MS)
-                    if (favorites != null && history != null && playlists != null) {
-                        return@run Result.success(
-                            MusicLibraryBootstrap(
-                                favorites = favorites,
-                                history = history,
-                                playlists = playlists
-                            )
-                        )
-                    }
-                }
+                supervisorScope {
+                    val favoritesDeferred = async { listFavorites(forceRefresh = forceRefresh) }
+                    val historyDeferred = async { listPlayHistory(forceRefresh = forceRefresh) }
+                    val playlistsDeferred = async { listUserPlaylists(forceRefresh = forceRefresh) }
 
-                runCatching {
-                    val response = api.getLibraryBootstrap(
-                        token = "Bearer $token",
-                        body = MusicLibraryBootstrapRequest()
-                    )
-                    if (!response.isSuccessful) {
-                        throw IllegalStateException("bootstrap rpc unavailable")
-                    }
-
-                    val body = response.body() ?: throw IllegalStateException("bootstrap empty")
-                    val primaryFavorites = body.favorites.orEmpty().map { it.toSong() }
-                    val primaryHistory = body.history.orEmpty().map { it.toSong() }
-                    val playlists = body.playlists.orEmpty().map { it.toUserPlaylist() }
-
-                    val favorites = if (primaryFavorites.isEmpty()) {
-                        fetchMergedFavorites(token, userId)
-                    } else {
-                        primaryFavorites
-                    }
-                    val history = if (primaryHistory.isEmpty()) {
-                        fetchMergedHistory(token, userId, limit = 100)
-                    } else {
-                        primaryHistory
-                    }
-
-                    favoritesCache.put(favoritesKey, favorites)
-                    historyCache.put(historyKey, history)
-                    playlistsCache.put(playlistsKey, playlists)
-
-                    MusicLibraryBootstrap(
-                        favorites = favorites,
-                        history = history,
-                        playlists = playlists
-                    )
-                }.recoverCatching {
-                    supervisorScope {
-                        val favoritesDeferred = async { listFavorites(forceRefresh = forceRefresh) }
-                        val historyDeferred = async { listPlayHistory(forceRefresh = forceRefresh) }
-                        val playlistsDeferred = async { listUserPlaylists(forceRefresh = forceRefresh) }
-
+                    runCatching {
                         MusicLibraryBootstrap(
                             favorites = favoritesDeferred.await().getOrThrow(),
                             history = historyDeferred.await().getOrThrow(),
@@ -165,7 +144,8 @@ class SupabaseMusicRepository(context: Context) {
         }
 
     suspend fun listFavorites(forceRefresh: Boolean = false): Result<List<Song>> = withContext(Dispatchers.IO) {
-        val (token, userId) = requireSession()
+        val (token, userId) = sessionOrFailure()
+            .getOrElse { return@withContext Result.failure(it) }
         val cacheKey = "favorites|$userId"
         if (!forceRefresh) {
             favoritesCache.get(cacheKey, FAVORITES_TTL_MS)?.let { return@withContext Result.success(it) }
@@ -176,8 +156,11 @@ class SupabaseMusicRepository(context: Context) {
                 favoritesCache.get(cacheKey, FAVORITES_TTL_MS)?.let { return@run Result.success(it) }
             }
 
-            runCatching { fetchMergedFavorites(token, userId) }
-                .onSuccess { favoritesCache.put(cacheKey, it) }
+            runCatching {
+                val response = executeAuthorized(token) { api.listFavorites(token = it, page = 0, size = 100) }
+                val items = parsePageItems(response, "Failed to load favorites")
+                items.map { it.toSong() }
+            }.onSuccess { favoritesCache.put(cacheKey, it) }
         }
     }
 
@@ -185,18 +168,24 @@ class SupabaseMusicRepository(context: Context) {
         runCatching {
             val (token, userId) = requireSession()
             if (isFavorite) {
-                insertFavoriteCompat(token, userId, song)
+                val response = executeAuthorized(token) { api.saveFavorite(it, song.toFavoriteRequest()) }
+                ensureSuccessful(response, "Failed to save favorite")
             } else {
-                deleteFavoriteCompat(token, userId, song.id)
+                val response = executeAuthorized(token) {
+                    api.deleteFavorite(it, source = song.source, songId = song.id)
+                }
+                if (!response.isSuccessful && response.code() != 404) {
+                    throw IllegalStateException(errorMessage(response, "Failed to delete favorite"))
+                }
             }
-
             favoritesCache.remove("favorites|$userId")
         }
     }
 
     suspend fun listPlayHistory(limit: Int = 100, forceRefresh: Boolean = false): Result<List<Song>> =
         withContext(Dispatchers.IO) {
-            val (token, userId) = requireSession()
+            val (token, userId) = sessionOrFailure()
+                .getOrElse { return@withContext Result.failure(it) }
             val cacheKey = "history|$userId|$limit"
             if (!forceRefresh) {
                 historyCache.get(cacheKey, HISTORY_TTL_MS)?.let { return@withContext Result.success(it) }
@@ -207,23 +196,37 @@ class SupabaseMusicRepository(context: Context) {
                     historyCache.get(cacheKey, HISTORY_TTL_MS)?.let { return@run Result.success(it) }
                 }
 
-                runCatching { fetchMergedHistory(token, userId, limit) }
-                    .onSuccess { historyCache.put(cacheKey, it) }
+                runCatching {
+                    val response = executeAuthorized(token) {
+                        api.listPlayHistory(token = it, page = 0, size = limit.coerceAtMost(100))
+                    }
+                    val items = parsePageItems(response, "Failed to load play history")
+                    historyRecordIds["history_ids|$userId"] = items.toRecordIdMap()
+                    items.map { it.toSong() }
+                }.onSuccess { historyCache.put(cacheKey, it) }
             }
         }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun addPlayHistory(song: Song): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val (token, userId) = requireSession()
-            insertPlayHistoryCompat(token, userId, song)
+            val (_, userId) = requireSession()
             historyCache.remove("history|$userId|100")
+            // The website backend records history when /api/v1/music/play is called with Authorization.
         }
     }
 
     suspend fun clearPlayHistory(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            clearPlayHistoryCompat(token, userId)
+            val response = executeAuthorized(token) { api.listPlayHistory(it, page = 0, size = 100) }
+            val items = parsePageItems(response, "Failed to load play history")
+            items.mapNotNull { it.optLongOrNull("id") }
+                .forEach { id ->
+                    val deleteResponse = executeAuthorized(token) { api.deletePlayHistoryItem(it, id) }
+                    ensureSuccessful(deleteResponse, "Failed to clear play history")
+                }
+            historyRecordIds.remove("history_ids|$userId")
             historyCache.remove("history|$userId|100")
         }
     }
@@ -234,14 +237,29 @@ class SupabaseMusicRepository(context: Context) {
             if (trimmed.isBlank()) throw IllegalArgumentException("Invalid song ID")
 
             val (token, userId) = requireSession()
-            deletePlayHistoryCompat(token, userId, trimmed)
+            val cacheKey = "history_ids|$userId"
+            var recordId = historyRecordIds[cacheKey]?.get(trimmed)
+            if (recordId == null) {
+                val response = executeAuthorized(token) { api.listPlayHistory(it, page = 0, size = 100) }
+                val items = parsePageItems(response, "Failed to load play history")
+                val ids = items.toRecordIdMap()
+                historyRecordIds[cacheKey] = ids
+                recordId = ids[trimmed]
+            }
+            if (recordId == null) throw IllegalStateException("History item not found")
+
+            val response = executeAuthorized(token) { api.deletePlayHistoryItem(it, recordId) }
+            if (!response.isSuccessful && response.code() != 404) {
+                throw IllegalStateException(errorMessage(response, "Failed to delete history item"))
+            }
             historyCache.remove("history|$userId|100")
         }
     }
 
     suspend fun listUserPlaylists(forceRefresh: Boolean = false): Result<List<UserPlaylist>> =
         withContext(Dispatchers.IO) {
-            val (token, userId) = requireSession()
+            val (token, userId) = sessionOrFailure()
+                .getOrElse { return@withContext Result.failure(it) }
             val cacheKey = "playlists|$userId"
             if (!forceRefresh) {
                 playlistsCache.get(cacheKey, PLAYLISTS_TTL_MS)?.let { return@withContext Result.success(it) }
@@ -253,12 +271,10 @@ class SupabaseMusicRepository(context: Context) {
                 }
 
                 runCatching {
-                    val response = api.listUserPlaylists(
-                        token = "Bearer $token",
-                        userId = "eq.$userId"
-                    )
-                    if (!response.isSuccessful) throw IllegalStateException("Failed to load playlists")
-                    response.body().orEmpty().map { row -> row.toUserPlaylist() }
+                    val response = executeAuthorized(token) {
+                        api.listUserPlaylists(token = it, page = 0, size = 100)
+                    }
+                    parsePageItems(response, "Failed to load playlists").map { it.toUserPlaylist() }
                 }.onSuccess { playlistsCache.put(cacheKey, it) }
             }
         }
@@ -266,38 +282,46 @@ class SupabaseMusicRepository(context: Context) {
     suspend fun createPlaylist(name: String, description: String?): Result<UserPlaylist> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            val response = api.insertPlaylist(
-                token = "Bearer $token",
-                playlist = MusicPlaylistInsert(
-                    userId = userId,
-                    name = name,
-                    description = description?.takeIf { it.isNotBlank() },
-                    coverUrl = null,
-                    isPublic = false
-                )
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to create playlist")
-            val row = response.body()?.firstOrNull() ?: throw IllegalStateException("Failed to create playlist")
-
+            val title = name.trim()
+            if (title.isBlank()) throw IllegalArgumentException("Playlist name is required")
+            val response = if (title.startsWith("http://", ignoreCase = true) || title.startsWith("https://", ignoreCase = true)) {
+                executeAuthorized(token) { api.importPlaylist(it, PlaylistImportRequest(url = title)) }
+            } else {
+                executeAuthorized(token) { bearer ->
+                    api.createPlaylist(
+                        bearer,
+                        PlaylistCreateRequest(
+                            name = title,
+                            description = description?.trim()?.takeIf { it.isNotBlank() }
+                        )
+                    )
+                }
+            }
+            val data = parseDataObject(response, "Failed to import playlist")
             playlistsCache.remove("playlists|$userId")
-            row.toUserPlaylist()
+            data.toUserPlaylist()
         }
     }
 
     suspend fun deletePlaylist(playlistId: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            val response = api.deletePlaylist("Bearer $token", playlistId = "eq.$playlistId")
-            if (!response.isSuccessful) throw IllegalStateException("Failed to delete playlist")
-
+            val id = playlistId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+            val response = executeAuthorized(token) { api.deletePlaylist(it, id) }
+            if (!response.isSuccessful && response.code() != 404) {
+                throw IllegalStateException(errorMessage(response, "Failed to delete playlist"))
+            }
             playlistsCache.remove("playlists|$userId")
             playlistSongsCache.remove("playlist_songs|$playlistId")
+            playlistItemIds.remove("playlist_items|$playlistId")
+            Unit
         }
     }
 
     suspend fun listPlaylistSongs(playlistId: String, forceRefresh: Boolean = false): Result<List<Song>> =
         withContext(Dispatchers.IO) {
-            val (token, _) = requireSession()
+            val (token, _) = sessionOrFailure()
+                .getOrElse { return@withContext Result.failure(it) }
             val normalizedId = playlistId.trim()
             val cacheKey = "playlist_songs|$normalizedId"
             if (!forceRefresh) {
@@ -312,16 +336,16 @@ class SupabaseMusicRepository(context: Context) {
                 }
 
                 runCatching {
-                    val response = api.listPlaylistSongs("Bearer $token", playlistId = "eq.$normalizedId")
-                    if (!response.isSuccessful) throw IllegalStateException("Failed to load playlist songs")
-                    response.body().orEmpty().map { row ->
-                        minimalSong(
-                            songId = row.songId,
-                            songName = row.songName,
-                            artistName = row.artistName,
-                            albumCover = row.albumCover
-                        )
+                    val id = normalizedId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+                    val response = executeAuthorized(token) {
+                        api.playlistDetail(it, id = id, page = 0, size = 100)
                     }
+                    val data = parseDataObject(response, "Failed to load playlist songs")
+                    val itemPage = data.optJSONObject("items") ?: JSONObject()
+                    val items = itemPage.optJSONArray("items") ?: JSONArray()
+                    val objects = items.toObjectList()
+                    playlistItemIds["playlist_items|$normalizedId"] = objects.toRecordIdMap()
+                    objects.map { it.toSong() }
                 }.onSuccess { playlistSongsCache.put(cacheKey, it) }
             }
         }
@@ -329,353 +353,164 @@ class SupabaseMusicRepository(context: Context) {
     suspend fun addSongToPlaylist(playlistId: String, song: Song): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            val songId = song.id.toLongOrNull() ?: throw IllegalArgumentException("Invalid song ID")
-            val artistName = song.artists.joinToString(", ") { it.name }.ifBlank { "Unknown" }
-            val insert = MusicPlaylistSongInsert(
-                playlistId = playlistId,
-                songId = songId,
-                songName = song.name,
-                artistName = artistName,
-                albumCover = song.album.picUrl.takeIf { it.isNotBlank() }
-            )
-            val response = api.insertPlaylistSong("Bearer $token", song = insert)
-            if (!response.isSuccessful) throw IllegalStateException("Failed to add song to playlist")
-
+            val playlistLongId = playlistId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+            val response = executeAuthorized(token) {
+                api.addPlaylistItem(it, playlistLongId, song.toPlaylistItemRequest())
+            }
+            ensureSuccessful(response, "Failed to add song to playlist")
             playlistsCache.remove("playlists|$userId")
             playlistSongsCache.remove("playlist_songs|$playlistId")
+            playlistItemIds.remove("playlist_items|$playlistId")
+            Unit
         }
     }
 
     suspend fun removeSongFromPlaylist(playlistId: String, songId: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            val id = songId.toLongOrNull() ?: throw IllegalArgumentException("Invalid song ID")
-            val response = api.deletePlaylistSong(
-                token = "Bearer $token",
-                playlistId = "eq.$playlistId",
-                songId = "eq.$id"
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to remove song from playlist")
+            val playlistLongId = playlistId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+            val itemCacheKey = "playlist_items|$playlistId"
+            var itemId = playlistItemIds[itemCacheKey]?.get(songId.trim())
+            if (itemId == null) {
+                listPlaylistSongs(playlistId, forceRefresh = true).getOrThrow()
+                itemId = playlistItemIds[itemCacheKey]?.get(songId.trim())
+            }
+            if (itemId == null) throw IllegalStateException("Playlist item not found")
 
+            val response = executeAuthorized(token) { api.deletePlaylistItem(it, playlistLongId, itemId) }
+            if (!response.isSuccessful && response.code() != 404) {
+                throw IllegalStateException(errorMessage(response, "Failed to remove song from playlist"))
+            }
             playlistsCache.remove("playlists|$userId")
             playlistSongsCache.remove("playlist_songs|$playlistId")
+            playlistItemIds.remove(itemCacheKey)
+            Unit
         }
     }
 
-    private suspend fun fetchMergedFavorites(token: String, userId: String): List<Song> {
-        val primary = runCatching { fetchFavoritesFromPrimary(token, userId) }
-        val legacy = runCatching { fetchFavoritesFromLegacy(token, userId) }
-        return mergeSongSources(
-            primary = primary.getOrNull().orEmpty(),
-            legacy = legacy.getOrNull().orEmpty(),
-            primaryFailure = primary.exceptionOrNull(),
-            legacyFailure = legacy.exceptionOrNull(),
-            failureMessage = "Failed to load favorites"
-        )
+    private fun parsePageItems(response: Response<ResponseBody>, fallbackMessage: String): List<JSONObject> {
+        val data = parseDataObject(response, fallbackMessage)
+        val items = data.optJSONArray("items") ?: JSONArray()
+        return items.toObjectList()
     }
 
-    private suspend fun fetchMergedHistory(token: String, userId: String, limit: Int): List<Song> {
-        val primary = runCatching { fetchHistoryFromPrimary(token, userId, limit) }
-        val legacy = runCatching { fetchHistoryFromLegacy(token, userId, limit) }
-        return mergeSongSources(
-            primary = primary.getOrNull().orEmpty(),
-            legacy = legacy.getOrNull().orEmpty(),
-            primaryFailure = primary.exceptionOrNull(),
-            legacyFailure = legacy.exceptionOrNull(),
-            failureMessage = "Failed to load play history"
-        )
-    }
-
-    private suspend fun fetchFavoritesFromPrimary(token: String, userId: String): List<Song> {
-        val response = api.listFavorites(
-            token = "Bearer $token",
-            userId = "eq.$userId"
-        )
-        if (!response.isSuccessful) throw IllegalStateException("Failed to load favorites")
-        return response.body().orEmpty().map { row -> row.toSong() }
-    }
-
-    private suspend fun fetchFavoritesFromLegacy(token: String, userId: String): List<Song> {
-        val response = api.listLegacyFavorites(
-            token = "Bearer $token",
-            userId = "eq.$userId"
-        )
-        if (!response.isSuccessful) throw IllegalStateException("Failed to load favorites")
-        return response.body().orEmpty().map { row -> row.toSong() }
-    }
-
-    private suspend fun fetchHistoryFromPrimary(token: String, userId: String, limit: Int): List<Song> {
-        val response = api.listPlayHistory(
-            token = "Bearer $token",
-            userId = "eq.$userId",
-            limit = limit
-        )
-        if (!response.isSuccessful) throw IllegalStateException("Failed to load play history")
-        return response.body().orEmpty().map { row -> row.toSong() }
-    }
-
-    private suspend fun fetchHistoryFromLegacy(token: String, userId: String, limit: Int): List<Song> {
-        val response = api.listLegacyPlayHistory(
-            token = "Bearer $token",
-            userId = "eq.$userId",
-            limit = limit
-        )
-        if (!response.isSuccessful) throw IllegalStateException("Failed to load play history")
-        return response.body().orEmpty().map { row -> row.toSong() }
-    }
-
-    private suspend fun insertFavoriteCompat(token: String, userId: String, song: Song) {
-        val artistName = song.artists.joinToString(", ") { it.name }.ifBlank { "Unknown" }
-        val primaryAction: suspend () -> Unit = {
-            val insert = MusicFavoriteInsert(
-                userId = userId,
-                songId = song.id,
-                source = song.source,
-                songName = song.name,
-                artistName = artistName,
-                albumName = song.album.name.takeIf { it.isNotBlank() },
-                albumCover = song.album.picUrl.takeIf { it.isNotBlank() },
-                duration = song.duration.toIntSafely()
-            )
-            val response = api.insertFavorite("Bearer $token", favorite = insert)
-            if (!response.isSuccessful && response.code() != 409) {
-                throw IllegalStateException("Failed to save favorite")
-            }
+    private fun parseDataObject(response: Response<ResponseBody>, fallbackMessage: String): JSONObject {
+        ensureSuccessful(response, fallbackMessage)
+        val raw = response.body()?.string().orEmpty()
+        val root = JSONObject(raw)
+        val code = root.optInt("code", 0)
+        if (code != 0) {
+            throw IllegalStateException(root.optString("message").ifBlank { fallbackMessage })
         }
-        val legacyAction: suspend () -> Unit = {
-            val insert = LegacyMusicFavoriteInsert(
-                userId = userId,
-                songId = song.id,
-                songName = song.name,
-                artistName = artistName,
-                albumCover = song.album.picUrl.takeIf { it.isNotBlank() }
-            )
-            val response = api.insertLegacyFavorite("Bearer $token", favorite = insert)
-            if (!response.isSuccessful && response.code() != 409) {
-                throw IllegalStateException("Failed to save favorite")
-            }
-        }
-
-        runPrimaryWithLegacyFallback(primaryAction, legacyAction)
+        return root.optJSONObject("data") ?: JSONObject()
     }
 
-    private suspend fun deleteFavoriteCompat(token: String, userId: String, songId: String) {
-        val primaryAction: suspend () -> Unit = {
-            val response = api.deleteFavorite(
-                token = "Bearer $token",
-                userId = "eq.$userId",
-                songId = "eq.$songId"
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to delete favorite")
+    private fun ensureSuccessful(response: Response<ResponseBody>, fallbackMessage: String) {
+        if (!response.isSuccessful) {
+            throw IllegalStateException(errorMessage(response, fallbackMessage))
         }
-        val legacyAction: suspend () -> Unit = {
-            val response = api.deleteLegacyFavorite(
-                token = "Bearer $token",
-                userId = "eq.$userId",
-                songId = "eq.$songId"
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to delete favorite")
-        }
-
-        runPrimaryWithLegacyFallback(primaryAction, legacyAction)
     }
 
-    private suspend fun insertPlayHistoryCompat(token: String, userId: String, song: Song) {
-        val artistName = song.artists.joinToString(", ") { it.name }.ifBlank { "Unknown" }
-        val playedAt = isoUtcNow()
-        val primaryAction: suspend () -> Unit = {
-            val insert = MusicPlayHistoryInsert(
-                userId = userId,
-                songId = song.id,
-                source = song.source,
-                songName = song.name,
-                artistName = artistName,
-                albumName = song.album.name.takeIf { it.isNotBlank() },
-                albumCover = song.album.picUrl.takeIf { it.isNotBlank() },
-                duration = song.duration.toIntSafely(),
-                playedAt = playedAt
-            )
-            val response = api.insertPlayHistory("Bearer $token", history = insert)
-            if (!response.isSuccessful) throw IllegalStateException("Failed to save play history")
-        }
-        val legacyAction: suspend () -> Unit = {
-            val insert = LegacyMusicPlayHistoryInsert(
-                userId = userId,
-                songId = song.id,
-                songName = song.name,
-                artistName = artistName,
-                playedAt = playedAt
-            )
-            val response = api.insertLegacyPlayHistory("Bearer $token", history = insert)
-            if (!response.isSuccessful) throw IllegalStateException("Failed to save play history")
-        }
-
-        runPrimaryWithLegacyFallback(primaryAction, legacyAction)
+    private fun errorMessage(response: Response<ResponseBody>, fallbackMessage: String): String {
+        val raw = response.errorBody()?.string().orEmpty()
+        if (raw.isBlank()) return "$fallbackMessage (${response.code()})"
+        return runCatching {
+            JSONObject(raw).optString("message").ifBlank { "$fallbackMessage (${response.code()})" }
+        }.getOrDefault("$fallbackMessage (${response.code()})")
     }
 
-    private suspend fun clearPlayHistoryCompat(token: String, userId: String) {
-        val primaryAction: suspend () -> Unit = {
-            val response = api.clearPlayHistory("Bearer $token", userId = "eq.$userId")
-            if (!response.isSuccessful) throw IllegalStateException("Failed to clear play history")
+    private fun JSONArray.toObjectList(): List<JSONObject> {
+        val list = ArrayList<JSONObject>(length())
+        for (i in 0 until length()) {
+            optJSONObject(i)?.let { list.add(it) }
         }
-        val legacyAction: suspend () -> Unit = {
-            val response = api.clearLegacyPlayHistory("Bearer $token", userId = "eq.$userId")
-            if (!response.isSuccessful) throw IllegalStateException("Failed to clear play history")
-        }
-
-        runPrimaryWithLegacyFallback(primaryAction, legacyAction)
+        return list
     }
 
-    private suspend fun deletePlayHistoryCompat(token: String, userId: String, songId: String) {
-        val primaryAction: suspend () -> Unit = {
-            val response = api.deletePlayHistoryItem(
-                token = "Bearer $token",
-                userId = "eq.$userId",
-                songId = "eq.$songId"
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to delete history item")
-        }
-        val legacyAction: suspend () -> Unit = {
-            val response = api.deleteLegacyPlayHistoryItem(
-                token = "Bearer $token",
-                userId = "eq.$userId",
-                songId = "eq.$songId"
-            )
-            if (!response.isSuccessful) throw IllegalStateException("Failed to delete history item")
-        }
+    private fun List<JSONObject>.toRecordIdMap(): Map<String, Long> =
+        mapNotNull { item ->
+            val songId = item.optString("songId").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val id = item.optLongOrNull("id") ?: return@mapNotNull null
+            songId to id
+        }.toMap()
 
-        runPrimaryWithLegacyFallback(primaryAction, legacyAction)
-    }
-
-    private suspend fun runPrimaryWithLegacyFallback(
-        primaryAction: suspend () -> Unit,
-        legacyAction: suspend () -> Unit
-    ) {
-        val primaryResult = runCatching { primaryAction() }
-        if (primaryResult.isSuccess) {
-            runCatching { legacyAction() }
-            return
-        }
-
-        val legacyResult = runCatching { legacyAction() }
-        if (legacyResult.isSuccess) return
-
-        throw primaryResult.exceptionOrNull() ?: legacyResult.exceptionOrNull() ?: IllegalStateException()
-    }
-
-    private fun mergeSongSources(
-        primary: List<Song>,
-        legacy: List<Song>,
-        primaryFailure: Throwable?,
-        legacyFailure: Throwable?,
-        failureMessage: String
-    ): List<Song> {
-        if (primaryFailure != null && legacyFailure != null) {
-            throw IllegalStateException(failureMessage, primaryFailure)
-        }
-
-        if (primary.isEmpty() && legacy.isEmpty()) return emptyList()
-
-        val merged = LinkedHashMap<String, Song>()
-        (primary + legacy).forEach { song ->
-            val key = song.id.trim().ifBlank {
-                buildString {
-                    append(song.name.trim())
-                    append('|')
-                    append(song.artists.joinToString(",") { it.name.trim() })
-                }
-            }
-            merged.putIfAbsent(key, song)
-        }
-        return merged.values.toList()
-    }
-
-    private fun minimalSong(songId: Long, songName: String, artistName: String, albumCover: String?): Song {
-        return Song(
-            id = songId.toString(),
-            name = songName,
-            artists = listOf(Artist(id = "", name = artistName)),
-            album = Album(id = "", name = "", picUrl = albumCover.orEmpty()),
-            duration = 0L
-        )
-    }
-
-    private fun com.music.player.data.auth.MusicFavoriteRow.toSong(): Song {
-        val artist = artistName.orEmpty().ifBlank { "Unknown" }
+    private fun JSONObject.toSong(): Song {
+        val source = optString("source").ifBlank { "netease" }
+        val songId = optString("songId").ifBlank { optString("id") }
+        val artist = optString("artist").ifBlank { "Unknown" }
+        val durationMs = optLongOrNull("durationMs")
+            ?: optIntOrNull("durationSec")?.let { it * 1000L }
+            ?: 0L
         return Song(
             id = songId,
-            name = songName.orEmpty().ifBlank { "(unknown)" },
+            name = optString("name").ifBlank { "(unknown)" },
             artists = listOf(Artist(id = "", name = artist)),
             album = Album(
                 id = "",
-                name = albumName.orEmpty(),
-                picUrl = albumCover.orEmpty()
+                name = optString("album"),
+                picUrl = optString("coverUrl")
             ),
-            duration = (duration ?: 0).toLong(),
-            source = source ?: "netease"
+            duration = durationMs,
+            source = source
         )
     }
 
-    private fun com.music.player.data.auth.LegacyMusicFavoriteRow.toSong(): Song {
-        val artist = artistName.orEmpty().ifBlank { "Unknown" }
-        return Song(
-            id = songId,
-            name = songName.orEmpty().ifBlank { "(unknown)" },
-            artists = listOf(Artist(id = "", name = artist)),
-            album = Album(id = "", name = "", picUrl = albumCover.orEmpty()),
-            duration = 0L,
-            source = "netease"
-        )
-    }
-
-    private fun com.music.player.data.auth.MusicPlayHistoryRow.toSong(): Song {
-        val artist = artistName.orEmpty().ifBlank { "Unknown" }
-        return Song(
-            id = songId,
-            name = songName.orEmpty().ifBlank { "(unknown)" },
-            artists = listOf(Artist(id = "", name = artist)),
-            album = Album(
-                id = "",
-                name = albumName.orEmpty(),
-                picUrl = albumCover.orEmpty()
-            ),
-            duration = (duration ?: 0).toLong(),
-            source = source ?: "netease"
-        )
-    }
-
-    private fun com.music.player.data.auth.LegacyMusicPlayHistoryRow.toSong(): Song {
-        val artist = artistName.orEmpty().ifBlank { "Unknown" }
-        return Song(
-            id = songId,
-            name = songName.orEmpty().ifBlank { "(unknown)" },
-            artists = listOf(Artist(id = "", name = artist)),
-            album = Album(id = "", name = "", picUrl = ""),
-            duration = 0L,
-            source = "netease"
-        )
-    }
-
-    private fun MusicPlaylistRow.toUserPlaylist(): UserPlaylist {
+    private fun JSONObject.toUserPlaylist(): UserPlaylist {
         return UserPlaylist(
-            id = id,
-            name = name,
-            description = description,
-            coverUrl = coverUrl,
-            isPublic = isPublic,
-            createdAt = createdAt,
-            updatedAt = updatedAt
+            id = optString("id"),
+            name = optString("name").ifBlank { "Imported Playlist" },
+            description = optString("description").takeIf { it.isNotBlank() },
+            coverUrl = optString("coverUrl").takeIf { it.isNotBlank() },
+            source = optString("source").takeIf { it.isNotBlank() },
+            sourceId = optString("sourceId").takeIf { it.isNotBlank() },
+            sourceUrl = optString("sourceUrl").takeIf { it.isNotBlank() },
+            creatorName = optString("creatorName").takeIf { it.isNotBlank() },
+            trackCount = optInt("trackCount", 0).coerceAtLeast(0),
+            isPublic = false,
+            createdAt = optString("createdAt").takeIf { it.isNotBlank() },
+            updatedAt = optString("updatedAt").takeIf { it.isNotBlank() }
         )
     }
 
-    private fun isoUtcNow(): String {
-        val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-        format.timeZone = TimeZone.getTimeZone("UTC")
-        return format.format(Date())
+    private fun Song.toPlaylistItemRequest(): PlaylistItemRequest {
+        val artistName = artists.joinToString(", ") { it.name }.ifBlank { "Unknown" }
+        return PlaylistItemRequest(
+            source = source,
+            songId = id,
+            name = name,
+            artist = artistName,
+            album = album.name.takeIf { it.isNotBlank() },
+            coverUrl = album.picUrl.takeIf { it.isNotBlank() },
+            durationSec = duration.toDurationSec()
+        )
     }
 
-    private fun Long.toIntSafely(): Int? {
+    private fun Song.toFavoriteRequest(): MusicFavoriteRequest {
+        val artistName = artists.joinToString(", ") { it.name }.ifBlank { "Unknown" }
+        return MusicFavoriteRequest(
+            source = source,
+            songId = id,
+            name = name,
+            artist = artistName,
+            album = album.name.takeIf { it.isNotBlank() },
+            coverUrl = album.picUrl.takeIf { it.isNotBlank() },
+            durationSec = duration.toDurationSec()
+        )
+    }
+
+    private fun JSONObject.optLongOrNull(name: String): Long? {
+        if (!has(name) || isNull(name)) return null
+        return runCatching { optLong(name) }.getOrNull()?.takeIf { it > 0L }
+    }
+
+    private fun JSONObject.optIntOrNull(name: String): Int? {
+        if (!has(name) || isNull(name)) return null
+        return runCatching { optInt(name) }.getOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun Long.toDurationSec(): Int? {
         if (this <= 0L) return null
-        return if (this > Int.MAX_VALUE.toLong()) Int.MAX_VALUE else this.toInt()
+        val seconds = (this / 1000L).coerceAtLeast(1L)
+        return if (seconds > Int.MAX_VALUE.toLong()) Int.MAX_VALUE else seconds.toInt()
     }
 }

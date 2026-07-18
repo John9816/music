@@ -1,95 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:background="@android:color/transparent"
-    android:orientation="vertical">
+    android:layout_height="match_parent"
+    android:background="?attr/pageBackground"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/spacing_m"
+    android:paddingEnd="@dimen/spacing_m">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="@dimen/spacing_m"
+        android:background="@drawable/bg_cymusic_sheet_handle" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_l"
         android:gravity="center_vertical"
-        android:layout_marginStart="@dimen/spacing_m"
-        android:layout_marginTop="@dimen/spacing_m"
-        android:layout_marginEnd="@dimen/spacing_m"
-        android:orientation="horizontal"
-        android:paddingStart="@dimen/spacing_m"
-        android:paddingTop="@dimen/spacing_s"
-        android:paddingEnd="@dimen/spacing_s"
-        android:paddingBottom="@dimen/spacing_s"
-        android:background="?attr/glassSurfaceStrong"
-        android:backgroundTintMode="src_over">
-
-        <View
-            android:layout_width="40dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="@dimen/spacing_s"
-            android:background="?attr/colorOutline"
-            android:alpha="0.4" />
+        android:orientation="horizontal">
 
         <TextView
             android:id="@+id/tvTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/queue_title"
-            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+            android:text="播放列表"
+            android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
             android:textColor="?attr/textPrimary"
             android:textStyle="bold" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnClear"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:text="@string/queue_clear" />
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/btnClose"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/content_desc_close"
-            android:padding="@dimen/spacing_s"
-            android:src="@drawable/ic_close_24"
-            app:tint="?attr/textSecondary" />
+            android:padding="12dp"
+            android:src="@drawable/ic_more_vert_24"
+            android:visibility="invisible" />
     </LinearLayout>
 
-    <LinearLayout
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/toggleMode"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnQueueMode"
+            android:layout_width="1dp"
+            android:layout_height="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnHistoryMode"
+            android:layout_width="1dp"
+            android:layout_height="1dp" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnClear"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:visibility="gone" />
+
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_height="0dp"
         android:layout_marginTop="@dimen/spacing_s"
-        android:layout_marginEnd="@dimen/spacing_m"
-        android:layout_marginBottom="@dimen/spacing_m"
-        android:background="?attr/surfaceColor"
-        android:orientation="vertical"
-        android:paddingTop="@dimen/spacing_s"
-        android:paddingBottom="@dimen/spacing_s">
+        android:layout_weight="1">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:clipToPadding="false"
             android:overScrollMode="never"
-            android:paddingStart="@dimen/spacing_m"
-            android:paddingEnd="@dimen/spacing_m"
-            android:paddingBottom="@dimen/spacing_s"
-            android:scrollbars="vertical" />
+            android:paddingBottom="@dimen/spacing_l"
+            android:scrollbars="none" />
 
         <TextView
             android:id="@+id/tvEmptyState"
             android:layout_width="match_parent"
-            android:layout_height="160dp"
+            android:layout_height="match_parent"
             android:gravity="center"
-            android:paddingHorizontal="@dimen/spacing_xl"
             android:text="@string/queue_empty"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textSecondary"
             android:visibility="gone" />
-    </LinearLayout>
-
+    </FrameLayout>
 </LinearLayout>

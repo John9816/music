@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/ripple_rect_primary"
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical"
@@ -16,13 +16,13 @@
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/iconContainer"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            app:cardBackgroundColor="?attr/glassSurfaceStrong"
-            app:cardCornerRadius="12dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            app:cardBackgroundColor="?attr/surfaceAltColor"
+            app:cardCornerRadius="6dp"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/glassStrokeSoft"
-            app:strokeWidth="1dp"
+            app:strokeColor="@android:color/transparent"
+            app:strokeWidth="0dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent">
@@ -31,7 +31,7 @@
                 android:id="@+id/ivCover"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:contentDescription="@string/item_song_name_placeholder"
+                android:importantForAccessibility="no"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_note_24"
                 app:tint="?attr/brandPrimary" />
@@ -46,8 +46,9 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/item_song_name_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
             android:textColor="?attr/textPrimary"
+            android:textSize="15sp"
             android:textStyle="bold"
             app:layout_constraintEnd_toStartOf="@id/btnMore"
             app:layout_constraintStart_toEndOf="@id/iconContainer"
@@ -58,14 +59,15 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/spacing_m"
-            android:layout_marginTop="@dimen/spacing_xs"
+            android:layout_marginTop="2dp"
             android:layout_marginEnd="@dimen/spacing_s"
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/item_artist_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
             android:textColor="?attr/textSecondary"
-            app:layout_constraintEnd_toStartOf="@id/tvDuration"
+            android:textSize="12sp"
+            app:layout_constraintEnd_toStartOf="@id/btnMore"
             app:layout_constraintStart_toEndOf="@id/iconContainer"
             app:layout_constraintTop_toBottomOf="@id/tvSongName" />
 
@@ -83,16 +85,17 @@
             android:text="00:00"
             android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
             android:textColor="?attr/brandPrimary"
+            android:visibility="gone"
             app:layout_constraintBaseline_toBaselineOf="@id/tvArtist"
             app:layout_constraintEnd_toStartOf="@id/btnMore" />
 
         <ImageButton
             android:id="@+id/btnMore"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="@drawable/bg_toolbar_action_button"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/content_desc_more"
-            android:padding="8dp"
+            android:padding="12dp"
             android:src="@drawable/ic_more_vert_24"
             app:tint="?attr/textPrimary"
             app:layout_constraintBottom_toBottomOf="@id/iconContainer"
@@ -103,7 +106,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginStart="64dp"
+        android:layout_marginStart="56dp"
         android:alpha="0.5"
         android:background="?attr/colorOutline" />
 </LinearLayout>

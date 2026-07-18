@@ -68,9 +68,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          if [[ -n "${ANDROID_KEYSTORE_BASE64}" && -n "${ANDROID_KEYSTORE_PASSWORD}" && -n "${ANDROID_KEY_ALIAS}" && -n "${ANDROID_KEY_PASSWORD}" ]]; then
+          if [[ -n "${ANDROID_KEYSTORE_BASE64}" && -n "${ANDROID_KEYSTORE_PASSWORD}" && -n "${ANDROID_KEY_ALIAS}" && -n "${ANDROID_KEY_PASSWORD}" && -n "${ANDROID_SIGNING_CERT_SHA256}" ]]; then
             echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > release.keystore
             printf '%s\n' \
               'storeFile=release.keystore' \
@@ -79,7 +80,11 @@ jobs:
               "keyPassword=${ANDROID_KEY_PASSWORD}" \
               > keystore.properties
           else
-            echo "Signing secrets are not fully configured. Building unsigned release APK."
+            if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+              echo "All release signing secrets, including ANDROID_SIGNING_CERT_SHA256, are required for version tags." >&2
+              exit 1
+            fi
+            echo "Signing secrets are not fully configured. Branch builds may produce an unsigned release APK."
           fi
 
       - name: Grant execute permission for gradlew
@@ -96,21 +101,64 @@ jobs:
           fi
           variant="${{ github.event.inputs.variant || 'both' }}"
           echo "variant=$variant"
-          if [[ "$variant" == "debug" ]]; then
-            ./gradlew :app:assembleDebug --no-daemon
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon
+          elif [[ "$variant" == "debug" ]]; then
+            ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
           elif [[ "$variant" == "release" ]]; then
-            ./gradlew :app:assembleRelease --no-daemon
+            ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon
           else
-            ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon
+            ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease --no-daemon
           fi
+
+      - name: Verify and stage release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: release_apk
+        shell: bash
+        env:
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          if [[ ! -f "$apk" ]]; then
+            echo "Release APK was not produced." >&2
+            exit 1
+          fi
+
+          build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          apksigner="${build_tools}/apksigner"
+          aapt="${build_tools}/aapt"
+
+          "$apksigner" verify "$apk"
+          badging="$("$aapt" dump badging "$apk" | head -n1)"
+          echo "$badging"
+          grep -q "name='com.music.player'" <<<"$badging"
+          grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
+          grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
+
+          actual_cert="$("$apksigner" verify --print-certs "$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | head -n1 \
+            | tr '[:upper:]' '[:lower:]')"
+          expected_cert="$(printf '%s' "${ANDROID_SIGNING_CERT_SHA256}" \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+          if [[ -z "$actual_cert" || "$actual_cert" != "$expected_cert" ]]; then
+            echo "Release certificate mismatch. expected=$expected_cert actual=$actual_cert" >&2
+            exit 1
+          fi
+
+          release_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
+          release_path="app/build/outputs/apk/release/${release_name}"
+          cp "$apk" "$release_path"
+          echo "path=$release_path" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release (tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Music Player v${{ steps.app_version.outputs.version_name }}
+          name: DuckMusic v${{ steps.app_version.outputs.version_name }}
           generate_release_notes: true
           files: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+            ${{ steps.release_apk.outputs.path }}
             app/build/outputs/apk/release/output-metadata.json

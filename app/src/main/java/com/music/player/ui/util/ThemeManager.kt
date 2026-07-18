@@ -20,7 +20,7 @@ object ThemeManager {
     ) {
         LIGHT(
             storageValue = "light",
-            themeResId = R.style.Theme_MusicPlayer_Light,
+            themeResId = R.style.Theme_MusicPlayer_Dark,
             titleResId = R.string.app_theme_light_title,
             summaryResId = R.string.app_theme_light_summary
         ),
@@ -29,11 +29,32 @@ object ThemeManager {
             themeResId = R.style.Theme_MusicPlayer_Dark,
             titleResId = R.string.app_theme_dark_title,
             summaryResId = R.string.app_theme_dark_summary
+        ),
+
+        // These skins define both a light (values/) and dark (values-night/) variant,
+        // so they follow the system day/night setting and let the resource system pick.
+        SUNSET(
+            storageValue = "sunset",
+            themeResId = R.style.Theme_MusicPlayer_Dark,
+            titleResId = R.string.app_theme_sunset_title,
+            summaryResId = R.string.app_theme_sunset_summary
+        ),
+        OCEAN(
+            storageValue = "ocean",
+            themeResId = R.style.Theme_MusicPlayer_Dark,
+            titleResId = R.string.app_theme_ocean_title,
+            summaryResId = R.string.app_theme_ocean_summary
+        ),
+        GRAPHITE(
+            storageValue = "graphite",
+            themeResId = R.style.Theme_MusicPlayer_Dark,
+            titleResId = R.string.app_theme_graphite_title,
+            summaryResId = R.string.app_theme_graphite_summary
         );
 
         companion object {
             fun fromStorage(value: String?): AppThemeSkin {
-                return entries.firstOrNull { it.storageValue == value } ?: LIGHT
+                return DARK
             }
         }
     }
@@ -61,19 +82,18 @@ object ThemeManager {
 
         companion object {
             fun fromStorage(value: String?): PlayerStyle {
-                return entries.firstOrNull { it.storageValue == value } ?: GLASS
+                return entries.firstOrNull { it.storageValue == value } ?: MINIMAL
             }
         }
     }
 
     fun prepareActivity(activity: Activity) {
-        val themeSkin = getAppThemeSkin(activity)
-        AppCompatDelegate.setDefaultNightMode(getNightModeForSkin(themeSkin))
-        activity.setTheme(themeSkin.themeResId)
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        activity.setTheme(AppThemeSkin.DARK.themeResId)
     }
 
     fun getNightMode(context: Context): Int {
-        return getNightModeForSkin(getAppThemeSkin(context))
+        return AppCompatDelegate.MODE_NIGHT_YES
     }
 
     fun applySavedNightMode(context: Context) {
@@ -89,27 +109,25 @@ object ThemeManager {
     }
 
     fun getAppThemeSkin(context: Context): AppThemeSkin {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return AppThemeSkin.fromStorage(prefs.getString(KEY_APP_THEME, null))
+        return AppThemeSkin.DARK
     }
 
     fun setAppThemeSkin(context: Context, skin: AppThemeSkin) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_APP_THEME, skin.storageValue)
+            .putString(KEY_APP_THEME, AppThemeSkin.DARK.storageValue)
             .apply()
-        AppCompatDelegate.setDefaultNightMode(getNightModeForSkin(skin))
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
     }
 
     fun getPlayerStyle(context: Context): PlayerStyle {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return PlayerStyle.fromStorage(prefs.getString(KEY_PLAYER_STYLE, null))
+        return PlayerStyle.MINIMAL
     }
 
     fun setPlayerStyle(context: Context, style: PlayerStyle) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_PLAYER_STYLE, style.storageValue)
+            .putString(KEY_PLAYER_STYLE, PlayerStyle.MINIMAL.storageValue)
             .apply()
     }
 
@@ -117,6 +135,10 @@ object ThemeManager {
         return when (skin) {
             AppThemeSkin.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
             AppThemeSkin.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            // Sunset/Ocean/Graphite ship both variants, so defer to the system setting.
+            AppThemeSkin.SUNSET,
+            AppThemeSkin.OCEAN,
+            AppThemeSkin.GRAPHITE -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
     }
 }

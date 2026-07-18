@@ -1,6 +1,7 @@
 package com.music.player.data.auth
 
 import retrofit2.Response
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -8,29 +9,30 @@ import retrofit2.http.POST
 
 interface SupabaseAuthApi {
 
-    @POST("auth/v1/signup")
-    suspend fun signUp(@Body request: AuthRequest): Response<AuthResponse>
+    @POST("api/auth/register")
+    suspend fun signUp(@Body request: AuthRequest): Response<ResponseBody>
 
-    @POST("auth/v1/token?grant_type=password")
-    suspend fun signIn(@Body request: SignInRequest): Response<AuthResponse>
+    @POST("api/auth/login")
+    suspend fun signIn(@Body request: SignInRequest): Response<ResponseBody>
 
-    @POST("auth/v1/token?grant_type=refresh_token")
-    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<AuthResponse>
+    @POST("api/auth/refresh")
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<ResponseBody>
 
-    @POST("auth/v1/logout")
+    @POST("api/auth/logout")
     suspend fun signOut(@Header("Authorization") token: String): Response<Unit>
 
-    @GET("auth/v1/user")
-    suspend fun getUser(@Header("Authorization") token: String): Response<UserData>
+    @GET("api/user/me")
+    suspend fun getUser(@Header("Authorization") token: String): Response<ResponseBody>
 }
 
 data class AuthRequest(
+    val username: String,
     val email: String,
     val password: String
 )
 
 data class SignInRequest(
-    val email: String,
+    val username: String,
     val password: String
 )
 
@@ -39,19 +41,27 @@ data class RefreshTokenRequest(
 )
 
 data class AuthResponse(
-    val access_token: String?,
-    val token_type: String?,
-    val expires_in: Int?,
-    val refresh_token: String?,
-    val user: UserData?,
-    val error: String?,
-    val error_description: String?
+    val token: String? = null,
+    val tokenType: String? = null,
+    val expiresInMinutes: Long? = null,
+    val username: String? = null,
+    val role: String? = null,
+    val access_token: String? = null,
+    val token_type: String? = null,
+    val expires_in: Int? = null,
+    val refresh_token: String? = null,
+    val user: UserData? = null,
+    val error: String? = null,
+    val error_description: String? = null
 )
 
 data class UserData(
     val id: String,
-    val email: String?,
-    val created_at: String?,
+    val username: String? = null,
+    val role: String? = null,
+    val canManageSystemConfig: Boolean? = null,
+    val email: String? = null,
+    val created_at: String? = null,
     val user_metadata: Map<String, @JvmSuppressWildcards Any?>? = null,
     val identities: List<UserIdentity>? = null
 )

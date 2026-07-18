@@ -3,7 +3,6 @@ package com.music.player.playback
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
@@ -53,12 +52,13 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
 
         val loadControl = DefaultLoadControl.Builder()
-            // Start faster (less initial buffering) while keeping a reasonable steady-state buffer.
+            // Prefer stable audio over the fastest possible start. Short buffers caused
+            // repeated rebuffering on unstable music URLs.
             .setBufferDurationsMs(
-                /* minBufferMs = */ 6_000,
-                /* maxBufferMs = */ 30_000,
-                /* bufferForPlaybackMs = */ 800,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_800
+                /* minBufferMs = */ 20_000,
+                /* maxBufferMs = */ 90_000,
+                /* bufferForPlaybackMs = */ 2_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 8_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -99,7 +99,15 @@ class PlaybackService : MediaSessionService() {
                     Player.STATE_ENDED -> "ENDED"
                     else -> playbackState.toString()
                 }
-                Log.d(TAG, "player state=$stateName (+${delta}ms)")
+                Log.d(
+                    TAG,
+                    "player state=$stateName (+${delta}ms), " +
+                        "position=${player.currentPosition}, " +
+                        "buffered=${player.bufferedPosition}, " +
+                        "totalBuffered=${player.totalBufferedDuration}, " +
+                        "duration=${player.duration}, " +
+                        "playWhenReady=${player.playWhenReady}"
+                )
                 if (playbackState == Player.STATE_ENDED) {
                     val durationMs = player.duration
                     val positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -160,8 +168,7 @@ class PlaybackService : MediaSessionService() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val flags = (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0) or
-            PendingIntent.FLAG_UPDATE_CURRENT
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         return PendingIntent.getActivity(this, 0, intent, flags)
     }
 }

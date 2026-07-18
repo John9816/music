@@ -25,6 +25,7 @@ import com.music.player.data.model.Song
 import com.music.player.data.settings.SearchHistoryManager
 import com.music.player.databinding.FragmentLibraryBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -57,6 +58,16 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     companion object {
         private const val DEBOUNCE_MS = 400L
         private const val MIN_QUERY_LENGTH = 2
+        private val QUICK_SEARCH_TERMS = listOf(
+            "\u5468\u6770\u4f26",
+            "\u9648\u5955\u8fc5",
+            "Taylor Swift",
+            "Adele",
+            "YOASOBI",
+            "\u6797\u4fca\u6770",
+            "\u85a4\u4e95\u98ce",
+            "Coldplay"
+        )
     }
 
     override fun onCreateView(
@@ -90,9 +101,9 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         setupObservers()
         setupInteractions()
         setupHistory()
+        setupQuickSearch()
 
-        binding.tvSectionTitle.text = getString(R.string.search_result_title)
-        binding.tvSectionSubtitle.text = getString(R.string.search_hint)
+        showIdleState()
         renderSongs(emptyList())
 
         libraryViewModel.prefetch()
@@ -124,6 +135,23 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         refreshSearch()
     }
 
+    override fun onMusicSourceChanged() {
+        val binding = _binding ?: return
+        debounceJob?.cancel()
+        renderSongs(emptyList())
+        binding.layoutError.visibility = View.GONE
+        binding.searchInputLayout.error = null
+        val query = binding.etSearch.text?.toString()?.trim().orEmpty()
+        if (query.isBlank()) {
+            showIdleState()
+            return
+        }
+        binding.tvSectionTitle.text = getString(R.string.search_result_title)
+        binding.tvSectionSubtitle.text = getString(R.string.search_searching, query)
+        collapseHero()
+        musicViewModel.searchSongs(query)
+    }
+
     // ── RecyclerView ──────────────────────────────────────────────
 
     private fun setupRecyclerView() {
@@ -135,7 +163,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
             setHasFixedSize(true)
-            itemAnimator = SearchItemAnimator()
+            itemAnimator = null
         }
         binding.recyclerView.setOnTouchListener { _, _ ->
             hideKeyboardAndClearFocus()
@@ -205,8 +233,27 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         binding.btnClearHistory.setOnClickListener {
             searchHistoryManager.clearAll()
             refreshHistoryChips()
+            updateSearchSummary()
         }
         refreshHistoryChips()
+    }
+
+    private fun setupQuickSearch() {
+        val b = _binding ?: return
+        b.chipGroupQuickSearch.removeAllViews()
+        QUICK_SEARCH_TERMS.forEach { keyword ->
+            val chip = Chip(requireContext()).apply {
+                text = keyword
+                isCheckable = false
+                isClickable = true
+                setOnClickListener {
+                    b.etSearch.setText(keyword)
+                    b.etSearch.setSelection(keyword.length)
+                    performSearch()
+                }
+            }
+            b.chipGroupQuickSearch.addView(chip)
+        }
     }
 
     private fun refreshHistoryChips() {
@@ -221,6 +268,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
         val query = b.etSearch.text?.toString()?.trim().orEmpty()
         b.scrollHistory.visibility = if (query.isEmpty() && songAdapter.currentList.isEmpty()) View.VISIBLE else View.GONE
+        updateSearchSummary()
 
         history.forEach { keyword ->
             val chip = Chip(requireContext()).apply {
@@ -244,9 +292,9 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun syncHistoryVisibility(query: String) {
         val b = _binding ?: return
-        val history = searchHistoryManager.getHistory()
-        val shouldShow = query.isEmpty() && history.isNotEmpty() && songAdapter.currentList.isEmpty()
-        b.scrollHistory.visibility = if (shouldShow) View.VISIBLE else View.GONE
+        b.scrollHistory.visibility = View.GONE
+        b.layoutQuickSearch.visibility = View.GONE
+        b.scrollSearchSummary.visibility = View.GONE
     }
 
     // ── Interactions ──────────────────────────────────────────────
@@ -275,11 +323,16 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun setupObservers() {
         musicViewModel.searchResults.observe(viewLifecycleOwner) { songs ->
             renderSongs(songs)
-            binding.tvSectionTitle.text = getString(R.string.search_result_title)
-            binding.tvSectionSubtitle.text = if (songs.isEmpty()) {
-                getString(R.string.search_not_found)
+            val query = binding.etSearch.text?.toString()?.trim().orEmpty()
+            if (query.isBlank()) {
+                showIdleState()
             } else {
-                getString(R.string.search_found_count, songs.size)
+                binding.tvSectionTitle.text = getString(R.string.search_result_title)
+                binding.tvSectionSubtitle.text = if (songs.isEmpty()) {
+                    getString(R.string.search_not_found)
+                } else {
+                    getString(R.string.search_found_count, songs.size)
+                }
             }
             stopRefreshIndicator()
             syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
@@ -304,6 +357,14 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             // Only affect progressBar for library-level loading, not search UI
             binding.progressBar.visibility = if (loading && !isSearchLoading) View.VISIBLE else View.GONE
         }
+
+        libraryViewModel.favorites.observe(viewLifecycleOwner) {
+            updateSearchSummary()
+        }
+
+        libraryViewModel.playlists.observe(viewLifecycleOwner) {
+            updateSearchSummary()
+        }
     }
 
     // ── Search Actions ────────────────────────────────────────────
@@ -314,6 +375,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             binding.searchInputLayout.error = getString(R.string.search_input_required)
             binding.etSearch.requestFocus()
             stopRefreshIndicator()
+            showIdleState()
             return
         }
         debounceJob?.cancel()
@@ -325,6 +387,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         hideKeyboardAndClearFocus()
         collapseHero()
         searchHistoryManager.addQuery(query)
+        updateSearchSummary()
         musicViewModel.searchSongs(query)
     }
 
@@ -344,6 +407,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         val query = binding.etSearch.text?.toString()?.trim().orEmpty()
         if (query.isBlank()) {
             stopRefreshIndicator()
+            showIdleState()
             requestSearchFocus()
             return
         }
@@ -362,6 +426,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun renderSongs(songs: List<Song>) {
         songAdapter.submitList(songs)
         syncEmptyState(songs.isEmpty())
+        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
     }
 
     private fun syncLoadingState() {
@@ -380,11 +445,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun syncEmptyState(forceEmpty: Boolean = musicViewModel.searchResults.value.orEmpty().isEmpty()) {
         val hasError = musicViewModel.searchError.value != null
         val hasResults = musicViewModel.searchResults.value.orEmpty().isNotEmpty()
-        val shouldShowEmpty = !isSearchLoading &&
-            !hasError &&
-            !hasResults &&
-            forceEmpty &&
-            binding.etSearch.text?.toString()?.trim().orEmpty().isNotEmpty()
+        val shouldShowEmpty = !isSearchLoading && !hasError && !hasResults && forceEmpty
 
         binding.layoutEmpty.visibility = if (shouldShowEmpty) View.VISIBLE else View.GONE
     }
@@ -414,6 +475,23 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         binding.swipeRefresh.isEnabled = hasQuery && !loading
     }
 
+    private fun updateSearchSummary() {
+        val b = _binding ?: return
+        val historyCount = searchHistoryManager.getHistory().size
+        val favoritesCount = libraryViewModel.favorites.value.orEmpty().size
+        val playlistCount = libraryViewModel.playlists.value.orEmpty().size
+        b.tvSummaryHistory.text = getString(R.string.search_summary_history_count, historyCount)
+        b.tvSummaryFavorites.text = getString(R.string.search_summary_favorites_count, favoritesCount)
+        b.tvSummaryPlaylists.text = getString(R.string.search_summary_playlists_count, playlistCount)
+    }
+
+    private fun showIdleState() {
+        binding.tvSectionTitle.text = getString(R.string.search_idle_title)
+        binding.tvSectionSubtitle.text = getString(R.string.search_idle_subtitle)
+        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        updateSearchSummary()
+    }
+
     private fun stopRefreshIndicator() {
         isUserRefreshing = false
         binding.swipeRefresh.isRefreshing = false
@@ -422,45 +500,21 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Hero Collapse/Expand ──────────────────────────────────────
 
     private fun collapseHero() {
-        if (isHeroCollapsed) return
-        isHeroCollapsed = true
-        val fromHeight = binding.heroFrame.height.takeIf { it > 0 } ?: heroExpandedHeight
-        val toHeight = heroCollapsedHeight.takeIf { it > 0 } ?: fromHeight
+        isHeroCollapsed = false
         binding.layoutHeroContent.animate().cancel()
-        binding.layoutHeroContent.alpha = 0f
-        binding.layoutHeroContent.visibility = View.GONE
-        animateHeroHeight(fromHeight, toHeight)
+        binding.layoutHeroContent.alpha = 1f
+        binding.layoutHeroContent.visibility = View.VISIBLE
     }
 
     private fun expandHero() {
-        if (!isHeroCollapsed) return
         isHeroCollapsed = false
-        val fromHeight = binding.heroFrame.height.takeIf { it > 0 } ?: heroCollapsedHeight
-        val toHeight = heroExpandedHeight.takeIf { it > 0 } ?: fromHeight
         binding.layoutHeroContent.visibility = View.VISIBLE
-        binding.layoutHeroContent.alpha = 0f
-        animateHeroHeight(fromHeight, toHeight)
-        binding.layoutHeroContent.animate()
-            .alpha(1f)
-            .setDuration(250)
-            .setInterpolator(FastOutSlowInInterpolator())
-            .start()
+        binding.layoutHeroContent.alpha = 1f
     }
 
     private fun animateHeroHeight(from: Int, to: Int) {
         heroAnimator?.cancel()
-        heroAnimator = ValueAnimator.ofInt(from, to).apply {
-            duration = 300L
-            interpolator = FastOutSlowInInterpolator()
-            addUpdateListener { animator ->
-                val b = _binding ?: return@addUpdateListener
-                val value = animator.animatedValue as Int
-                val lp = b.heroFrame.layoutParams
-                lp.height = value
-                b.heroFrame.layoutParams = lp
-            }
-            start()
-        }
+        heroAnimator = null
     }
 
     // ── Song Actions Dialog ───────────────────────────────────────
@@ -475,9 +529,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         items += getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
         actions += { libraryViewModel.setFavorite(song, !isFavorite) }
 
-        items += getString(R.string.action_add_to_playlist)
-        actions += { showAddToPlaylistDialog(song) }
-
         items += getString(R.string.action_play_next)
         actions += {
             musicViewModel.enqueueNext(song)
@@ -490,6 +541,12 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
         }
 
+        items += getString(R.string.action_add_to_playlist)
+        actions += { showAddToPlaylistDialog(song) }
+
+        items += getString(R.string.action_download_song)
+        actions += { SongDownloader.download(requireContext(), musicViewModel, song) }
+
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(song.name)
             .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
@@ -499,15 +556,37 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun showAddToPlaylistDialog(song: Song) {
         val playlists = libraryViewModel.playlists.value.orEmpty()
         if (playlists.isEmpty()) {
-            Toast.makeText(requireContext(), getString(R.string.user_playlist_create_first), Toast.LENGTH_SHORT).show()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.user_playlist_pick_title)
+                .setMessage(R.string.user_playlist_create_first)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.user_playlist_create_title) { _, _ ->
+                    CreatePlaylistBottomSheet().apply {
+                        onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                    }.show(parentFragmentManager, "create_playlist")
+                }
+                .show()
             return
         }
 
-        val names = playlists.map { it.name }.toTypedArray()
+        val names = playlists.map { playlist ->
+            val count = resources.getQuantityString(
+                R.plurals.user_playlist_track_count,
+                playlist.trackCount,
+                playlist.trackCount
+            )
+            "${playlist.name} · $count"
+        }.toTypedArray()
+
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.user_playlist_pick_title)
             .setItems(names) { _, which ->
                 libraryViewModel.addSongToPlaylist(playlists[which].id, song)
+            }
+            .setNeutralButton(R.string.user_playlist_create_title) { _, _ ->
+                CreatePlaylistBottomSheet().apply {
+                    onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                }.show(parentFragmentManager, "create_playlist")
             }
             .show()
     }

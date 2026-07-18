@@ -2,4 +2,10 @@
 <resources>
     <string name="newest_albums_title">最新专辑</string>
     <string name="newest_albums_subtitle">刚刚上架的专辑新作</string>
+    <string name="discover_summary_recommend_default">今日推荐 0 首</string>
+    <string name="discover_summary_weekly_default">热门速递 0 首</string>
+    <string name="discover_summary_album_default">新专辑 0 张</string>
+    <string name="discover_summary_recommend_count">今日推荐 %1$d 首</string>
+    <string name="discover_summary_weekly_count">热门速递 %1$d 首</string>
+    <string name="discover_summary_album_count">新专辑 %1$d 张</string>
 </resources>

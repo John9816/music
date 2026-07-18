@@ -25,13 +25,13 @@ class CreatePlaylistBottomSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.btnCancel.setOnClickListener { dismiss() }
         binding.btnConfirm.setOnClickListener {
-            val name = binding.etPlaylistName.text?.toString()?.trim().orEmpty()
+            val nameOrUrl = binding.etPlaylistName.text?.toString()?.trim().orEmpty()
             val desc = binding.etPlaylistDesc.text?.toString()?.trim().orEmpty()
-            if (name.isBlank()) {
+            if (nameOrUrl.isBlank()) {
                 Toast.makeText(requireContext(), getString(R.string.user_playlist_name_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            onConfirm?.invoke(name, desc)
+            onConfirm?.invoke(nameOrUrl, desc)
             dismiss()
         }
     }

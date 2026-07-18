@@ -30,6 +30,7 @@ class MusicViewModel : ViewModel() {
 
     private val _topPlaylists = MutableLiveData<List<Playlist>>()
     val topPlaylists: LiveData<List<Playlist>> = _topPlaylists
+    private var topPlaylistsRequestVersion = 0L
 
     private val _playlistCategories = MutableLiveData<List<PlaylistCategory>>(listOf(PlaylistCategory.All))
     val playlistCategories: LiveData<List<PlaylistCategory>> = _playlistCategories
@@ -76,6 +77,15 @@ class MusicViewModel : ViewModel() {
     private val _newestAlbums = MutableLiveData<List<NewestAlbum>>(emptyList())
     val newestAlbums: LiveData<List<NewestAlbum>> = _newestAlbums
 
+    private val _currentAlbum = MutableLiveData<NewestAlbum?>()
+    val currentAlbum: LiveData<NewestAlbum?> = _currentAlbum
+
+    private val _currentAlbumSongs = MutableLiveData<List<Song>>(emptyList())
+    val currentAlbumSongs: LiveData<List<Song>> = _currentAlbumSongs
+
+    private val _currentAlbumLoading = MutableLiveData(false)
+    val currentAlbumLoading: LiveData<Boolean> = _currentAlbumLoading
+
     private val _searchResults = MutableLiveData<List<Song>>(emptyList())
     val searchResults: LiveData<List<Song>> = _searchResults
 
@@ -94,6 +104,7 @@ class MusicViewModel : ViewModel() {
     private var searchRequestVersion = 0L
     private var searchJob: Job? = null
     private var loadMoreJob: Job? = null
+    private var activeSourceValue: String? = null
 
     private val _currentPlaylist = MutableLiveData<Playlist?>()
     val currentPlaylist: LiveData<Playlist?> = _currentPlaylist
@@ -196,6 +207,49 @@ class MusicViewModel : ViewModel() {
         }
     }
 
+    fun loadNewestAlbumDetail(album: NewestAlbum, forceRefresh: Boolean = false) {
+        _currentAlbum.value = album
+        viewModelScope.launch {
+            _currentAlbumLoading.value = true
+            try {
+                val primaryQuery = listOf(album.album.name, album.artistNames)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+
+                val primaryResults = repository.searchSongs(
+                    keywords = primaryQuery.ifBlank { album.album.name },
+                    limit = 60,
+                    offset = 0
+                )
+
+                val resolvedSongs = primaryResults.getOrNull()
+                    .orEmpty()
+                    .filterForAlbum(album)
+                    .ifEmpty {
+                        repository.searchSongs(
+                            keywords = album.album.name,
+                            limit = 60,
+                            offset = 0
+                        ).getOrNull()
+                            .orEmpty()
+                            .filterForAlbum(album, strictId = false)
+                    }
+
+                if (resolvedSongs.isNotEmpty()) {
+                    _currentAlbumSongs.value = resolvedSongs
+                } else {
+                    _currentAlbumSongs.value = emptyList()
+                    _error.value = "暂时没有加载到这张专辑的歌曲"
+                }
+            } catch (t: Throwable) {
+                _currentAlbumSongs.value = emptyList()
+                _error.value = t.message ?: "获取专辑歌曲失败"
+            } finally {
+                _currentAlbumLoading.value = false
+            }
+        }
+    }
+
     fun loadTopLists(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             repository.getTopLists(forceRefresh = forceRefresh)
@@ -210,6 +264,7 @@ class MusicViewModel : ViewModel() {
         offset: Int = 0,
         forceRefresh: Boolean = false
     ) {
+        val requestVersion = ++topPlaylistsRequestVersion
         viewModelScope.launch {
             repository.getTopPlaylists(
                 category = category,
@@ -218,8 +273,14 @@ class MusicViewModel : ViewModel() {
                 device = "mobile",
                 forceRefresh = forceRefresh
             )
-                .onSuccess { _topPlaylists.value = it }
-                .onFailure { _error.value = it.message ?: "获取歌单失败" }
+                .onSuccess {
+                    if (requestVersion == topPlaylistsRequestVersion) _topPlaylists.value = it
+                }
+                .onFailure {
+                    if (requestVersion == topPlaylistsRequestVersion) {
+                        _error.value = it.message ?: "获取歌单失败"
+                    }
+                }
         }
     }
 
@@ -231,6 +292,43 @@ class MusicViewModel : ViewModel() {
                 }
                 .onFailure { _error.value = it.message ?: "获取歌单分类失败" }
         }
+    }
+
+    fun clearSourceDependentState() {
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        topPlaylistsRequestVersion++
+        searchRequestVersion++
+        currentSearchKeywords = ""
+        searchOffset = 0
+        hasMoreSearchResults = true
+        _dailyRecommend.value = emptyList()
+        _topLists.value = emptyList()
+        _topPlaylists.value = emptyList()
+        _playlistCategories.value = listOf(PlaylistCategory.All)
+        _languagePlaylists.value = emptyList()
+        _stylePlaylists.value = emptyList()
+        _scenePlaylists.value = emptyList()
+        _emotionPlaylists.value = emptyList()
+        _themePlaylists.value = emptyList()
+        _playlistSongs.value = emptyList()
+        _weeklyHotSongs.value = emptyList()
+        _newestAlbums.value = emptyList()
+        _currentAlbum.value = null
+        _currentAlbumSongs.value = emptyList()
+        _currentPlaylist.value = null
+        _searchResults.value = emptyList()
+        _searchError.value = null
+        _isSearchLoading.value = false
+        _isLoadingMore.value = false
+        _weeklyHotLoading.value = false
+        setAllGroupLoading(false)
+    }
+
+    fun updateActiveSource(sourceValue: String): Boolean {
+        val previous = activeSourceValue
+        activeSourceValue = sourceValue
+        return previous != null && previous != sourceValue
     }
 
     fun loadSectionPlaylists(
@@ -444,7 +542,7 @@ class MusicViewModel : ViewModel() {
                 onResult(Result.success(cachedUrl))
                 return@launch
             }
-            onResult(repository.getSongUrl(song.id))
+            onResult(repository.getSongUrl(song.id, source = song.source))
         }
     }
 
@@ -469,4 +567,27 @@ class MusicViewModel : ViewModel() {
     fun clearNowPlaying() = PlaybackCoordinator.clearNowPlaying()
 
     fun resetPlayback() = PlaybackCoordinator.resetPlayback()
+
+    private fun List<Song>.filterForAlbum(album: NewestAlbum, strictId: Boolean = true): List<Song> {
+        val targetAlbumId = album.album.id.trim()
+        val targetAlbumName = album.album.name.trim()
+        val targetArtists = album.artistNames.split(",", "/", "&", "、")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val exactAlbumMatches = filter { song ->
+            val sameId = targetAlbumId.isNotBlank() && song.album.id.trim() == targetAlbumId
+            val sameName = targetAlbumName.isNotBlank() && song.album.name.trim().equals(targetAlbumName, ignoreCase = true)
+            when {
+                sameId -> true
+                strictId -> false
+                !sameName -> false
+                targetArtists.isEmpty() -> true
+                else -> song.artists.any { artist ->
+                    targetArtists.any { target -> artist.name.contains(target, ignoreCase = true) }
+                }
+            }
+        }
+        return exactAlbumMatches.distinctBy { it.id }
+    }
 }

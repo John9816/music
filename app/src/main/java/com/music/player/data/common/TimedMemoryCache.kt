@@ -1,12 +1,12 @@
 package com.music.player.data.common
 
-class TimedMemoryCache<K, V> {
+class TimedMemoryCache<K, V>(private val maxSize: Int = 100) {
     private data class Entry<V>(
         val value: V,
         val timestampMs: Long
     )
 
-    private val store = LinkedHashMap<K, Entry<V>>()
+    private val store = LinkedHashMap<K, Entry<V>>(maxSize, 0.75f, true)
 
     @Synchronized
     fun get(key: K, ttlMs: Long, nowMs: Long = System.currentTimeMillis()): V? {
@@ -20,6 +20,11 @@ class TimedMemoryCache<K, V> {
 
     @Synchronized
     fun put(key: K, value: V, nowMs: Long = System.currentTimeMillis()) {
+        // Evict oldest entries if at capacity (LinkedHashMap access-order keeps track of LRU)
+        while (store.size >= maxSize) {
+            val oldest = store.entries.iterator().next()
+            store.remove(oldest.key)
+        }
         store[key] = Entry(value = value, timestampMs = nowMs)
     }
 

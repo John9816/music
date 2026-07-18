@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Duck Music</string>
+    <string name="app_name">DuckMusic</string>
 
     <string name="menu_profile">个人资料</string>
     <string name="menu_logout">退出登录</string>
@@ -14,6 +14,22 @@
     <string name="nav_library">搜索</string>
     <string name="nav_playlists">歌单</string>
     <string name="nav_profile">我的</string>
+    <string name="nav_songs">Songs</string>
+    <string name="nav_radio">Radio</string>
+    <string name="nav_favorites">Favorites</string>
+    <string name="nav_search">Search</string>
+    <string name="songs_find_hint">Find in songs</string>
+    <string name="songs_play">Play</string>
+    <string name="songs_shuffle">Shuffle</string>
+    <string name="radio_page_title">Radio</string>
+    <string name="radio_page_subtitle">排行榜</string>
+    <string name="radio_tab_rankings">排行榜</string>
+    <string name="radio_tab_playlists">歌单</string>
+    <string name="radio_empty_rankings">暂无排行榜</string>
+    <string name="radio_empty_playlists">暂无歌单</string>
+    <string name="radio_search_rankings">Find in Radio</string>
+    <string name="radio_search_playlists">Find in playlists</string>
+    <string name="search_for_songs">Search for songs</string>
 
     <string name="content_desc_play_pause">播放/暂停</string>
     <string name="content_desc_play">播放</string>
@@ -131,7 +147,6 @@
     <string name="password_too_short">密码长度至少 6 位</string>
 
     <string name="profile_title">个人资料</string>
-    <string name="settings_title">设置</string>
     <string name="profile_signed_in">已登录账号</string>
     <string name="profile_info_title">账号信息</string>
     <string name="profile_liked_title">我喜欢的音乐</string>
@@ -195,6 +210,26 @@
     <string name="update_install_failed">无法打开安装界面</string>
     <string name="settings_audio_quality">首选音质</string>
     <string name="settings_audio_quality_dialog_title">选择首选音质</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_app_info">应用信息</string>
+    <string name="settings_version">版本号</string>
+    <string name="settings_check_update">检查更新</string>
+    <string name="settings_clear_all_cache">清空缓存</string>
+    <string name="settings_audio_section">音频设置</string>
+    <string name="settings_clear_queue">清空待播清单</string>
+    <string name="settings_clear_queue_action">清空</string>
+    <string name="settings_queue_cleared">待播清单已清空</string>
+    <string name="settings_custom_source">自定义音源</string>
+    <string name="settings_switch_source">切换音源</string>
+    <string name="settings_source_status">音源状态</string>
+    <string name="settings_source_not_checked">点击检测</string>
+    <string name="settings_source_checking">检测中…</string>
+    <string name="settings_source_available">正常</string>
+    <string name="settings_source_unavailable">异常</string>
+    <string name="settings_source_switched">已切换到 %1$s</string>
+    <string name="settings_source_switch_failed">%1$s 当前不可用，未切换</string>
+    <string name="settings_sleep_timer_off_summary">关闭</string>
+    <string name="settings_sleep_timer_minutes">剩余 %1$d 分钟</string>
 
     <!-- Settings: Playback -->
     <string name="settings_category_playback">播放设置</string>
@@ -228,7 +263,7 @@
 
     <!-- Settings: About -->
     <string name="settings_category_about">关于与帮助</string>
-    <string name="settings_about">关于 Duck Music</string>
+    <string name="settings_about">关于 DuckMusic</string>
     <string name="settings_help_feedback">帮助与反馈</string>
     <string name="settings_user_agreement">用户协议</string>
     <string name="settings_privacy_policy">隐私政策</string>
@@ -246,8 +281,8 @@
 
     <!-- About -->
     <string name="about_version">版本 %1$s (%2$d)</string>
-    <string name="about_description">Duck Music 是一款专注于简洁体验的音乐播放器，为你发现和播放喜欢的音乐。</string>
-    <string name="about_copyright">© 2024 Duck Music. 保留所有权利。</string>
+    <string name="about_description">DuckMusic 是一款专注于简洁体验的音乐播放器，为你发现和播放喜欢的音乐。</string>
+    <string name="about_copyright">© 2024 DuckMusic. 保留所有权利。</string>
 
     <!-- Help -->
     <string name="help_title">帮助与反馈</string>
@@ -266,8 +301,13 @@
     <string name="downloads_empty">还没有下载任何歌曲</string>
     <string name="downloads_delete_confirm">确定删除「%1$s」吗？</string>
     <string name="downloads_deleted">已删除「%1$s」</string>
+    <string name="downloads_delete_failed">无法删除「%1$s」</string>
+    <string name="downloads_delete">删除</string>
     <string name="downloads_delete_all">清空所有下载</string>
     <string name="downloads_delete_all_confirm">确定清空所有已下载歌曲吗？此操作不可恢复。</string>
+    <string name="downloads_deleted_all">已删除 %1$d 首歌曲</string>
+    <string name="downloads_playing">正在播放「%1$s」</string>
+    <string name="downloads_file_missing">下载文件不存在，列表已刷新</string>
     <string name="downloads_total_size">共 %1$d 首歌曲，占用 %2$s</string>
     <string name="discover_hero_eyebrow">发现</string>
     <string name="discover_hero_title">发现好音乐</string>

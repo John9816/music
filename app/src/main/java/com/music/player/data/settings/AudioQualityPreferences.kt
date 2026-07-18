@@ -47,6 +47,14 @@ object AudioQualityPreferences {
 
     fun getPreferredLevel(): Level = getPreferredLevel(NetworkRuntime.applicationContext())
 
+    fun getPlaybackLevel(context: Context): Level {
+        val preferred = getPreferredLevel(context)
+        if (!NetworkRuntime.isActiveNetworkMetered()) return preferred
+        return levelForMeteredNetwork(preferred, AppSettings.mobileStreamQuality(context))
+    }
+
+    fun getPlaybackLevel(): Level = getPlaybackLevel(NetworkRuntime.applicationContext())
+
     fun getPreferredLevelStorageValue(context: Context): String = getPreferredLevel(context).storageValue
 
     fun setPreferredLevel(context: Context, level: Level) {
@@ -60,6 +68,26 @@ object AudioQualityPreferences {
     fun orderedLevels(context: Context): List<Level> = orderedLevels(getPreferredLevel(context))
 
     fun orderedLevels(): List<Level> = orderedLevels(getPreferredLevel())
+
+    internal fun levelForMeteredNetwork(
+        preferred: Level,
+        quality: AppSettings.MobileStreamQuality
+    ): Level {
+        val meteredLimit = when (quality) {
+            AppSettings.MobileStreamQuality.WIFI_ONLY,
+            AppSettings.MobileStreamQuality.STANDARD -> Level.STANDARD
+            AppSettings.MobileStreamQuality.HIGH -> Level.EXHIGH
+            AppSettings.MobileStreamQuality.EXTREME -> Level.LOSSLESS
+        }
+        return preferred.coerceAtMostQuality(meteredLimit)
+    }
+
+    private fun Level.coerceAtMostQuality(limit: Level): Level {
+        val currentRank = defaultAttemptOrder.indexOf(this)
+        val limitRank = defaultAttemptOrder.indexOf(limit)
+        if (currentRank < 0 || limitRank < 0) return limit
+        return if (currentRank <= limitRank) limit else this
+    }
 
     fun orderedLevels(preferredLevel: Level): List<Level> {
         return if (defaultAttemptOrder.contains(preferredLevel)) {

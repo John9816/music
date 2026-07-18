@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="collection_count_default">0 首</string>
+    <string name="collection_count_value">%1$d 首</string>
+    <string name="collection_mode_default">音乐集合</string>
+    <string name="collection_mode_liked">喜欢</string>
+    <string name="collection_mode_history">历史</string>
+    <string name="collection_mode_playlist">歌单</string>
+    <string name="collection_mode_private">私藏</string>
+    <string name="collection_mode_public">公开</string>
+    <string name="collection_playlist_description_fallback">已同步到你的音乐库</string>
+    <string name="now_playing_meta_placeholder">轻触封面查看歌词</string>
+    <string name="now_playing_meta_with_queue">%1$s · 队列 %2$d 首</string>
+    <string name="now_playing_meta_with_next">%1$s · 下一首 %2$s</string>
+    <string name="now_playing_meta_with_lyrics">%1$s · 歌词已就绪</string>
+    <string name="now_playing_meta_without_queue">%1$s · 单曲播放</string>
+    <string name="now_playing_meta_no_song">选择一首歌开始播放</string>
+</resources>

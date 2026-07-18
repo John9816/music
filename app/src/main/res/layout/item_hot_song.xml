@@ -23,7 +23,7 @@
             android:id="@+id/ivCover"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:contentDescription="@string/item_song_name_placeholder"
+            android:importantForAccessibility="no"
             android:scaleType="centerCrop"
             android:src="@drawable/ic_music_note_24"
             app:tint="?attr/brandPrimary" />

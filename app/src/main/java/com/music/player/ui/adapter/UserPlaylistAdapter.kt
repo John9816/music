@@ -51,11 +51,23 @@ class UserPlaylistAdapter(
         }
 
         private fun buildMeta(context: android.content.Context, playlist: UserPlaylist): String {
-            val visibility = context.getString(
-                if (playlist.isPublic) R.string.user_playlist_public else R.string.user_playlist_private
+            val source = when (playlist.source?.lowercase()) {
+                "local" -> context.getString(R.string.user_playlist_local)
+                "qq" -> context.getString(R.string.user_playlist_source_qq)
+                "netease" -> context.getString(R.string.user_playlist_source_netease)
+                else -> context.getString(
+                    if (playlist.isPublic) R.string.user_playlist_public else R.string.user_playlist_private
+                )
+            }
+            val countText = context.resources.getQuantityString(
+                R.plurals.user_playlist_track_count,
+                playlist.trackCount,
+                playlist.trackCount
             )
             val dateText = playlist.updatedAt?.take(10)?.trim().orEmpty()
-            return if (dateText.isBlank()) visibility else "$visibility · $dateText"
+            return listOf(source, countText, dateText)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
         }
     }
 

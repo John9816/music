@@ -1,6 +1,8 @@
 package com.music.player.ui.fragment
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -8,45 +10,42 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.tabs.TabLayout
 import com.music.player.R
 import com.music.player.data.model.Playlist
 import com.music.player.data.model.PlaylistCategory
+import com.music.player.data.settings.MusicSourcePreferences
 import com.music.player.databinding.FragmentPlaylistsBinding
-import com.music.player.ui.adapter.PlaylistAdapter
+import com.music.player.ui.adapter.PlaylistCategoryChipAdapter
+import com.music.player.ui.adapter.RadioPlaylistAdapter
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
-import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
 class PlaylistsFragment : Fragment(), RootTabInteraction {
+
+    private enum class RadioTab { RANKINGS, PLAYLISTS }
 
     private var _binding: FragmentPlaylistsBinding? = null
     private val binding: FragmentPlaylistsBinding
         get() = _binding!!
 
     private lateinit var musicViewModel: MusicViewModel
-    private lateinit var libraryViewModel: LibraryViewModel
+    private lateinit var adapter: RadioPlaylistAdapter
+    private lateinit var categoryAdapter: PlaylistCategoryChipAdapter
+    private var selectedTab = RadioTab.RANKINGS
+    private var rankingsRequested = false
+    private var playlistsRequested = false
+    private var rankingsLoaded = false
+    private var playlistsLoaded = false
+    private var allItems: List<Playlist> = emptyList()
+    private var selectedCategory = ""
 
-    private lateinit var langAdapter: PlaylistAdapter
-    private lateinit var styleAdapter: PlaylistAdapter
-    private lateinit var sceneAdapter: PlaylistAdapter
-    private lateinit var emotionAdapter: PlaylistAdapter
-    private lateinit var themeAdapter: PlaylistAdapter
-    private var langCat: String = ""
-    private var styleCat: String = ""
-    private var sceneCat: String = ""
-    private var emotionCat: String = ""
-    private var themeCat: String = ""
-    private val groupLoaded = BooleanArray(5)
-    private var categoriesReady: Boolean = false
-    private var isLangLoading: Boolean = false
-    private var isStyleLoading: Boolean = false
-    private var isSceneLoading: Boolean = false
-    private var isEmotionLoading: Boolean = false
-    private var isThemeLoading: Boolean = false
-    private var isUserRefreshing: Boolean = false
-
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
         _binding = FragmentPlaylistsBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -54,15 +53,25 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
-        libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
+        selectedTab = savedInstanceState?.getString(STATE_TAB)
+            ?.let { runCatching { RadioTab.valueOf(it) }.getOrNull() }
+            ?: RadioTab.RANKINGS
+        selectedCategory = savedInstanceState?.getString(STATE_CATEGORY).orEmpty()
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
-        setupUi()
-        setupObservers()
+        setupList()
+        setupCategories()
+        setupTabs()
+        setupSearch()
         setupInteractions()
+        setupObservers()
+        selectTab(selectedTab, forceRefresh = false)
+    }
 
-        libraryViewModel.prefetch()
-        musicViewModel.loadPlaylistCategories()
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_TAB, selectedTab.name)
+        outState.putString(STATE_CATEGORY, selectedCategory)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroyView() {
@@ -72,228 +81,219 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
 
     override fun onTabReselected() {
         val binding = _binding ?: return
-        if (binding.scrollView.scrollY > 0) {
-            binding.scrollView.smoothScrollTo(0, 0)
-            return
+        val layoutManager = binding.recyclerView.layoutManager as? LinearLayoutManager
+        if ((layoutManager?.findFirstVisibleItemPosition() ?: 0) > 0) {
+            binding.recyclerView.smoothScrollToPosition(0)
+        } else {
+            refreshCurrentTab()
         }
-        refreshContent(userInitiated = true)
     }
 
-    private fun setupUi() {
-        binding.tvLangTitle.setOnClickListener { openGroup(groupId = 0, titleRes = R.string.playlist_group_language) }
-        binding.tvStyleTitle.setOnClickListener { openGroup(groupId = 1, titleRes = R.string.playlist_group_style) }
-        binding.tvSceneTitle.setOnClickListener { openGroup(groupId = 2, titleRes = R.string.playlist_group_scene) }
-        binding.tvEmotionTitle.setOnClickListener { openGroup(groupId = 3, titleRes = R.string.playlist_group_emotion) }
-        binding.tvThemeTitle.setOnClickListener { openGroup(groupId = 4, titleRes = R.string.playlist_group_theme) }
-        binding.scrollView.setOnScrollChangeListener { _: View, _: Int, _: Int, _: Int, _: Int ->
-            maybeLoadVisibleSections()
-        }
+    override fun onMusicSourceChanged() {
+        if (_binding == null) return
+        rankingsRequested = false
+        playlistsRequested = false
+        rankingsLoaded = false
+        playlistsLoaded = false
+        allItems = emptyList()
+        selectedCategory = ""
+        categoryAdapter.selectedApiName = ""
+        adapter.submitList(emptyList())
+        musicViewModel.loadPlaylistCategories(forceRefresh = true)
+        selectTab(selectedTab, forceRefresh = true)
+    }
 
-        fun openPlaylist(playlist: Playlist) {
-            parentFragmentManager.beginTransaction()
-                .replace(R.id.fragmentContainer, PlaylistSongsFragment.newInstance(playlist.id))
-                .addToBackStack(null)
-                .commit()
+    private fun setupList() {
+        adapter = RadioPlaylistAdapter(::openPlaylist)
+        binding.recyclerView.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = this@PlaylistsFragment.adapter
+            setHasFixedSize(true)
+            itemAnimator = null
         }
+    }
 
-        langAdapter = PlaylistAdapter(::openPlaylist)
-        styleAdapter = PlaylistAdapter(::openPlaylist)
-        sceneAdapter = PlaylistAdapter(::openPlaylist)
-        emotionAdapter = PlaylistAdapter(::openPlaylist)
-        themeAdapter = PlaylistAdapter(::openPlaylist)
+    private fun setupCategories() {
+        categoryAdapter = PlaylistCategoryChipAdapter(
+            showGroupName = true,
+            onClick = ::selectCategory
+        )
+        binding.rvCategories.apply {
+            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+            adapter = categoryAdapter
+            itemAnimator = null
+        }
+        categoryAdapter.selectedApiName = selectedCategory
+    }
 
-        binding.rvLangPlaylists.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false).apply {
-                initialPrefetchItemCount = 6
-            }
-            adapter = langAdapter
-            setHasFixedSize(true)
-            setItemViewCacheSize(8)
-            itemAnimator = null
-        }
-        binding.rvStylePlaylists.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false).apply {
-                initialPrefetchItemCount = 6
-            }
-            adapter = styleAdapter
-            setHasFixedSize(true)
-            setItemViewCacheSize(8)
-            itemAnimator = null
-        }
-        binding.rvScenePlaylists.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false).apply {
-                initialPrefetchItemCount = 6
-            }
-            adapter = sceneAdapter
-            setHasFixedSize(true)
-            setItemViewCacheSize(8)
-            itemAnimator = null
-        }
-        binding.rvEmotionPlaylists.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false).apply {
-                initialPrefetchItemCount = 6
-            }
-            adapter = emotionAdapter
-            setHasFixedSize(true)
-            setItemViewCacheSize(8)
-            itemAnimator = null
-        }
-        binding.rvThemePlaylists.apply {
-            layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false).apply {
-                initialPrefetchItemCount = 6
-            }
-            adapter = themeAdapter
-            setHasFixedSize(true)
-            setItemViewCacheSize(8)
-            itemAnimator = null
+    private fun setupTabs() {
+        binding.tabLayout.apply {
+            addTab(newTab().setText(R.string.radio_tab_rankings), selectedTab == RadioTab.RANKINGS)
+            addTab(newTab().setText(R.string.radio_tab_playlists), selectedTab == RadioTab.PLAYLISTS)
+            addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab) {
+                    selectTab(if (tab.position == 0) RadioTab.RANKINGS else RadioTab.PLAYLISTS)
+                }
+
+                override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabReselected(tab: TabLayout.Tab) {
+                    binding.recyclerView.smoothScrollToPosition(0)
+                }
+            })
         }
     }
 
     private fun setupInteractions() {
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener {
-            refreshContent(userInitiated = true)
-        }
+        binding.swipeRefresh.setOnRefreshListener { refreshCurrentTab() }
+    }
+
+    private fun setupSearch() {
+        binding.etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderFiltered(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
     }
 
     private fun setupObservers() {
-        musicViewModel.languageLoading.observe(viewLifecycleOwner) { loading ->
-            isLangLoading = loading == true
-            binding.pbLang.visibility = if (loading == true) View.VISIBLE else View.GONE
-            syncRefreshState()
-        }
-        musicViewModel.styleLoading.observe(viewLifecycleOwner) { loading ->
-            isStyleLoading = loading == true
-            binding.pbStyle.visibility = if (loading == true) View.VISIBLE else View.GONE
-            syncRefreshState()
-        }
-        musicViewModel.sceneLoading.observe(viewLifecycleOwner) { loading ->
-            isSceneLoading = loading == true
-            binding.pbScene.visibility = if (loading == true) View.VISIBLE else View.GONE
-            syncRefreshState()
-        }
-        musicViewModel.emotionLoading.observe(viewLifecycleOwner) { loading ->
-            isEmotionLoading = loading == true
-            binding.pbEmotion.visibility = if (loading == true) View.VISIBLE else View.GONE
-            syncRefreshState()
-        }
-        musicViewModel.themeLoading.observe(viewLifecycleOwner) { loading ->
-            isThemeLoading = loading == true
-            binding.pbTheme.visibility = if (loading == true) View.VISIBLE else View.GONE
-            syncRefreshState()
-        }
-
-        musicViewModel.languagePlaylists.observe(viewLifecycleOwner) { langAdapter.submitList(it) }
-        musicViewModel.stylePlaylists.observe(viewLifecycleOwner) { styleAdapter.submitList(it) }
-        musicViewModel.scenePlaylists.observe(viewLifecycleOwner) { sceneAdapter.submitList(it) }
-        musicViewModel.emotionPlaylists.observe(viewLifecycleOwner) { emotionAdapter.submitList(it) }
-        musicViewModel.themePlaylists.observe(viewLifecycleOwner) { themeAdapter.submitList(it) }
-
         musicViewModel.playlistCategories.observe(viewLifecycleOwner) { categories ->
-            langCat = pickDefaultCategory(categories, groupId = 0)
-            styleCat = pickDefaultCategory(categories, groupId = 1)
-            sceneCat = pickDefaultCategory(categories, groupId = 2)
-            emotionCat = pickDefaultCategory(categories, groupId = 3)
-            themeCat = pickDefaultCategory(categories, groupId = 4)
-
-            binding.tvLangTitle.text = titleWithPicked(R.string.playlist_group_language, langCat)
-            binding.tvStyleTitle.text = titleWithPicked(R.string.playlist_group_style, styleCat)
-            binding.tvSceneTitle.text = titleWithPicked(R.string.playlist_group_scene, sceneCat)
-            binding.tvEmotionTitle.text = titleWithPicked(R.string.playlist_group_emotion, emotionCat)
-            binding.tvThemeTitle.text = titleWithPicked(R.string.playlist_group_theme, themeCat)
-
-            categoriesReady = true
-            for (i in groupLoaded.indices) groupLoaded[i] = false
-            binding.scrollView.post { maybeLoadVisibleSections() }
-            syncRefreshState()
+            categoryAdapter.submitList(categories.distinctBy { it.apiName })
+            categoryAdapter.selectedApiName = selectedCategory
         }
-
-        musicViewModel.error.observe(viewLifecycleOwner) { msg ->
-            val text = msg?.trim().orEmpty()
+        musicViewModel.topLists.observe(viewLifecycleOwner) {
+            rankingsLoaded = true
+            if (selectedTab == RadioTab.RANKINGS) render(it)
+        }
+        musicViewModel.topPlaylists.observe(viewLifecycleOwner) {
+            playlistsLoaded = true
+            if (selectedTab == RadioTab.PLAYLISTS) render(it)
+        }
+        musicViewModel.error.observe(viewLifecycleOwner) { message ->
+            val text = message?.trim().orEmpty()
             if (text.isBlank()) return@observe
+            if (selectedTab == RadioTab.RANKINGS) rankingsLoaded = true else playlistsLoaded = true
+            render(emptyList())
             Toast.makeText(requireContext(), text, Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun refreshContent(userInitiated: Boolean) {
-        categoriesReady = false
-        for (i in groupLoaded.indices) groupLoaded[i] = false
-        if (userInitiated) {
-            isUserRefreshing = true
-            binding.swipeRefresh.isRefreshing = true
-            binding.swipeRefresh.postDelayed({
-                if (_binding != null && isUserRefreshing) {
-                    stopRefreshIndicator()
-                }
-            }, 3000L)
+    private fun selectTab(tab: RadioTab, forceRefresh: Boolean = false) {
+        selectedTab = tab
+        val supportsCategories = MusicSourcePreferences.activeSource(requireContext()) ==
+            MusicSourcePreferences.Source.NETEASE
+        if (!supportsCategories) selectedCategory = ""
+        binding.rvCategories.visibility =
+            if (tab == RadioTab.PLAYLISTS && supportsCategories) View.VISIBLE else View.GONE
+        if (tab == RadioTab.PLAYLISTS && supportsCategories &&
+            musicViewModel.playlistCategories.value.orEmpty().size <= 1
+        ) {
+            musicViewModel.loadPlaylistCategories()
         }
-        musicViewModel.loadPlaylistCategories()
+        binding.etSearch.setText("")
+        binding.etSearch.setHint(
+            if (tab == RadioTab.RANKINGS) R.string.radio_search_rankings else R.string.radio_search_playlists
+        )
+        binding.tvEmpty.setText(
+            if (tab == RadioTab.RANKINGS) R.string.radio_empty_rankings else R.string.radio_empty_playlists
+        )
+        val current = if (tab == RadioTab.RANKINGS) {
+            musicViewModel.topLists.value.orEmpty()
+        } else {
+            musicViewModel.topPlaylists.value.orEmpty()
+        }
+
+        val hasFinishedLoading = if (tab == RadioTab.RANKINGS) rankingsLoaded else playlistsLoaded
+        if (!forceRefresh && (current.isNotEmpty() || hasFinishedLoading)) {
+            render(current)
+            return
+        }
+
+        adapter.submitList(emptyList())
+        startLoading()
+        when (tab) {
+            RadioTab.RANKINGS -> {
+                if (!rankingsRequested || forceRefresh) {
+                    rankingsRequested = true
+                    rankingsLoaded = false
+                    musicViewModel.loadTopLists(forceRefresh = forceRefresh)
+                }
+            }
+            RadioTab.PLAYLISTS -> {
+                if (!playlistsRequested || forceRefresh) {
+                    playlistsRequested = true
+                    playlistsLoaded = false
+                    musicViewModel.loadTopPlaylists(
+                        category = selectedCategory,
+                        forceRefresh = forceRefresh
+                    )
+                }
+            }
+        }
     }
 
-    private fun pickDefaultCategory(all: List<PlaylistCategory>, groupId: Int): String {
-        val inGroup = all.filter { it.groupId == groupId && it.apiName.isNotBlank() }
-        val hot = inGroup.firstOrNull { it.hot }?.apiName
-        return hot ?: inGroup.firstOrNull()?.apiName ?: ""
+    private fun refreshCurrentTab() {
+        selectTab(selectedTab, forceRefresh = true)
     }
 
-    private fun titleWithPicked(titleRes: Int, pickedCategory: String): String {
-        val title = getString(titleRes)
-        val cat = pickedCategory.trim()
-        return if (cat.isBlank()) title else "$title · $cat"
+    private fun selectCategory(category: PlaylistCategory) {
+        if (category.apiName == selectedCategory) return
+        selectedCategory = category.apiName
+        categoryAdapter.selectedApiName = selectedCategory
+        playlistsRequested = true
+        playlistsLoaded = false
+        adapter.submitList(emptyList())
+        startLoading()
+        musicViewModel.loadTopPlaylists(category = selectedCategory)
     }
 
-    private fun openGroup(groupId: Int, titleRes: Int) {
-        val fragment = PlaylistGroupFragment.newInstance(groupId = groupId, groupTitle = getString(titleRes))
+    private fun render(playlists: List<Playlist>) {
+        allItems = playlists
+        renderFiltered(binding.etSearch.text?.toString().orEmpty())
+        stopLoading()
+    }
+
+    private fun renderFiltered(query: String) {
+        val normalized = query.trim()
+        val filtered = if (normalized.isBlank()) {
+            allItems
+        } else {
+            allItems.filter { it.name.contains(normalized, ignoreCase = true) }
+        }
+        adapter.submitList(filtered)
+        binding.tvEmpty.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        binding.recyclerView.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun startLoading() {
+        binding.tvEmpty.visibility = View.GONE
+        binding.recyclerView.visibility = View.VISIBLE
+        binding.progressBar.visibility = View.VISIBLE
+    }
+
+    private fun stopLoading() {
+        binding.swipeRefresh.isRefreshing = false
+        binding.progressBar.visibility = View.GONE
+    }
+
+    private fun openPlaylist(playlist: Playlist) {
+        val fragment = PlaylistSongsFragment.newInstance(playlist.id)
         val main = activity as? com.music.player.MainActivity
         if (main != null) {
             main.pushDetail(fragment)
         } else {
             parentFragmentManager.beginTransaction()
-                .add(R.id.fragmentContainer, fragment)
+                .replace(R.id.fragmentContainer, fragment)
                 .addToBackStack(null)
                 .commit()
         }
     }
 
-    private fun maybeLoadVisibleSections() {
-        if (!categoriesReady) return
-        val scrollView = binding.scrollView
-        val preloadPx = (240f * resources.displayMetrics.density).toInt()
-        val viewportBottom = scrollView.scrollY + scrollView.height + preloadPx
-
-        fun shouldLoad(view: View): Boolean = view.top <= viewportBottom
-
-        if (!groupLoaded[0] && shouldLoad(binding.rvLangPlaylists)) {
-            groupLoaded[0] = true
-            musicViewModel.loadGroupPlaylists(groupId = 0, category = langCat, limit = 12)
-        }
-        if (!groupLoaded[1] && shouldLoad(binding.rvStylePlaylists)) {
-            groupLoaded[1] = true
-            musicViewModel.loadGroupPlaylists(groupId = 1, category = styleCat, limit = 12)
-        }
-        if (!groupLoaded[2] && shouldLoad(binding.rvScenePlaylists)) {
-            groupLoaded[2] = true
-            musicViewModel.loadGroupPlaylists(groupId = 2, category = sceneCat, limit = 12)
-        }
-        if (!groupLoaded[3] && shouldLoad(binding.rvEmotionPlaylists)) {
-            groupLoaded[3] = true
-            musicViewModel.loadGroupPlaylists(groupId = 3, category = emotionCat, limit = 12)
-        }
-        if (!groupLoaded[4] && shouldLoad(binding.rvThemePlaylists)) {
-            groupLoaded[4] = true
-            musicViewModel.loadGroupPlaylists(groupId = 4, category = themeCat, limit = 12)
-        }
-    }
-
-    private fun syncRefreshState() {
-        if (!isUserRefreshing) return
-        val anySectionLoading = isLangLoading || isStyleLoading || isSceneLoading || isEmotionLoading || isThemeLoading
-        if (!categoriesReady || anySectionLoading) return
-        stopRefreshIndicator()
-    }
-
-    private fun stopRefreshIndicator() {
-        isUserRefreshing = false
-        binding.swipeRefresh.isRefreshing = false
+    private companion object {
+        const val STATE_TAB = "radio_selected_tab"
+        const val STATE_CATEGORY = "radio_playlist_category"
     }
 }

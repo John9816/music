@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_quick_title">快速搜索</string>
+    <string name="search_quick_subtitle">从常听关键词里直接开始</string>
+    <string name="search_summary_history_default">最近搜索 0 条</string>
+    <string name="search_summary_favorites_default">收藏 0 首</string>
+    <string name="search_summary_playlists_default">歌单 0 个</string>
+    <string name="search_summary_history_count">最近搜索 %1$d 条</string>
+    <string name="search_summary_favorites_count">收藏 %1$d 首</string>
+    <string name="search_summary_playlists_count">歌单 %1$d 个</string>
+    <string name="search_idle_title">开始搜索你想听的音乐</string>
+    <string name="search_idle_subtitle">支持歌名、歌手和专辑关键词</string>
+</resources>

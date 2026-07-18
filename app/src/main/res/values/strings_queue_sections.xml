@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="queue_segment_up_next">接下来</string>
+    <string name="queue_segment_recent">最近播放</string>
+    <string name="queue_subtitle_default">从这里继续掌控播放顺序</string>
+    <string name="queue_subtitle_up_next">接下来还有 %1$d 首</string>
+    <string name="queue_subtitle_recent">最近听过 %1$d 首</string>
+    <string name="queue_empty_history">还没有最近播放记录</string>
+</resources>

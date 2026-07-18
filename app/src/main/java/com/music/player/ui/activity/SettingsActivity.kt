@@ -13,6 +13,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
@@ -20,6 +21,10 @@ import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.data.settings.AppSettings
+import com.music.player.data.settings.MusicSourcePreferences
+import com.music.player.data.api.RetrofitClient
+import com.music.player.data.repository.MusicRepository
+import com.music.player.data.repository.AlbumRepository
 import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.util.ImmersiveHeaderBackground
@@ -31,6 +36,11 @@ import com.music.player.ui.viewmodel.UpdateViewModel
 import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
+import com.music.player.ui.util.SongDownloader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -47,6 +57,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var insetsController: WindowInsetsControllerCompat
     private var currentUser: UserProfile? = null
     private var shouldRecreateMain: Boolean = false
+    private val musicRepository = MusicRepository()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.prepareActivity(this)
@@ -83,6 +94,8 @@ class SettingsActivity : AppCompatActivity() {
         updateAudioQualitySummary()
         updateSleepTimerSummary(AppSettings.remainingSleepMinutes(this))
         updateStreamQualitySummary(AppSettings.mobileStreamQuality(this))
+        updateMusicSourceSummary()
+        binding.tvSourceStatusSummary.setText(R.string.settings_source_not_checked)
         updateCacheSize()
         updateDownloadedSize()
         authViewModel.refreshProfile()
@@ -95,10 +108,18 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::binding.isInitialized) {
+            updateDownloadedSize()
+        }
+    }
+
     private fun setupUi() {
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.tvEmail.text = "DuckMusic"
+        binding.tvAppVersion.text = BuildConfig.VERSION_NAME
 
-        binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
         binding.btnLogout.setOnClickListener { showLogoutConfirmation() }
 
         // Playback
@@ -107,6 +128,8 @@ class SettingsActivity : AppCompatActivity() {
 
         // Network
         binding.layoutStreamQuality.setOnClickListener { showStreamQualityDialog() }
+        binding.layoutMusicSource.setOnClickListener { showMusicSourceDialog() }
+        binding.layoutSourceStatus.setOnClickListener { checkMusicSource() }
         binding.switchDownloadWifiOnly.isChecked = AppSettings.isDownloadWifiOnly(this)
         binding.switchDownloadWifiOnly.setOnCheckedChangeListener { _, isChecked ->
             AppSettings.setDownloadWifiOnly(this, isChecked)
@@ -119,15 +142,11 @@ class SettingsActivity : AppCompatActivity() {
         binding.layoutClearCache.setOnClickListener { clearCache() }
 
         // Theme & Update
-        binding.layoutTheme.setOnClickListener { showSkinDialog() }
         binding.layoutCheckUpdate.setOnClickListener {
             updateViewModel.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, userInitiated = true)
         }
 
         // About
-        binding.layoutAbout.setOnClickListener {
-            startActivity(Intent(this, AboutActivity::class.java))
-        }
         binding.layoutHelpFeedback.setOnClickListener {
             startActivity(Intent(this, HelpFeedbackActivity::class.java))
         }
@@ -147,7 +166,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupObservers() {
         authViewModel.currentUser.observe(this) { user ->
             currentUser = user
-            binding.tvEmail.text = user?.email ?: getString(R.string.profile_email_placeholder)
+            binding.tvEmail.text = "DuckMusic"
         }
 
         updateViewModel.state.observe(this) { state ->
@@ -279,6 +298,7 @@ class SettingsActivity : AppCompatActivity() {
             .setSingleChoiceItems(names, current) { dialog, which ->
                 AudioQualityPreferences.setPreferredLevel(this@SettingsActivity, levels[which])
                 updateAudioQualitySummary()
+                PlaybackCoordinator.reloadCurrentSongForAudioQualityChange()
                 dialog.dismiss()
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -332,6 +352,78 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun showMusicSourceDialog() {
+        val sources = MusicSourcePreferences.Source.entries
+        val active = MusicSourcePreferences.activeSource(this)
+        val checked = sources.indexOf(active).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_switch_source)
+            .setSingleChoiceItems(sources.map { it.displayName }.toTypedArray(), checked) { dialog, which ->
+                val selected = sources[which]
+                dialog.dismiss()
+                if (selected == active) return@setSingleChoiceItems
+                verifyAndSwitchMusicSource(selected)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun verifyAndSwitchMusicSource(source: MusicSourcePreferences.Source) {
+        binding.layoutMusicSource.isEnabled = false
+        binding.tvSourceStatusSummary.setText(R.string.settings_source_checking)
+        lifecycleScope.launch {
+            val result = withTimeoutOrNull(12_000L) { musicRepository.checkSource(source) }
+                ?: Result.failure(Exception("音源检测超时"))
+            binding.layoutMusicSource.isEnabled = true
+            if (result.isFailure) {
+                binding.tvSourceStatusSummary.setText(R.string.settings_source_unavailable)
+                Toast.makeText(
+                    this@SettingsActivity,
+                    getString(R.string.settings_source_switch_failed, source.displayName),
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            MusicSourcePreferences.setActiveSource(this@SettingsActivity, source)
+            onMusicSourceChanged()
+            Toast.makeText(
+                this@SettingsActivity,
+                getString(R.string.settings_source_switched, source.displayName),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun checkMusicSource() {
+        val source = MusicSourcePreferences.activeSource(this)
+        binding.layoutSourceStatus.isEnabled = false
+        binding.tvSourceStatusSummary.setText(R.string.settings_source_checking)
+        lifecycleScope.launch {
+            val result = musicRepository.checkSource(source)
+            binding.layoutSourceStatus.isEnabled = true
+            binding.tvSourceStatusSummary.setText(
+                if (result.isSuccess) R.string.settings_source_available
+                else R.string.settings_source_unavailable
+            )
+            result.exceptionOrNull()?.message?.takeIf { it.isNotBlank() }?.let {
+                Toast.makeText(this@SettingsActivity, it, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun onMusicSourceChanged() {
+        MusicRepository.clearCaches()
+        AlbumRepository.clearCaches()
+        PlaybackCoordinator.clearResolvedUrlCache()
+        updateMusicSourceSummary()
+        binding.tvSourceStatusSummary.setText(R.string.settings_source_not_checked)
+        markMainNeedsRecreate()
+    }
+
+    private fun updateMusicSourceSummary() {
+        binding.tvMusicSourceSummary.text = MusicSourcePreferences.activeSource(this).displayName
     }
 
     private fun showSkinDialog() {
@@ -388,7 +480,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showOpenSourceLicenses() {
         val licenses = buildString {
-            appendLine("Duck Music 使用以下开源项目：")
+            appendLine("DuckMusic 使用以下开源项目：")
             appendLine()
             appendLine("Retrofit — Apache 2.0")
             appendLine("OkHttp — Apache 2.0")
@@ -418,9 +510,10 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun updateSleepTimerSummary(minutes: Long) {
-        binding.tvSleepTimerSummary.text = when (minutes) {
-            0L -> getString(R.string.settings_sleep_timer_summary)
-            else -> getString(R.string.sleep_timer_set, "$minutes ${getString(R.string.sleep_timer_15min).replace("15 ", "")}")
+        if (minutes <= 0L) {
+            binding.tvSleepTimerSummary.setText(R.string.settings_sleep_timer_off_summary)
+        } else {
+            binding.tvSleepTimerSummary.text = getString(R.string.settings_sleep_timer_minutes, minutes)
         }
     }
 
@@ -435,21 +528,33 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun updateCacheSize() {
         val cacheDir = Glide.getPhotoCacheDir(this)
-        val size = cacheDir?.let { calculateDirSize(it) } ?: 0L
+        val imageCacheSize = cacheDir?.let { calculateDirSize(it) } ?: 0L
+        val size = imageCacheSize + RetrofitClient.httpCacheSizeBytes()
         binding.tvCacheSize.text = getString(R.string.settings_cache_size, formatSize(size))
     }
 
     private fun updateDownloadedSize() {
-        val downloadDir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
-            android.os.Environment.DIRECTORY_MUSIC), "Duck Music")
-        val size = if (downloadDir.exists()) calculateDirSize(downloadDir) else 0L
-        binding.tvDownloadedSize.text = getString(R.string.settings_downloaded_size, formatSize(size))
+        lifecycleScope.launch {
+            val totalSize = withContext(Dispatchers.IO) {
+                SongDownloader.downloadDirs(this@SettingsActivity)
+                    .flatMap { it.listFiles().orEmpty().asIterable() }
+                    .filter { it.isFile && !it.name.endsWith(".part", ignoreCase = true) }
+                    .distinctBy { it.absolutePath }
+                    .sumOf { it.length().coerceAtLeast(0L) }
+            }
+            binding.tvDownloadedSize.text = formatSize(totalSize)
+        }
     }
 
     private fun clearCache() {
         Thread {
-            Glide.getPhotoCacheDir(this)?.delete()
+            Glide.get(this).clearDiskCache()
+            RetrofitClient.clearHttpCache()
+            MusicRepository.clearCaches()
+            AlbumRepository.clearCaches()
+            PlaybackCoordinator.clearResolvedUrlCache()
             runOnUiThread {
+                Glide.get(this).clearMemory()
                 Toast.makeText(this, R.string.settings_cache_cleared, Toast.LENGTH_SHORT).show()
                 updateCacheSize()
             }

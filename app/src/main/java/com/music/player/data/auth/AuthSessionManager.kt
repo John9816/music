@@ -99,11 +99,9 @@ class AuthSessionManager(context: Context) {
         val refreshToken = getRefreshToken()
         val expiresAtMs = getExpiresAtMs()
 
-        if (refreshToken.isNullOrBlank()) {
-            // 无刷新令牌时无法续期：若访问令牌已经过期，直接判定为需要重新登录，
-            // 避免发出一轮必然 401 的请求。仅临近过期（尚未过期）时仍放行使用。
-            return if (isExpired(expiresAtMs)) null else token
-        }
+        // 无刷新令牌时无法续期：仍返回现有令牌，交由服务端以 401 判定是否失效。
+        // 本地 expiresAtMs 可能因时钟或后端策略不准，提前判定过期会造成误登出。
+        if (refreshToken.isNullOrBlank()) return token
         if (!isNearExpiry(expiresAtMs)) return token
 
         return refreshMutex.withLock {
@@ -171,12 +169,6 @@ class AuthSessionManager(context: Context) {
     private fun isNearExpiry(expiresAtMs: Long): Boolean {
         if (expiresAtMs <= 0L) return true
         return System.currentTimeMillis() >= (expiresAtMs - EXPIRY_SAFETY_WINDOW_MS)
-    }
-
-    /** 令牌是否已真正过期（不含安全窗口）。expiresAtMs<=0 表示未知过期时间，保守视为未过期。 */
-    private fun isExpired(expiresAtMs: Long): Boolean {
-        if (expiresAtMs <= 0L) return false
-        return System.currentTimeMillis() >= expiresAtMs
     }
 
     private companion object {

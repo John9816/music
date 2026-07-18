@@ -1,6 +1,6 @@
 package com.music.player.data.auth
 
-import com.google.gson.annotations.SerializedName
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -8,295 +8,129 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface SupabaseMusicApi {
 
-    @POST("rest/v1/rpc/get_music_library_bootstrap")
-    suspend fun getLibraryBootstrap(
-        @Header("Authorization") token: String,
-        @Body body: MusicLibraryBootstrapRequest = MusicLibraryBootstrapRequest()
-    ): Response<MusicLibraryBootstrapRow>
-
-    @GET("rest/v1/liked_songs")
+    @GET("api/user/music/favorites")
     suspend fun listFavorites(
         @Header("Authorization") token: String,
-        @Query("select") select: String = "song_id,source,name,artist,album,cover_url,duration,created_at",
-        @Query("user_id") userId: String,
-        @Query("order") order: String = "created_at.desc",
-        @Query("limit") limit: Int = 200
-    ): Response<List<MusicFavoriteRow>>
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 100
+    ): Response<ResponseBody>
 
-    @POST("rest/v1/liked_songs")
-    suspend fun insertFavorite(
+    @POST("api/user/music/favorites")
+    suspend fun saveFavorite(
         @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=minimal",
-        @Body favorite: MusicFavoriteInsert
-    ): Response<Unit>
+        @Body favorite: MusicFavoriteRequest
+    ): Response<ResponseBody>
 
-    @GET("rest/v1/music_favorites")
-    suspend fun listLegacyFavorites(
-        @Header("Authorization") token: String,
-        @Query("select") select: String = "song_id,song_name,artist_name,album_cover,created_at",
-        @Query("user_id") userId: String,
-        @Query("order") order: String = "created_at.desc",
-        @Query("limit") limit: Int = 200
-    ): Response<List<LegacyMusicFavoriteRow>>
-
-    @POST("rest/v1/music_favorites")
-    suspend fun insertLegacyFavorite(
-        @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=minimal",
-        @Body favorite: LegacyMusicFavoriteInsert
-    ): Response<Unit>
-
-    @DELETE("rest/v1/liked_songs")
+    @DELETE("api/user/music/favorites")
     suspend fun deleteFavorite(
         @Header("Authorization") token: String,
-        @Query("user_id") userId: String,
-        @Query("song_id") songId: String
-    ): Response<Unit>
+        @Query("source") source: String,
+        @Query("songId") songId: String
+    ): Response<ResponseBody>
 
-    @DELETE("rest/v1/music_favorites")
-    suspend fun deleteLegacyFavorite(
-        @Header("Authorization") token: String,
-        @Query("user_id") userId: String,
-        @Query("song_id") songId: String
-    ): Response<Unit>
-
-    @GET("rest/v1/music_history")
+    @GET("api/user/music/history")
     suspend fun listPlayHistory(
         @Header("Authorization") token: String,
-        @Query("select") select: String = "song_id,source,name,artist,album,cover_url,duration,played_at",
-        @Query("user_id") userId: String,
-        @Query("order") order: String = "played_at.desc",
-        @Query("limit") limit: Int = 100
-    ): Response<List<MusicPlayHistoryRow>>
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 100
+    ): Response<ResponseBody>
 
-    @POST("rest/v1/music_history")
-    suspend fun insertPlayHistory(
-        @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=minimal",
-        @Query("on_conflict") onConflict: String = "user_id,song_id",
-        @Body history: MusicPlayHistoryInsert
-    ): Response<Unit>
-
-    @GET("rest/v1/music_play_history")
-    suspend fun listLegacyPlayHistory(
-        @Header("Authorization") token: String,
-        @Query("select") select: String = "song_id,song_name,artist_name,played_at",
-        @Query("user_id") userId: String,
-        @Query("order") order: String = "played_at.desc",
-        @Query("limit") limit: Int = 100
-    ): Response<List<LegacyMusicPlayHistoryRow>>
-
-    @POST("rest/v1/music_play_history")
-    suspend fun insertLegacyPlayHistory(
-        @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=minimal",
-        @Body history: LegacyMusicPlayHistoryInsert
-    ): Response<Unit>
-
-    @DELETE("rest/v1/music_history")
-    suspend fun clearPlayHistory(
-        @Header("Authorization") token: String,
-        @Query("user_id") userId: String
-    ): Response<Unit>
-
-    @DELETE("rest/v1/music_play_history")
-    suspend fun clearLegacyPlayHistory(
-        @Header("Authorization") token: String,
-        @Query("user_id") userId: String
-    ): Response<Unit>
-
-    @DELETE("rest/v1/music_history")
+    @DELETE("api/user/music/history/{id}")
     suspend fun deletePlayHistoryItem(
         @Header("Authorization") token: String,
-        @Query("user_id") userId: String,
-        @Query("song_id") songId: String
-    ): Response<Unit>
+        @Path("id") id: Long
+    ): Response<ResponseBody>
 
-    @DELETE("rest/v1/music_play_history")
-    suspend fun deleteLegacyPlayHistoryItem(
-        @Header("Authorization") token: String,
-        @Query("user_id") userId: String,
-        @Query("song_id") songId: String
-    ): Response<Unit>
-
-    @GET("rest/v1/music_playlists")
+    @GET("api/user/music/playlists")
     suspend fun listUserPlaylists(
         @Header("Authorization") token: String,
-        @Query("user_id") userId: String,
-        @Query("select") select: String = "id,name,description,cover_url,is_public,created_at,updated_at",
-        @Query("order") order: String = "updated_at.desc,created_at.desc",
-        @Query("limit") limit: Int = 100
-    ): Response<List<MusicPlaylistRow>>
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 100
+    ): Response<ResponseBody>
 
-    @POST("rest/v1/music_playlists")
-    suspend fun insertPlaylist(
+    @POST("api/user/music/playlists")
+    suspend fun createPlaylist(
         @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=representation",
-        @Query("select") select: String = "id,name,description,cover_url,is_public,created_at,updated_at",
-        @Body playlist: MusicPlaylistInsert
-    ): Response<List<MusicPlaylistRow>>
+        @Body request: PlaylistCreateRequest
+    ): Response<ResponseBody>
 
-    @PATCH("rest/v1/music_playlists")
-    suspend fun updatePlaylist(
+    @POST("api/user/music/playlists/import")
+    suspend fun importPlaylist(
         @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=minimal",
-        @Query("id") playlistId: String,
-        @Body updates: Map<String, Any?>
-    ): Response<Unit>
+        @Body request: PlaylistImportRequest
+    ): Response<ResponseBody>
 
-    @DELETE("rest/v1/music_playlists")
+    @GET("api/user/music/playlists/{id}")
+    suspend fun playlistDetail(
+        @Header("Authorization") token: String,
+        @Path("id") id: Long,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 100
+    ): Response<ResponseBody>
+
+    @PATCH("api/user/music/playlists/{id}")
+    suspend fun renamePlaylist(
+        @Header("Authorization") token: String,
+        @Path("id") id: Long,
+        @Body request: PlaylistRenameRequest
+    ): Response<ResponseBody>
+
+    @DELETE("api/user/music/playlists/{id}")
     suspend fun deletePlaylist(
         @Header("Authorization") token: String,
-        @Query("id") playlistId: String
-    ): Response<Unit>
+        @Path("id") id: Long
+    ): Response<ResponseBody>
 
-    @GET("rest/v1/music_playlist_songs")
-    suspend fun listPlaylistSongs(
+    @DELETE("api/user/music/playlists/{id}/items/{itemId}")
+    suspend fun deletePlaylistItem(
         @Header("Authorization") token: String,
-        @Query("playlist_id") playlistId: String,
-        @Query("select") select: String = "song_id,song_name,artist_name,album_cover,sort_order,added_at",
-        @Query("order") order: String = "sort_order.asc,added_at.desc"
-    ): Response<List<MusicPlaylistSongRow>>
+        @Path("id") id: Long,
+        @Path("itemId") itemId: Long
+    ): Response<ResponseBody>
 
-    @POST("rest/v1/music_playlist_songs")
-    suspend fun insertPlaylistSong(
+    @POST("api/user/music/playlists/{id}/items")
+    suspend fun addPlaylistItem(
         @Header("Authorization") token: String,
-        @Header("Prefer") prefer: String = "return=minimal",
-        @Body song: MusicPlaylistSongInsert
-    ): Response<Unit>
-
-    @DELETE("rest/v1/music_playlist_songs")
-    suspend fun deletePlaylistSong(
-        @Header("Authorization") token: String,
-        @Query("playlist_id") playlistId: String,
-        @Query("song_id") songId: String
-    ): Response<Unit>
+        @Path("id") id: Long,
+        @Body request: PlaylistItemRequest
+    ): Response<ResponseBody>
 }
 
-data class MusicLibraryBootstrapRequest(
-    @SerializedName("p_favorites_limit") val favoritesLimit: Int = 200,
-    @SerializedName("p_history_limit") val historyLimit: Int = 100,
-    @SerializedName("p_playlists_limit") val playlistsLimit: Int = 100
+data class MusicFavoriteRequest(
+    val source: String,
+    val songId: String,
+    val name: String,
+    val artist: String?,
+    val album: String?,
+    val coverUrl: String?,
+    val durationSec: Int?
 )
 
-data class MusicLibraryBootstrapRow(
-    @SerializedName("favorites") val favorites: List<MusicFavoriteRow>?,
-    @SerializedName("history") val history: List<MusicPlayHistoryRow>?,
-    @SerializedName("playlists") val playlists: List<MusicPlaylistRow>?
+data class PlaylistImportRequest(
+    val url: String
 )
 
-data class MusicFavoriteRow(
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("source") val source: String?,
-    @SerializedName("name") val songName: String?,
-    @SerializedName("artist") val artistName: String?,
-    @SerializedName("album") val albumName: String?,
-    @SerializedName("cover_url") val albumCover: String?,
-    @SerializedName("duration") val duration: Int?,
-    @SerializedName("created_at") val createdAt: String?
+data class PlaylistCreateRequest(
+    val name: String,
+    val description: String? = null,
+    val coverUrl: String? = null
 )
 
-data class MusicFavoriteInsert(
-    @SerializedName("user_id") val userId: String,
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("source") val source: String,
-    @SerializedName("name") val songName: String,
-    @SerializedName("artist") val artistName: String,
-    @SerializedName("album") val albumName: String?,
-    @SerializedName("cover_url") val albumCover: String?,
-    @SerializedName("duration") val duration: Int?
+data class PlaylistRenameRequest(
+    val name: String
 )
 
-data class LegacyMusicFavoriteRow(
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("song_name") val songName: String?,
-    @SerializedName("artist_name") val artistName: String?,
-    @SerializedName("album_cover") val albumCover: String?,
-    @SerializedName("created_at") val createdAt: String?
-)
-
-data class LegacyMusicFavoriteInsert(
-    @SerializedName("user_id") val userId: String,
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("song_name") val songName: String,
-    @SerializedName("artist_name") val artistName: String,
-    @SerializedName("album_cover") val albumCover: String?
-)
-
-data class MusicPlayHistoryRow(
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("source") val source: String?,
-    @SerializedName("name") val songName: String?,
-    @SerializedName("artist") val artistName: String?,
-    @SerializedName("album") val albumName: String?,
-    @SerializedName("cover_url") val albumCover: String?,
-    @SerializedName("duration") val duration: Int?,
-    @SerializedName("played_at") val playedAt: String?
-)
-
-data class MusicPlayHistoryInsert(
-    @SerializedName("user_id") val userId: String,
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("source") val source: String,
-    @SerializedName("name") val songName: String,
-    @SerializedName("artist") val artistName: String,
-    @SerializedName("album") val albumName: String?,
-    @SerializedName("cover_url") val albumCover: String?,
-    @SerializedName("duration") val duration: Int?,
-    @SerializedName("played_at") val playedAt: String
-)
-
-data class LegacyMusicPlayHistoryRow(
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("song_name") val songName: String?,
-    @SerializedName("artist_name") val artistName: String?,
-    @SerializedName("played_at") val playedAt: String?
-)
-
-data class LegacyMusicPlayHistoryInsert(
-    @SerializedName("user_id") val userId: String,
-    @SerializedName("song_id") val songId: String,
-    @SerializedName("song_name") val songName: String,
-    @SerializedName("artist_name") val artistName: String,
-    @SerializedName("played_at") val playedAt: String
-)
-
-data class MusicPlaylistRow(
-    @SerializedName("id") val id: String,
-    @SerializedName("name") val name: String,
-    @SerializedName("description") val description: String?,
-    @SerializedName("cover_url") val coverUrl: String?,
-    @SerializedName("is_public") val isPublic: Boolean,
-    @SerializedName("created_at") val createdAt: String?,
-    @SerializedName("updated_at") val updatedAt: String?
-)
-
-data class MusicPlaylistInsert(
-    @SerializedName("user_id") val userId: String,
-    @SerializedName("name") val name: String,
-    @SerializedName("description") val description: String?,
-    @SerializedName("cover_url") val coverUrl: String?,
-    @SerializedName("is_public") val isPublic: Boolean = false
-)
-
-data class MusicPlaylistSongRow(
-    @SerializedName("song_id") val songId: Long,
-    @SerializedName("song_name") val songName: String,
-    @SerializedName("artist_name") val artistName: String,
-    @SerializedName("album_cover") val albumCover: String?,
-    @SerializedName("sort_order") val sortOrder: Int?,
-    @SerializedName("added_at") val addedAt: String?
-)
-
-data class MusicPlaylistSongInsert(
-    @SerializedName("playlist_id") val playlistId: String,
-    @SerializedName("song_id") val songId: Long,
-    @SerializedName("song_name") val songName: String,
-    @SerializedName("artist_name") val artistName: String,
-    @SerializedName("album_cover") val albumCover: String?,
-    @SerializedName("sort_order") val sortOrder: Int = 0
+data class PlaylistItemRequest(
+    val source: String,
+    val songId: String,
+    val name: String,
+    val artist: String?,
+    val album: String?,
+    val coverUrl: String?,
+    val durationSec: Int?
 )

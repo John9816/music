@@ -234,9 +234,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             repository.createPlaylist(name, description)
                 .onSuccess { playlist ->
                     _playlists.value = listOf(playlist) + _playlists.value.orEmpty()
-                    _message.value = "歌单已创建"
+                    _message.value = "歌单已保存"
                 }
-                .onFailure { _message.value = it.message ?: "创建歌单失败" }
+                .onFailure { _message.value = it.message ?: "保存歌单失败" }
             _isLoading.value = false
         }
     }
@@ -269,7 +269,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _isLoading.value = true
             repository.addSongToPlaylist(playlistId, song)
-                .onSuccess { _message.value = "已添加到歌单" }
+                .onSuccess {
+                    _playlists.value = _playlists.value.orEmpty().map { playlist ->
+                        if (playlist.id == playlistId) {
+                            playlist.copy(trackCount = playlist.trackCount + 1)
+                        } else {
+                            playlist
+                        }
+                    }
+                    _message.value = "已添加到歌单"
+                }
                 .onFailure { _message.value = it.message ?: "添加到歌单失败" }
             _isLoading.value = false
         }

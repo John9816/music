@@ -12,7 +12,9 @@ import com.music.player.databinding.ItemNewestAlbumBannerBinding
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.resolveThemeColorStateList
 
-class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapter.Vh>(Diff) {
+class NewestAlbumBannerAdapter(
+    private val onAlbumClick: (NewestAlbum) -> Unit
+) : ListAdapter<NewestAlbum, NewestAlbumBannerAdapter.Vh>(Diff) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
         val binding = ItemNewestAlbumBannerBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -23,7 +25,7 @@ class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapt
         holder.bind(getItem(position))
     }
 
-    class Vh(
+    inner class Vh(
         private val binding: ItemNewestAlbumBannerBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
@@ -45,6 +47,8 @@ class NewestAlbumBannerAdapter : ListAdapter<NewestAlbum, NewestAlbumBannerAdapt
                     .dontAnimate()
                     .into(binding.ivCover)
             }
+
+            binding.root.setOnClickListener { onAlbumClick(item) }
         }
     }
 

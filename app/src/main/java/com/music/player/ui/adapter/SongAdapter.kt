@@ -12,7 +12,6 @@ import com.music.player.data.model.Song
 import com.music.player.databinding.ItemSongBinding
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.resolveThemeColorStateList
-import java.util.Locale
 
 class SongAdapter(
     private val onSongClick: (Song) -> Unit,
@@ -42,11 +41,7 @@ class SongAdapter(
             binding.tvSongName.text = song.name
             binding.tvArtist.text = buildMetaLine(song)
 
-            val hasDuration = song.duration > 0L
-            binding.tvDuration.visibility = if (hasDuration) View.VISIBLE else View.GONE
-            if (hasDuration) {
-                binding.tvDuration.text = formatDuration(song.duration)
-            }
+            binding.tvDuration.visibility = View.GONE
 
             if (onMoreClick == null) {
                 binding.btnMore.visibility = View.GONE
@@ -77,18 +72,6 @@ class SongAdapter(
             binding.root.setOnLongClickListener {
                 onSongLongClick(song)
                 true
-            }
-        }
-
-        private fun formatDuration(millis: Long): String {
-            val totalSeconds = (millis / 1000).coerceAtLeast(0)
-            val seconds = totalSeconds % 60
-            val minutes = (totalSeconds / 60) % 60
-            val hours = totalSeconds / 3600
-            return if (hours > 0) {
-                String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
-            } else {
-                String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
             }
         }
 

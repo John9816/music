@@ -5,15 +5,18 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
-import com.music.player.MainActivity
 import com.music.player.R
+import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -50,11 +53,14 @@ class PlaylistSongsFragment : Fragment() {
         binding.ivHeaderOverlay.visibility = View.GONE
         binding.btnPlayAll.setOnClickListener { playAll() }
 
-        songAdapter = SongAdapter(onSongClick = { song -> musicViewModel.playStandaloneSong(song) })
+        songAdapter = SongAdapter(
+            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            onMoreClick = { anchor, song -> showSongMenu(anchor, song) }
+        )
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
-            setHasFixedSize(false)
+            setHasFixedSize(true)
         }
 
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
@@ -84,16 +90,6 @@ class PlaylistSongsFragment : Fragment() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        (activity as? MainActivity)?.setBottomNavVisible(false)
-    }
-
-    override fun onStop() {
-        super.onStop()
-        (activity as? MainActivity)?.setBottomNavVisible(true)
-    }
-
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
@@ -118,6 +114,35 @@ class PlaylistSongsFragment : Fragment() {
         val songs = songAdapter.currentList
         if (songs.isEmpty()) return
         musicViewModel.playFromList(songs, songs.first())
+    }
+
+    private fun showSongMenu(anchor: View, song: Song) {
+        val popup = PopupMenu(requireContext(), anchor)
+        popup.menu.add(R.string.action_play_next)
+        popup.menu.add(R.string.action_add_to_queue)
+        popup.menu.add(R.string.action_download_song)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.title) {
+                getString(R.string.action_play_next) -> {
+                    musicViewModel.enqueueNext(song)
+                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
+                    true
+                }
+                getString(R.string.action_add_to_queue) -> {
+                    musicViewModel.enqueue(song)
+                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
+                    true
+                }
+                getString(R.string.action_download_song) -> {
+                    SongDownloader.download(requireContext(), musicViewModel, song)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        popup.show()
     }
 
     private fun formatPlayCount(context: android.content.Context, playCount: Long): String {
