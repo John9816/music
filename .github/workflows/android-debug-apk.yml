@@ -136,9 +136,11 @@ jobs:
           grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
           grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
 
-          actual_cert="$("$apksigner" verify --print-certs "$apk" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-            | head -n1 \
+          cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1)"
+          actual_cert="$(printf '%s\n' "$cert_output" \
+            | grep -i -m1 'certificate SHA-256 digest' \
+            | sed -E 's/.*:[[:space:]]*//' \
+            | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')"
           expected_cert="$(printf '%s' "${ANDROID_SIGNING_CERT_SHA256}" \
             | tr -d ':[:space:]' \
