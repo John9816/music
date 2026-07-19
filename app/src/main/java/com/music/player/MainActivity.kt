@@ -70,7 +70,6 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_FROM_LOGIN = "extra_from_login"
         const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
         const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
-        private var hasCheckedForUpdatesThisProcess = false
     }
 
     val player: Player?
@@ -158,7 +157,6 @@ class MainActivity : AppCompatActivity() {
         refreshForMusicSourceChangeIfNeeded()
 
         libraryViewModel.prefetch()
-        maybeCheckForAppUpdate(savedInstanceState)
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -200,6 +198,7 @@ class MainActivity : AppCompatActivity() {
         insetsController.show(WindowInsetsCompat.Type.systemBars())
         attachPlayerListener()
         startMiniProgressUpdates()
+        maybeCheckForAppUpdate()
     }
 
     override fun onResume() {
@@ -299,10 +298,7 @@ class MainActivity : AppCompatActivity() {
             .forEach { it.onMusicSourceChanged() }
     }
 
-    private fun maybeCheckForAppUpdate(savedInstanceState: Bundle?) {
-        if (savedInstanceState != null) return
-        if (hasCheckedForUpdatesThisProcess) return
-        hasCheckedForUpdatesThisProcess = true
+    private fun maybeCheckForAppUpdate() {
         updateViewModel.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, userInitiated = false)
     }
 

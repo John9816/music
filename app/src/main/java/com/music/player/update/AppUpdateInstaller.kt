@@ -193,13 +193,21 @@ class AppUpdateInstaller(
             "${BuildConfig.APPLICATION_ID}.fileprovider",
             file
         )
-        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+        val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             setDataAndType(apkUri, APK_MIME_TYPE)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
 
         runCatching {
+            activity.grantUriPermission(
+                "com.android.packageinstaller",
+                apkUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
             activity.startActivity(installIntent)
             clearPendingInstall()
         }.onFailure {
