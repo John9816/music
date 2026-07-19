@@ -24,3 +24,9 @@ build/
 captures/
 output.json
 *.hprof
+classes.jar
+crashlog.txt
+gradle-compile-check.log
+androidx/
+cache/
+res/

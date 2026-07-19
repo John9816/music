@@ -19,7 +19,6 @@ import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.util.applyStatusBarInsetPadding
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
@@ -35,10 +34,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private lateinit var authViewModel: AuthViewModel
     private lateinit var libraryViewModel: LibraryViewModel
     private var currentUser: UserProfile? = null
-    private var awaitingUserRefresh: Boolean = false
-    private var awaitingFavoritesRefresh: Boolean = false
-    private var awaitingHistoryRefresh: Boolean = false
-    private var awaitingPlaylistsRefresh: Boolean = false
     private val avatarPicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             uri ?: return@registerForActivityResult
@@ -69,9 +64,9 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
+        binding.stickyProfileTitle.applyStatusBarInsetPadding()
         binding.scrollContent.setOnScrollChangeListener { _, scrollY, _, _, _ ->
-            // Keep the Favorites title row pinned while the collection below it scrolls.
-            binding.layoutHeroContent.translationY = scrollY.toFloat()
+            binding.stickyProfileTitle.visibility = if (scrollY > 0) View.VISIBLE else View.GONE
         }
         setupUi()
         setupObservers()
@@ -109,16 +104,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
             return
         }
 
-        awaitingUserRefresh = true
-        awaitingFavoritesRefresh = true
-        awaitingHistoryRefresh = true
-        awaitingPlaylistsRefresh = true
-        binding.swipeRefresh.isRefreshing = true
-        binding.swipeRefresh.postDelayed({
-            if (_binding != null && binding.swipeRefresh.isRefreshing) {
-                stopRefreshIndicator()
-            }
-        }, 3000L)
         authViewModel.refreshProfile()
         libraryViewModel.refreshFavorites(silent = true, forceRefresh = true)
         libraryViewModel.refreshHistory(silent = true, forceRefresh = true)
@@ -126,11 +111,11 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupUi() {
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
+        binding.btnCreatePlaylist.setOnClickListener { showCreatePlaylistSheet() }
+        binding.btnCreatePlaylistSticky.setOnClickListener { showCreatePlaylistSheet() }
         val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
         val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
         binding.rowLiked.setOnClickListener(openLiked)
@@ -154,12 +139,18 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         }
     }
 
+    private fun showCreatePlaylistSheet() {
+        CreatePlaylistBottomSheet().apply {
+            onConfirm = { nameOrUrl, description ->
+                libraryViewModel.createPlaylist(nameOrUrl, description)
+            }
+        }.show(parentFragmentManager, "create_playlist")
+    }
+
     private fun setupObservers() {
         authViewModel.currentUser.observe(viewLifecycleOwner) { user ->
             currentUser = user
             renderUser(user)
-            awaitingUserRefresh = false
-            syncRefreshState()
         }
 
         authViewModel.authState.observe(viewLifecycleOwner) { state ->
@@ -181,20 +172,14 @@ class ProfileFragment : Fragment(), RootTabInteraction {
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
             updateLikedSection(songs)
-            awaitingFavoritesRefresh = false
-            syncRefreshState()
         }
 
         libraryViewModel.history.observe(viewLifecycleOwner) { songs ->
             updateHistorySection(songs)
-            awaitingHistoryRefresh = false
-            syncRefreshState()
         }
 
         libraryViewModel.playlists.observe(viewLifecycleOwner) { playlists ->
             updatePlaylistsSection(playlists)
-            awaitingPlaylistsRefresh = false
-            syncRefreshState()
         }
     }
 
@@ -332,19 +317,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         } else {
             binding.tvBadge.visibility = View.GONE
         }
-    }
-
-    private fun syncRefreshState() {
-        if (awaitingUserRefresh || awaitingFavoritesRefresh || awaitingHistoryRefresh || awaitingPlaylistsRefresh) return
-        stopRefreshIndicator()
-    }
-
-    private fun stopRefreshIndicator() {
-        awaitingUserRefresh = false
-        awaitingFavoritesRefresh = false
-        awaitingHistoryRefresh = false
-        awaitingPlaylistsRefresh = false
-        binding.swipeRefresh.isRefreshing = false
     }
 
     private fun setProfileActionsEnabled(enabled: Boolean) {

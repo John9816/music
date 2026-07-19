@@ -1,5 +1,6 @@
 package com.music.player.ui.fragment
 
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.Build
@@ -8,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -16,6 +18,7 @@ import android.view.GestureDetector
 import android.view.WindowManager
 import android.view.MotionEvent
 import android.view.animation.LinearInterpolator
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -30,7 +33,6 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.music.player.MainActivity
@@ -58,6 +60,11 @@ import com.music.player.ui.viewmodel.LibraryViewModel
 
 class NowPlayingBottomSheetFragment : DialogFragment() {
 
+    private companion object {
+        const val STAGE_ANIMATION_MS = 240L
+        const val COVER_PULSE_DURATION_MS = 3600L
+    }
+
     private var _binding: BottomSheetNowPlayingBinding? = null
     private val binding: BottomSheetNowPlayingBinding
         get() = _binding!!
@@ -84,6 +91,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private var lyricRenderToken = 0L
     private var progressJob: Job? = null
     private var currentActiveIndex: Int = -1
+    private var isUserScrollingLyrics = false
     private var isUserSeeking: Boolean = false
     private var coverRotateAnimator: ObjectAnimator? = null
     private var favoriteIds: Set<String> = emptySet()
@@ -207,6 +215,15 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         // Setup lyrics RecyclerView
         rvLyrics?.layoutManager = LinearLayoutManager(requireContext())
         rvLyrics?.adapter = lyricsAdapter
+        rvLyrics?.itemAnimator = null
+        rvLyrics?.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                isUserScrollingLyrics = newState == RecyclerView.SCROLL_STATE_DRAGGING
+                if (newState == RecyclerView.SCROLL_STATE_IDLE && showingLyrics) {
+                    syncActiveLyric(scroll = true)
+                }
+            }
+        })
         rvLyrics?.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
             private val tapDetector = GestureDetector(
                 requireContext(),
@@ -249,7 +266,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             binding.layoutSongMenu.isVisible = false
             toggleFavoriteForCurrentSong()
         }
-        binding.menuShareSong.setOnClickListener { binding.layoutSongMenu.isVisible = false }
+        binding.menuShareSong.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            musicViewModel.currentSong.value?.let(::shareCurrentSong)
+        }
         binding.menuDownloadSong.setOnClickListener {
             binding.layoutSongMenu.isVisible = false
             musicViewModel.currentSong.value?.let { song ->
@@ -260,11 +280,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             binding.layoutSongMenu.isVisible = false
             musicViewModel.currentSong.value?.let(::showAddToPlaylistDialog)
         }
-        binding.menuShowAlbum.setOnClickListener { binding.layoutSongMenu.isVisible = false }
+        binding.menuShowAlbum.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            musicViewModel.currentSong.value?.let(::openCurrentAlbum)
+        }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
-        binding.btnLyrics.setOnClickListener { showLyricsStage() }
+        binding.btnLyrics.setOnClickListener { toggleFavoriteForCurrentSong() }
         val playerForVolume = (activity as? MainActivity)?.player
         binding.sliderVolume.value = playerForVolume?.volume ?: 1f
         binding.sliderVolume.addOnChangeListener { _, value, fromUser ->
@@ -369,7 +392,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             if (song == null) {
                 lyricParseJob?.cancel()
                 lyricLines = emptyList()
-                lyricsAdapter.submitList(emptyList())
+                lyricsAdapter.submitLyrics(emptyList())
                 currentActiveIndex = -1
                 applySongToViews(null)
                 return@observe
@@ -456,11 +479,55 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnFavorite.imageTintList = ColorStateList.valueOf(
             themeColor(R.attr.textPrimary)
         )
+        binding.btnLyrics.imageTintList = ColorStateList.valueOf(
+            themeColor(if (isFavorite) R.attr.brandPrimary else R.attr.textSecondary)
+        )
+        binding.btnLyrics.contentDescription = getString(
+            if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
+        )
         binding.btnFavorite.contentDescription = getString(
             R.string.content_desc_more
         )
         binding.menuFavoriteSong.text = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
+        )
+    }
+
+    private fun shareCurrentSong(song: com.music.player.data.model.Song) {
+        val artist = song.artists.joinToString(", ") { it.name }.trim()
+        val album = song.album.name.trim()
+        val text = listOfNotNull(
+            listOf(song.name.trim(), artist).filter { it.isNotBlank() }.joinToString(" - "),
+            album.takeIf { it.isNotBlank() }
+        ).joinToString("\n")
+        runCatching {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }, getString(R.string.player_share_song)))
+        }.onFailure {
+            Toast.makeText(requireContext(), R.string.player_share_unavailable, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openCurrentAlbum(song: com.music.player.data.model.Song) {
+        val albumId = song.album.id.trim()
+        if (albumId.isBlank()) {
+            Toast.makeText(requireContext(), R.string.player_album_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val main = activity as? MainActivity
+        if (main == null) {
+            Toast.makeText(requireContext(), R.string.player_album_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        main.pushDetail(
+            AlbumSongsFragment.newInstance(
+                albumId = albumId,
+                albumName = song.album.name,
+                artistNames = song.artists.joinToString(", ") { it.name },
+                coverUrl = song.album.picUrl
+            )
         )
     }
 
@@ -487,7 +554,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             binding.tvControlSongArtist.isVisible = true
             binding.tvSheetMetaDetail.text = getString(R.string.now_playing_meta_no_song)
             immersiveBackground?.setImageUrl(null)
-            lyricsAdapter.submitList(emptyList())
+            lyricsAdapter.submitLyrics(emptyList())
             tvLyricsPlain?.visibility = View.VISIBLE
             rvLyrics?.visibility = View.GONE
             tvLyricsPlain?.text = getString(R.string.lyrics_placeholder)
@@ -511,7 +578,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         val renderToken = ++lyricRenderToken
         lyricLines = emptyList()
         currentActiveIndex = -1
-        lyricsAdapter.submitList(emptyList())
+        lyricsAdapter.submitLyrics(emptyList())
         tvLyricsPlain?.visibility = View.VISIBLE
         rvLyrics?.visibility = View.GONE
         tvLyricsPlain?.text = if (song.lyric.isNullOrBlank()) {
@@ -528,10 +595,13 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             }
             lyricLines = parsed
             if (parsed.isNotEmpty()) {
-                lyricsAdapter.submitList(parsed)
                 tvLyricsPlain?.visibility = View.GONE
                 rvLyrics?.visibility = View.VISIBLE
-                syncActiveLyric(scroll = true)
+                lyricsAdapter.submitLyrics(parsed) {
+                    if (_binding != null && renderToken == lyricRenderToken) {
+                        syncActiveLyric(scroll = showingLyrics)
+                    }
+                }
             } else {
                 tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
                     ?: getString(R.string.lyrics_not_available)
@@ -561,12 +631,41 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun showCoverStage(immediate: Boolean = false) {
+        if (!immediate && !showingLyrics) {
+            syncCoverRotation()
+            return
+        }
         showingLyrics = false
-        coverStage?.visibility = View.VISIBLE
-        lyricsStage?.visibility = View.GONE
-        if (!immediate) {
+        if (immediate) {
+            coverStage?.animate()?.cancel()
+            lyricsStage?.animate()?.cancel()
+            coverStage?.visibility = View.VISIBLE
             coverStage?.alpha = 1f
-            lyricsStage?.alpha = 1f
+            coverStage?.scaleX = 1f
+            coverStage?.scaleY = 1f
+            lyricsStage?.visibility = View.GONE
+        } else {
+            coverStage?.animate()?.cancel()
+            lyricsStage?.animate()?.cancel()
+            coverStage?.visibility = View.VISIBLE
+            coverStage?.alpha = 0f
+            coverStage?.scaleX = 0.985f
+            coverStage?.scaleY = 0.985f
+            lyricsStage?.animate()
+                ?.alpha(0f)
+                ?.scaleX(0.985f)
+                ?.scaleY(0.985f)
+                ?.setDuration(STAGE_ANIMATION_MS)
+                ?.setInterpolator(AccelerateDecelerateInterpolator())
+                ?.withEndAction { lyricsStage?.visibility = View.GONE }
+                ?.start()
+            coverStage?.animate()
+                ?.alpha(1f)
+                ?.scaleX(1f)
+                ?.scaleY(1f)
+                ?.setDuration(STAGE_ANIMATION_MS)
+                ?.setInterpolator(AccelerateDecelerateInterpolator())
+                ?.start()
         }
         syncCoverRotation()
         val player = (activity as? MainActivity)?.player
@@ -574,13 +673,35 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun showLyricsStage() {
+        if (showingLyrics) {
+            syncActiveLyric(scroll = true)
+            return
+        }
         showingLyrics = true
         lyricsStage?.visibility = View.VISIBLE
-        coverStage?.visibility = View.GONE
-        lyricsStage?.alpha = 1f
-        coverStage?.alpha = 1f
+        coverStage?.animate()?.cancel()
+        lyricsStage?.animate()?.cancel()
+        lyricsStage?.alpha = 0f
+        lyricsStage?.scaleX = 0.985f
+        lyricsStage?.scaleY = 0.985f
+        coverStage?.animate()
+            ?.alpha(0f)
+            ?.scaleX(0.985f)
+            ?.scaleY(0.985f)
+            ?.setDuration(STAGE_ANIMATION_MS)
+            ?.setInterpolator(AccelerateDecelerateInterpolator())
+            ?.withEndAction { coverStage?.visibility = View.GONE }
+            ?.start()
+        lyricsStage?.animate()
+            ?.alpha(1f)
+            ?.scaleX(1f)
+            ?.scaleY(1f)
+            ?.setDuration(STAGE_ANIMATION_MS)
+            ?.setInterpolator(AccelerateDecelerateInterpolator())
+            ?.start()
         pauseCoverRotation()
         syncGlowWithPlayback(false, false)
+        syncActiveLyric(scroll = true)
     }
 
     private fun syncPlayPauseIcon(isPlaying: Boolean) {
@@ -622,11 +743,27 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     // ── Cover Rotation (disc style) ──────────────────────────────
 
     private fun syncCoverRotation() {
-        stopCoverRotation()
+        val player = (activity as? MainActivity)?.player
+        if (!showingLyrics && player?.isPlaying == true) {
+            startCoverRotation()
+        } else {
+            stopCoverRotation()
+        }
     }
 
     private fun startCoverRotation() {
-        stopCoverRotation()
+        val target = discContainer ?: return
+        if (coverRotateAnimator?.isRunning == true) return
+        coverRotateAnimator = ObjectAnimator.ofPropertyValuesHolder(
+            target,
+            PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.018f),
+            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.018f)
+        ).apply {
+            duration = COVER_PULSE_DURATION_MS
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+        }.also { it.start() }
     }
 
     private fun pauseCoverRotation() {
@@ -639,6 +776,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         if (_binding != null) {
             discContainer?.rotation = 0f
             ivCoverBig?.rotation = 0f
+            discContainer?.scaleX = 1f
+            discContainer?.scaleY = 1f
         }
     }
 
@@ -720,7 +859,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         lyricJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
                 val player = (activity as? MainActivity)?.player
-                if (player != null && rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
+                if (player != null && showingLyrics && rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
                     syncActiveLyric()
                 }
                 delay(250)
@@ -732,35 +871,31 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         val player = (activity as? MainActivity)?.player ?: return
         if (lyricLines.isEmpty()) return
         val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
-        if (index == currentActiveIndex) return
-        currentActiveIndex = index
-        lyricsAdapter.setActiveIndex(index)
-        if (scroll && index >= 0) {
-            rvLyrics?.post { smoothScrollLyricToCenter(index) }
-        } else if (index >= 0) {
-            smoothScrollLyricToCenter(index)
+        val activeLineChanged = index != currentActiveIndex
+        if (activeLineChanged) {
+            currentActiveIndex = index
+            lyricsAdapter.setActiveIndex(index)
+        }
+        if (index >= 0 && !isUserScrollingLyrics && (activeLineChanged || scroll)) {
+            if (scroll) {
+                rvLyrics?.post { centerLyricAt(index) }
+            } else {
+                centerLyricAt(index)
+            }
         }
     }
 
-    private fun smoothScrollLyricToCenter(position: Int) {
+    private fun centerLyricAt(position: Int) {
         val layoutManager = rvLyrics?.layoutManager as? LinearLayoutManager ?: return
-        val scroller = object : LinearSmoothScroller(requireContext()) {
-            override fun getVerticalSnapPreference(): Int = SNAP_TO_START
-
-            override fun calculateDtToFit(
-                viewStart: Int,
-                viewEnd: Int,
-                boxStart: Int,
-                boxEnd: Int,
-                snapPreference: Int
-            ): Int {
-                val viewCenter = viewStart + (viewEnd - viewStart) / 2
-                val boxCenter = boxStart + (boxEnd - boxStart) / 2
-                return boxCenter - viewCenter
-            }
+        val recyclerView = rvLyrics ?: return
+        layoutManager.scrollToPosition(position)
+        recyclerView.post {
+            if (!showingLyrics || isUserScrollingLyrics) return@post
+            val line = layoutManager.findViewByPosition(position) ?: return@post
+            val lineCenter = line.top + line.height / 2
+            val viewportCenter = recyclerView.height / 2
+            recyclerView.scrollBy(0, lineCenter - viewportCenter)
         }
-        scroller.targetPosition = position
-        layoutManager.startSmoothScroll(scroller)
     }
 
     // ── Progress updates ──────────────────────────────────────────

@@ -563,6 +563,38 @@ class MusicRepository(context: Context? = null) {
         }
     }
 
+    suspend fun searchArtists(keywords: String, limit: Int = 30): Result<List<com.music.player.data.model.SearchArtist>> =
+        searchCatalog(keywords, type = "artist", limit = limit, parser = ::parseArtistsFromEnvelope)
+
+    suspend fun searchPlaylists(keywords: String, limit: Int = 30): Result<List<Playlist>> =
+        searchCatalog(keywords, type = "playlist", limit = limit, parser = ::parsePlaylistsFromSearchEnvelope)
+
+    private suspend fun <T> searchCatalog(
+        keywords: String,
+        type: String,
+        limit: Int,
+        parser: (String, String) -> List<T>
+    ): Result<List<T>> = withContext(Dispatchers.IO) {
+        try {
+            val response = api.searchSongs(
+                source = activeSourceValue(),
+                keyword = keywords,
+                type = type,
+                page = 1,
+                pageSize = limit.coerceAtLeast(1)
+            )
+            if (response.isSuccessful) {
+                Result.success(parser(response.body()?.string().orEmpty(), activeSourceValue()))
+            } else {
+                Result.failure(Exception("搜索${type}失败"))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun checkSource(source: MusicSourcePreferences.Source): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val response = api.searchSongs(
@@ -919,6 +951,50 @@ private fun String.decodeHtmlEntities(): String {
                 runCatching { String(Character.toChars(codePoint)) }.getOrNull()
             } ?: match.value
         }
+}
+
+internal fun parsePlaylistsFromSearchEnvelope(raw: String, fallbackSource: String): List<Playlist> {
+    val data = parseEnvelopeData(raw) ?: return emptyList()
+    val list = data.obj("playlists")?.takeIf { it.isJsonArray && it.asJsonArray.size() > 0 }
+        ?: data.obj("list")?.takeIf { it.isJsonArray }
+        ?: return emptyList()
+    return list.asJsonArray.mapNotNull { item ->
+        val obj = item.asJsonObjectOrNull() ?: return@mapNotNull null
+        val id = obj.str("id")
+        val name = obj.str("name")
+        if (id.isBlank() || name.isBlank()) return@mapNotNull null
+        Playlist(
+            id = id,
+            name = name,
+            coverImgUrl = obj.str("coverUrl").ifBlank { obj.str("picUrl") }.ifBlank { obj.str("coverImgUrl") },
+            description = obj.str("description"),
+            trackCount = obj.int("trackCount").takeIf { it > 0 } ?: obj.int("trackNumber"),
+            playCount = obj.long("playCount"),
+            source = obj.str("source").ifBlank { fallbackSource }
+        )
+    }
+}
+
+internal fun parseArtistsFromEnvelope(raw: String, fallbackSource: String): List<com.music.player.data.model.SearchArtist> {
+    val data = parseEnvelopeData(raw) ?: return emptyList()
+    val list = data.obj("artists")?.takeIf { it.isJsonArray && it.asJsonArray.size() > 0 }
+        ?: data.obj("list")?.takeIf { it.isJsonArray }
+        ?: return emptyList()
+    return list.asJsonArray.mapNotNull { item ->
+        val obj = item.asJsonObjectOrNull() ?: return@mapNotNull null
+        val id = obj.str("id")
+        val name = obj.str("name")
+        if (id.isBlank() || name.isBlank()) return@mapNotNull null
+        com.music.player.data.model.SearchArtist(
+            id = id,
+            name = name,
+            avatarUrl = obj.str("avatarUrl").ifBlank { obj.str("picUrl") }.ifBlank { obj.str("coverUrl") },
+            songCount = obj.int("songCount").takeIf { it > 0 }
+                ?: obj.int("musicSize").takeIf { it > 0 }
+                ?: obj.int("trackCount"),
+            source = obj.str("source").ifBlank { fallbackSource }
+        )
+    }
 }
 
 private fun com.google.gson.JsonObject.int(name: String, default: Int = 0): Int =

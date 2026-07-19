@@ -19,7 +19,6 @@ import com.music.player.databinding.FragmentPlaylistsBinding
 import com.music.player.ui.adapter.PlaylistCategoryChipAdapter
 import com.music.player.ui.adapter.RadioPlaylistAdapter
 import com.music.player.ui.util.applyStatusBarInsetPadding
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.MusicViewModel
 
 class PlaylistsFragment : Fragment(), RootTabInteraction {
@@ -219,8 +218,6 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupInteractions() {
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
     }
 
     private fun setupSearch() {
@@ -417,7 +414,6 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     }
 
     private fun stopLoading() {
-        binding.swipeRefresh.isRefreshing = false
         binding.progressBar.visibility = View.GONE
     }
 

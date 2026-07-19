@@ -19,7 +19,6 @@ import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.SongDownloader
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -136,8 +135,6 @@ class SongCollectionFragment : Fragment() {
             })
         }
 
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.btnPlayAll.setOnClickListener { playAll() }
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
@@ -227,7 +224,6 @@ class SongCollectionFragment : Fragment() {
             binding.recyclerView.visibility = View.GONE
             binding.tvEmpty.visibility = View.GONE
         }
-        binding.swipeRefresh.isRefreshing = loading && !showSkeleton
     }
 
     private fun refreshCurrentCollection() {

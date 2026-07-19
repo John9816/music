@@ -16,6 +16,7 @@ import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DefaultItemAnimator
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
@@ -23,11 +24,14 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.data.settings.SearchHistoryManager
+import com.music.player.data.settings.MusicSourcePreferences
 import com.music.player.databinding.FragmentLibraryBinding
+import com.music.player.MainActivity
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.adapter.PlaylistGridAdapter
+import com.music.player.ui.adapter.SearchArtistAdapter
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 import kotlinx.coroutines.Job
@@ -43,15 +47,17 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private lateinit var musicViewModel: MusicViewModel
     private lateinit var libraryViewModel: LibraryViewModel
     private lateinit var songAdapter: SongAdapter
+    private lateinit var artistAdapter: SearchArtistAdapter
+    private lateinit var playlistAdapter: PlaylistGridAdapter
     private lateinit var searchHistoryManager: SearchHistoryManager
 
     private var isSearchLoading = false
     private var isLibraryLoading = false
-    private var isUserRefreshing = false
     private var isHeroCollapsed = false
     private var heroExpandedHeight = 0
     private var heroCollapsedHeight = 0
     private var heroAnimator: ValueAnimator? = null
+    private var searchType = SearchType.SONGS
 
     private var debounceJob: Job? = null
 
@@ -68,6 +74,12 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             "\u85a4\u4e95\u98ce",
             "Coldplay"
         )
+    }
+
+    private enum class SearchType(val labelRes: Int) {
+        SONGS(R.string.search_type_songs),
+        ARTISTS(R.string.search_type_artists),
+        PLAYLISTS(R.string.search_type_playlists)
     }
 
     override fun onCreateView(
@@ -98,6 +110,8 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         }
         setupRecyclerView()
         setupInput()
+        setupSourceSelector()
+        setupSearchTypeSelector()
         setupObservers()
         setupInteractions()
         setupHistory()
@@ -137,6 +151,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     override fun onMusicSourceChanged() {
         val binding = _binding ?: return
+        syncSourceSelection()
         debounceJob?.cancel()
         renderSongs(emptyList())
         binding.layoutError.visibility = View.GONE
@@ -149,7 +164,90 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         binding.tvSectionTitle.text = getString(R.string.search_result_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_searching, query)
         collapseHero()
-        musicViewModel.searchSongs(query)
+        searchByType(query)
+    }
+
+    private fun setupSourceSelector() {
+        val sources = MusicSourcePreferences.Source.entries
+        binding.chipGroupSources.removeAllViews()
+        sources.forEach { source ->
+            val chip = Chip(requireContext()).apply {
+                id = View.generateViewId()
+                text = source.displayName
+                isCheckable = true
+                isClickable = true
+                setEnsureMinTouchTargetSize(true)
+                setOnClickListener { selectSearchSource(source) }
+            }
+            binding.chipGroupSources.addView(chip)
+        }
+        syncSourceSelection()
+    }
+
+    private fun syncSourceSelection() {
+        val active = MusicSourcePreferences.activeSource(requireContext())
+        val index = MusicSourcePreferences.Source.entries.indexOf(active)
+        if (index >= 0 && index < binding.chipGroupSources.childCount) {
+            binding.chipGroupSources.check(binding.chipGroupSources.getChildAt(index).id)
+        }
+    }
+
+    private fun selectSearchSource(source: MusicSourcePreferences.Source) {
+        val current = MusicSourcePreferences.activeSource(requireContext())
+        if (current == source) return
+
+        MusicSourcePreferences.setActiveSource(requireContext(), source)
+        musicViewModel.updateActiveSource(source.storageValue)
+        musicViewModel.clearSourceDependentState()
+        onMusicSourceChanged()
+    }
+
+    private fun setupSearchTypeSelector() {
+        binding.chipGroupSearchTypes.removeAllViews()
+        SearchType.entries.forEach { type ->
+            val chip = Chip(requireContext()).apply {
+                id = View.generateViewId()
+                text = getString(type.labelRes)
+                isCheckable = true
+                isClickable = true
+                setEnsureMinTouchTargetSize(true)
+                setOnClickListener { selectSearchType(type) }
+            }
+            binding.chipGroupSearchTypes.addView(chip)
+        }
+        syncSearchTypeSelection()
+    }
+
+    private fun syncSearchTypeSelection() {
+        val index = SearchType.entries.indexOf(searchType)
+        if (index >= 0 && index < binding.chipGroupSearchTypes.childCount) {
+            binding.chipGroupSearchTypes.check(binding.chipGroupSearchTypes.getChildAt(index).id)
+        }
+    }
+
+    private fun selectSearchType(type: SearchType) {
+        if (searchType == type) return
+        searchType = type
+        syncSearchTypeSelection()
+        val query = binding.etSearch.text?.toString()?.trim().orEmpty()
+        if (query.isBlank()) {
+            showIdleState()
+            return
+        }
+        binding.tvSectionTitle.text = getString(R.string.search_result_title)
+        binding.tvSectionSubtitle.text = getString(R.string.search_searching, query)
+        binding.layoutError.visibility = View.GONE
+        binding.layoutEmpty.visibility = View.GONE
+        collapseHero()
+        searchByType(query)
+    }
+
+    private fun searchByType(query: String) {
+        when (searchType) {
+            SearchType.SONGS -> musicViewModel.searchSongs(query)
+            SearchType.ARTISTS -> musicViewModel.searchArtists(query)
+            SearchType.PLAYLISTS -> musicViewModel.searchPlaylists(query)
+        }
     }
 
     // ── RecyclerView ──────────────────────────────────────────────
@@ -157,8 +255,21 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun setupRecyclerView() {
         songAdapter = SongAdapter(
             onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
-            onSongLongClick = { song -> showSongActions(song) }
+            onSongLongClick = { song -> showSongActions(song) },
+            onMoreClick = { _, song -> showSongActions(song) }
         )
+        artistAdapter = SearchArtistAdapter { artist ->
+            searchType = SearchType.SONGS
+            syncSearchTypeSelection()
+            binding.etSearch.setText(artist.name)
+            binding.etSearch.setSelection(artist.name.length)
+            performSearch()
+        }
+        playlistAdapter = PlaylistGridAdapter { playlist ->
+            (activity as? MainActivity)?.pushDetail(
+                PlaylistSongsFragment.newInstance(playlist.id, playlist.name)
+            )
+        }
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
@@ -182,7 +293,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
                 val lm = rv.layoutManager as? LinearLayoutManager ?: return
                 val totalItemCount = lm.itemCount
                 val lastVisible = lm.findLastVisibleItemPosition()
-                if (totalItemCount > 0 && lastVisible >= totalItemCount - 5) {
+                if (searchType == SearchType.SONGS && totalItemCount > 0 && lastVisible >= totalItemCount - 5) {
                     musicViewModel.loadMoreSearchResults()
                 }
             }
@@ -305,8 +416,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Interactions ──────────────────────────────────────────────
 
     private fun setupInteractions() {
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.btnRetry.setOnClickListener { performSearch() }
         syncSearchActionState()
     }
@@ -327,20 +436,27 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun setupObservers() {
         musicViewModel.searchResults.observe(viewLifecycleOwner) { songs ->
+            if (searchType != SearchType.SONGS) return@observe
             renderSongs(songs)
             val query = binding.etSearch.text?.toString()?.trim().orEmpty()
             if (query.isBlank()) {
                 showIdleState()
             } else {
-                binding.tvSectionTitle.text = getString(R.string.search_result_title)
-                binding.tvSectionSubtitle.text = if (songs.isEmpty()) {
-                    getString(R.string.search_not_found)
-                } else {
-                    getString(R.string.search_found_count, songs.size)
-                }
+                updateSearchResultSummary(songs.size)
             }
-            stopRefreshIndicator()
             syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        }
+
+        musicViewModel.searchArtists.observe(viewLifecycleOwner) { artists ->
+            if (searchType != SearchType.ARTISTS) return@observe
+            renderArtists(artists)
+            updateSearchResultSummary(artists.size)
+        }
+
+        musicViewModel.searchPlaylists.observe(viewLifecycleOwner) { playlists ->
+            if (searchType != SearchType.PLAYLISTS) return@observe
+            renderPlaylists(playlists)
+            updateSearchResultSummary(playlists.size)
         }
 
         musicViewModel.isSearchLoading.observe(viewLifecycleOwner) { loading ->
@@ -379,7 +495,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         if (query.isBlank()) {
             binding.searchInputLayout.error = getString(R.string.search_input_required)
             binding.etSearch.requestFocus()
-            stopRefreshIndicator()
             showIdleState()
             return
         }
@@ -393,7 +508,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         collapseHero()
         searchHistoryManager.addQuery(query)
         updateSearchSummary()
-        musicViewModel.searchSongs(query)
+        searchByType(query)
     }
 
     /** Debounced auto-search — does not hide keyboard or save history */
@@ -405,33 +520,53 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         binding.tvSectionTitle.text = getString(R.string.search_result_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_searching, query)
         collapseHero()
-        musicViewModel.searchSongs(query)
+        searchByType(query)
     }
 
     private fun refreshSearch() {
         val query = binding.etSearch.text?.toString()?.trim().orEmpty()
         if (query.isBlank()) {
-            stopRefreshIndicator()
             showIdleState()
             requestSearchFocus()
             return
         }
-        isUserRefreshing = true
-        binding.swipeRefresh.isRefreshing = false
-        binding.swipeRefresh.postDelayed({
-            if (_binding != null && isUserRefreshing) {
-                stopRefreshIndicator()
-            }
-        }, 3000L)
-        musicViewModel.searchSongs(query)
+        searchByType(query)
     }
 
     // ── Render & State Sync ───────────────────────────────────────
 
     private fun renderSongs(songs: List<Song>) {
+        showResultLayout(SearchType.SONGS)
         songAdapter.submitList(songs)
         syncEmptyState(songs.isEmpty())
         syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+    }
+
+    private fun renderArtists(artists: List<com.music.player.data.model.SearchArtist>) {
+        showResultLayout(SearchType.ARTISTS)
+        artistAdapter.submitList(artists)
+        syncEmptyState(artists.isEmpty())
+        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+    }
+
+    private fun renderPlaylists(playlists: List<com.music.player.data.model.Playlist>) {
+        showResultLayout(SearchType.PLAYLISTS)
+        playlistAdapter.submitList(playlists)
+        syncEmptyState(playlists.isEmpty())
+        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+    }
+
+    private fun showResultLayout(type: SearchType) {
+        when (type) {
+            SearchType.SONGS, SearchType.ARTISTS -> {
+                binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
+                binding.recyclerView.adapter = if (type == SearchType.SONGS) songAdapter else artistAdapter
+            }
+            SearchType.PLAYLISTS -> {
+                binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 2)
+                binding.recyclerView.adapter = playlistAdapter
+            }
+        }
     }
 
     private fun syncLoadingState() {
@@ -449,10 +584,17 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun syncEmptyState(forceEmpty: Boolean = musicViewModel.searchResults.value.orEmpty().isEmpty()) {
         val hasError = musicViewModel.searchError.value != null
-        val hasResults = musicViewModel.searchResults.value.orEmpty().isNotEmpty()
+        val hasResults = currentResultCount() > 0
         val shouldShowEmpty = !isSearchLoading && !hasError && !hasResults && forceEmpty
 
         binding.layoutEmpty.visibility = if (shouldShowEmpty) View.VISIBLE else View.GONE
+        if (shouldShowEmpty) {
+            binding.tvEmptyTitle.text = when (searchType) {
+                SearchType.SONGS -> getString(R.string.search_for_songs)
+                SearchType.ARTISTS -> getString(R.string.search_for_artists)
+                SearchType.PLAYLISTS -> getString(R.string.search_for_playlists)
+            }
+        }
     }
 
     private fun syncErrorState(errorMsg: String?) {
@@ -461,7 +603,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             return
         }
         // Only show inline error if we have no results to display
-        if (musicViewModel.searchResults.value.orEmpty().isEmpty()) {
+        if (currentResultCount() == 0) {
             binding.layoutError.visibility = View.VISIBLE
             binding.tvErrorMessage.text = errorMsg
             binding.layoutEmpty.visibility = View.GONE
@@ -477,7 +619,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         val loading = isSearchLoading
         val hasQuery = binding.etSearch.text?.toString()?.trim().isNullOrEmpty() == false
         binding.btnSearch.isEnabled = hasQuery && !loading
-        binding.swipeRefresh.isEnabled = hasQuery && !loading
     }
 
     private fun updateSearchSummary() {
@@ -490,16 +631,36 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         b.tvSummaryPlaylists.text = getString(R.string.search_summary_playlists_count, playlistCount)
     }
 
+    private fun updateSearchResultSummary(count: Int) {
+        val query = binding.etSearch.text?.toString()?.trim().orEmpty()
+        if (query.isBlank()) return
+        binding.tvSectionTitle.text = getString(R.string.search_result_title)
+        binding.tvSectionSubtitle.text = if (count == 0) {
+            when (searchType) {
+                SearchType.SONGS -> getString(R.string.search_not_found_songs)
+                SearchType.ARTISTS -> getString(R.string.search_not_found_artists)
+                SearchType.PLAYLISTS -> getString(R.string.search_not_found_playlists)
+            }
+        } else {
+            when (searchType) {
+                SearchType.SONGS -> getString(R.string.search_found_count_songs, count)
+                SearchType.ARTISTS -> getString(R.string.search_found_count_artists, count)
+                SearchType.PLAYLISTS -> getString(R.string.search_found_count_playlists, count)
+            }
+        }
+    }
+
+    private fun currentResultCount(): Int = when (searchType) {
+        SearchType.SONGS -> musicViewModel.searchResults.value.orEmpty().size
+        SearchType.ARTISTS -> musicViewModel.searchArtists.value.orEmpty().size
+        SearchType.PLAYLISTS -> musicViewModel.searchPlaylists.value.orEmpty().size
+    }
+
     private fun showIdleState() {
         binding.tvSectionTitle.text = getString(R.string.search_idle_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_idle_subtitle)
         syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
         updateSearchSummary()
-    }
-
-    private fun stopRefreshIndicator() {
-        isUserRefreshing = false
-        binding.swipeRefresh.isRefreshing = false
     }
 
     // ── Hero Collapse/Expand ──────────────────────────────────────
@@ -542,34 +703,25 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         val favoriteIds = libraryViewModel.favoriteIds.value.orEmpty()
         val isFavorite = favoriteIds.contains(song.id)
 
-        val items = mutableListOf<String>()
-        val actions = mutableListOf<() -> Unit>()
-
-        items += getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
-        actions += { libraryViewModel.setFavorite(song, !isFavorite) }
-
-        items += getString(R.string.action_play_next)
-        actions += {
+        val options = mutableListOf<SongOption>()
+        options += SongOption(getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)) {
+            libraryViewModel.setFavorite(song, !isFavorite)
+        }
+        options += SongOption(getString(R.string.action_play_next)) {
             musicViewModel.enqueueNext(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
         }
-
-        items += getString(R.string.action_add_to_queue)
-        actions += {
+        options += SongOption(getString(R.string.action_add_to_queue)) {
             musicViewModel.enqueue(song)
             Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
         }
-
-        items += getString(R.string.action_add_to_playlist)
-        actions += { showAddToPlaylistDialog(song) }
-
-        items += getString(R.string.action_download_song)
-        actions += { SongDownloader.download(requireContext(), musicViewModel, song) }
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(song.name)
-            .setItems(items.toTypedArray()) { _, which -> actions[which].invoke() }
-            .show()
+        options += SongOption(getString(R.string.action_add_to_playlist)) {
+            showAddToPlaylistDialog(song)
+        }
+        options += SongOption(getString(R.string.action_download_song)) {
+            SongDownloader.download(requireContext(), musicViewModel, song)
+        }
+        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

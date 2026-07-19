@@ -16,6 +16,14 @@ data class Artist(
     val name: String
 )
 
+data class SearchArtist(
+    val id: String,
+    val name: String,
+    val avatarUrl: String = "",
+    val songCount: Int = 0,
+    val source: String = "netease"
+)
+
 data class Album(
     val id: String,
     val name: String,

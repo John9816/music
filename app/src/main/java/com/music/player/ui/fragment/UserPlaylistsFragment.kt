@@ -14,7 +14,6 @@ import com.music.player.R
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentUserPlaylistsBinding
 import com.music.player.ui.adapter.UserPlaylistAdapter
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 
 class UserPlaylistsFragment : Fragment() {
@@ -46,8 +45,6 @@ class UserPlaylistsFragment : Fragment() {
             setHasFixedSize(false)
         }
 
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.btnImport.setOnClickListener { showImportDialog() }
         binding.btnEmptyImport.setOnClickListener { showImportDialog() }
 
@@ -91,7 +88,6 @@ class UserPlaylistsFragment : Fragment() {
             binding.recyclerView.visibility = View.GONE
             binding.layoutEmpty.visibility = View.GONE
         }
-        binding.swipeRefresh.isRefreshing = loading && !showSkeleton
     }
 
     private fun openPlaylist(playlist: UserPlaylist) {

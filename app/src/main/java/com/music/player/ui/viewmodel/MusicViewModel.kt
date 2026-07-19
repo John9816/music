@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.music.player.data.model.NewestAlbum
 import com.music.player.data.model.Playlist
 import com.music.player.data.model.PlaylistCategory
+import com.music.player.data.model.SearchArtist
 import com.music.player.data.model.Song
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
@@ -88,6 +89,12 @@ class MusicViewModel : ViewModel() {
 
     private val _searchResults = MutableLiveData<List<Song>>(emptyList())
     val searchResults: LiveData<List<Song>> = _searchResults
+
+    private val _searchArtists = MutableLiveData<List<SearchArtist>>(emptyList())
+    val searchArtists: LiveData<List<SearchArtist>> = _searchArtists
+
+    private val _searchPlaylists = MutableLiveData<List<Playlist>>(emptyList())
+    val searchPlaylists: LiveData<List<Playlist>> = _searchPlaylists
 
     private val _isSearchLoading = MutableLiveData(false)
     val isSearchLoading: LiveData<Boolean> = _isSearchLoading
@@ -327,6 +334,8 @@ class MusicViewModel : ViewModel() {
         _currentAlbumSongs.value = emptyList()
         _currentPlaylist.value = null
         _searchResults.value = emptyList()
+        _searchArtists.value = emptyList()
+        _searchPlaylists.value = emptyList()
         _searchError.value = null
         _isSearchLoading.value = false
         _isLoadingMore.value = false
@@ -474,6 +483,8 @@ class MusicViewModel : ViewModel() {
             _isSearchLoading.value = true
             _isLoadingMore.value = false
             _searchError.value = null
+            _searchArtists.value = emptyList()
+            _searchPlaylists.value = emptyList()
             try {
                 repository.searchSongs(keywords)
                     .onSuccess { songs ->
@@ -488,6 +499,72 @@ class MusicViewModel : ViewModel() {
                             return@onFailure
                         }
                         _searchError.value = error.message ?: "搜索歌曲失败"
+                    }
+            } finally {
+                if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                    _isSearchLoading.value = false
+                }
+            }
+        }
+    }
+
+    fun searchArtists(keywords: String) {
+        currentSearchKeywords = keywords
+        searchOffset = 0
+        hasMoreSearchResults = false
+        val requestVersion = ++searchRequestVersion
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _isSearchLoading.value = true
+            _isLoadingMore.value = false
+            _searchError.value = null
+            _searchResults.value = emptyList()
+            _searchPlaylists.value = emptyList()
+            try {
+                repository.searchArtists(keywords)
+                    .onSuccess { artists ->
+                        if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                            _searchArtists.value = artists
+                        }
+                    }
+                    .onFailure { error ->
+                        if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                            _searchError.value = error.message ?: "搜索歌手失败"
+                        }
+                    }
+            } finally {
+                if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                    _isSearchLoading.value = false
+                }
+            }
+        }
+    }
+
+    fun searchPlaylists(keywords: String) {
+        currentSearchKeywords = keywords
+        searchOffset = 0
+        hasMoreSearchResults = false
+        val requestVersion = ++searchRequestVersion
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _isSearchLoading.value = true
+            _isLoadingMore.value = false
+            _searchError.value = null
+            _searchResults.value = emptyList()
+            _searchArtists.value = emptyList()
+            try {
+                repository.searchPlaylists(keywords)
+                    .onSuccess { playlists ->
+                        if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                            _searchPlaylists.value = playlists
+                        }
+                    }
+                    .onFailure { error ->
+                        if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {
+                            _searchError.value = error.message ?: "搜索歌单失败"
+                        }
                     }
             } finally {
                 if (requestVersion == searchRequestVersion && keywords == currentSearchKeywords) {

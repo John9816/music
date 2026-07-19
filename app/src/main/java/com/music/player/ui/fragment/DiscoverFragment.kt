@@ -25,7 +25,6 @@ import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.activity.SettingsActivity
@@ -65,11 +64,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     private var isMusicLoading = false
     private var isLibraryLoading = false
     private var isWeeklyHotLoading = false
-    private var isUserRefreshing = false
-    private var appBarVerticalOffset = 0
-    private var awaitingRecommendRefresh = false
-    private var awaitingWeeklyHotRefresh = false
-    private var awaitingNewestAlbumRefresh = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -133,11 +127,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     override fun onMusicSourceChanged() {
         val binding = _binding ?: return
         binding.appBar.setExpanded(true, false)
-        binding.swipeRefresh.isRefreshing = true
-        isUserRefreshing = true
-        awaitingRecommendRefresh = true
-        awaitingWeeklyHotRefresh = false
-        awaitingNewestAlbumRefresh = false
         songAdapter.submitList(emptyList())
         syncEmptyState(forceEmpty = false)
         libraryViewModel.prefetch(forceRefresh = true)
@@ -176,8 +165,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupInteractions() {
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
         binding.cardSongsSearch.setOnClickListener {
             (activity as? MainActivity)?.selectRootTab(R.id.nav_library)
         }
@@ -197,7 +184,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             }
         }
         binding.appBar.addOnOffsetChangedListener(AppBarLayout.OnOffsetChangedListener { _, verticalOffset ->
-            appBarVerticalOffset = verticalOffset
             binding.stickySongsHeader.visibility = if (verticalOffset < 0) View.VISIBLE else View.GONE
         })
     }
@@ -207,20 +193,14 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             renderSongs(songs)
             binding.tvSongListSubtitle.text = getString(R.string.recommend_loaded_count, songs.size)
             updateSummaryChips(recommendCount = songs.size)
-            awaitingRecommendRefresh = false
-            syncRefreshState()
         }
 
         musicViewModel.weeklyHotSongs.observe(viewLifecycleOwner) { songs ->
             updateSummaryChips(weeklyCount = songs.size)
-            awaitingWeeklyHotRefresh = false
-            syncRefreshState()
         }
 
         musicViewModel.newestAlbums.observe(viewLifecycleOwner) { albums ->
             updateSummaryChips(albumCount = albums.size)
-            awaitingNewestAlbumRefresh = false
-            syncRefreshState()
         }
 
         musicViewModel.weeklyHotLoading.observe(viewLifecycleOwner) { loading ->
@@ -242,18 +222,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun refreshContent(userInitiated: Boolean) {
-        if (userInitiated) {
-            isUserRefreshing = true
-            awaitingRecommendRefresh = true
-            awaitingWeeklyHotRefresh = false
-            awaitingNewestAlbumRefresh = false
-            binding.swipeRefresh.isRefreshing = false
-            binding.swipeRefresh.postDelayed({
-                if (_binding != null && isUserRefreshing) {
-                    stopRefreshIndicator()
-                }
-            }, 3000L)
-        }
         libraryViewModel.prefetch(forceRefresh = userInitiated)
         musicViewModel.loadDailyRecommend(forceRefresh = userInitiated)
     }
@@ -296,27 +264,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     private fun syncLoadingState() {
         val anyLoading = isMusicLoading || isLibraryLoading
         binding.progressBar.visibility = if (anyLoading) View.VISIBLE else View.GONE
-    }
-
-    private fun syncRefreshState() {
-        if (!isUserRefreshing) return
-        if (awaitingRecommendRefresh || awaitingWeeklyHotRefresh || awaitingNewestAlbumRefresh) return
-        stopRefreshIndicator()
-    }
-
-    private fun stopRefreshIndicator() {
-        isUserRefreshing = false
-        awaitingRecommendRefresh = false
-        awaitingWeeklyHotRefresh = false
-        awaitingNewestAlbumRefresh = false
-        binding.swipeRefresh.isRefreshing = false
-    }
-
-    private fun shouldBlockSwipeRefresh(): Boolean {
-        if (_binding == null) return true
-        if (binding.swipeRefresh.isRefreshing) return false
-        if (appBarVerticalOffset != 0) return true
-        return binding.recyclerView.canScrollVertically(-1)
     }
 
     private fun showSongActions(song: Song) {

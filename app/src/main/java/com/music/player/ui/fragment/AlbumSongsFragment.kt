@@ -18,7 +18,6 @@ import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.SongDownloader
-import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -93,9 +92,6 @@ class AlbumSongsFragment : Fragment() {
             setHasFixedSize(true)
         }
 
-        binding.swipeRefresh.isEnabled = false
-        binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-
         musicViewModel.currentAlbum.observe(viewLifecycleOwner) { album ->
             if (album == null || album.album.id != albumId) return@observe
             binding.tvHeaderTitle.text = album.album.name.ifBlank { albumName }
@@ -121,7 +117,6 @@ class AlbumSongsFragment : Fragment() {
                 binding.recyclerView.visibility = View.GONE
                 binding.tvEmpty.visibility = View.GONE
             }
-            binding.swipeRefresh.isRefreshing = loading && !showSkeleton
         }
 
         musicViewModel.error.observe(viewLifecycleOwner) { message ->

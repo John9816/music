@@ -5,11 +5,14 @@ import com.music.player.data.model.LyricLine
 object LyricsParser {
 
     private val timeTag = Regex("""\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?]""")
+    private val offsetTag = Regex("""\[offset:([+-]?\d+)]""", RegexOption.IGNORE_CASE)
+    private val inlineWordTimeTag = Regex("""<\s*\d+\s*,\s*\d+(?:\s*,\s*\d+)?\s*>""")
 
     fun parse(lrc: String?): List<LyricLine> {
         val source = lrc?.trim().orEmpty()
         if (source.isBlank()) return emptyList()
 
+        val offsetMs = offsetTag.find(source)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
         val grouped = linkedMapOf<Float, MutableList<String>>()
 
         source.lineSequence().forEach { rawLine ->
@@ -19,7 +22,10 @@ object LyricsParser {
             val matches = timeTag.findAll(line).toList()
             if (matches.isEmpty()) return@forEach
 
-            val text = line.replace(timeTag, "").trim()
+            val text = line
+                .replace(timeTag, "")
+                .replace(inlineWordTimeTag, "")
+                .trim()
             if (text.isBlank()) return@forEach
 
             for (match in matches) {
@@ -32,7 +38,8 @@ object LyricsParser {
                     2 -> fraction.toIntOrNull()?.times(10) ?: 0
                     else -> fraction.take(3).toIntOrNull() ?: 0
                 }
-                val timeSeconds = minutes * 60f + seconds + (millis / 1000f)
+                val timeSeconds = (minutes * 60_000L + seconds * 1_000L + millis + offsetMs)
+                    .coerceAtLeast(0L) / 1000f
                 grouped.getOrPut(timeSeconds) { mutableListOf() }.add(text)
             }
         }

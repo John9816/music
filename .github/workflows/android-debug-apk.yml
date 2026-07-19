@@ -194,7 +194,7 @@ jobs:
           fi
 
           apk="${{ steps.release_apk.outputs.path }}"
-          manifest="update-manifest.json"
+          manifest="latest.json"
           apk_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
           download_url="${ECS_UPDATE_BASE_URL%/}/${apk_name}"
           cat > "${manifest}" <<EOF

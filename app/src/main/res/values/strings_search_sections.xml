@@ -9,5 +9,19 @@
     <string name="search_summary_favorites_count">收藏 %1$d 首</string>
     <string name="search_summary_playlists_count">歌单 %1$d 个</string>
     <string name="search_idle_title">开始搜索你想听的音乐</string>
-    <string name="search_idle_subtitle">支持歌名、歌手和专辑关键词</string>
+    <string name="search_idle_subtitle">支持歌曲、歌手和歌单关键词</string>
+    <string name="search_source_label">音源</string>
+    <string name="search_type_label">类型</string>
+    <string name="search_type_songs">歌曲</string>
+    <string name="search_type_artists">歌手</string>
+    <string name="search_type_playlists">歌单</string>
+    <string name="search_artist_song_count">%1$d 首歌曲</string>
+    <string name="search_found_count_songs">共找到 %1$d 首歌曲</string>
+    <string name="search_found_count_artists">共找到 %1$d 位歌手</string>
+    <string name="search_found_count_playlists">共找到 %1$d 个歌单</string>
+    <string name="search_not_found_songs">没有找到匹配歌曲</string>
+    <string name="search_not_found_artists">没有找到匹配歌手</string>
+    <string name="search_not_found_playlists">没有找到匹配歌单</string>
+    <string name="search_for_artists">Search for artists</string>
+    <string name="search_for_playlists">Search for playlists</string>
 </resources>

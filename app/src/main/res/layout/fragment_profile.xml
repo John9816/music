@@ -5,18 +5,13 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
+    <ScrollView
+        android:id="@+id/scrollContent"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <ScrollView
-            android:id="@+id/scrollContent"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:fillViewport="true"
-            android:overScrollMode="never">
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -44,6 +39,16 @@
                         android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
                         android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
+
+                    <ImageButton
+                        android:id="@+id/btnCreatePlaylist"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/user_playlist_create_title"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_add_24"
+                        app:tint="?attr/textPrimary" />
 
                 </LinearLayout>
 
@@ -73,6 +78,15 @@
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                         android:textColor="?attr/textSecondary" />
                 </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_l"
+                    android:text="@string/profile_library_section"
+                    android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+                    android:textColor="?attr/textSecondary"
+                    android:textStyle="bold" />
 
                 <LinearLayout
                     android:id="@+id/rowLiked"
@@ -269,7 +283,7 @@
                             android:layout_height="wrap_content"
                             android:ellipsize="end"
                             android:maxLines="1"
-                            android:text="伍佰 &amp; ChinaBlue，伍..."
+                            android:text="@string/user_playlist_title"
                             android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
                             android:textColor="?attr/textPrimary"
                             android:textStyle="bold" />
@@ -338,6 +352,39 @@
                         android:layout_height="1dp" />
                 </LinearLayout>
             </LinearLayout>
-        </ScrollView>
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/stickyProfileTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/pageBackground"
+        android:elevation="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/spacing_m"
+        android:paddingTop="@dimen/spacing_s"
+        android:paddingEnd="@dimen/spacing_m"
+        android:paddingBottom="@dimen/spacing_s"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/nav_favorites"
+            android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+            android:textColor="?attr/textPrimary"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btnCreatePlaylistSticky"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/user_playlist_create_title"
+            android:padding="12dp"
+            android:src="@drawable/ic_add_24"
+            app:tint="?attr/textPrimary" />
+    </LinearLayout>
 </FrameLayout>
