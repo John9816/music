@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="0"
-        android:endColor="?attr/brandPrimaryDark"
-        android:startColor="?attr/brandPrimary" />
+    <!-- Keep the play-count badge readable even in the monochrome theme, where
+         brandPrimary is intentionally white. -->
+    <solid android:color="#B8000000" />
     <corners android:radius="12dp" />
 </shape>

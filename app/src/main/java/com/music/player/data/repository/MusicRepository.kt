@@ -356,15 +356,31 @@ class MusicRepository(context: Context? = null) {
                 }
 
                 try {
-                    // QQ user playlists use playlist/detail; QQ rankings use toplist/detail.
-                    val playlistResponse = api.getPlaylistDetail(source = source, id = normalizedId)
-                    var detail = if (playlistResponse.isSuccessful) {
-                        parsePlaylistDetailFromEnvelope(
+                    // QQ and Kuwo rankings use toplist/detail; regular collections
+                    // use playlist/detail. Try the ranking shape first for Kuwo,
+                    // whose chart IDs otherwise look like ordinary playlist IDs.
+                    var detail: Pair<Playlist, List<Song>>? = null
+                    if (source == MusicSourcePreferences.Source.KUWO.storageValue) {
+                        val rankingResponse = api.getTopListDetail(source = source, id = normalizedId)
+                        if (rankingResponse.isSuccessful) {
+                            detail = parsePlaylistDetailFromEnvelope(
+                                rankingResponse.body()?.string().orEmpty(),
+                                fallbackId = normalizedId,
+                                fallbackSource = source
+                            )?.takeIf { it.second.isNotEmpty() }
+                        }
+                    }
+
+                    val playlistResponse = if (detail == null && source != MusicSourcePreferences.Source.KUWO.storageValue) {
+                        api.getPlaylistDetail(source = source, id = normalizedId)
+                    } else null
+                    if (detail == null && playlistResponse?.isSuccessful == true) {
+                        detail = parsePlaylistDetailFromEnvelope(
                             playlistResponse.body()?.string().orEmpty(),
                             fallbackId = normalizedId,
                             fallbackSource = source
                         )
-                    } else null
+                    }
 
                     if (detail == null && source == MusicSourcePreferences.Source.QQ.storageValue) {
                         val rankingResponse = api.getTopListDetail(source = source, id = normalizedId)

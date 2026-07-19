@@ -27,6 +27,9 @@ object ImageUrl {
 
     private fun sanitize(url: String?): String? {
         val raw = url?.trim().orEmpty()
-        return raw.ifBlank { null }
+        if (raw.isBlank()) return null
+        // Kuwo still returns HTTP artwork for some songs; Android blocks
+        // those requests under the app's cleartext policy.
+        return raw.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
     }
 }
