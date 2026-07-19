@@ -86,6 +86,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
+        binding.stickySongsHeader.applyStatusBarInsetPadding()
         setupRecyclerViews()
         setupObservers()
         setupInteractions()
@@ -197,6 +198,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         }
         binding.appBar.addOnOffsetChangedListener(AppBarLayout.OnOffsetChangedListener { _, verticalOffset ->
             appBarVerticalOffset = verticalOffset
+            binding.stickySongsHeader.visibility = if (verticalOffset < 0) View.VISIBLE else View.GONE
         })
     }
 

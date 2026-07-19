@@ -31,7 +31,7 @@
     <dimen name="toolbar_search_trailing_size">28dp</dimen>
     <dimen name="profile_cover_size">70dp</dimen>
     <dimen name="profile_cover_placeholder_padding">18dp</dimen>
-    <dimen name="bottom_nav_content_height">49dp</dimen>
+    <dimen name="bottom_nav_content_height">64dp</dimen>
     <dimen name="immersive_root_content_top_offset">0dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
     <dimen name="immersive_top_scrim_height">200dp</dimen>

@@ -17,7 +17,6 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.BottomSheetQueueBinding
 import com.music.player.databinding.ItemQueueSongBinding
-import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -31,31 +30,27 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
     private lateinit var musicViewModel: MusicViewModel
     private var currentSong: Song? = null
     private var queueSongs: List<Song> = emptyList()
-    private var recentSongs: List<Song> = emptyList()
-    private var playbackMode: PlaylistViewMode = PlaylistViewMode.RECENT
-    private var selectedMode: PlaylistViewMode? = null
+    private var visibleQueueCount = PAGE_SIZE
     private val queueAdapter = QueueAdapter(
         onPlay = { song ->
             val playing = currentSong
             if (playing != null && playing.id == song.id) {
                 Toast.makeText(requireContext(), getString(R.string.queue_playing_badge), Toast.LENGTH_SHORT).show()
             } else {
-                when (resolveMode()) {
-                    PlaylistViewMode.QUEUE -> musicViewModel.playFromQueue(song.id)
-                    PlaylistViewMode.RECENT -> musicViewModel.playFromRecent(song.id)
-                }
+                musicViewModel.playFromQueue(song.id)
                 dismiss()
             }
         },
         onRemove = { song ->
-            if (resolveMode() == PlaylistViewMode.QUEUE) {
-                musicViewModel.removeFromQueue(song.id)
-                Toast.makeText(requireContext(), getString(R.string.msg_removed_from_queue), Toast.LENGTH_SHORT).show()
-            } else {
-                musicViewModel.removeFromRecentlyPlayed(song.id)
-            }
+            musicViewModel.removeFromQueue(song.id)
+            Toast.makeText(requireContext(), getString(R.string.msg_removed_from_queue), Toast.LENGTH_SHORT).show()
         }
     )
+
+    private companion object {
+        const val PAGE_SIZE = 50
+        const val LOAD_MORE_THRESHOLD = 8
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -86,17 +81,20 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
 
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = queueAdapter
+        binding.recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0 || visibleQueueCount >= queueSongs.size) return
+                val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                if (layoutManager.findLastVisibleItemPosition() >=
+                    recyclerView.adapter.orEmptyItemCount() - LOAD_MORE_THRESHOLD
+                ) {
+                    visibleQueueCount = (visibleQueueCount + PAGE_SIZE).coerceAtMost(queueSongs.size)
+                    render()
+                }
+            }
+        })
 
         binding.btnClose.setOnClickListener { dismiss() }
-        binding.toggleMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (!isChecked) return@addOnButtonCheckedListener
-            selectedMode = when (checkedId) {
-                R.id.btnQueueMode -> PlaylistViewMode.QUEUE
-                R.id.btnHistoryMode -> PlaylistViewMode.RECENT
-                else -> resolveMode()
-            }
-            render()
-        }
         binding.btnClear.setOnClickListener {
             musicViewModel.clearQueue()
             Toast.makeText(requireContext(), getString(R.string.msg_queue_cleared), Toast.LENGTH_SHORT).show()
@@ -109,19 +107,7 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
 
         musicViewModel.queue.observe(viewLifecycleOwner) { queue ->
             queueSongs = queue
-            render()
-        }
-
-        musicViewModel.recentlyPlayed.observe(viewLifecycleOwner) { songs ->
-            recentSongs = songs
-            render()
-        }
-
-        musicViewModel.playlistViewMode.observe(viewLifecycleOwner) { mode ->
-            playbackMode = mode ?: PlaylistViewMode.RECENT
-            if (selectedMode == null) {
-                selectedMode = playbackMode
-            }
+            visibleQueueCount = visibleQueueCount.coerceAtMost(queue.size).coerceAtLeast(PAGE_SIZE)
             render()
         }
     }
@@ -132,51 +118,29 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
     }
 
     private fun render() {
-        val activeMode = resolveMode()
         val playing = currentSong
         val display = buildList {
             if (playing != null) add(playing)
-            when (activeMode) {
-                PlaylistViewMode.QUEUE -> addAll(queueSongs)
-                PlaylistViewMode.RECENT -> addAll(recentSongs.filterNot { it.id == playing?.id })
-            }
+            addAll(queueSongs.take(visibleQueueCount))
         }
 
         queueAdapter.setState(
             songId = playing?.id,
-            showRemove = activeMode == PlaylistViewMode.QUEUE
+            showRemove = true
         )
         queueAdapter.submitList(display)
 
-        syncModeToggle(activeMode)
         binding.tvEmptyState.visibility = if (display.isEmpty()) View.VISIBLE else View.GONE
-        binding.tvEmptyState.text = getString(
-            if (activeMode == PlaylistViewMode.QUEUE) R.string.queue_empty else R.string.queue_empty_history
-        )
-        binding.btnClear.isEnabled = activeMode == PlaylistViewMode.QUEUE && queueSongs.isNotEmpty()
-        binding.btnClear.visibility = if (activeMode == PlaylistViewMode.QUEUE) View.VISIBLE else View.GONE
+        binding.tvEmptyState.text = getString(R.string.queue_empty)
+        binding.btnClear.isEnabled = queueSongs.isNotEmpty()
+        binding.btnClear.visibility = if (queueSongs.isNotEmpty()) View.VISIBLE else View.GONE
 
         val itemCount = if (display.isEmpty()) 0 else display.size
-        binding.tvTitle.text = getString(
-            if (activeMode == PlaylistViewMode.QUEUE) R.string.queue_title else R.string.history_title
-        )
-        binding.tvSubtitle.text = when (activeMode) {
-            PlaylistViewMode.QUEUE -> getString(R.string.queue_subtitle_up_next, itemCount)
-            PlaylistViewMode.RECENT -> getString(R.string.queue_subtitle_recent, itemCount)
-        }
+        binding.tvTitle.text = getString(R.string.queue_title)
+        binding.tvSubtitle.text = getString(R.string.queue_subtitle_up_next, itemCount)
     }
 
-    private fun resolveMode(): PlaylistViewMode = selectedMode ?: playbackMode
-
-    private fun syncModeToggle(mode: PlaylistViewMode) {
-        val targetId = when (mode) {
-            PlaylistViewMode.QUEUE -> R.id.btnQueueMode
-            PlaylistViewMode.RECENT -> R.id.btnHistoryMode
-        }
-        if (binding.toggleMode.checkedButtonId != targetId) {
-            binding.toggleMode.check(targetId)
-        }
-    }
+    private fun RecyclerView.Adapter<*>?.orEmptyItemCount(): Int = this?.itemCount ?: 0
 
     private class QueueAdapter(
         private val onPlay: (Song) -> Unit,

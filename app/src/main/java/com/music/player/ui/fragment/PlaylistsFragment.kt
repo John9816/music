@@ -40,13 +40,18 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     private var playlistsLoaded = false
     private var allItems: List<Playlist> = emptyList()
     private var selectedCategory = ""
+    private var selectedGroupId: Int? = null
+    private var groupTabIds: List<Int?> = emptyList()
+    private var rebuildingGroupTabs = false
     private var loadingMore = false
     private var hasMorePlaylists = true
     private var previousPlaylistCount = 0
+    private var radioHeaderCollapsed = false
 
     private companion object {
         const val STATE_TAB = "radio_selected_tab"
         const val STATE_CATEGORY = "radio_playlist_category"
+        const val STATE_GROUP_ID = "radio_playlist_group_id"
         const val PLAYLIST_PAGE_SIZE = 42
     }
 
@@ -66,6 +71,8 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
             ?.let { runCatching { RadioTab.valueOf(it) }.getOrNull() }
             ?: RadioTab.RANKINGS
         selectedCategory = savedInstanceState?.getString(STATE_CATEGORY).orEmpty()
+        selectedGroupId = savedInstanceState?.getInt(STATE_GROUP_ID, Int.MIN_VALUE)
+            ?.takeUnless { it == Int.MIN_VALUE }
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
         setupList()
@@ -80,6 +87,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_TAB, selectedTab.name)
         outState.putString(STATE_CATEGORY, selectedCategory)
+        outState.putInt(STATE_GROUP_ID, selectedGroupId ?: Int.MIN_VALUE)
         super.onSaveInstanceState(outState)
     }
 
@@ -106,10 +114,12 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         playlistsLoaded = false
         allItems = emptyList()
         selectedCategory = ""
+        selectedGroupId = null
         loadingMore = false
         hasMorePlaylists = true
         previousPlaylistCount = 0
         categoryAdapter.selectedApiName = ""
+        rebuildGroupTabs(emptyList())
         adapter.submitList(emptyList())
         musicViewModel.loadPlaylistCategories(forceRefresh = true)
         selectTab(selectedTab, forceRefresh = true)
@@ -128,6 +138,11 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
                     dx: Int,
                     dy: Int
                 ) {
+                    if (dy > 0 && !radioHeaderCollapsed) {
+                        setRadioHeaderCollapsed(true)
+                    } else if (dy < 0 && !recyclerView.canScrollVertically(-1) && radioHeaderCollapsed) {
+                        setRadioHeaderCollapsed(false)
+                    }
                     if (dy <= 0 || selectedTab != RadioTab.PLAYLISTS || loadingMore || !hasMorePlaylists) {
                         return
                     }
@@ -149,7 +164,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
 
     private fun setupCategories() {
         categoryAdapter = PlaylistCategoryChipAdapter(
-            showGroupName = true,
+            showGroupName = false,
             onClick = ::selectCategory
         )
         binding.rvCategories.apply {
@@ -158,6 +173,31 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
             itemAnimator = null
         }
         categoryAdapter.selectedApiName = selectedCategory
+
+        binding.playlistGroupTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                if (!rebuildingGroupTabs) {
+                    selectCategoryGroup(groupTabIds.getOrNull(tab.position))
+                }
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+            override fun onTabReselected(tab: TabLayout.Tab) = Unit
+        })
+    }
+
+    private fun setRadioHeaderCollapsed(collapsed: Boolean) {
+        if (radioHeaderCollapsed == collapsed) return
+        radioHeaderCollapsed = collapsed
+        val visibility = if (collapsed) View.GONE else View.VISIBLE
+        binding.tabLayout.visibility = visibility
+        binding.radioSearchBar.visibility = visibility
+        binding.tvPlaylistCategoryLabel.visibility =
+            if (!collapsed && selectedTab == RadioTab.PLAYLISTS) View.VISIBLE else View.GONE
+        binding.playlistGroupTabs.visibility =
+            if (!collapsed && selectedTab == RadioTab.PLAYLISTS) View.VISIBLE else View.GONE
+        binding.rvCategories.visibility =
+            if (!collapsed && selectedTab == RadioTab.PLAYLISTS) View.VISIBLE else View.GONE
     }
 
     private fun setupTabs() {
@@ -195,7 +235,9 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
 
     private fun setupObservers() {
         musicViewModel.playlistCategories.observe(viewLifecycleOwner) { categories ->
-            categoryAdapter.submitList(categories.distinctBy { it.apiName })
+            val distinct = categories.distinctBy { it.apiName }
+            rebuildGroupTabs(distinct)
+            categoryAdapter.submitList(categoriesForSelectedGroup(distinct))
             categoryAdapter.selectedApiName = selectedCategory
         }
         musicViewModel.topLists.observe(viewLifecycleOwner) {
@@ -227,7 +269,11 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
             MusicSourcePreferences.Source.NETEASE
         if (!supportsCategories) selectedCategory = ""
         binding.rvCategories.visibility =
-            if (tab == RadioTab.PLAYLISTS && supportsCategories) View.VISIBLE else View.GONE
+            if (!radioHeaderCollapsed && tab == RadioTab.PLAYLISTS && supportsCategories) View.VISIBLE else View.GONE
+        val categoryVisibility =
+            if (!radioHeaderCollapsed && tab == RadioTab.PLAYLISTS && supportsCategories) View.VISIBLE else View.GONE
+        binding.tvPlaylistCategoryLabel.visibility = categoryVisibility
+        binding.playlistGroupTabs.visibility = categoryVisibility
         if (tab == RadioTab.PLAYLISTS && supportsCategories &&
             musicViewModel.playlistCategories.value.orEmpty().size <= 1
         ) {
@@ -294,6 +340,58 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         musicViewModel.loadTopPlaylists(category = selectedCategory)
     }
 
+    private fun rebuildGroupTabs(categories: List<PlaylistCategory>) {
+        val groups = buildList {
+            add(null)
+            categories.mapNotNull { it.groupId }
+                .distinct()
+                .forEach { add(it) }
+        }
+        groupTabIds = groups
+        rebuildingGroupTabs = true
+        binding.playlistGroupTabs.removeAllTabs()
+        groups.forEach { groupId ->
+            val title = if (groupId == null) {
+                getString(R.string.playlist_category_all)
+            } else {
+                categories.firstOrNull { it.groupId == groupId }?.groupName.orEmpty()
+            }
+            binding.playlistGroupTabs.addTab(
+                binding.playlistGroupTabs.newTab().setText(title),
+                groupId == selectedGroupId
+            )
+        }
+        rebuildingGroupTabs = false
+    }
+
+    private fun categoriesForSelectedGroup(categories: List<PlaylistCategory>): List<PlaylistCategory> {
+        return if (selectedGroupId == null) categories else categories.filter {
+            it.groupId == selectedGroupId
+        }
+    }
+
+    private fun selectCategoryGroup(groupId: Int?) {
+        if (groupId == selectedGroupId) return
+        selectedGroupId = groupId
+        val categories = musicViewModel.playlistCategories.value.orEmpty()
+        val visibleCategories = categoriesForSelectedGroup(categories)
+        categoryAdapter.submitList(visibleCategories)
+        val nextCategory = visibleCategories
+            .firstOrNull { it.hot }
+            ?: visibleCategories.firstOrNull()
+            ?: PlaylistCategory.All
+        selectedCategory = nextCategory.apiName
+        categoryAdapter.selectedApiName = selectedCategory
+        playlistsRequested = true
+        playlistsLoaded = false
+        loadingMore = false
+        hasMorePlaylists = true
+        previousPlaylistCount = 0
+        adapter.submitList(emptyList())
+        startLoading()
+        musicViewModel.loadTopPlaylists(category = selectedCategory)
+    }
+
     private fun render(playlists: List<Playlist>) {
         allItems = playlists
         renderFiltered(binding.etSearch.text?.toString().orEmpty())
@@ -324,7 +422,10 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     }
 
     private fun openPlaylist(playlist: Playlist) {
-        val fragment = PlaylistSongsFragment.newInstance(playlist.id)
+        // Rankings carry their own display name (for example 飙升榜、新歌榜、热歌榜).
+        // Keep a fallback only for malformed source data.
+        val detailTitle = playlist.name.ifBlank { "飙升榜" }
+        val fragment = PlaylistSongsFragment.newInstance(playlist.id, detailTitle)
         val main = activity as? com.music.player.MainActivity
         if (main != null) {
             main.pushDetail(fragment)

@@ -49,9 +49,11 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.data.settings.AudioQualityPreferences
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.music.player.ui.viewmodel.LibraryViewModel
 
 class NowPlayingBottomSheetFragment : DialogFragment() {
@@ -78,6 +80,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private var lyricLines: List<LyricLine> = emptyList()
     private var lyricJob: Job? = null
+    private var lyricParseJob: Job? = null
+    private var lyricRenderToken = 0L
     private var progressJob: Job? = null
     private var currentActiveIndex: Int = -1
     private var isUserSeeking: Boolean = false
@@ -146,7 +150,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             controller.isAppearanceLightNavigationBars = !isNightMode
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.show(WindowInsetsCompat.Type.systemBars())
         }
 
         startLyricUpdates()
@@ -156,6 +160,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     override fun onStop() {
         lyricJob?.cancel()
         lyricJob = null
+        lyricParseJob?.cancel()
+        lyricParseJob = null
         progressJob?.cancel()
         progressJob = null
         stopCoverRotation()
@@ -361,6 +367,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             updateAudioQualityButton()
             updateFavoriteButton()
             if (song == null) {
+                lyricParseJob?.cancel()
                 lyricLines = emptyList()
                 lyricsAdapter.submitList(emptyList())
                 currentActiveIndex = -1
@@ -499,21 +506,36 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.tvControlSongArtist.isVisible = artistText.isNotBlank()
         updatePlaybackMeta()
 
-        // Parse and display lyrics
-        val parsed = LyricsParser.parse(song.lyric)
-        lyricLines = parsed
+        // Clear the previous song immediately, then parse the new LRC off the main thread.
+        lyricParseJob?.cancel()
+        val renderToken = ++lyricRenderToken
+        lyricLines = emptyList()
         currentActiveIndex = -1
-        if (parsed.isNotEmpty()) {
-            lyricsAdapter.submitList(parsed)
-            tvLyricsPlain?.visibility = View.GONE
-            rvLyrics?.visibility = View.VISIBLE
-            rvLyrics?.scrollToPosition(0)
+        lyricsAdapter.submitList(emptyList())
+        tvLyricsPlain?.visibility = View.VISIBLE
+        rvLyrics?.visibility = View.GONE
+        tvLyricsPlain?.text = if (song.lyric.isNullOrBlank()) {
+            getString(R.string.lyrics_loading)
         } else {
-            lyricsAdapter.submitList(emptyList())
-            tvLyricsPlain?.visibility = View.VISIBLE
-            rvLyrics?.visibility = View.GONE
-            tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
-                ?: getString(R.string.lyrics_placeholder)
+            getString(R.string.lyrics_placeholder)
+        }
+        lyricParseJob = viewLifecycleOwner.lifecycleScope.launch {
+            val parsed = withContext(Dispatchers.Default) {
+                LyricsParser.parse(song.lyric)
+            }
+            if (renderToken != lyricRenderToken || musicViewModel.currentSong.value?.id != song.id) {
+                return@launch
+            }
+            lyricLines = parsed
+            if (parsed.isNotEmpty()) {
+                lyricsAdapter.submitList(parsed)
+                tvLyricsPlain?.visibility = View.GONE
+                rvLyrics?.visibility = View.VISIBLE
+                syncActiveLyric(scroll = true)
+            } else {
+                tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
+                    ?: getString(R.string.lyrics_not_available)
+            }
         }
 
         // Load cover image
@@ -699,17 +721,24 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             while (isActive) {
                 val player = (activity as? MainActivity)?.player
                 if (player != null && rvLyrics?.visibility == View.VISIBLE && lyricLines.isNotEmpty()) {
-                    val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
-                    if (index != currentActiveIndex) {
-                        currentActiveIndex = index
-                        lyricsAdapter.setActiveIndex(index)
-                        if (index >= 0) {
-                            smoothScrollLyricToCenter(index.coerceAtLeast(0))
-                        }
-                    }
+                    syncActiveLyric()
                 }
                 delay(250)
             }
+        }
+    }
+
+    private fun syncActiveLyric(scroll: Boolean = false) {
+        val player = (activity as? MainActivity)?.player ?: return
+        if (lyricLines.isEmpty()) return
+        val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
+        if (index == currentActiveIndex) return
+        currentActiveIndex = index
+        lyricsAdapter.setActiveIndex(index)
+        if (scroll && index >= 0) {
+            rvLyrics?.post { smoothScrollLyricToCenter(index) }
+        } else if (index >= 0) {
+            smoothScrollLyricToCenter(index)
         }
     }
 
@@ -838,6 +867,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         (activity as? MainActivity)?.player?.removeListener(playerListener)
         lyricJob?.cancel()
         lyricJob = null
+        lyricParseJob?.cancel()
+        lyricParseJob = null
         progressJob?.cancel()
         progressJob = null
         stopCoverRotation()

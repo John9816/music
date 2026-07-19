@@ -42,7 +42,8 @@ object PlaybackCoordinator {
     private const val MAX_URL_CACHE_SIZE = 200
     private const val RECOVERY_WINDOW_MS = 45_000L
     private const val MAX_RECOVERY_ATTEMPTS = 1
-    private const val LYRICS_FETCH_DELAY_MS = 8_000L
+    // Lyrics are independent of audio URL resolution and must start as soon as playback begins.
+    private const val LYRICS_FETCH_DELAY_MS = 0L
     private const val NEXT_URL_PREFETCH_DELAY_MS = 15_000L
 
     private val repository = MusicRepository()

@@ -147,6 +147,10 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, notificationPlayer)
             .setSessionActivity(buildContentIntent())
             .build()
+
+        // Register the session with MediaSessionService so its notification manager receives
+        // playback callbacks even before an external MediaController connects.
+        addSession(checkNotNull(mediaSession))
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession

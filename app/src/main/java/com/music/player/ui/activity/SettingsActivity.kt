@@ -104,7 +104,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && ::insetsController.isInitialized) {
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
@@ -117,7 +117,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupUi() {
         binding.toolbar.setNavigationOnClickListener { finish() }
-        binding.tvEmail.text = "DuckMusic"
+        binding.tvEmail.text = getString(R.string.app_name)
         binding.tvAppVersion.text = BuildConfig.VERSION_NAME
 
         binding.btnLogout.setOnClickListener { showLogoutConfirmation() }
@@ -166,7 +166,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupObservers() {
         authViewModel.currentUser.observe(this) { user ->
             currentUser = user
-            binding.tvEmail.text = "DuckMusic"
+            binding.tvEmail.text = getString(R.string.app_name)
         }
 
         updateViewModel.state.observe(this) { state ->
@@ -480,7 +480,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showOpenSourceLicenses() {
         val licenses = buildString {
-            appendLine("DuckMusic 使用以下开源项目：")
+            appendLine("${getString(R.string.app_name)} 使用以下开源项目：")
             appendLine()
             appendLine("Retrofit — Apache 2.0")
             appendLine("OkHttp — Apache 2.0")

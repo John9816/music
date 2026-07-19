@@ -27,4 +27,7 @@
     <color name="white">#FFFFFFFF</color>
     <color name="ripple_primary">#26FFFFFF</color>
     <color name="cymusic_red">#FFFC3C44</color>
+    <color name="launcher_background">#FF0B0B10</color>
+    <color name="launcher_accent">#FFFF3B5C</color>
+    <color name="launcher_highlight">#FFFFC857</color>
 </resources>

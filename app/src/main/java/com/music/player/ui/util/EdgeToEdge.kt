@@ -22,6 +22,6 @@ fun Activity.applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowIn
     controller.isAppearanceLightNavigationBars = lightSystemBars
     controller.systemBarsBehavior =
         WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    controller.hide(WindowInsetsCompat.Type.systemBars())
+    controller.show(WindowInsetsCompat.Type.systemBars())
     return controller
 }

@@ -506,23 +506,30 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun collapseHero() {
         isHeroCollapsed = true
-        binding.layoutHeroContent.animate().cancel()
-        binding.layoutHeroContent.animate()
+        binding.layoutSearchPanel.animate().cancel()
+        binding.layoutSearchPanel.animate()
             .alpha(0f)
             .setDuration(140L)
-            .withEndAction { binding.layoutHeroContent.visibility = View.GONE }
+            .withEndAction {
+                binding.layoutSearchPanel.visibility = View.GONE
+                binding.heroFrame.minimumHeight = 0
+            }
             .start()
     }
 
     private fun expandHero() {
         isHeroCollapsed = false
-        binding.layoutHeroContent.visibility = View.VISIBLE
-        binding.layoutHeroContent.alpha = 0f
-        binding.layoutHeroContent.animate()
+        binding.heroFrame.minimumHeight = dp(128)
+        binding.layoutSearchPanel.visibility = View.VISIBLE
+        binding.layoutSearchPanel.alpha = 0f
+        binding.layoutSearchPanel.animate()
             .alpha(1f)
             .setDuration(180L)
             .start()
     }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun animateHeroHeight(from: Int, to: Int) {
         heroAnimator?.cancel()

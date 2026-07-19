@@ -49,6 +49,7 @@
                 app:tabTextColor="?attr/textSecondary" />
 
             <LinearLayout
+                android:id="@+id/radioSearchBar"
                 android:layout_width="match_parent"
                 android:layout_height="40dp"
                 android:layout_marginTop="@dimen/spacing_xs"
@@ -82,13 +83,42 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
+            <TextView
+                android:id="@+id/tvPlaylistCategoryLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_m"
+                android:text="@string/playlist_category_label"
+                android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
+                android:textColor="?attr/textSecondary"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/playlistGroupTabs"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:visibility="gone"
+                app:tabGravity="start"
+                app:tabIndicatorAnimationMode="linear"
+                app:tabIndicatorColor="@color/cymusic_red"
+                app:tabIndicatorFullWidth="false"
+                app:tabIndicatorHeight="2dp"
+                app:tabMode="scrollable"
+                app:tabMinWidth="0dp"
+                app:tabRippleColor="?attr/rippleColor"
+                app:tabSelectedTextColor="@color/cymusic_red"
+                app:tabTextAppearance="@style/TextAppearance.Material3.BodyMedium"
+                app:tabTextColor="?attr/textSecondary" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvCategories"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:clipToPadding="false"
                 android:overScrollMode="never"
-                android:paddingTop="@dimen/spacing_s"
+                android:paddingTop="@dimen/spacing_xs"
                 android:scrollbars="none"
                 android:visibility="gone" />
         </LinearLayout>

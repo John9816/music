@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DuckMusic</string>
+    <string name="app_name">柒伍壹壹音乐</string>
 
     <string name="menu_profile">个人资料</string>
     <string name="menu_logout">退出登录</string>
@@ -135,6 +135,7 @@
     <string name="current_playing_hint">选择一首歌开始播放</string>
     <string name="lyrics_title">歌词</string>
     <string name="lyrics_placeholder">歌词将在播放歌曲后显示</string>
+    <string name="lyrics_loading">正在加载歌词…</string>
     <string name="lyrics_not_available">暂无歌词</string>
 
     <string name="login_title">欢迎回来</string>
@@ -271,7 +272,7 @@
 
     <!-- Settings: About -->
     <string name="settings_category_about">关于与帮助</string>
-    <string name="settings_about">关于 DuckMusic</string>
+    <string name="settings_about">关于柒伍壹壹音乐</string>
     <string name="settings_help_feedback">帮助与反馈</string>
     <string name="settings_user_agreement">用户协议</string>
     <string name="settings_privacy_policy">隐私政策</string>
@@ -289,8 +290,8 @@
 
     <!-- About -->
     <string name="about_version">版本 %1$s (%2$d)</string>
-    <string name="about_description">DuckMusic 是一款专注于简洁体验的音乐播放器，为你发现和播放喜欢的音乐。</string>
-    <string name="about_copyright">© 2024 DuckMusic. 保留所有权利。</string>
+    <string name="about_description">柒伍壹壹音乐是一款专注于简洁体验的音乐播放器，为你发现和播放喜欢的音乐。</string>
+    <string name="about_copyright">© 2024 柒伍壹壹音乐。保留所有权利。</string>
 
     <!-- Help -->
     <string name="help_title">帮助与反馈</string>

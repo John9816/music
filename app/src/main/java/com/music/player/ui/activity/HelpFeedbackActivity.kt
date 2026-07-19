@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.music.player.R
 import com.music.player.databinding.ActivityHelpFeedbackBinding
 
 class HelpFeedbackActivity : AppCompatActivity() {
@@ -43,7 +44,7 @@ class HelpFeedbackActivity : AppCompatActivity() {
         val controller = WindowInsetsControllerCompat(window, binding.root)
         controller.isAppearanceLightStatusBars = !isNightMode
         controller.isAppearanceLightNavigationBars = !isNightMode
-        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.show(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
         binding.toolbar.applySystemBarInsetPadding()
@@ -57,7 +58,7 @@ class HelpFeedbackActivity : AppCompatActivity() {
         binding.layoutFeedbackEmail.setOnClickListener {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
                 data = Uri.parse("mailto:$FEEDBACK_EMAIL")
-                putExtra(Intent.EXTRA_SUBJECT, "DuckMusic 反馈")
+                putExtra(Intent.EXTRA_SUBJECT, getString(R.string.app_name) + "反馈")
             }
             startActivity(Intent.createChooser(intent, null))
         }

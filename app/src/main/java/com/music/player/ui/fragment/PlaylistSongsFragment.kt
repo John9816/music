@@ -9,7 +9,9 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.Song
@@ -17,6 +19,7 @@ import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -24,9 +27,13 @@ class PlaylistSongsFragment : Fragment() {
 
     companion object {
         private const val ARG_PLAYLIST_ID = "playlist_id"
+        private const val ARG_HEADER_TITLE = "header_title"
 
-        fun newInstance(playlistId: String): PlaylistSongsFragment = PlaylistSongsFragment().apply {
+        fun newInstance(playlistId: String, headerTitle: String? = null): PlaylistSongsFragment = PlaylistSongsFragment().apply {
             arguments = Bundle().apply { putString(ARG_PLAYLIST_ID, playlistId) }
+            headerTitle?.takeIf { it.isNotBlank() }?.let {
+                arguments?.putString(ARG_HEADER_TITLE, it)
+            }
         }
     }
 
@@ -36,9 +43,15 @@ class PlaylistSongsFragment : Fragment() {
 
     private lateinit var musicViewModel: MusicViewModel
     private lateinit var songAdapter: SongAdapter
+    private var headerCollapsed = false
+    private var headerDescriptionVisibility = View.GONE
+    private var headerOverlayVisibility = View.GONE
 
     private val playlistId: String
         get() = arguments?.getString(ARG_PLAYLIST_ID).orEmpty()
+
+    private val headerTitleOverride: String?
+        get() = arguments?.getString(ARG_HEADER_TITLE)?.takeIf { it.isNotBlank() }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSongCollectionBinding.inflate(inflater, container, false)
@@ -48,6 +61,7 @@ class PlaylistSongsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
+        binding.content.applyStatusBarInsetPadding()
 
         binding.tvHeaderTitle.visibility = View.VISIBLE
         binding.ivHeaderOverlay.visibility = View.GONE
@@ -61,11 +75,20 @@ class PlaylistSongsFragment : Fragment() {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
             setHasFixedSize(true)
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    if (dy > 0 && !headerCollapsed) {
+                        setHeaderCollapsed(true)
+                    } else if (dy < 0 && !recyclerView.canScrollVertically(-1) && headerCollapsed) {
+                        setHeaderCollapsed(false)
+                    }
+                }
+            })
         }
 
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
             playlist ?: return@observe
-            binding.tvHeaderTitle.text = playlist.name
+            binding.tvHeaderTitle.text = headerTitleOverride ?: playlist.name
             if (playlist.trackCount > 0) {
                 binding.tvCollectionCount.text =
                     getString(R.string.collection_count_value, playlist.trackCount)
@@ -115,6 +138,34 @@ class PlaylistSongsFragment : Fragment() {
                 .placeholder(R.drawable.ic_music_note_24)
                 .centerCrop()
                 .into(binding.ivHeaderCover)
+        }
+    }
+
+    private fun setHeaderCollapsed(collapsed: Boolean) {
+        if (headerCollapsed == collapsed) return
+        headerCollapsed = collapsed
+        if (collapsed) {
+            headerDescriptionVisibility = binding.tvHeaderDescription.visibility
+            headerOverlayVisibility = binding.ivHeaderOverlay.visibility
+        }
+        val visibility = if (collapsed) View.GONE else View.VISIBLE
+        binding.tvHeaderEyebrow.visibility = visibility
+        binding.headerCoverContainer.visibility = visibility
+        binding.tvHeaderDescription.visibility =
+            if (collapsed) View.GONE else headerDescriptionVisibility
+        binding.ivHeaderOverlay.visibility =
+            if (collapsed) View.GONE else headerOverlayVisibility
+        binding.btnPlayAll.visibility = visibility
+        binding.scrollCollectionStats.visibility = visibility
+        binding.headerDivider.visibility = visibility
+        (binding.tvHeaderTitle.layoutParams as ConstraintLayout.LayoutParams).apply {
+            endToStart = if (collapsed) ConstraintLayout.LayoutParams.UNSET else R.id.headerCoverContainer
+            endToEnd = if (collapsed) ConstraintLayout.LayoutParams.PARENT_ID else ConstraintLayout.LayoutParams.UNSET
+            binding.tvHeaderTitle.layoutParams = this
+        }
+        (binding.contentContainer.layoutParams as ConstraintLayout.LayoutParams).apply {
+            topToBottom = if (collapsed) R.id.tvHeaderTitle else R.id.headerDivider
+            binding.contentContainer.layoutParams = this
         }
     }
 

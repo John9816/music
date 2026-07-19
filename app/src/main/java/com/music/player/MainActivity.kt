@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.core.app.ActivityCompat
@@ -36,6 +37,7 @@ import com.music.player.ui.fragment.LibraryFragment
 import com.music.player.ui.fragment.NowPlayingBottomSheetFragment
 import com.music.player.ui.fragment.PlaylistsFragment
 import com.music.player.ui.fragment.ProfileFragment
+import com.music.player.ui.fragment.PlaylistSongsFragment
 import com.music.player.ui.fragment.QueueBottomSheetFragment
 import com.music.player.ui.fragment.RootTabInteraction
 import com.music.player.ui.viewmodel.AuthViewModel
@@ -133,11 +135,6 @@ class MainActivity : AppCompatActivity() {
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
         libraryViewModel = ViewModelProvider(this)[LibraryViewModel::class.java]
 
-        if (!authViewModel.isLoggedIn()) {
-            navigateToLogin()
-            return
-        }
-
         updateViewModel = ViewModelProvider(this)[UpdateViewModel::class.java]
         appUpdateInstaller = AppUpdateInstaller(this)
         appUpdatePreferences = AppUpdatePreferences(this)
@@ -200,7 +197,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         PlayerUiStyler.applyMiniPlayer(binding, this)
-        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        insetsController.show(WindowInsetsCompat.Type.systemBars())
         attachPlayerListener()
         startMiniProgressUpdates()
     }
@@ -213,7 +210,7 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && ::insetsController.isInitialized) {
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
@@ -322,7 +319,7 @@ class MainActivity : AppCompatActivity() {
             isAppearanceLightNavigationBars = !isNightMode()
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
+            show(WindowInsetsCompat.Type.systemBars())
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
             val bars = insets.safeDrawingInsets()
@@ -378,6 +375,19 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNav.selectedItemId = initialTab
         suppressNavCallback = false
         switchToTab(initialTab)
+        binding.bottomNav.post { tuneBottomNavigationItemSpacing() }
+    }
+
+    private fun tuneBottomNavigationItemSpacing() {
+        val menuView = binding.bottomNav.getChildAt(0) as? ViewGroup ?: return
+        val iconContainerId = com.google.android.material.R.id.navigation_bar_item_icon_container
+        val iconBottomMargin = (10 * resources.displayMetrics.density).toInt()
+        for (index in 0 until menuView.childCount) {
+            val iconContainer = menuView.getChildAt(index).findViewById<View>(iconContainerId) ?: continue
+            val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams ?: continue
+            params.bottomMargin = iconBottomMargin
+            iconContainer.layoutParams = params
+        }
     }
 
     private fun setupTopAppBar() {
@@ -472,7 +482,8 @@ class MainActivity : AppCompatActivity() {
             else -> false
         }
 
-        val showBack = top != null && !isRootTab
+        // Playlist/ranking details render their own fixed title and use system back only.
+        val showBack = top != null && !isRootTab && top !is PlaylistSongsFragment
         binding.toolbar.navigationIcon = if (showBack) {
             ContextCompat.getDrawable(this, R.drawable.ic_arrow_back_24)
         } else {
@@ -516,8 +527,9 @@ class MainActivity : AppCompatActivity() {
 
             binding.miniPlayer.visibility = View.VISIBLE
             val artists = song.artists.joinToString(", ") { it.name }
-            binding.tvMiniTitle.text = song.name
-            binding.tvMiniArtist.text = artists.ifBlank { getString(R.string.item_artist_placeholder) }
+            val artistLabel = artists.ifBlank { getString(R.string.item_artist_placeholder) }
+            binding.tvMiniTitle.text = "${song.name} - $artistLabel"
+            binding.tvMiniArtist.text = artistLabel
             binding.miniProgress.isIndeterminate = false
             binding.miniProgress.progress = 0
 
@@ -611,6 +623,7 @@ class MainActivity : AppCompatActivity() {
         val contentDesc = if (isPlaying) R.string.content_desc_pause else R.string.content_desc_play
         binding.btnMiniPlayPause.setImageResource(icon)
         binding.btnMiniPlayPause.contentDescription = getString(contentDesc)
+        binding.tvMiniTitle.isSelected = isPlaying
         resetMiniCoverRotation()
     }
 

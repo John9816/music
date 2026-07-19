@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="playlist_category_label">歌单分类</string>
+    <string name="playlist_category_all">全部</string>
     <string name="playlist_group_language">语种</string>
     <string name="playlist_group_style">风格</string>
     <string name="playlist_group_scene">场景</string>

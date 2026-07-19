@@ -1,11 +1,22 @@
 package com.music.player.playback
 
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 
 @UnstableApi
 internal class QueueAwarePlayer(player: Player) : ForwardingPlayer(player) {
+
+    // Keep the system media notification compact. The full artwork remains available in the
+    // in-app player, while omitting it here prevents Android from expanding the notification.
+    override fun getMediaMetadata(): MediaMetadata {
+        return super.getMediaMetadata()
+            .buildUpon()
+            .setArtworkData(null, null)
+            .setArtworkUri(null)
+            .build()
+    }
 
     // Keep actions visible on the notification card; coordinator decides what to do.
     override fun hasNextMediaItem(): Boolean = true

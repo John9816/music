@@ -31,6 +31,8 @@
                     android:id="@+id/layoutHeroContent"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:background="?attr/pageBackground"
+                    android:elevation="4dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -43,15 +45,6 @@
                         android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
-                    <ImageButton
-                        android:id="@+id/btnSettings"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/user_playlist_create_title"
-                        android:padding="12dp"
-                        android:src="@drawable/ic_add_24"
-                        app:tint="?attr/textPrimary" />
                 </LinearLayout>
 
                 <LinearLayout

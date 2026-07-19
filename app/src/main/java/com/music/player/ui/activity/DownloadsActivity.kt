@@ -72,7 +72,7 @@ class DownloadsActivity : AppCompatActivity() {
         val controller = WindowInsetsControllerCompat(window, binding.root)
         controller.isAppearanceLightStatusBars = !isNightMode
         controller.isAppearanceLightNavigationBars = !isNightMode
-        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.show(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 

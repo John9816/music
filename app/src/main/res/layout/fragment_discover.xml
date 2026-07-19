@@ -25,9 +25,9 @@
                 style="@style/Widget.MusicPlayer.Card.Outlined"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                app:layout_scrollFlags="scroll|enterAlways|snap"
                 app:cardBackgroundColor="@android:color/transparent"
                 app:cardElevation="0dp"
-                 app:layout_scrollFlags="scroll|enterAlways|snap"
                 app:strokeColor="@android:color/transparent"
                 app:strokeWidth="0dp">
 
@@ -160,6 +160,26 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </com.google.android.material.appbar.AppBarLayout>
+
+        <LinearLayout
+            android:id="@+id/stickySongsHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/pageBackground"
+            android:elevation="6dp"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/spacing_xs"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/nav_songs"
+                android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+                android:textColor="?attr/textPrimary"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardRecommendationList"

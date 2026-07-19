@@ -65,7 +65,7 @@ class LoginActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && ::insetsController.isInitialized) {
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 

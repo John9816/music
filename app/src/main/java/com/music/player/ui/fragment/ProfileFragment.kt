@@ -69,6 +69,10 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
+        binding.scrollContent.setOnScrollChangeListener { _, scrollY, _, _, _ ->
+            // Keep the Favorites title row pinned while the collection below it scrolls.
+            binding.layoutHeroContent.translationY = scrollY.toFloat()
+        }
         setupUi()
         setupObservers()
         warmProfileData()
@@ -127,12 +131,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
-        binding.btnSettings.setOnClickListener {
-            CreatePlaylistBottomSheet().apply {
-                onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
-            }.show(parentFragmentManager, "create_playlist")
-        }
-
         val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
         val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
         binding.rowLiked.setOnClickListener(openLiked)
@@ -352,7 +350,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private fun setProfileActionsEnabled(enabled: Boolean) {
         binding.ivAvatar.isEnabled = enabled
         binding.ivAvatar.alpha = if (enabled) 1f else 0.6f
-        binding.btnSettings.isEnabled = enabled
     }
 
     private fun buildProfileMeta(user: UserProfile): String {
