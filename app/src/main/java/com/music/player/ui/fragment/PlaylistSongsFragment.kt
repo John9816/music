@@ -12,6 +12,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.Song
@@ -22,6 +23,7 @@ import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
+import com.music.player.ui.viewmodel.LibraryViewModel
 
 class PlaylistSongsFragment : Fragment() {
 
@@ -42,6 +44,7 @@ class PlaylistSongsFragment : Fragment() {
         get() = _binding!!
 
     private lateinit var musicViewModel: MusicViewModel
+    private lateinit var libraryViewModel: LibraryViewModel
     private lateinit var songAdapter: SongAdapter
     private var headerCollapsed = false
     private var headerDescriptionVisibility = View.GONE
@@ -61,6 +64,7 @@ class PlaylistSongsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
+        libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
         binding.content.applyStatusBarInsetPadding()
 
         binding.tvHeaderTitle.visibility = View.VISIBLE
@@ -114,6 +118,13 @@ class PlaylistSongsFragment : Fragment() {
             binding.tvEmpty.visibility = if (songs.isEmpty()) View.VISIBLE else View.GONE
             binding.recyclerView.visibility = if (songs.isEmpty()) View.GONE else View.VISIBLE
             binding.btnPlayAll.isEnabled = songs.isNotEmpty()
+        }
+
+        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
+            message?.takeIf { it.isNotBlank() }?.let {
+                Toast.makeText(requireContext(), it, Toast.LENGTH_SHORT).show()
+                libraryViewModel.consumeMessage()
+            }
         }
 
         if (playlistId.isNotBlank()) {
@@ -177,12 +188,23 @@ class PlaylistSongsFragment : Fragment() {
 
     private fun showSongMenu(anchor: View, song: Song) {
         val popup = PopupMenu(requireContext(), anchor)
+        val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
+        popup.menu.add(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
+        popup.menu.add(R.string.action_add_to_playlist)
         popup.menu.add(R.string.action_play_next)
         popup.menu.add(R.string.action_add_to_queue)
         popup.menu.add(R.string.action_download_song)
 
         popup.setOnMenuItemClickListener { item ->
             when (item.title) {
+                getString(R.string.action_favorite), getString(R.string.action_unfavorite) -> {
+                    libraryViewModel.setFavorite(song, !isFavorite)
+                    true
+                }
+                getString(R.string.action_add_to_playlist) -> {
+                    showAddToPlaylistDialog(song)
+                    true
+                }
                 getString(R.string.action_play_next) -> {
                     musicViewModel.enqueueNext(song)
                     Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
@@ -202,6 +224,44 @@ class PlaylistSongsFragment : Fragment() {
         }
 
         popup.show()
+    }
+
+    private fun showAddToPlaylistDialog(song: Song) {
+        val playlists = libraryViewModel.playlists.value.orEmpty()
+        if (playlists.isEmpty()) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.user_playlist_pick_title)
+                .setMessage(R.string.user_playlist_create_first)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.user_playlist_create_title) { _, _ ->
+                    CreatePlaylistBottomSheet().apply {
+                        onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                    }.show(parentFragmentManager, "create_playlist")
+                }
+                .show()
+            return
+        }
+
+        val names = playlists.map { playlist ->
+            val count = resources.getQuantityString(
+                R.plurals.user_playlist_track_count,
+                playlist.trackCount,
+                playlist.trackCount
+            )
+            "${playlist.name} - $count"
+        }.toTypedArray()
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.user_playlist_pick_title)
+            .setItems(names) { _, which ->
+                libraryViewModel.addSongToPlaylist(playlists[which].id, song)
+            }
+            .setNeutralButton(R.string.user_playlist_create_title) { _, _ ->
+                CreatePlaylistBottomSheet().apply {
+                    onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+                }.show(parentFragmentManager, "create_playlist")
+            }
+            .show()
     }
 
     private fun formatPlayCount(context: android.content.Context, playCount: Long): String {

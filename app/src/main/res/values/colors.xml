@@ -5,6 +5,7 @@
     <color name="brand_primary_light">#FF2C2C2E</color>
     <color name="brand_secondary">#FFA1A1A6</color>
     <color name="page_background">#FF000000</color>
+    <color name="favorite_red">#FFFF2D55</color>
     <color name="surface">#FF1C1C1E</color>
     <color name="surface_alt">#FF2C2C2E</color>
     <color name="text_primary">#FFF5F5F7</color>

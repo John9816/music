@@ -163,17 +163,28 @@
             android:background="?attr/pageBackground"
             android:elevation="6dp"
             android:gravity="center_vertical"
-            android:orientation="vertical"
+            android:orientation="horizontal"
             android:paddingBottom="@dimen/spacing_xs"
             android:visibility="gone">
 
             <TextView
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="@string/nav_songs"
                 android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
                 android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/btnStickySongsSettings"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/content_desc_settings"
+                android:padding="12dp"
+                android:src="@drawable/ic_settings_24"
+                app:tint="?attr/textPrimary" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView

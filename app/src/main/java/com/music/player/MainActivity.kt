@@ -5,6 +5,9 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -53,6 +56,7 @@ import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.util.safeDrawingInsets
 import com.music.player.ui.util.resolveThemeColorStateList
+import com.music.player.ui.util.resolveThemeColor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
@@ -377,7 +381,7 @@ class MainActivity : AppCompatActivity() {
     private fun tuneBottomNavigationItemSpacing() {
         val menuView = binding.bottomNav.getChildAt(0) as? ViewGroup ?: return
         val iconContainerId = com.google.android.material.R.id.navigation_bar_item_icon_container
-        val iconBottomMargin = (10 * resources.displayMetrics.density).toInt()
+        val iconBottomMargin = (2 * resources.displayMetrics.density).toInt()
         for (index in 0 until menuView.childCount) {
             val iconContainer = menuView.getChildAt(index).findViewById<View>(iconContainerId) ?: continue
             val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams ?: continue
@@ -524,7 +528,18 @@ class MainActivity : AppCompatActivity() {
             binding.miniPlayer.visibility = View.VISIBLE
             val artists = song.artists.joinToString(", ") { it.name }
             val artistLabel = artists.ifBlank { getString(R.string.item_artist_placeholder) }
-            binding.tvMiniTitle.text = "${song.name} - $artistLabel"
+            binding.tvMiniTitle.text = SpannableStringBuilder()
+                .append(song.name)
+                .append(" - ")
+                .append(artistLabel)
+                .apply {
+                    setSpan(
+                        ForegroundColorSpan(resolveThemeColor(R.attr.textSecondary)),
+                        song.name.length + 3,
+                        length,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
             binding.tvMiniArtist.text = artistLabel
             binding.miniProgress.isIndeterminate = false
             binding.miniProgress.progress = 0
@@ -605,6 +620,20 @@ class MainActivity : AppCompatActivity() {
                 NowPlayingBottomSheetFragment().show(supportFragmentManager, "now_playing")
             }
         }
+    }
+
+    fun animatePlayerBackground(expanded: Boolean) {
+        val targetScale = if (expanded) 0.94f else 1f
+        val targetTranslationY = if (expanded) 24f * resources.displayMetrics.density else 0f
+        val targetAlpha = if (expanded) 0.78f else 1f
+        binding.root.animate()
+            .scaleX(targetScale)
+            .scaleY(targetScale)
+            .translationY(targetTranslationY)
+            .alpha(targetAlpha)
+            .setDuration(if (expanded) 600L else 500L)
+            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+            .start()
     }
 
     private fun maybeResetPlaybackAfterFreshLogin() {

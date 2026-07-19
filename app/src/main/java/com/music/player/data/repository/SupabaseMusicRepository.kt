@@ -169,7 +169,7 @@ class SupabaseMusicRepository(context: Context) {
             val (token, userId) = requireSession()
             if (isFavorite) {
                 val response = executeAuthorized(token) { api.saveFavorite(it, song.toFavoriteRequest()) }
-                ensureSuccessful(response, "Failed to save favorite")
+                ensureMutationSuccessful(response, "Failed to save favorite")
             } else {
                 val response = executeAuthorized(token) {
                     api.deleteFavorite(it, source = song.source, songId = song.id)
@@ -357,7 +357,7 @@ class SupabaseMusicRepository(context: Context) {
             val response = executeAuthorized(token) {
                 api.addPlaylistItem(it, playlistLongId, song.toPlaylistItemRequest())
             }
-            ensureSuccessful(response, "Failed to add song to playlist")
+            ensureMutationSuccessful(response, "Failed to add song to playlist")
             playlistsCache.remove("playlists|$userId")
             playlistSongsCache.remove("playlist_songs|$playlistId")
             playlistItemIds.remove("playlist_items|$playlistId")
@@ -408,6 +408,20 @@ class SupabaseMusicRepository(context: Context) {
     private fun ensureSuccessful(response: Response<ResponseBody>, fallbackMessage: String) {
         if (!response.isSuccessful) {
             throw IllegalStateException(errorMessage(response, fallbackMessage))
+        }
+    }
+
+    private fun ensureMutationSuccessful(response: Response<ResponseBody>, fallbackMessage: String) {
+        ensureSuccessful(response, fallbackMessage)
+        val raw = response.body()?.string().orEmpty()
+        if (raw.isBlank()) return
+        runCatching {
+            val root = JSONObject(raw)
+            if (root.optInt("code", 0) != 0) {
+                throw IllegalStateException(root.optString("message").ifBlank { fallbackMessage })
+            }
+        }.getOrElse { error ->
+            if (error is IllegalStateException) throw error
         }
     }
 

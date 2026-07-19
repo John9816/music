@@ -12,11 +12,11 @@ import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.graphics.Color
+import android.view.MotionEvent
 import android.graphics.drawable.ColorDrawable
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.WindowManager
-import android.view.MotionEvent
 import android.view.animation.LinearInterpolator
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
@@ -63,6 +63,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private companion object {
         const val STAGE_ANIMATION_MS = 240L
         const val COVER_PULSE_DURATION_MS = 3600L
+        const val HANDLE_DISMISS_DISTANCE_DP = 80f
     }
 
     private var _binding: BottomSheetNowPlayingBinding? = null
@@ -128,6 +129,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     override fun onStart() {
         super.onStart()
 
+        (activity as? MainActivity)?.animatePlayerBackground(expanded = true)
+
         dialog?.window?.let { window ->
             WindowCompat.setDecorFitsSystemWindows(window, false)
             window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -174,6 +177,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         progressJob = null
         stopCoverRotation()
         stopGlowAnimation()
+        (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
         super.onStop()
     }
 
@@ -253,7 +257,11 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.progressContainer.doOnLayout { updateFullscreenContentPadding() }
         binding.controlsBar.doOnLayout { updateFullscreenContentPadding() }
 
-        binding.btnClose.setOnClickListener { dismiss() }
+        binding.btnClose.setOnClickListener {
+            (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
+            dismiss()
+        }
+        installHandleDragToDismiss()
         binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
         binding.btnFavorite.setOnClickListener {
             binding.layoutSongMenu.isVisible = !binding.layoutSongMenu.isVisible
@@ -404,6 +412,43 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         musicViewModel.currentSong.value?.let { applySongToViews(it) }
     }
 
+    private fun installHandleDragToDismiss() {
+        val threshold = HANDLE_DISMISS_DISTANCE_DP * resources.displayMetrics.density
+        var downY = 0f
+        var dragging = false
+
+        binding.btnClose.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downY = event.rawY
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val distance = event.rawY - downY
+                    if (distance > 12f * resources.displayMetrics.density) dragging = true
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val distance = event.rawY - downY
+                    if (dragging && distance >= threshold) {
+                        (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
+                        dismiss()
+                    } else if (!dragging) {
+                        view.performClick()
+                    }
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    dragging = false
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
     private fun showAudioQualityDialog() {
         val sheet = AudioQualityBottomSheet()
         sheet.onQualitySelected = { selectedLevel ->
@@ -480,7 +525,11 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             themeColor(R.attr.textPrimary)
         )
         binding.btnLyrics.imageTintList = ColorStateList.valueOf(
-            themeColor(if (isFavorite) R.attr.brandPrimary else R.attr.textSecondary)
+            if (isFavorite) {
+                androidx.core.content.ContextCompat.getColor(requireContext(), R.color.favorite_red)
+            } else {
+                themeColor(R.attr.textSecondary)
+            }
         )
         binding.btnLyrics.contentDescription = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
@@ -636,6 +685,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             return
         }
         showingLyrics = false
+        binding.controlsBar.visibility = View.VISIBLE
         if (immediate) {
             coverStage?.animate()?.cancel()
             lyricsStage?.animate()?.cancel()
@@ -644,6 +694,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             coverStage?.scaleX = 1f
             coverStage?.scaleY = 1f
             lyricsStage?.visibility = View.GONE
+            binding.controlsBar.visibility = View.VISIBLE
         } else {
             coverStage?.animate()?.cancel()
             lyricsStage?.animate()?.cancel()
@@ -678,6 +729,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             return
         }
         showingLyrics = true
+        binding.controlsBar.visibility = View.GONE
         lyricsStage?.visibility = View.VISIBLE
         coverStage?.animate()?.cancel()
         lyricsStage?.animate()?.cancel()
@@ -915,9 +967,13 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
                 binding.sliderProgress.valueTo = safeDuration.toFloat()
                 binding.sliderProgress.isEnabled = hasDuration
-                binding.tvTotalTime.text = formatTime(if (hasDuration) durationMs else 0L)
 
                 val positionMs = player.currentPosition.coerceAtLeast(0L)
+                binding.tvTotalTime.text = if (hasDuration) {
+                    "-${formatTime((durationMs - positionMs).coerceAtLeast(0L))}"
+                } else {
+                    "-00:00"
+                }
                 if (!isUserSeeking) {
                     binding.sliderProgress.value = positionMs.coerceAtMost(safeDuration).toFloat()
                     binding.tvCurrentTime.text = formatTime(positionMs)

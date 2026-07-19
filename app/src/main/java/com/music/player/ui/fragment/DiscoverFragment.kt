@@ -171,6 +171,9 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         binding.btnSongsSettings.setOnClickListener {
             startActivity(Intent(requireContext(), SettingsActivity::class.java))
         }
+        binding.btnStickySongsSettings.setOnClickListener {
+            startActivity(Intent(requireContext(), SettingsActivity::class.java))
+        }
         binding.btnPlayAllSongs.setOnClickListener {
             val songs = songAdapter.currentList
             if (songs.isNotEmpty()) {

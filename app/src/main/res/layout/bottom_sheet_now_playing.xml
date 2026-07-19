@@ -344,14 +344,15 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/nowPlayingSongInfo"
-                app:thumbRadius="7dp"
-                app:trackHeight="4dp" />
+                app:thumbRadius="9dp"
+                app:trackHeight="6dp" />
 
             <TextView
                 android:id="@+id/tvCurrentTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="-4dp"
+                android:includeFontPadding="false"
                 android:text="00:00"
                 android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
                 android:textColor="?attr/textSecondary"
@@ -362,7 +363,8 @@
                 android:id="@+id/tvTotalTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="-4dp"
+                android:includeFontPadding="false"
                 android:text="00:00"
                 android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
                 android:textColor="?attr/textSecondary"
@@ -394,7 +396,7 @@
                         android:layout_gravity="center"
                         android:background="@drawable/ripple_circular_primary"
                         android:contentDescription="@string/content_desc_previous"
-                        android:padding="10dp"
+                        android:padding="9dp"
                         android:src="@drawable/ic_skip_previous_24"
                         app:tint="?attr/textSecondary" />
                 </FrameLayout>
@@ -412,7 +414,7 @@
                         android:layout_gravity="center"
                         android:background="@drawable/ripple_circular_primary"
                         android:contentDescription="@string/content_desc_play_pause"
-                        android:padding="14dp"
+                        android:padding="16dp"
                         android:src="@drawable/ic_pause_24"
                         app:tint="?attr/textPrimary" />
                 </FrameLayout>
@@ -430,7 +432,7 @@
                         android:layout_gravity="center"
                         android:background="@drawable/ripple_circular_primary"
                         android:contentDescription="@string/content_desc_next"
-                        android:padding="10dp"
+                        android:padding="9dp"
                         android:src="@drawable/ic_skip_next_24"
                         app:tint="?attr/textSecondary" />
                 </FrameLayout>
@@ -464,8 +466,8 @@
                     android:valueFrom="0"
                     android:valueTo="1"
                     app:haloRadius="12dp"
-                    app:thumbRadius="6dp"
-                    app:trackHeight="4dp" />
+                    app:thumbRadius="8dp"
+                    app:trackHeight="6dp" />
 
                 <ImageView
                     android:layout_width="24dp"

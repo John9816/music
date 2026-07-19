@@ -94,7 +94,13 @@
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@style/NowPlayingWindowAnimations</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="NowPlayingWindowAnimations" parent="@android:style/Animation.Activity">
+        <item name="android:windowEnterAnimation">@anim/now_playing_enter</item>
+        <item name="android:windowExitAnimation">@anim/now_playing_exit</item>
     </style>
 </resources>

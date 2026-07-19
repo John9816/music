@@ -786,10 +786,22 @@ private fun JsonElement.toWebsiteSong(): Song? {
                 .ifBlank { albumObj?.str("name").orEmpty() },
             picUrl = obj.str("coverUrl")
                 .ifBlank { obj.str("picUrl") }
+                .ifBlank { obj.str("albumPic") }
+                .ifBlank { obj.str("album_pic") }
+                .ifBlank { obj.str("img") }
+                .ifBlank { obj.str("pic") }
                 .ifBlank { root.str("coverUrl") }
                 .ifBlank { root.str("picUrl") }
+                .ifBlank { root.str("albumPic") }
+                .ifBlank { root.str("album_pic") }
+                .ifBlank { root.str("img") }
+                .ifBlank { root.str("pic") }
                 .ifBlank { albumObj?.str("picUrl").orEmpty() }
                 .ifBlank { albumObj?.str("coverUrl").orEmpty() }
+                .ifBlank { albumObj?.str("albumPic").orEmpty() }
+                .ifBlank { albumObj?.str("album_pic").orEmpty() }
+                .ifBlank { albumObj?.str("img").orEmpty() }
+                .ifBlank { albumObj?.str("pic").orEmpty() }
         ),
         duration = obj.long("durationMs").takeIf { it > 0 }
             ?: root.long("durationMs").takeIf { it > 0 }
