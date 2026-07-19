@@ -139,10 +139,7 @@ object PlayerUiStyler {
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
 
-        binding.root.setBackgroundColor(pageBackground)
-        binding.ivBlurBackground.visibility = View.GONE
-        binding.viewScrim.setBackgroundColor(pageBackground)
-        binding.viewScrim.alpha = 1f
+        applyImmersiveNowPlayingBackground(binding)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(binding.controlsBar, ColorUtils.setAlphaComponent(surface, 246), ColorUtils.setAlphaComponent(textPrimary, 22), 18f, 1f, context)
@@ -153,7 +150,7 @@ object PlayerUiStyler {
             tintColor = textPrimary
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textSecondary
@@ -184,10 +181,7 @@ object PlayerUiStyler {
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
 
-        binding.root.setBackgroundColor(surface)
-        binding.ivBlurBackground.visibility = View.GONE
-        binding.viewScrim.setBackgroundColor(surface)
-        binding.viewScrim.alpha = 1f
+        applyImmersiveNowPlayingBackground(binding)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(
@@ -205,7 +199,7 @@ object PlayerUiStyler {
             tintColor = textPrimary
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textPrimary
@@ -236,10 +230,7 @@ object PlayerUiStyler {
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
 
-        binding.root.setBackgroundColor(pageBackground)
-        binding.ivBlurBackground.visibility = View.GONE
-        binding.viewScrim.setBackgroundColor(pageBackground)
-        binding.viewScrim.alpha = 1f
+        applyImmersiveNowPlayingBackground(binding)
 
         binding.progressContainer.background = null
         stylePlayerControlsBar(
@@ -251,7 +242,7 @@ object PlayerUiStyler {
             context
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnFavorite, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnClose, binding.btnFavorite, binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textPrimary
@@ -322,6 +313,14 @@ object PlayerUiStyler {
         primaryText: Int,
         secondaryText: Int
     ) {
+        // The reference player uses one continuous dark surface instead of a floating control card.
+        binding.controlsBar.setCardBackgroundColor(Color.TRANSPARENT)
+        binding.controlsBar.strokeWidth = 0
+        binding.controlsBar.radius = 0f
+        binding.sliderVolume.trackActiveTintList = ColorStateList.valueOf(primaryText)
+        binding.sliderVolume.trackInactiveTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primaryText, 90))
+        binding.sliderVolume.thumbTintList = ColorStateList.valueOf(primaryText)
+        binding.sliderVolume.haloTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primaryText, 35))
         binding.playerContent.lyricsStage.background = null
         binding.playerContent.rvLyrics.background = null
         binding.playerContent.tvLyricsPlain.background = null
@@ -330,6 +329,14 @@ object PlayerUiStyler {
         binding.playerContent.tvLyricsPlain.setTextColor(secondaryText)
         binding.tvSheetTitle.setTextColor(primaryText)
         binding.tvSheetSubtitle.setTextColor(secondaryText)
+    }
+
+    private fun applyImmersiveNowPlayingBackground(binding: BottomSheetNowPlayingBinding) {
+        binding.root.setBackgroundColor(Color.TRANSPARENT)
+        // Match the reference player: a stable gray-to-black backdrop shared by cover and lyrics.
+        binding.ivBlurBackground.visibility = View.GONE
+        binding.viewScrim.setBackgroundResource(R.drawable.bg_now_playing_cymusic_scrim)
+        binding.viewScrim.alpha = 1f
     }
 
     private fun roundedPanelDrawable(

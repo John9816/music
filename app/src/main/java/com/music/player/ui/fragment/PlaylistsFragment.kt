@@ -40,6 +40,15 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     private var playlistsLoaded = false
     private var allItems: List<Playlist> = emptyList()
     private var selectedCategory = ""
+    private var loadingMore = false
+    private var hasMorePlaylists = true
+    private var previousPlaylistCount = 0
+
+    private companion object {
+        const val STATE_TAB = "radio_selected_tab"
+        const val STATE_CATEGORY = "radio_playlist_category"
+        const val PLAYLIST_PAGE_SIZE = 42
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -97,6 +106,9 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         playlistsLoaded = false
         allItems = emptyList()
         selectedCategory = ""
+        loadingMore = false
+        hasMorePlaylists = true
+        previousPlaylistCount = 0
         categoryAdapter.selectedApiName = ""
         adapter.submitList(emptyList())
         musicViewModel.loadPlaylistCategories(forceRefresh = true)
@@ -110,6 +122,28 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
             adapter = this@PlaylistsFragment.adapter
             setHasFixedSize(true)
             itemAnimator = null
+            addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+                override fun onScrolled(
+                    recyclerView: androidx.recyclerview.widget.RecyclerView,
+                    dx: Int,
+                    dy: Int
+                ) {
+                    if (dy <= 0 || selectedTab != RadioTab.PLAYLISTS || loadingMore || !hasMorePlaylists) {
+                        return
+                    }
+                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    if (layoutManager.findLastVisibleItemPosition() >= this@PlaylistsFragment.adapter.itemCount - 5) {
+                        previousPlaylistCount = allItems.size
+                        loadingMore = true
+                        musicViewModel.loadTopPlaylists(
+                            category = selectedCategory,
+                            limit = PLAYLIST_PAGE_SIZE,
+                            offset = allItems.size,
+                            append = true
+                        )
+                    }
+                }
+            })
         }
     }
 
@@ -145,8 +179,8 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupInteractions() {
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener { refreshCurrentTab() }
     }
 
     private fun setupSearch() {
@@ -170,6 +204,12 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         }
         musicViewModel.topPlaylists.observe(viewLifecycleOwner) {
             playlistsLoaded = true
+            if (loadingMore) {
+                loadingMore = false
+                if (it.size <= previousPlaylistCount || it.size - previousPlaylistCount < PLAYLIST_PAGE_SIZE) {
+                    hasMorePlaylists = false
+                }
+            }
             if (selectedTab == RadioTab.PLAYLISTS) render(it)
         }
         musicViewModel.error.observe(viewLifecycleOwner) { message ->
@@ -228,6 +268,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
                     playlistsLoaded = false
                     musicViewModel.loadTopPlaylists(
                         category = selectedCategory,
+                        limit = PLAYLIST_PAGE_SIZE,
                         forceRefresh = forceRefresh
                     )
                 }
@@ -245,6 +286,9 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         categoryAdapter.selectedApiName = selectedCategory
         playlistsRequested = true
         playlistsLoaded = false
+        loadingMore = false
+        hasMorePlaylists = true
+        previousPlaylistCount = 0
         adapter.submitList(emptyList())
         startLoading()
         musicViewModel.loadTopPlaylists(category = selectedCategory)
@@ -292,8 +336,4 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         }
     }
 
-    private companion object {
-        const val STATE_TAB = "radio_selected_tab"
-        const val STATE_CATEGORY = "radio_playlist_category"
-    }
 }

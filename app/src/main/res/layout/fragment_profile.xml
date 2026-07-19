@@ -48,9 +48,9 @@
                         android:layout_width="48dp"
                         android:layout_height="48dp"
                         android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/content_desc_settings"
+                        android:contentDescription="@string/user_playlist_create_title"
                         android:padding="12dp"
-                        android:src="@drawable/ic_settings_24"
+                        android:src="@drawable/ic_add_24"
                         app:tint="?attr/textPrimary" />
                 </LinearLayout>
 

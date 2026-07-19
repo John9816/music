@@ -16,6 +16,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.DefaultMediaNotificationProvider
+import com.music.player.R
 import com.music.player.MainActivity
 
 /**
@@ -50,6 +52,11 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider(this).apply {
+                setSmallIcon(R.drawable.ic_music_note_24)
+            }
+        )
 
         val loadControl = DefaultLoadControl.Builder()
             // Prefer stable audio over the fastest possible start. Short buffers caused

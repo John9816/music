@@ -122,8 +122,8 @@ class SongCollectionFragment : Fragment() {
             setHasFixedSize(true)
         }
 
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener { refreshCurrentCollection() }
         binding.btnPlayAll.setOnClickListener { playAll() }
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
@@ -217,6 +217,9 @@ class SongCollectionFragment : Fragment() {
         }
         binding.tvHeaderDescription.text = headerDescription
         binding.tvHeaderDescription.visibility = View.VISIBLE
+        val totalSongCount = playlist?.trackCount?.takeIf { it > 0 } ?: songs.size
+        binding.tvCollectionCount.text =
+            getString(R.string.collection_count_value, totalSongCount)
 
         binding.tvCollectionMode.text = when {
             playlist?.isPublic == true -> getString(R.string.collection_mode_public)

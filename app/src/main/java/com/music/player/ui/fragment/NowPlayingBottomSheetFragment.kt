@@ -172,18 +172,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
-        binding.ivBlurBackground.visibility = View.VISIBLE
+        // The playback and lyrics screens use the fixed reference gradient, never album blur.
+        binding.ivBlurBackground.visibility = View.GONE
         immersiveBackground = ImmersiveHeaderBackground(
             lifecycleOwner = viewLifecycleOwner,
             imageView = binding.ivBlurBackground
-        ) { suggestion ->
-            binding.viewScrim.alpha = suggestion.topScrimAlpha.coerceIn(0.16f, 0.42f)
-            dialog?.window?.let { window ->
-                val controller = WindowInsetsControllerCompat(window, binding.root)
-                controller.isAppearanceLightStatusBars = suggestion.lightSystemBars
-                controller.isAppearanceLightNavigationBars = suggestion.lightSystemBars
-            }
-        }
+        ) { binding.viewScrim.alpha = 1f }
 
         // Direct view references — no ViewPager2
         // playerContent is an included layout binding (PageNowPlayingCoverBinding)
@@ -263,6 +257,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.menuShowAlbum.setOnClickListener { binding.layoutSongMenu.isVisible = false }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
+        }
+        binding.btnLyrics.setOnClickListener { showLyricsStage() }
+        val playerForVolume = (activity as? MainActivity)?.player
+        binding.sliderVolume.value = playerForVolume?.volume ?: 1f
+        binding.sliderVolume.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                (activity as? MainActivity)?.player?.volume = value.coerceIn(0f, 1f)
+            }
         }
         updateAudioQualityButton()
         updateFavoriteButton()

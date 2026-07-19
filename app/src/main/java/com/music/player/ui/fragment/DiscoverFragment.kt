@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.content.Intent
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -27,6 +28,7 @@ import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
+import com.music.player.ui.activity.SettingsActivity
 
 class DiscoverFragment : Fragment(), RootTabInteraction {
 
@@ -173,18 +175,13 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupInteractions() {
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setDistanceToTriggerSync(
-            resources.getDimensionPixelSize(R.dimen.spacing_xxl)
-        )
-        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            shouldBlockSwipeRefresh()
-        }
-        binding.swipeRefresh.setOnRefreshListener {
-            refreshContent(userInitiated = true)
-        }
         binding.cardSongsSearch.setOnClickListener {
             (activity as? MainActivity)?.selectRootTab(R.id.nav_library)
+        }
+        binding.btnSongsSettings.setOnClickListener {
+            startActivity(Intent(requireContext(), SettingsActivity::class.java))
         }
         binding.btnPlayAllSongs.setOnClickListener {
             val songs = songAdapter.currentList
@@ -248,7 +245,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             awaitingRecommendRefresh = true
             awaitingWeeklyHotRefresh = false
             awaitingNewestAlbumRefresh = false
-            binding.swipeRefresh.isRefreshing = true
+            binding.swipeRefresh.isRefreshing = false
             binding.swipeRefresh.postDelayed({
                 if (_binding != null && isUserRefreshing) {
                     stopRefreshIndicator()

@@ -122,13 +122,15 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupUi() {
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener { refresh(userInitiated = true) }
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
         binding.btnSettings.setOnClickListener {
-            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
+            CreatePlaylistBottomSheet().apply {
+                onConfirm = { name, desc -> libraryViewModel.createPlaylist(name, desc) }
+            }.show(parentFragmentManager, "create_playlist")
         }
 
         val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }

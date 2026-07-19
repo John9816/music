@@ -164,3 +164,49 @@ jobs:
           files: |
             ${{ steps.release_apk.outputs.path }}
             app/build/outputs/apk/release/output-metadata.json
+
+      - name: Upload update package to ECS
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+          ECS_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+          ECS_UPDATE_DIR: ${{ secrets.ECS_UPDATE_DIR }}
+          ECS_UPDATE_BASE_URL: ${{ secrets.ECS_UPDATE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ECS_HOST}" || -z "${ECS_USER}" || -z "${ECS_SSH_PRIVATE_KEY}" || -z "${ECS_UPDATE_DIR}" || -z "${ECS_UPDATE_BASE_URL}" ]]; then
+            echo "ECS upload skipped: configure ECS_HOST, ECS_USER, ECS_SSH_PRIVATE_KEY, ECS_UPDATE_DIR and ECS_UPDATE_BASE_URL."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+          chmod 600 ~/.ssh/duckmusic_ecs
+          if [[ -n "${ECS_KNOWN_HOSTS}" ]]; then
+            printf '%s\n' "${ECS_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${ECS_PORT:-22}" -H "${ECS_HOST}" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          apk="${{ steps.release_apk.outputs.path }}"
+          manifest="update-manifest.json"
+          apk_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
+          download_url="${ECS_UPDATE_BASE_URL%/}/${apk_name}"
+          cat > "${manifest}" <<EOF
+          {
+            "version": "${{ steps.app_version.outputs.version_name }}",
+            "buildNumber": ${{ steps.app_version.outputs.version_code }},
+            "downloadUrl": "${download_url}",
+            "description": "DuckMusic ${{ steps.app_version.outputs.version_name }}",
+            "forceUpdate": false,
+            "minBuildNumber": 0
+          }
+          EOF
+
+          ssh -i ~/.ssh/duckmusic_ecs -p "${ECS_PORT:-22}" "${ECS_USER}@${ECS_HOST}" "mkdir -p '${ECS_UPDATE_DIR}'"
+          scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" "${apk}" "${manifest}" "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"

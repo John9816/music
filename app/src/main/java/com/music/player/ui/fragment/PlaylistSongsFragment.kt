@@ -66,6 +66,10 @@ class PlaylistSongsFragment : Fragment() {
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
             playlist ?: return@observe
             binding.tvHeaderTitle.text = playlist.name
+            if (playlist.trackCount > 0) {
+                binding.tvCollectionCount.text =
+                    getString(R.string.collection_count_value, playlist.trackCount)
+            }
             updateHeaderCover(playlist.coverImgUrl)
 
             val description = playlist.description.replace(Regex("\\s+"), " ").trim()
@@ -79,6 +83,10 @@ class PlaylistSongsFragment : Fragment() {
 
         musicViewModel.playlistSongs.observe(viewLifecycleOwner) { songs ->
             songAdapter.submitList(songs)
+            if (musicViewModel.currentPlaylist.value?.trackCount ?: 0 <= 0) {
+                binding.tvCollectionCount.text =
+                    getString(R.string.collection_count_value, songs.size)
+            }
             binding.tvEmpty.setText(R.string.song_list_empty_playlist)
             binding.tvEmpty.visibility = if (songs.isEmpty()) View.VISIBLE else View.GONE
             binding.recyclerView.visibility = if (songs.isEmpty()) View.GONE else View.VISIBLE

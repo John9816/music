@@ -356,20 +356,27 @@ class MusicRepository(context: Context? = null) {
                 }
 
                 try {
-                    val response = if (source == MusicSourcePreferences.Source.QQ.storageValue) {
-                        api.getTopListDetail(source = source, id = normalizedId)
-                    } else {
-                        api.getPlaylistDetail(source = source, id = normalizedId)
+                    // QQ user playlists use playlist/detail; QQ rankings use toplist/detail.
+                    val playlistResponse = api.getPlaylistDetail(source = source, id = normalizedId)
+                    var detail = if (playlistResponse.isSuccessful) {
+                        parsePlaylistDetailFromEnvelope(
+                            playlistResponse.body()?.string().orEmpty(),
+                            fallbackId = normalizedId,
+                            fallbackSource = source
+                        )
+                    } else null
+
+                    if (detail == null && source == MusicSourcePreferences.Source.QQ.storageValue) {
+                        val rankingResponse = api.getTopListDetail(source = source, id = normalizedId)
+                        if (rankingResponse.isSuccessful) {
+                            detail = parsePlaylistDetailFromEnvelope(
+                                rankingResponse.body()?.string().orEmpty(),
+                                fallbackId = normalizedId,
+                                fallbackSource = source
+                            )
+                        }
                     }
-                    if (!response.isSuccessful) {
-                        return@run Result.failure(Exception("获取歌单详情失败"))
-                    }
-                    val detail = parsePlaylistDetailFromEnvelope(
-                        response.body()?.string().orEmpty(),
-                        fallbackId = normalizedId,
-                        fallbackSource = source
-                    )
-                        ?: return@run Result.failure(Exception("歌单数据为空"))
+                    detail ?: return@run Result.failure(Exception("获取歌单详情失败"))
                     Result.success(detail.also { playlistDetailCache.put(cacheKey, it) })
                 } catch (e: Exception) {
                     Result.failure(e)

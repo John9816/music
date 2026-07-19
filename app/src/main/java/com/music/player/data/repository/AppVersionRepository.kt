@@ -31,24 +31,35 @@ class AppVersionRepository(context: Context) {
         .build()
 
     suspend fun getLatestVersion(): Result<AppVersionInfo?> = withContext(Dispatchers.IO) {
-        runCatching {
-            val request = Request.Builder()
-                .url(LATEST_RELEASE_URL)
-                .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "Duck-Music-Android/${BuildConfig.VERSION_NAME}")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.code == 404) return@use null
-                if (!response.isSuccessful) {
-                    throw IllegalStateException("检查更新失败 (HTTP ${response.code})")
-                }
-                parseRelease(response.body?.string().orEmpty())
-            }
+        var lastError: Throwable? = null
+        for (source in UPDATE_SOURCES) {
+            val result = runCatching { fetchVersion(source) }
+            val version = result.getOrNull()
+            if (version != null) return@withContext Result.success(version)
+            if (result.isFailure) lastError = result.exceptionOrNull()
+        }
+        if (lastError == null) Result.success(null) else Result.failure(lastError)
+    }
+
+    private fun fetchVersion(source: String): AppVersionInfo? {
+        val request = Request.Builder()
+            .url(source)
+            .header("Accept", "application/json, application/vnd.github+json")
+            .header("User-Agent", "Duck-Music-Android/${BuildConfig.VERSION_NAME}")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (response.code == 404) return null
+            if (!response.isSuccessful) throw IllegalStateException("检查更新失败 (HTTP ${response.code})")
+            val root = JsonParser.parseString(response.body?.string().orEmpty()).asJsonObject
+            return if (root.has("tag_name")) parseReleaseRoot(root) else parseUpdateManifest(root)
         }
     }
 
     private fun parseRelease(raw: String): AppVersionInfo? {
-        val root = JsonParser.parseString(raw).asJsonObject
+        return parseReleaseRoot(JsonParser.parseString(raw).asJsonObject)
+    }
+
+    private fun parseReleaseRoot(root: JsonObject): AppVersionInfo? {
         if (root.booleanOrFalse("draft") || root.booleanOrFalse("prerelease")) return null
         val version = root.stringOrNull("tag_name")?.removePrefix("v")?.removePrefix("V")
             ?: return null
@@ -64,6 +75,18 @@ class AppVersionRepository(context: Context) {
             description = description,
             forceUpdate = description?.contains("[force-update]", ignoreCase = true) == true,
             minBuildNumber = 0
+        )
+    }
+
+    private fun parseUpdateManifest(root: JsonObject): AppVersionInfo? {
+        val version = root.stringOrNull("version") ?: return null
+        return AppVersionInfo(
+            version = version.removePrefix("v").removePrefix("V"),
+            buildNumber = root.intOrNull("buildNumber") ?: version.hashCode(),
+            downloadUrl = root.stringOrNull("downloadUrl") ?: root.stringOrNull("download_url"),
+            description = root.stringOrNull("description"),
+            forceUpdate = root.booleanOrFalse("forceUpdate"),
+            minBuildNumber = root.intOrNull("minBuildNumber") ?: 0
         )
     }
 
@@ -88,9 +111,16 @@ class AppVersionRepository(context: Context) {
         return runCatching { get(name)?.asBoolean ?: false }.getOrDefault(false)
     }
 
+    private fun JsonObject.intOrNull(name: String): Int? {
+        return runCatching { get(name)?.takeUnless { it.isJsonNull }?.asInt }.getOrNull()
+    }
+
     private companion object {
+        private const val ECS_UPDATE_MANIFEST_URL =
+            "https://api.751152.xyz/updates/latest.json"
         private const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/John9816/music/releases/latest"
+        private val UPDATE_SOURCES = listOf(ECS_UPDATE_MANIFEST_URL, LATEST_RELEASE_URL)
     }
 }
 

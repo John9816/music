@@ -46,10 +46,8 @@ class UserPlaylistsFragment : Fragment() {
             setHasFixedSize(false)
         }
 
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener {
-            libraryViewModel.refreshPlaylists(silent = true, forceRefresh = true)
-        }
         binding.btnImport.setOnClickListener { showImportDialog() }
         binding.btnEmptyImport.setOnClickListener { showImportDialog() }
 

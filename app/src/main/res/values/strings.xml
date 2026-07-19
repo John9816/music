@@ -100,6 +100,7 @@
     <string name="player_download_song">下载</string>
     <string name="player_add_to_playlist">添加到歌单</string>
     <string name="player_show_lyrics">查看歌词</string>
+    <string name="content_desc_volume">音量</string>
     <string name="player_show_album">显示专辑</string>
     <string name="player_unfavorite">取消喜欢</string>
     <string name="action_remove_from_playlist">从歌单移除</string>

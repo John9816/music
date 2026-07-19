@@ -173,6 +173,11 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         // Infinite scroll for pagination
         binding.recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                if (dy > 0 && !isHeroCollapsed) {
+                    collapseHero()
+                } else if (dy < 0 && !rv.canScrollVertically(-1) && isHeroCollapsed) {
+                    expandHero()
+                }
                 if (dy <= 0) return
                 val lm = rv.layoutManager as? LinearLayoutManager ?: return
                 val totalItemCount = lm.itemCount
@@ -300,8 +305,8 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Interactions ──────────────────────────────────────────────
 
     private fun setupInteractions() {
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener { refreshSearch() }
         binding.btnRetry.setOnClickListener { performSearch() }
         syncSearchActionState()
     }
@@ -412,7 +417,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             return
         }
         isUserRefreshing = true
-        binding.swipeRefresh.isRefreshing = true
+        binding.swipeRefresh.isRefreshing = false
         binding.swipeRefresh.postDelayed({
             if (_binding != null && isUserRefreshing) {
                 stopRefreshIndicator()
@@ -500,16 +505,23 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Hero Collapse/Expand ──────────────────────────────────────
 
     private fun collapseHero() {
-        isHeroCollapsed = false
+        isHeroCollapsed = true
         binding.layoutHeroContent.animate().cancel()
-        binding.layoutHeroContent.alpha = 1f
-        binding.layoutHeroContent.visibility = View.VISIBLE
+        binding.layoutHeroContent.animate()
+            .alpha(0f)
+            .setDuration(140L)
+            .withEndAction { binding.layoutHeroContent.visibility = View.GONE }
+            .start()
     }
 
     private fun expandHero() {
         isHeroCollapsed = false
         binding.layoutHeroContent.visibility = View.VISIBLE
-        binding.layoutHeroContent.alpha = 1f
+        binding.layoutHeroContent.alpha = 0f
+        binding.layoutHeroContent.animate()
+            .alpha(1f)
+            .setDuration(180L)
+            .start()
     }
 
     private fun animateHeroHeight(from: Int, to: Int) {

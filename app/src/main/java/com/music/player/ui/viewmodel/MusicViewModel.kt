@@ -262,7 +262,8 @@ class MusicViewModel : ViewModel() {
         category: String? = "",
         limit: Int = 42,
         offset: Int = 0,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        append: Boolean = false
     ) {
         val requestVersion = ++topPlaylistsRequestVersion
         viewModelScope.launch {
@@ -274,7 +275,15 @@ class MusicViewModel : ViewModel() {
                 forceRefresh = forceRefresh
             )
                 .onSuccess {
-                    if (requestVersion == topPlaylistsRequestVersion) _topPlaylists.value = it
+                    if (requestVersion == topPlaylistsRequestVersion) {
+                        _topPlaylists.value = if (append) {
+                            (_topPlaylists.value.orEmpty() + it).distinctBy { playlist ->
+                                "${playlist.source}:${playlist.id}"
+                            }
+                        } else {
+                            it
+                        }
+                    }
                 }
                 .onFailure {
                     if (requestVersion == topPlaylistsRequestVersion) {

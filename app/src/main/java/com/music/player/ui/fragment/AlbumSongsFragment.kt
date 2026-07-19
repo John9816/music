@@ -93,8 +93,8 @@ class AlbumSongsFragment : Fragment() {
             setHasFixedSize(true)
         }
 
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setColorSchemeColors(requireContext().resolveThemeColor(R.attr.brandPrimary))
-        binding.swipeRefresh.setOnRefreshListener { refreshAlbum(forceRefresh = true) }
 
         musicViewModel.currentAlbum.observe(viewLifecycleOwner) { album ->
             if (album == null || album.album.id != albumId) return@observe

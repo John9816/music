@@ -27,7 +27,7 @@
                 android:layout_height="wrap_content"
                 app:cardBackgroundColor="@android:color/transparent"
                 app:cardElevation="0dp"
-                app:layout_scrollFlags="scroll"
+                 app:layout_scrollFlags="scroll|enterAlways|snap"
                 app:strokeColor="@android:color/transparent"
                 app:strokeWidth="0dp">
 
@@ -44,13 +44,31 @@
                         android:paddingTop="@dimen/spacing_s"
                         android:paddingBottom="@dimen/spacing_sm">
 
-                        <TextView
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/nav_songs"
-                            android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
-                            android:textColor="?attr/textPrimary"
-                            android:textStyle="bold" />
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/nav_songs"
+                                android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
+                                android:textColor="?attr/textPrimary"
+                                android:textStyle="bold" />
+
+                            <ImageButton
+                                android:id="@+id/btnSongsSettings"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:contentDescription="@string/content_desc_settings"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_settings_24"
+                                app:tint="?attr/textPrimary" />
+                        </LinearLayout>
 
                         <LinearLayout
                             android:id="@+id/cardSongsSearch"

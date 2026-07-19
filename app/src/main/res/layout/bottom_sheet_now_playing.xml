@@ -376,28 +376,10 @@
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:weightSum="5"
+                android:weightSum="3"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/tvCurrentTime">
-
-                <FrameLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:foregroundGravity="center">
-
-                    <ImageButton
-                        android:id="@+id/btnPlayMode"
-                        android:layout_width="@dimen/now_playing_secondary_control_size"
-                        android:layout_height="@dimen/now_playing_secondary_control_size"
-                        android:layout_gravity="center"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/content_desc_shuffle"
-                        android:padding="10dp"
-                        android:src="@drawable/ic_shuffle_24"
-                        app:tint="?attr/textSecondary" />
-                </FrameLayout>
 
                 <FrameLayout
                     android:layout_width="0dp"
@@ -453,23 +435,90 @@
                         app:tint="?attr/textSecondary" />
                 </FrameLayout>
 
-                <FrameLayout
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/volumeRow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/controlRow">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@string/content_desc_volume"
+                    android:src="@drawable/ic_volume_down_24"
+                    app:tint="?attr/textSecondary" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderVolume"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:foregroundGravity="center">
+                    android:value="1"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    app:haloRadius="12dp"
+                    app:thumbRadius="6dp"
+                    app:trackHeight="4dp" />
 
-                    <ImageButton
-                        android:id="@+id/btnQueue"
-                        android:layout_width="@dimen/now_playing_secondary_control_size"
-                        android:layout_height="@dimen/now_playing_secondary_control_size"
-                        android:layout_gravity="center"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/content_desc_queue"
-                        android:padding="10dp"
-                        android:src="@drawable/ic_queue_24"
-                        app:tint="?attr/textSecondary" />
-                </FrameLayout>
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@string/content_desc_volume"
+                    android:src="@drawable/ic_volume_up_24"
+                    app:tint="?attr/textSecondary" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/secondaryControlRow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:weightSum="3"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/volumeRow">
+
+                <ImageButton
+                    android:id="@+id/btnLyrics"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/player_show_lyrics"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_lyrics_24"
+                    app:tint="?attr/textSecondary" />
+
+                <ImageButton
+                    android:id="@+id/btnPlayMode"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/content_desc_repeat"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_repeat_24"
+                    app:tint="?attr/textSecondary" />
+
+                <ImageButton
+                    android:id="@+id/btnQueue"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/content_desc_queue"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_queue_24"
+                    app:tint="?attr/textSecondary" />
             </LinearLayout>
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
