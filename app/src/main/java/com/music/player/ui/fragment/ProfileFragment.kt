@@ -24,6 +24,7 @@ import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
 import android.widget.Toast
+import java.text.NumberFormat
 
 class ProfileFragment : Fragment(), RootTabInteraction {
 
@@ -114,8 +115,11 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
-        binding.btnCreatePlaylist.setOnClickListener { showCreatePlaylistSheet() }
-        binding.btnCreatePlaylistSticky.setOnClickListener { showCreatePlaylistSheet() }
+        val openSettings = View.OnClickListener {
+            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
+        }
+        binding.btnSettings.setOnClickListener(openSettings)
+        binding.btnSettingsSticky.setOnClickListener(openSettings)
         val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
         val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
         binding.rowLiked.setOnClickListener(openLiked)
@@ -137,14 +141,6 @@ class ProfileFragment : Fragment(), RootTabInteraction {
                 .addToBackStack(null)
                 .commit()
         }
-    }
-
-    private fun showCreatePlaylistSheet() {
-        CreatePlaylistBottomSheet().apply {
-            onConfirm = { nameOrUrl, description ->
-                libraryViewModel.createPlaylist(nameOrUrl, description)
-            }
-        }.show(parentFragmentManager, "create_playlist")
     }
 
     private fun setupObservers() {
@@ -184,7 +180,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateLikedSection(songs: List<Song>) {
-        binding.tvLikedCount.text = songs.size.toString()
+        binding.tvLikedCount.text = NumberFormat.getIntegerInstance().format(songs.size)
         updateLikedCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvLikedMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_liked_empty)
@@ -194,7 +190,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateHistorySection(songs: List<Song>) {
-        binding.tvHistoryCount.text = songs.size.toString()
+        binding.tvHistoryCount.text = NumberFormat.getIntegerInstance().format(songs.size)
         updateHistoryCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvHistoryMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_history_empty)
@@ -204,7 +200,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updatePlaylistsSection(playlists: List<UserPlaylist>) {
-        binding.tvPlaylistCount.text = playlists.size.toString()
+        binding.tvPlaylistCount.text = NumberFormat.getIntegerInstance().format(playlists.size)
         updatePlaylistCover(playlists.firstOrNull()?.coverUrl)
         binding.tvPlaylistsMeta.text = if (playlists.isEmpty()) {
             getString(R.string.user_playlist_empty)

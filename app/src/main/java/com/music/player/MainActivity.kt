@@ -14,7 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.core.app.ActivityCompat
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -25,12 +25,15 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import com.bumptech.glide.Glide
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
+import com.music.player.data.auth.AuthSessionState
 import com.music.player.data.settings.MusicSourcePreferences
 import com.music.player.databinding.ActivityMainBinding
 import com.music.player.playback.PlaybackCoordinator
@@ -74,6 +77,9 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_FROM_LOGIN = "extra_from_login"
         const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
         const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
+
+        private const val NOTIFICATION_PERMISSION_PREFS = "notification_permission_prefs"
+        private const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "requested"
     }
 
     val player: Player?
@@ -94,6 +100,10 @@ class MainActivity : AppCompatActivity() {
     private var topSystemBarInset: Int = 0
     private var miniProgressJob: Job? = null
     private var hasRestoredRecentSong = false
+    private var isNavigatingToLogin = false
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -104,6 +114,12 @@ class MainActivity : AppCompatActivity() {
             val p = player ?: return
             updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
             updateMiniProgress()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (playWhenReady) {
+                requestNotificationPermissionForPlaybackIfNeeded()
+            }
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -136,13 +152,16 @@ class MainActivity : AppCompatActivity() {
 
         musicViewModel = ViewModelProvider(this)[MusicViewModel::class.java]
         authViewModel = ViewModelProvider(this)[AuthViewModel::class.java]
+        if (!authViewModel.isLoggedIn()) {
+            isNavigatingToLogin = true
+            navigateToLogin()
+            return
+        }
         libraryViewModel = ViewModelProvider(this)[LibraryViewModel::class.java]
 
         updateViewModel = ViewModelProvider(this)[UpdateViewModel::class.java]
         appUpdateInstaller = AppUpdateInstaller(this)
         appUpdatePreferences = AppUpdatePreferences(this)
-
-        requestNotificationPermissionIfNeeded()
 
         PlaybackCoordinator.init(applicationContext)
         observePlayerAttachment()
@@ -156,6 +175,7 @@ class MainActivity : AppCompatActivity() {
 
         setupMiniPlayer()
         setupObservers()
+        observeSessionExpiry()
         setupUpdateObservers()
         setupBottomNavigation(savedInstanceState)
         refreshForMusicSourceChangeIfNeeded()
@@ -234,13 +254,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
+    private fun requestNotificationPermissionForPlaybackIfNeeded() {
         if (Build.VERSION.SDK_INT < 33) return
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2001)
-        }
+        if (granted) return
+
+        val prefs = getSharedPreferences(NOTIFICATION_PERMISSION_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false)) return
+        prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, true).apply()
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun setupUpdateObservers() {
@@ -306,6 +329,7 @@ class MainActivity : AppCompatActivity() {
         updateViewModel.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, userInitiated = false)
     }
 
+    @Suppress("DEPRECATION")
     private fun setupEdgeToEdge() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
@@ -351,6 +375,19 @@ class MainActivity : AppCompatActivity() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
+    }
+
+    private fun observeSessionExpiry() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                AuthSessionState.expired.collect { expired ->
+                    if (!expired || isNavigatingToLogin) return@collect
+                    isNavigatingToLogin = true
+                    PlaybackCoordinator.resetPlayback()
+                    navigateToLogin()
+                }
+            }
+        }
     }
 
     private fun setupBottomNavigation(savedInstanceState: Bundle?) {
@@ -482,17 +519,12 @@ class MainActivity : AppCompatActivity() {
             else -> false
         }
 
-        // Playlist/ranking details render their own fixed title and use system back only.
-        val showBack = top != null && !isRootTab && top !is PlaylistSongsFragment
-        binding.toolbar.navigationIcon = if (showBack) {
-            ContextCompat.getDrawable(this, R.drawable.ic_arrow_back_24)
-        } else {
-            null
-        }
+        // Detail pages use Android system back / gesture navigation. Keeping a global toolbar
+        // here duplicates page headers and creates a large blank top inset.
+        val showBack = false
+        binding.toolbar.navigationIcon = null
         binding.toolbar.setNavigationOnClickListener {
-            if (showBack) {
-                supportFragmentManager.popBackStack()
-            }
+            Unit
         }
         updateToolbarForVisiblePage(showBack = showBack)
     }

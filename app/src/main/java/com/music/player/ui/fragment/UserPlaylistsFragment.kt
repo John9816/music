@@ -14,6 +14,7 @@ import com.music.player.R
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentUserPlaylistsBinding
 import com.music.player.ui.adapter.UserPlaylistAdapter
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.LibraryViewModel
 
 class UserPlaylistsFragment : Fragment() {
@@ -33,6 +34,7 @@ class UserPlaylistsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
+        binding.root.applyStatusBarInsetPadding()
 
         adapter = UserPlaylistAdapter(
             onPlaylistClick = { playlist -> openPlaylist(playlist) },

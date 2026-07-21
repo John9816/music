@@ -54,15 +54,6 @@
                                 android:textColor="?attr/textPrimary"
                                 android:textStyle="bold" />
 
-                            <ImageButton
-                                android:id="@+id/btnSongsSettings"
-                                android:layout_width="48dp"
-                                android:layout_height="48dp"
-                                android:background="?attr/selectableItemBackgroundBorderless"
-                                android:contentDescription="@string/content_desc_settings"
-                                android:padding="12dp"
-                                android:src="@drawable/ic_settings_24"
-                                app:tint="?attr/textPrimary" />
                         </LinearLayout>
 
                         <LinearLayout
@@ -176,15 +167,6 @@
                 android:textColor="?attr/textPrimary"
                 android:textStyle="bold" />
 
-            <ImageButton
-                android:id="@+id/btnStickySongsSettings"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/content_desc_settings"
-                android:padding="12dp"
-                android:src="@drawable/ic_settings_24"
-                app:tint="?attr/textPrimary" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView

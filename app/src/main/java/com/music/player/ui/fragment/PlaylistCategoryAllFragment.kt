@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.music.player.R
 import com.music.player.databinding.FragmentPlaylistCategoryAllBinding
 import com.music.player.ui.adapter.PlaylistGridAdapter
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.PlaylistCategoryAllViewModel
 
 class PlaylistCategoryAllFragment : Fragment() {
@@ -50,6 +51,7 @@ class PlaylistCategoryAllFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(this)[PlaylistCategoryAllViewModel::class.java]
+        binding.root.applyStatusBarInsetPadding()
         binding.tvPlaylistCategoryTitle.text = titleText.ifBlank {
             category.ifBlank { getString(R.string.nav_playlists) }
         }

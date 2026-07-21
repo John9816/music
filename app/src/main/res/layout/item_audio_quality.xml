@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="56dp"
     android:gravity="center_vertical"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/ripple_rect_primary"
     android:paddingHorizontal="@dimen/spacing_l"
     android:orientation="horizontal">
 

@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent"
     android:paddingStart="@dimen/spacing_l"
-    android:paddingTop="@dimen/spacing_l"
+    android:paddingTop="@dimen/spacing_m"
     android:paddingEnd="@dimen/spacing_l"
     android:paddingBottom="@dimen/spacing_l">
 
@@ -13,6 +13,7 @@
         android:id="@+id/tvPlaylistCategoryEyebrow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
         android:text="@string/nav_playlists"
         android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
         android:textColor="?attr/brandPrimary"

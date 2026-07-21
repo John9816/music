@@ -31,6 +31,7 @@ class HelpFeedbackActivity : AppCompatActivity() {
         setupContent()
     }
 
+    @Suppress("DEPRECATION")
     private fun setupEdgeToEdge() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT

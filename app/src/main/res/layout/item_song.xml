@@ -82,7 +82,7 @@
             android:paddingTop="4dp"
             android:paddingEnd="@dimen/spacing_s"
             android:paddingBottom="4dp"
-            android:text="00:00"
+            android:text="@string/time_zero"
             android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
             android:textColor="?attr/brandPrimary"
             android:visibility="gone"

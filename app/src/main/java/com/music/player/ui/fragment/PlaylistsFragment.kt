@@ -18,6 +18,7 @@ import com.music.player.data.settings.MusicSourcePreferences
 import com.music.player.databinding.FragmentPlaylistsBinding
 import com.music.player.ui.adapter.PlaylistCategoryChipAdapter
 import com.music.player.ui.adapter.RadioPlaylistAdapter
+import com.music.player.ui.util.addSlopAwareHeaderCollapseListener
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -131,21 +132,14 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
             adapter = this@PlaylistsFragment.adapter
             setHasFixedSize(true)
             itemAnimator = null
-            addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
-                override fun onScrolled(
-                    recyclerView: androidx.recyclerview.widget.RecyclerView,
-                    dx: Int,
-                    dy: Int
-                ) {
-                    if (dy > 0 && !radioHeaderCollapsed) {
-                        setRadioHeaderCollapsed(true)
-                    } else if (dy < 0 && !recyclerView.canScrollVertically(-1) && radioHeaderCollapsed) {
-                        setRadioHeaderCollapsed(false)
-                    }
+            addSlopAwareHeaderCollapseListener(
+                isCollapsed = { radioHeaderCollapsed },
+                setCollapsed = ::setRadioHeaderCollapsed,
+                onScrolledAfterHeader = { recyclerView, dx, dy ->
                     if (dy <= 0 || selectedTab != RadioTab.PLAYLISTS || loadingMore || !hasMorePlaylists) {
-                        return
+                        return@addSlopAwareHeaderCollapseListener
                     }
-                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return@addSlopAwareHeaderCollapseListener
                     if (layoutManager.findLastVisibleItemPosition() >= this@PlaylistsFragment.adapter.itemCount - 5) {
                         previousPlaylistCount = allItems.size
                         loadingMore = true
@@ -157,7 +151,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
                         )
                     }
                 }
-            })
+            )
         }
     }
 

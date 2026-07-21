@@ -5,11 +5,22 @@
   但自有后端与登录服务强制 https，避免被降级或中间人攻击。
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Some upstream providers still return HTTP media CDN URLs. Limit the
+         exception to those media domains instead of allowing cleartext globally. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">music.126.net</domain>
+        <domain includeSubdomains="true">music.163.com</domain>
+        <domain includeSubdomains="true">qqmusic.qq.com</domain>
+        <domain includeSubdomains="true">music.tc.qq.com</domain>
+        <domain includeSubdomains="true">kuwo.cn</domain>
+        <domain includeSubdomains="true">kuwo.org</domain>
+    </domain-config>
 
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">api.751152.xyz</domain>

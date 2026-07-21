@@ -32,6 +32,7 @@ class ProfileActivity : AppCompatActivity() {
     private lateinit var insetsController: WindowInsetsControllerCompat
     private var currentUser: UserProfile? = null
 
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.prepareActivity(this)
         super.onCreate(savedInstanceState)

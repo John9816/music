@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.ItemSongBinding
@@ -32,11 +33,30 @@ class SongAdapter(
         holder.bind(getItem(position))
     }
 
+    override fun onViewRecycled(holder: SongViewHolder) {
+        holder.recycle()
+        super.onViewRecycled(holder)
+    }
+
     inner class SongViewHolder(
         private val binding: ItemSongBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var boundSong: Song? = null
+
+        init {
+            binding.root.setOnClickListener { boundSong?.let(onSongClick) }
+            binding.root.setOnLongClickListener {
+                boundSong?.let(onSongLongClick)
+                boundSong != null
+            }
+            binding.btnMore.setOnClickListener {
+                boundSong?.let { song -> onMoreClick?.invoke(binding.btnMore, song) }
+            }
+        }
+
         fun bind(song: Song) {
+            boundSong = song
             val context = binding.root.context
             binding.tvSongName.text = song.name
             binding.tvArtist.text = buildMetaLine(song)
@@ -45,14 +65,13 @@ class SongAdapter(
 
             if (onMoreClick == null) {
                 binding.btnMore.visibility = View.GONE
-                binding.btnMore.setOnClickListener(null)
             } else {
                 binding.btnMore.visibility = View.VISIBLE
-                binding.btnMore.setOnClickListener { onMoreClick.invoke(binding.btnMore, song) }
             }
 
             val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
             if (coverUrl == null) {
+                Glide.with(binding.ivCover).clear(binding.ivCover)
                 binding.ivCover.setImageResource(R.drawable.ic_music_note_24)
                 binding.ivCover.imageTintList = context.resolveThemeColorStateList(R.attr.brandPrimary)
             } else {
@@ -60,19 +79,17 @@ class SongAdapter(
                 Glide.with(binding.ivCover)
                     .load(ImageUrl.bestQuality(coverUrl))
                     .placeholder(R.drawable.ic_music_note_24)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .override(COVER_DECODE_SIZE_PX, COVER_DECODE_SIZE_PX)
                     .centerCrop()
                     .dontAnimate()
                     .into(binding.ivCover)
             }
+        }
 
-            binding.root.setOnClickListener {
-                onSongClick(song)
-            }
-
-            binding.root.setOnLongClickListener {
-                onSongLongClick(song)
-                true
-            }
+        fun recycle() {
+            boundSong = null
+            Glide.with(binding.ivCover).clear(binding.ivCover)
         }
 
         private fun buildMetaLine(song: Song): String {
@@ -94,5 +111,9 @@ class SongAdapter(
         override fun areContentsTheSame(oldItem: Song, newItem: Song): Boolean {
             return oldItem == newItem
         }
+    }
+
+    private companion object {
+        const val COVER_DECODE_SIZE_PX = 160
     }
 }

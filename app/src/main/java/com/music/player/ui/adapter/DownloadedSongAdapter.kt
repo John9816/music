@@ -9,6 +9,7 @@ import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.databinding.ItemDownloadedSongBinding
 import com.music.player.ui.activity.DownloadsActivity
+import com.music.player.ui.util.FileSizeFormatter
 import java.io.File
 
 class DownloadedSongAdapter(
@@ -41,7 +42,7 @@ class DownloadedSongAdapter(
                 .error(R.drawable.ic_music_note_24)
                 .centerCrop()
                 .into(binding.ivCover)
-            binding.tvSize.text = listOf(download.artist, formatSize(download.size))
+            binding.tvSize.text = listOf(download.artist, FileSizeFormatter.format(download.size))
                 .filter { it.isNotBlank() }
                 .joinToString(" · ")
 
@@ -57,14 +58,6 @@ class DownloadedSongAdapter(
             }
         }
 
-        private fun formatSize(bytes: Long): String {
-            return when {
-                bytes >= 1024 * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
-                bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
-                bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
-                else -> "$bytes B"
-            }
-        }
     }
 
     private object Diff : DiffUtil.ItemCallback<DownloadsActivity.DownloadInfo>() {

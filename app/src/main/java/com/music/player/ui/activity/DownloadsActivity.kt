@@ -26,6 +26,7 @@ import com.music.player.databinding.ActivityDownloadsBinding
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.adapter.DownloadedSongAdapter
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.FileSizeFormatter
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,6 +60,7 @@ class DownloadsActivity : AppCompatActivity() {
         loadDownloads()
     }
 
+    @Suppress("DEPRECATION")
     private fun setupEdgeToEdge() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
@@ -129,7 +131,7 @@ class DownloadsActivity : AppCompatActivity() {
             binding.tvSummary.text = getString(
                 R.string.downloads_total_size,
                 downloads.size,
-                formatSize(totalSize)
+                FileSizeFormatter.format(totalSize)
             )
         }
     }
@@ -249,15 +251,6 @@ class DownloadsActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun formatSize(bytes: Long): String {
-        return when {
-            bytes >= 1024 * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
-            bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
-            bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
-            else -> "$bytes B"
-        }
     }
 
     private fun deleteDownloadFiles(audioFile: File): Boolean {

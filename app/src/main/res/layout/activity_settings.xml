@@ -2,8 +2,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="?attr/pageBackground">
+    android:layout_height="match_parent">
 
     <include
         android:id="@+id/immersiveHeader"
@@ -58,6 +57,102 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_m"
+                android:text="@string/settings_profile_section"
+                android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                android:textColor="?attr/textPrimary"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/btnEditProfile"
+                style="@style/Widget.MusicPlayer.Card.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_s"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/spacing_m">
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        app:cardBackgroundColor="?attr/surfaceAltColor"
+                        app:cardCornerRadius="28dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="0dp">
+
+                        <ImageView
+                            android:id="@+id/ivProfileAvatar"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:contentDescription="@string/content_desc_avatar"
+                            android:padding="14dp"
+                            android:scaleType="center"
+                            android:src="@drawable/ic_person_24"
+                            app:tint="?attr/brandPrimary" />
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/spacing_m"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvProfileName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/profile_name_placeholder"
+                            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                            android:textColor="?attr/textPrimary"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvProfileEmail"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/profile_email_placeholder"
+                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textColor="?attr/textSecondary" />
+
+                        <TextView
+                            android:id="@+id/tvProfileSignature"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/profile_signature_empty"
+                            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                            android:textColor="?attr/textSecondary" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/spacing_s"
+                        android:text="@string/profile_edit_button"
+                        android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                        android:textColor="?attr/brandPrimary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_m"
                 android:text="@string/settings_app_info"
                 android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
                 android:textColor="?attr/textPrimary"
@@ -71,33 +166,6 @@
                 android:divider="@drawable/divider_settings"
                 android:orientation="vertical"
                 android:showDividers="middle">
-
-                <LinearLayout
-                    android:id="@+id/btnEditProfile"
-                    android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="@dimen/spacing_m">
-
-                    <ImageView
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
-                        android:background="@drawable/bg_cymusic_group"
-                        android:padding="6dp"
-                        android:src="@drawable/ic_music_note_24"
-                        app:tint="?attr/brandPrimary" />
-
-                    <TextView
-                        android:id="@+id/tvEmail"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/spacing_s"
-                        android:layout_weight="1"
-                        android:text="@string/app_name"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textPrimary" />
-                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -126,7 +194,7 @@
                     android:id="@+id/layoutCheckUpdate"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -146,7 +214,7 @@
                     android:id="@+id/layoutClearCache"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -192,7 +260,7 @@
                     android:id="@+id/layoutManageDownloads"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -211,7 +279,7 @@
                         android:id="@+id/tvDownloadedSize"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="0 B"
+                        android:text="@string/storage_size_zero"
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                         android:textColor="?attr/textSecondary" />
                 </LinearLayout>
@@ -220,7 +288,7 @@
                     android:id="@+id/layoutAudioQuality"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -247,7 +315,7 @@
                     android:id="@+id/layoutStreamQuality"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -274,7 +342,7 @@
                     android:id="@+id/layoutSleepTimer"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -320,7 +388,7 @@
                     android:id="@+id/layoutMusicSource"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -347,7 +415,7 @@
                     android:id="@+id/layoutSourceStatus"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"

@@ -18,6 +18,8 @@ import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -71,6 +73,7 @@ class AlbumSongsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
+        binding.content.applyStatusBarInsetPadding()
 
         binding.tvHeaderEyebrow.text = getString(R.string.album_header_eyebrow)
         binding.tvHeaderTitle.text = albumName.ifBlank { getString(R.string.album_header_title_fallback) }
@@ -89,7 +92,7 @@ class AlbumSongsFragment : Fragment() {
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
-            setHasFixedSize(true)
+            optimizeVerticalScrolling()
         }
 
         musicViewModel.currentAlbum.observe(viewLifecycleOwner) { album ->

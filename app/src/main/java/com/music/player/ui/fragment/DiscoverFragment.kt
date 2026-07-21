@@ -6,7 +6,6 @@ import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.content.Intent
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -25,9 +24,9 @@ import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
-import com.music.player.ui.activity.SettingsActivity
 
 class DiscoverFragment : Fragment(), RootTabInteraction {
 
@@ -142,7 +141,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
-            setHasFixedSize(true)
+            optimizeVerticalScrolling()
         }
 
         weeklyHotAdapter = HotSongAdapter(
@@ -167,12 +166,6 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     private fun setupInteractions() {
         binding.cardSongsSearch.setOnClickListener {
             (activity as? MainActivity)?.selectRootTab(R.id.nav_library)
-        }
-        binding.btnSongsSettings.setOnClickListener {
-            startActivity(Intent(requireContext(), SettingsActivity::class.java))
-        }
-        binding.btnStickySongsSettings.setOnClickListener {
-            startActivity(Intent(requireContext(), SettingsActivity::class.java))
         }
         binding.btnPlayAllSongs.setOnClickListener {
             val songs = songAdapter.currentList

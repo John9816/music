@@ -5,6 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.music.player.data.auth.AuthSessionManager
 import com.music.player.data.auth.SupabaseClient
+import com.music.player.data.auth.TokenRefreshResult
 import com.music.player.data.api.RetrofitClient
 import com.music.player.data.api.SongData
 import com.music.player.data.common.RequestCoalescer
@@ -400,13 +401,20 @@ class MusicRepository(context: Context? = null) {
             }
         }
     }
-    suspend fun searchSongs(keywords: String, limit: Int = 30, offset: Int = 0): Result<List<Song>> {
+    suspend fun searchSongs(
+        keywords: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        forceRefresh: Boolean = false
+    ): Result<List<Song>> {
         val source = activeSourceValue()
         val cacheKey = "search_${source}_${keywords}_${limit}_${offset}"
 
-        searchCache.get(cacheKey, SEARCH_TTL_MS)?.let { return Result.success(it) }
+        if (!forceRefresh) {
+            searchCache.get(cacheKey, SEARCH_TTL_MS)?.let { return Result.success(it) }
+        }
 
-        return searchRequests.run(cacheKey) {
+        return searchRequests.run(if (forceRefresh) "$cacheKey|refresh" else cacheKey) {
             withContext(Dispatchers.IO) {
                 try {
                     val safeLimit = limit.coerceAtLeast(1)
@@ -465,21 +473,29 @@ class MusicRepository(context: Context? = null) {
                 var lastFailure: Exception? = null
 
                 for (level in orderedLevels) {
+                    val initialAuthorization = authorizationHeader()
                     var response = api.getSongUrl(
-                        authorization = authorizationHeader(),
+                        authorization = initialAuthorization,
                         source = normalizedSource,
                         id = normalizedId,
                         level = level.toWebsiteQuality()
                     )
-                    if (response.code() == 401) {
-                        val refreshed = sessionManagerOrNull()?.forceRefresh(SupabaseClient.authApi)
-                        if (!refreshed.isNullOrBlank()) {
-                            response = api.getSongUrl(
-                                authorization = "Bearer $refreshed",
-                                source = normalizedSource,
-                                id = normalizedId,
-                                level = level.toWebsiteQuality()
-                            )
+                    if (response.code() == 401 && initialAuthorization != null) {
+                        val manager = sessionManagerOrNull()
+                        when (val refresh = manager?.forceRefresh(SupabaseClient.authApi)) {
+                            is TokenRefreshResult.Success -> {
+                                response = api.getSongUrl(
+                                    authorization = "Bearer ${refresh.accessToken}",
+                                    source = normalizedSource,
+                                    id = normalizedId,
+                                    level = level.toWebsiteQuality()
+                                )
+                                if (response.code() == 401) manager.invalidateSession()
+                            }
+                            TokenRefreshResult.MissingRefreshToken -> manager.invalidateSession()
+                            TokenRefreshResult.InvalidSession,
+                            TokenRefreshResult.TransientFailure,
+                            null -> Unit
                         }
                     }
                     val raw = response.body()?.string() ?: response.errorBody()?.string() ?: ""

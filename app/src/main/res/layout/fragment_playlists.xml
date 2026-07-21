@@ -70,6 +70,7 @@
                     android:background="@android:color/transparent"
                     android:hint="@string/radio_search_rankings"
                     android:imeOptions="actionSearch"
+                    android:importantForAutofill="no"
                     android:inputType="text"
                     android:maxLines="1"
                     android:padding="0dp"

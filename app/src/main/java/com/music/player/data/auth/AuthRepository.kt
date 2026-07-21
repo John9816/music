@@ -138,14 +138,19 @@ class AuthRepository(context: Context) {
             var token = sessionManager.getValidAccessToken(authApi) ?: return@withContext null
             var response = authApi.getUser("Bearer $token")
             if (response.code() == 401) {
-                sessionManager.forceRefresh(authApi)?.let { refreshed ->
-                    token = refreshed
-                    response = authApi.getUser("Bearer $token")
+                when (val refresh = sessionManager.forceRefresh(authApi)) {
+                    is TokenRefreshResult.Success -> {
+                        token = refresh.accessToken
+                        response = authApi.getUser("Bearer $token")
+                        if (response.code() == 401) sessionManager.invalidateSession()
+                    }
+                    TokenRefreshResult.InvalidSession -> Unit
+                    TokenRefreshResult.MissingRefreshToken -> sessionManager.invalidateSession()
+                    TokenRefreshResult.TransientFailure -> Unit
                 }
             }
             val apiResponse = parseUserApiResponse(response.body()?.string().orEmpty())
             if (!response.isSuccessful || apiResponse == null || apiResponse.code != 0) {
-                if (response.code() == 401) sessionManager.clear()
                 return@withContext null
             }
 

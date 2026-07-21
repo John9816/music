@@ -15,6 +15,7 @@ import com.music.player.data.model.PlaylistCategory
 import com.music.player.databinding.FragmentPlaylistGroupBinding
 import com.music.player.ui.adapter.PlaylistCategoryChipAdapter
 import com.music.player.ui.adapter.PlaylistGridAdapter
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.PlaylistCategoryAllViewModel
 
@@ -60,6 +61,7 @@ class PlaylistGroupFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         listViewModel = ViewModelProvider(this)[PlaylistCategoryAllViewModel::class.java]
+        binding.root.applyStatusBarInsetPadding()
         binding.tvPlaylistPageTitle.text = groupTitle.ifBlank { getString(R.string.nav_playlists) }
 
         categoryAdapter = PlaylistCategoryChipAdapter { category ->

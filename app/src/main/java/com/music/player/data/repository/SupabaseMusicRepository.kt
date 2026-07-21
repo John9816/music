@@ -2,6 +2,7 @@ package com.music.player.data.repository
 
 import android.content.Context
 import com.music.player.data.auth.AuthSessionManager
+import com.music.player.data.auth.TokenRefreshResult
 import com.music.player.data.auth.MusicFavoriteRequest
 import com.music.player.data.auth.PlaylistCreateRequest
 import com.music.player.data.auth.PlaylistImportRequest
@@ -57,16 +58,25 @@ class SupabaseMusicRepository(context: Context) {
     }
 
     private suspend fun requireSession(): Pair<String, String> {
-        var token = sessionManager.getValidAccessToken(authApi) ?: throw IllegalStateException("Not signed in")
+        val hadStoredSession = sessionManager.isLoggedIn()
+        var token = sessionManager.getValidAccessToken(authApi) ?: run {
+            if (!hadStoredSession) sessionManager.invalidateSession()
+            throw IllegalStateException("Not signed in")
+        }
         sessionManager.syncUserIdFromAccessToken(token)?.let { return token to it }
 
         var response = authApi.getUser("Bearer $token")
         if (response.code() == 401) {
-            val refreshed = sessionManager.forceRefresh(authApi)
-            if (refreshed != null) {
-                token = refreshed
-                sessionManager.syncUserIdFromAccessToken(token)?.let { return token to it }
-                response = authApi.getUser("Bearer $refreshed")
+            when (val refresh = sessionManager.forceRefresh(authApi)) {
+                is TokenRefreshResult.Success -> {
+                    token = refresh.accessToken
+                    sessionManager.syncUserIdFromAccessToken(token)?.let { return token to it }
+                    response = authApi.getUser("Bearer $token")
+                    if (response.code() == 401) sessionManager.invalidateSession()
+                }
+                TokenRefreshResult.InvalidSession -> Unit
+                TokenRefreshResult.MissingRefreshToken -> sessionManager.invalidateSession()
+                TokenRefreshResult.TransientFailure -> Unit
             }
         }
 
@@ -105,8 +115,17 @@ class SupabaseMusicRepository(context: Context) {
     ): Response<ResponseBody> {
         val first = request("Bearer $token")
         if (first.code() != 401) return first
-        val refreshed = sessionManager.forceRefresh(authApi) ?: return first
-        return request("Bearer $refreshed")
+        return when (val refresh = sessionManager.forceRefresh(authApi)) {
+            is TokenRefreshResult.Success -> request("Bearer ${refresh.accessToken}").also { retry ->
+                if (retry.code() == 401) sessionManager.invalidateSession()
+            }
+            TokenRefreshResult.InvalidSession -> first
+            TokenRefreshResult.MissingRefreshToken -> {
+                sessionManager.invalidateSession()
+                first
+            }
+            TokenRefreshResult.TransientFailure -> first
+        }
     }
 
     suspend fun fetchLibraryBootstrap(forceRefresh: Boolean = false): Result<MusicLibraryBootstrap> =

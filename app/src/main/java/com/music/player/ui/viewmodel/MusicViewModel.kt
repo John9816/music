@@ -226,7 +226,8 @@ class MusicViewModel : ViewModel() {
                 val primaryResults = repository.searchSongs(
                     keywords = primaryQuery.ifBlank { album.album.name },
                     limit = 60,
-                    offset = 0
+                    offset = 0,
+                    forceRefresh = forceRefresh
                 )
 
                 val resolvedSongs = primaryResults.getOrNull()
@@ -236,7 +237,8 @@ class MusicViewModel : ViewModel() {
                         repository.searchSongs(
                             keywords = album.album.name,
                             limit = 60,
-                            offset = 0
+                            offset = 0,
+                            forceRefresh = forceRefresh
                         ).getOrNull()
                             .orEmpty()
                             .filterForAlbum(album, strictId = false)

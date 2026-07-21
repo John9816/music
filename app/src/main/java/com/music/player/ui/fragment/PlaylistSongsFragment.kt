@@ -1,6 +1,5 @@
 package com.music.player.ui.fragment
 
-import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,9 +8,7 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.bumptech.glide.Glide
 import com.music.player.R
@@ -21,6 +18,7 @@ import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -46,9 +44,6 @@ class PlaylistSongsFragment : Fragment() {
     private lateinit var musicViewModel: MusicViewModel
     private lateinit var libraryViewModel: LibraryViewModel
     private lateinit var songAdapter: SongAdapter
-    private var headerCollapsed = false
-    private var headerDescriptionVisibility = View.GONE
-    private var headerOverlayVisibility = View.GONE
 
     private val playlistId: String
         get() = arguments?.getString(ARG_PLAYLIST_ID).orEmpty()
@@ -78,16 +73,7 @@ class PlaylistSongsFragment : Fragment() {
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
-            setHasFixedSize(true)
-            addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                    if (dy > 0 && !headerCollapsed) {
-                        setHeaderCollapsed(true)
-                    } else if (dy < 0 && !recyclerView.canScrollVertically(-1) && headerCollapsed) {
-                        setHeaderCollapsed(false)
-                    }
-                }
-            })
+            optimizeVerticalScrolling()
         }
 
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
@@ -149,34 +135,6 @@ class PlaylistSongsFragment : Fragment() {
                 .placeholder(R.drawable.ic_music_note_24)
                 .centerCrop()
                 .into(binding.ivHeaderCover)
-        }
-    }
-
-    private fun setHeaderCollapsed(collapsed: Boolean) {
-        if (headerCollapsed == collapsed) return
-        headerCollapsed = collapsed
-        if (collapsed) {
-            headerDescriptionVisibility = binding.tvHeaderDescription.visibility
-            headerOverlayVisibility = binding.ivHeaderOverlay.visibility
-        }
-        val visibility = if (collapsed) View.GONE else View.VISIBLE
-        binding.tvHeaderEyebrow.visibility = visibility
-        binding.headerCoverContainer.visibility = visibility
-        binding.tvHeaderDescription.visibility =
-            if (collapsed) View.GONE else headerDescriptionVisibility
-        binding.ivHeaderOverlay.visibility =
-            if (collapsed) View.GONE else headerOverlayVisibility
-        binding.btnPlayAll.visibility = visibility
-        binding.scrollCollectionStats.visibility = visibility
-        binding.headerDivider.visibility = visibility
-        (binding.tvHeaderTitle.layoutParams as ConstraintLayout.LayoutParams).apply {
-            endToStart = if (collapsed) ConstraintLayout.LayoutParams.UNSET else R.id.headerCoverContainer
-            endToEnd = if (collapsed) ConstraintLayout.LayoutParams.PARENT_ID else ConstraintLayout.LayoutParams.UNSET
-            binding.tvHeaderTitle.layoutParams = this
-        }
-        (binding.contentContainer.layoutParams as ConstraintLayout.LayoutParams).apply {
-            topToBottom = if (collapsed) R.id.tvHeaderTitle else R.id.headerDivider
-            binding.contentContainer.layoutParams = this
         }
     }
 

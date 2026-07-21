@@ -4,7 +4,7 @@
     android:layout_width="144dp"
     android:layout_height="wrap_content"
     android:layout_marginEnd="@dimen/spacing_xs"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/ripple_rect_primary"
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical"

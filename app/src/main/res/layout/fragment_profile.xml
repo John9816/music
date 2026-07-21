@@ -35,49 +35,119 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/nav_favorites"
+                        android:text="@string/nav_profile"
                         android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
                         android:textColor="?attr/textPrimary"
                         android:textStyle="bold" />
 
                     <ImageButton
-                        android:id="@+id/btnCreatePlaylist"
+                        android:id="@+id/btnSettings"
                         android:layout_width="48dp"
                         android:layout_height="48dp"
                         android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/user_playlist_create_title"
+                        android:contentDescription="@string/content_desc_settings"
                         android:padding="12dp"
-                        android:src="@drawable/ic_add_24"
+                        android:src="@drawable/ic_settings_24"
                         app:tint="?attr/textPrimary" />
 
                 </LinearLayout>
 
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.MusicPlayer.Card.Outlined"
                     android:layout_width="match_parent"
-                    android:layout_height="@dimen/toolbar_search_height"
-                    android:layout_marginTop="@dimen/spacing_s"
-                    android:background="@drawable/bg_toolbar_search_surface"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingStart="@dimen/spacing_s"
-                    android:paddingEnd="@dimen/spacing_s">
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_l">
 
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:contentDescription="@string/action_search"
-                        android:src="@drawable/ic_search_24"
-                        app:tint="?attr/textSecondary" />
-
-                    <TextView
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/spacing_s"
-                        android:layout_weight="1"
-                        android:text="Find in favorites"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textSecondary" />
-                </LinearLayout>
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="@dimen/spacing_m">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="72dp"
+                            android:layout_height="72dp"
+                            app:cardBackgroundColor="?attr/brandPrimaryLight"
+                            app:cardCornerRadius="36dp"
+                            app:cardElevation="0dp"
+                            app:strokeColor="?attr/glassStrokeSoft"
+                            app:strokeWidth="1dp">
+
+                            <ImageView
+                                android:id="@+id/ivAvatar"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:contentDescription="@string/content_desc_avatar"
+                                android:padding="18dp"
+                                android:scaleType="center"
+                                android:src="@drawable/ic_person_24"
+                                app:tint="?attr/brandPrimary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/spacing_m"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:id="@+id/tvNickname"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:ellipsize="end"
+                                    android:maxLines="1"
+                                    android:text="@string/profile_nickname_placeholder"
+                                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                                    android:textColor="?attr/textPrimary"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tvBadge"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="@dimen/spacing_s"
+                                    android:background="?attr/brandPrimaryLight"
+                                    android:paddingHorizontal="@dimen/spacing_s"
+                                    android:paddingVertical="@dimen/spacing_xs"
+                                    android:textColor="?attr/brandPrimary"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:visibility="gone" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tvProfileMeta"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="@string/profile_account_placeholder"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/textSecondary" />
+
+                            <TextView
+                                android:id="@+id/tvSignature"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="@string/profile_signature_empty"
+                                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                                android:textColor="?attr/textSecondary" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <TextView
                     android:layout_width="match_parent"
@@ -93,7 +163,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/spacing_m"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -153,6 +223,7 @@
                     <ImageView
                         android:layout_width="24dp"
                         android:layout_height="24dp"
+                        android:importantForAccessibility="no"
                         android:rotation="-90"
                         android:src="@drawable/ic_chevron_down_24"
                         app:tint="?attr/textSecondary" />
@@ -168,7 +239,7 @@
                     android:id="@+id/rowHistory"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -208,7 +279,7 @@
                             android:layout_height="wrap_content"
                             android:ellipsize="end"
                             android:maxLines="1"
-                            android:text="有人说：要感谢前任让..."
+                            android:text="@string/profile_history_title"
                             android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
                             android:textColor="?attr/textPrimary"
                             android:textStyle="bold" />
@@ -228,6 +299,7 @@
                     <ImageView
                         android:layout_width="24dp"
                         android:layout_height="24dp"
+                        android:importantForAccessibility="no"
                         android:rotation="-90"
                         android:src="@drawable/ic_chevron_down_24"
                         app:tint="?attr/textSecondary" />
@@ -243,7 +315,7 @@
                     android:id="@+id/rowPlaylists"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="?attr/selectableItemBackground"
+                    android:background="@drawable/ripple_rect_primary"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center_vertical"
@@ -303,6 +375,7 @@
                     <ImageView
                         android:layout_width="24dp"
                         android:layout_height="24dp"
+                        android:importantForAccessibility="no"
                         android:rotation="-90"
                         android:src="@drawable/ic_chevron_down_24"
                         app:tint="?attr/textSecondary" />
@@ -313,27 +386,6 @@
                     android:layout_height="1dp"
                     android:visibility="gone">
 
-                    <ImageView
-                        android:id="@+id/ivAvatar"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp"
-                        android:contentDescription="@string/content_desc_avatar" />
-                    <TextView
-                        android:id="@+id/tvNickname"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp" />
-                    <TextView
-                        android:id="@+id/tvSignature"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp" />
-                    <TextView
-                        android:id="@+id/tvBadge"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp" />
-                    <TextView
-                        android:id="@+id/tvProfileMeta"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp" />
                     <TextView
                         android:id="@+id/tvSyncHint"
                         android:layout_width="1dp"
@@ -372,19 +424,19 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/nav_favorites"
+            android:text="@string/nav_profile"
             android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
             android:textColor="?attr/textPrimary"
             android:textStyle="bold" />
 
         <ImageButton
-            android:id="@+id/btnCreatePlaylistSticky"
+            android:id="@+id/btnSettingsSticky"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/user_playlist_create_title"
+            android:contentDescription="@string/content_desc_settings"
             android:padding="12dp"
-            android:src="@drawable/ic_add_24"
+            android:src="@drawable/ic_settings_24"
             app:tint="?attr/textPrimary" />
     </LinearLayout>
 </FrameLayout>

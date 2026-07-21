@@ -76,6 +76,15 @@ class LoginActivity : AppCompatActivity() {
             submitAuth()
         }
 
+        binding.etEmail.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                binding.etPassword.requestFocus()
+                true
+            } else {
+                false
+            }
+        }
+
         binding.etPassword.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 submitAuth()
@@ -99,11 +108,15 @@ class LoginActivity : AppCompatActivity() {
                     binding.progressBar.visibility = View.VISIBLE
                     binding.btnSubmit.isEnabled = false
                     binding.tvToggleMode.isEnabled = false
+                    binding.tvStatus.text = getString(
+                        if (isLoginMode) R.string.auth_status_signing_in else R.string.auth_status_signing_up
+                    )
                 }
                 is AuthState.Success -> {
                     binding.progressBar.visibility = View.GONE
                     binding.btnSubmit.isEnabled = true
                     binding.tvToggleMode.isEnabled = true
+                    binding.tvStatus.text = state.message
                     Toast.makeText(this, state.message, Toast.LENGTH_SHORT).show()
                     navigateToMain()
                 }
@@ -111,12 +124,14 @@ class LoginActivity : AppCompatActivity() {
                     binding.progressBar.visibility = View.GONE
                     binding.btnSubmit.isEnabled = true
                     binding.tvToggleMode.isEnabled = true
+                    binding.tvStatus.text = state.message
                     Toast.makeText(this, state.message, Toast.LENGTH_LONG).show()
                 }
                 is AuthState.Idle -> {
                     binding.progressBar.visibility = View.GONE
                     binding.btnSubmit.isEnabled = true
                     binding.tvToggleMode.isEnabled = true
+                    binding.tvStatus.text = ""
                 }
             }
         }
@@ -141,14 +156,19 @@ class LoginActivity : AppCompatActivity() {
         if (isLoginMode) {
             binding.tvTitle.text = getString(R.string.login_title)
             binding.tvSubtitle.text = getString(R.string.login_subtitle)
+            binding.tvModeDescription.text = getString(R.string.login_mode_description)
+            binding.tvFormHint.text = getString(R.string.login_helper)
             binding.btnSubmit.text = getString(R.string.login_action)
             binding.tvToggleMode.text = getString(R.string.toggle_to_signup)
         } else {
             binding.tvTitle.text = getString(R.string.signup_title)
             binding.tvSubtitle.text = getString(R.string.signup_subtitle)
+            binding.tvModeDescription.text = getString(R.string.signup_mode_description)
+            binding.tvFormHint.text = getString(R.string.signup_helper)
             binding.btnSubmit.text = getString(R.string.signup_action)
             binding.tvToggleMode.text = getString(R.string.toggle_to_login)
         }
+        binding.tvStatus.text = ""
     }
 
     private fun validateInput(email: String, password: String): Boolean {
@@ -182,6 +202,7 @@ class LoginActivity : AppCompatActivity() {
         finish()
     }
 
+    @Suppress("DEPRECATION")
     private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT

@@ -29,4 +29,4 @@ crashlog.txt
 gradle-compile-check.log
 androidx/
 cache/
-res/
+/res/

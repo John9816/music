@@ -188,7 +188,7 @@
         <item name="glassHighlight">#26FFFFFF</item>
         <item name="glassShadow">#80000000</item>
         <item name="glassOverlayTint">#1FFFFFFF</item>
-        <item name="rippleColor">#26FFFFFF</item>
+        <item name="rippleColor">#14FFFFFF</item>
         <item name="selectedOverlay">#1FFFFFFF</item>
     </style>
 

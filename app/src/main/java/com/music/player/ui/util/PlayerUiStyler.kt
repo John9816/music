@@ -133,7 +133,6 @@ object PlayerUiStyler {
     }
 
     private fun applyGlassNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        val pageBackground = context.resolveThemeColor(R.attr.pageBackground)
         val surface = context.resolveThemeColor(R.attr.surfaceColor)
         val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
@@ -224,7 +223,6 @@ object PlayerUiStyler {
     }
 
     private fun applyMinimalNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        val pageBackground = context.resolveThemeColor(R.attr.pageBackground)
         val surface = context.resolveThemeColor(R.attr.surfaceColor)
         val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)

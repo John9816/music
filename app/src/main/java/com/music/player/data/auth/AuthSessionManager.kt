@@ -2,13 +2,15 @@ package com.music.player.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.json.JSONObject
+import okio.ByteString.Companion.decodeBase64
 
 class AuthSessionManager(context: Context) {
     private val appContext = context.applicationContext
@@ -63,7 +65,7 @@ class AuthSessionManager(context: Context) {
     }
 
     fun syncUserIdFromAccessToken(accessToken: String): String? {
-        val tokenUserId = extractUserIdFromJwt(accessToken)?.trim().orEmpty()
+        val tokenUserId = JwtTokenParser.userId(accessToken)?.trim().orEmpty()
         if (tokenUserId.isBlank()) return null
 
         if (getCachedUserId() != tokenUserId) {
@@ -81,9 +83,20 @@ class AuthSessionManager(context: Context) {
             .apply()
     }
 
+    fun invalidateSession() {
+        clear()
+        AuthSessionState.notifyExpired()
+    }
+
     fun saveSession(accessToken: String, refreshToken: String?, expiresInSeconds: Int?, userId: String?) {
-        val expiresAtMs = expiresInSeconds?.let { seconds ->
+        val expiresAtMs = expiresInSeconds?.takeIf { it > 0 }?.let { seconds ->
             System.currentTimeMillis() + (seconds.toLong() * 1000L)
+        } ?: JwtTokenParser.expiresAtMs(accessToken)
+
+        if (refreshToken.isNullOrBlank()) {
+            Log.w(TAG, "Auth response has no refresh token; session will end when the access token expires")
+        } else if (expiresAtMs == null) {
+            Log.w(TAG, "Auth response has no expiry and JWT exp claim is missing; refresh will be attempted before protected requests")
         }
 
         prefs.edit()
@@ -92,11 +105,19 @@ class AuthSessionManager(context: Context) {
             .putLong(KEY_EXPIRES_AT_MS, expiresAtMs ?: 0L)
             .putString(KEY_USER_ID, userId)
             .apply()
+        AuthSessionState.markActive()
     }
 
     suspend fun getValidAccessToken(authApi: SupabaseAuthApi): String? {
-        val token = getAccessToken() ?: return null
+        val token = getAccessToken()
         val refreshToken = getRefreshToken()
+        if (token.isNullOrBlank()) {
+            if (refreshToken.isNullOrBlank()) return null
+            return when (val result = forceRefresh(authApi)) {
+                is TokenRefreshResult.Success -> result.accessToken
+                else -> null
+            }
+        }
         val expiresAtMs = getExpiresAtMs()
 
         // 无刷新令牌时无法续期：仍返回现有令牌，交由服务端以 401 判定是否失效。
@@ -112,23 +133,42 @@ class AuthSessionManager(context: Context) {
             if (existingRefresh.isNullOrBlank()) return@withLock existingToken
             if (!isNearExpiry(existingExpiresAtMs)) return@withLock existingToken
 
-            refreshAccessToken(authApi, existingRefresh) ?: existingToken
+            when (val result = refreshAccessToken(authApi, existingRefresh)) {
+                is TokenRefreshResult.Success -> result.accessToken
+                TokenRefreshResult.InvalidSession -> null
+                TokenRefreshResult.MissingRefreshToken,
+                TokenRefreshResult.TransientFailure -> existingToken
+            }
         }
     }
 
-    suspend fun forceRefresh(authApi: SupabaseAuthApi): String? {
+    suspend fun forceRefresh(authApi: SupabaseAuthApi): TokenRefreshResult {
         return refreshMutex.withLock {
-            val currentRefreshToken = getRefreshToken() ?: return@withLock null
+            val currentRefreshToken = getRefreshToken()
+                ?: return@withLock TokenRefreshResult.MissingRefreshToken
             refreshAccessToken(authApi, currentRefreshToken)
         }
     }
 
-    private suspend fun refreshAccessToken(authApi: SupabaseAuthApi, refreshToken: String): String? {
+    private suspend fun refreshAccessToken(
+        authApi: SupabaseAuthApi,
+        refreshToken: String
+    ): TokenRefreshResult {
         return try {
             val response = authApi.refreshToken(RefreshTokenRequest(refreshToken))
-            if (!response.isSuccessful || response.body() == null) return null
-            val body = AuthResponseParser.parse(response.body()?.string().orEmpty())?.data ?: return null
-            val newAccess = body.token ?: body.access_token ?: return null
+            if (!response.isSuccessful) {
+                return when (classifyRefreshFailure(response.code())) {
+                    RefreshFailure.INVALID_SESSION -> {
+                        invalidateSession()
+                        TokenRefreshResult.InvalidSession
+                    }
+                    RefreshFailure.TRANSIENT -> TokenRefreshResult.TransientFailure
+                }
+            }
+            val body = AuthResponseParser.parse(response.body()?.string().orEmpty())?.data
+                ?: return TokenRefreshResult.TransientFailure
+            val newAccess = body.token ?: body.access_token
+                ?: return TokenRefreshResult.TransientFailure
 
             saveSession(
                 accessToken = newAccess,
@@ -137,29 +177,13 @@ class AuthSessionManager(context: Context) {
                 userId = syncUserIdFromAccessToken(newAccess) ?: getCachedUserId()
             )
 
-            newAccess
-        } catch (_: Exception) {
-            null
+            TokenRefreshResult.Success(newAccess)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.w(TAG, "Access token refresh failed: ${e.javaClass.simpleName}: ${e.message}")
+            TokenRefreshResult.TransientFailure
         }
-    }
-
-    private fun extractUserIdFromJwt(accessToken: String): String? {
-        return runCatching {
-            val parts = accessToken.split('.')
-            if (parts.size < 2) return null
-
-            val payload = parts[1]
-            val normalizedPayload = buildString(payload.length + 4) {
-                append(payload)
-                repeat((4 - payload.length % 4) % 4) { append('=') }
-            }
-
-            val decoded = Base64.decode(
-                normalizedPayload,
-                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-            )
-            JSONObject(String(decoded, Charsets.UTF_8)).optString("sub").takeIf { it.isNotBlank() }
-        }.getOrNull()
     }
 
     private fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
@@ -181,5 +205,48 @@ class AuthSessionManager(context: Context) {
         private const val KEY_USER_ID = "user_id"
 
         private const val EXPIRY_SAFETY_WINDOW_MS = 60_000L
+    }
+}
+
+internal object JwtTokenParser {
+    fun userId(accessToken: String): String? {
+        return payload(accessToken)
+            ?.stringOrNull("sub")
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    fun expiresAtMs(accessToken: String): Long? {
+        val expSeconds = payload(accessToken)
+            ?.longOrNull("exp")
+            ?.takeIf { it > 0L }
+            ?: return null
+        return runCatching { Math.multiplyExact(expSeconds, 1000L) }.getOrNull()
+    }
+
+    private fun payload(accessToken: String): JsonObject? {
+        return runCatching {
+            val parts = accessToken.split('.')
+            if (parts.size < 2) return null
+
+            val encodedPayload = parts[1]
+            val paddedPayload = buildString(encodedPayload.length + 4) {
+                append(encodedPayload)
+                repeat((4 - encodedPayload.length % 4) % 4) { append('=') }
+            }
+
+            val decoded = paddedPayload.decodeBase64()?.utf8() ?: return null
+            JsonParser.parseString(decoded).asJsonObject
+        }.getOrNull()
+    }
+
+    private fun JsonObject.stringOrNull(name: String): String? {
+        val value = get(name) ?: return null
+        if (value.isJsonNull || !value.isJsonPrimitive) return null
+        return value.asString.trim().takeIf { it.isNotBlank() }
+    }
+
+    private fun JsonObject.longOrNull(name: String): Long? {
+        val value = get(name) ?: return null
+        return runCatching { value.asLong }.getOrNull()
     }
 }

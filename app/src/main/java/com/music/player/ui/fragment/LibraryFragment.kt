@@ -1,10 +1,10 @@
 package com.music.player.ui.fragment
 
-import android.animation.ValueAnimator
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
@@ -31,7 +31,9 @@ import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.adapter.PlaylistGridAdapter
 import com.music.player.ui.adapter.SearchArtistAdapter
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.addSlopAwareHeaderCollapseListener
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 import kotlinx.coroutines.Job
@@ -56,7 +58,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private var isHeroCollapsed = false
     private var heroExpandedHeight = 0
     private var heroCollapsedHeight = 0
-    private var heroAnimator: ValueAnimator? = null
     private var searchType = SearchType.SONGS
 
     private var debounceJob: Job? = null
@@ -130,7 +131,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     }
 
     override fun onDestroyView() {
-        heroAnimator?.cancel()
         debounceJob?.cancel()
         super.onDestroyView()
         _binding = null
@@ -273,31 +273,32 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = songAdapter
-            setHasFixedSize(true)
-            itemAnimator = null
+            optimizeVerticalScrolling()
         }
-        binding.recyclerView.setOnTouchListener { _, _ ->
-            hideKeyboardAndClearFocus()
-            false
-        }
-
-        // Infinite scroll for pagination
-        binding.recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (dy > 0 && !isHeroCollapsed) {
-                    collapseHero()
-                } else if (dy < 0 && !rv.canScrollVertically(-1) && isHeroCollapsed) {
-                    expandHero()
+        binding.recyclerView.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: RecyclerView, event: MotionEvent): Boolean {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    hideKeyboardAndClearFocus()
                 }
-                if (dy <= 0) return
-                val lm = rv.layoutManager as? LinearLayoutManager ?: return
+                return false
+            }
+        })
+
+        binding.recyclerView.addSlopAwareHeaderCollapseListener(
+            isCollapsed = { isHeroCollapsed },
+            setCollapsed = { collapsed ->
+                if (collapsed) collapseHero() else expandHero()
+            },
+            onScrolledAfterHeader = { rv, _, dy ->
+                if (dy <= 0) return@addSlopAwareHeaderCollapseListener
+                val lm = rv.layoutManager as? LinearLayoutManager ?: return@addSlopAwareHeaderCollapseListener
                 val totalItemCount = lm.itemCount
                 val lastVisible = lm.findLastVisibleItemPosition()
                 if (searchType == SearchType.SONGS && totalItemCount > 0 && lastVisible >= totalItemCount - 5) {
                     musicViewModel.loadMoreSearchResults()
                 }
             }
-        })
+        )
     }
 
     // ── Input ─────────────────────────────────────────────────────
@@ -314,7 +315,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             val query = editable?.toString()?.trim().orEmpty()
 
             // Show/hide history based on empty input
-            syncHistoryVisibility(query)
+            syncHistoryVisibility()
 
             // Expand hero if query cleared
             if (query.isEmpty()) {
@@ -406,7 +407,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         }
     }
 
-    private fun syncHistoryVisibility(query: String) {
+    private fun syncHistoryVisibility() {
         val b = _binding ?: return
         b.scrollHistory.visibility = View.GONE
         b.layoutQuickSearch.visibility = View.GONE
@@ -444,7 +445,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
             } else {
                 updateSearchResultSummary(songs.size)
             }
-            syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+            syncHistoryVisibility()
         }
 
         musicViewModel.searchArtists.observe(viewLifecycleOwner) { artists ->
@@ -539,21 +540,21 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         showResultLayout(SearchType.SONGS)
         songAdapter.submitList(songs)
         syncEmptyState(songs.isEmpty())
-        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        syncHistoryVisibility()
     }
 
     private fun renderArtists(artists: List<com.music.player.data.model.SearchArtist>) {
         showResultLayout(SearchType.ARTISTS)
         artistAdapter.submitList(artists)
         syncEmptyState(artists.isEmpty())
-        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        syncHistoryVisibility()
     }
 
     private fun renderPlaylists(playlists: List<com.music.player.data.model.Playlist>) {
         showResultLayout(SearchType.PLAYLISTS)
         playlistAdapter.submitList(playlists)
         syncEmptyState(playlists.isEmpty())
-        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        syncHistoryVisibility()
     }
 
     private fun showResultLayout(type: SearchType) {
@@ -659,7 +660,7 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     private fun showIdleState() {
         binding.tvSectionTitle.text = getString(R.string.search_idle_title)
         binding.tvSectionSubtitle.text = getString(R.string.search_idle_subtitle)
-        syncHistoryVisibility(binding.etSearch.text?.toString()?.trim().orEmpty())
+        syncHistoryVisibility()
         updateSearchSummary()
     }
 
@@ -691,11 +692,6 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
-
-    private fun animateHeroHeight(from: Int, to: Int) {
-        heroAnimator?.cancel()
-        heroAnimator = null
-    }
 
     // ── Song Actions Dialog ───────────────────────────────────────
 

@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.Build
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -12,7 +13,6 @@ import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.graphics.Color
-import android.view.MotionEvent
 import android.graphics.drawable.ColorDrawable
 import android.util.TypedValue
 import android.view.GestureDetector
@@ -44,6 +44,9 @@ import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.installDownwardDragToDismiss
+import com.music.player.playback.PlaybackMode
+import com.music.player.playback.PlaybackModeController
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
@@ -57,6 +60,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.music.player.ui.viewmodel.LibraryViewModel
+import java.util.Locale
 
 class NowPlayingBottomSheetFragment : DialogFragment() {
 
@@ -126,6 +130,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     override fun getTheme(): Int = R.style.ThemeOverlayMusicPlayerFullscreenDialog
 
+    @Suppress("DEPRECATION")
     override fun onStart() {
         super.onStart()
 
@@ -366,13 +371,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         binding.btnPlayMode.setOnClickListener {
             val p = (activity as? MainActivity)?.player ?: return@setOnClickListener
-            val mode = currentPlayMode(p)
-            val next = when (mode) {
-                PlayMode.SHUFFLE -> PlayMode.REPEAT_ALL
-                PlayMode.REPEAT_ALL -> PlayMode.REPEAT_ONE
-                PlayMode.REPEAT_ONE -> PlayMode.SHUFFLE
-            }
-            applyPlayMode(p, next)
+            val next = PlaybackModeController.next(PlaybackModeController.resolve(p))
+            PlaybackModeController.apply(p, next)
             syncPlayModeIcon()
         }
 
@@ -414,38 +414,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private fun installHandleDragToDismiss() {
         val threshold = HANDLE_DISMISS_DISTANCE_DP * resources.displayMetrics.density
-        var downY = 0f
-        var dragging = false
-
-        binding.btnClose.setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downY = event.rawY
-                    dragging = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val distance = event.rawY - downY
-                    if (distance > 12f * resources.displayMetrics.density) dragging = true
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    val distance = event.rawY - downY
-                    if (dragging && distance >= threshold) {
-                        (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
-                        dismiss()
-                    } else if (!dragging) {
-                        view.performClick()
-                    }
-                    dragging = false
-                    true
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    dragging = false
-                    true
-                }
-                else -> true
-            }
+        binding.btnClose.installDownwardDragToDismiss(
+            dismissDistancePx = threshold,
+            dragSlopPx = 12f * resources.displayMetrics.density
+        ) {
+            (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
+            dismiss()
         }
     }
 
@@ -458,7 +432,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             }
             Toast.makeText(
                 requireContext(),
-                "已切换音质：${selectedLevel.displayName}",
+                getString(R.string.audio_quality_switched, selectedLevel.displayName),
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -860,43 +834,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     // ── Play mode ─────────────────────────────────────────────────
 
-    private enum class PlayMode {
-        SHUFFLE,
-        REPEAT_ALL,
-        REPEAT_ONE
-    }
-
-    private fun currentPlayMode(player: Player): PlayMode {
-        return when {
-            player.shuffleModeEnabled -> PlayMode.SHUFFLE
-            player.repeatMode == Player.REPEAT_MODE_ONE -> PlayMode.REPEAT_ONE
-            else -> PlayMode.REPEAT_ALL
-        }
-    }
-
-    private fun applyPlayMode(player: Player, mode: PlayMode) {
-        when (mode) {
-            PlayMode.SHUFFLE -> {
-                player.shuffleModeEnabled = true
-                player.repeatMode = Player.REPEAT_MODE_OFF
-            }
-            PlayMode.REPEAT_ALL -> {
-                player.shuffleModeEnabled = false
-                player.repeatMode = Player.REPEAT_MODE_ALL
-            }
-            PlayMode.REPEAT_ONE -> {
-                player.shuffleModeEnabled = false
-                player.repeatMode = Player.REPEAT_MODE_ONE
-            }
-        }
-    }
-
     private fun syncPlayModeIcon() {
         val player = (activity as? MainActivity)?.player ?: return
-        val (icon, desc) = when (currentPlayMode(player)) {
-            PlayMode.SHUFFLE -> R.drawable.ic_shuffle_24 to R.string.content_desc_shuffle
-            PlayMode.REPEAT_ALL -> R.drawable.ic_repeat_24 to R.string.content_desc_repeat
-            PlayMode.REPEAT_ONE -> R.drawable.ic_repeat_one_24 to R.string.content_desc_repeat
+        val (icon, desc) = when (PlaybackModeController.resolve(player)) {
+            PlaybackMode.SHUFFLE -> R.drawable.ic_shuffle_24 to R.string.content_desc_shuffle
+            PlaybackMode.REPEAT_ALL -> R.drawable.ic_repeat_24 to R.string.content_desc_repeat
+            PlaybackMode.REPEAT_ONE -> R.drawable.ic_repeat_one_24 to R.string.content_desc_repeat
         }
         binding.btnPlayMode.setImageResource(icon)
         binding.btnPlayMode.contentDescription = getString(desc)
@@ -1002,9 +945,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         val minutes = ((totalSeconds / 60) % 60).toInt()
         val hours = (totalSeconds / 3600).toInt()
         return if (hours > 0) {
-            String.format("%d:%02d:%02d", hours, minutes, seconds)
+            String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
         } else {
-            String.format("%02d:%02d", minutes, seconds)
+            String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
         }
     }
 

@@ -29,6 +29,7 @@ import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.FileSizeFormatter
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.UpdateState
@@ -37,6 +38,8 @@ import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.resolveAvatarUrl
+import com.music.player.ui.util.resolveThemeColorStateList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,8 +120,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupUi() {
         binding.toolbar.setNavigationOnClickListener { finish() }
-        binding.tvEmail.text = getString(R.string.app_name)
         binding.tvAppVersion.text = BuildConfig.VERSION_NAME
+        renderProfile(null)
+        binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
 
         binding.btnLogout.setOnClickListener { showLogoutConfirmation() }
 
@@ -166,7 +170,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupObservers() {
         authViewModel.currentUser.observe(this) { user ->
             currentUser = user
-            binding.tvEmail.text = getString(R.string.app_name)
+            renderProfile(user)
         }
 
         updateViewModel.state.observe(this) { state ->
@@ -227,20 +231,20 @@ class SettingsActivity : AppCompatActivity() {
                     binding.btnLogout.isEnabled = false
                 }
                 is AuthState.Success -> {
-                    binding.btnEditProfile.isEnabled = true
+                    binding.btnEditProfile.isEnabled = currentUser != null
                     binding.btnLogout.isEnabled = true
                     Toast.makeText(this, state.message, Toast.LENGTH_SHORT).show()
                     authViewModel.resetAuthState()
                     authViewModel.refreshProfile()
                 }
                 is AuthState.Error -> {
-                    binding.btnEditProfile.isEnabled = true
+                    binding.btnEditProfile.isEnabled = currentUser != null
                     binding.btnLogout.isEnabled = true
                     Toast.makeText(this, state.message, Toast.LENGTH_LONG).show()
                     authViewModel.resetAuthState()
                 }
                 is AuthState.Idle -> {
-                    binding.btnEditProfile.isEnabled = true
+                    binding.btnEditProfile.isEnabled = currentUser != null
                     binding.btnLogout.isEnabled = true
                 }
             }
@@ -286,6 +290,42 @@ class SettingsActivity : AppCompatActivity() {
                 )
             }
             .show()
+    }
+
+    private fun renderProfile(user: UserProfile?) {
+        binding.btnEditProfile.isEnabled = user != null
+        val displayName = user?.nickname?.trim().orEmpty()
+            .ifBlank { user?.username?.trim().orEmpty() }
+            .ifBlank { user?.email?.substringBefore("@").orEmpty() }
+
+        binding.tvProfileName.text = displayName.ifBlank {
+            getString(R.string.profile_name_placeholder)
+        }
+        binding.tvProfileEmail.text = user?.email?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.profile_email_placeholder)
+        binding.tvProfileSignature.text = user?.signature?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.profile_signature_empty)
+
+        if (user == null) {
+            Glide.with(binding.ivProfileAvatar).clear(binding.ivProfileAvatar)
+            val padding = (14 * resources.displayMetrics.density).toInt()
+            binding.ivProfileAvatar.setPadding(padding, padding, padding, padding)
+            binding.ivProfileAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER
+            binding.ivProfileAvatar.setImageResource(R.drawable.ic_person_24)
+            binding.ivProfileAvatar.imageTintList =
+                resolveThemeColorStateList(R.attr.brandPrimary)
+            return
+        }
+
+        binding.ivProfileAvatar.setPadding(0, 0, 0, 0)
+        binding.ivProfileAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+        binding.ivProfileAvatar.imageTintList = null
+        Glide.with(binding.ivProfileAvatar)
+            .load(user.resolveAvatarUrl())
+            .placeholder(R.drawable.ic_person_24)
+            .error(R.drawable.ic_person_24)
+            .circleCrop()
+            .into(binding.ivProfileAvatar)
     }
 
     private fun showAudioQualityDialog() {
@@ -530,7 +570,7 @@ class SettingsActivity : AppCompatActivity() {
         val cacheDir = Glide.getPhotoCacheDir(this)
         val imageCacheSize = cacheDir?.let { calculateDirSize(it) } ?: 0L
         val size = imageCacheSize + RetrofitClient.httpCacheSizeBytes()
-        binding.tvCacheSize.text = getString(R.string.settings_cache_size, formatSize(size))
+        binding.tvCacheSize.text = getString(R.string.settings_cache_size, FileSizeFormatter.format(size))
     }
 
     private fun updateDownloadedSize() {
@@ -542,7 +582,7 @@ class SettingsActivity : AppCompatActivity() {
                     .distinctBy { it.absolutePath }
                     .sumOf { it.length().coerceAtLeast(0L) }
             }
-            binding.tvDownloadedSize.text = formatSize(totalSize)
+            binding.tvDownloadedSize.text = FileSizeFormatter.format(totalSize)
         }
     }
 
@@ -567,15 +607,6 @@ class SettingsActivity : AppCompatActivity() {
             size += if (file.isDirectory) calculateDirSize(file) else file.length()
         }
         return size
-    }
-
-    private fun formatSize(bytes: Long): String {
-        return when {
-            bytes >= 1024 * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
-            bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024))
-            bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
-            else -> "$bytes B"
-        }
     }
 
     private fun markMainNeedsRecreate() {
@@ -603,6 +634,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    @Suppress("DEPRECATION")
     private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT

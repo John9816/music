@@ -8,7 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.music.player.data.repository.AppVersionInfo
 import com.music.player.data.repository.AppVersionRepository
 import com.music.player.data.repository.VersionComparator
+import com.music.player.R
+import com.music.player.update.AutomaticUpdateGate
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 sealed class UpdateState {
     data object Idle : UpdateState()
@@ -28,19 +31,28 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _state = MutableLiveData<UpdateState>(UpdateState.Idle)
     val state: LiveData<UpdateState> = _state
+    private var checkJob: Job? = null
+    private val automaticUpdateGate = AutomaticUpdateGate()
 
     fun reset() {
         _state.value = UpdateState.Idle
     }
 
     fun check(currentVersion: String, currentBuildNumber: Int, userInitiated: Boolean = true) {
-        viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        if (!userInitiated) {
+            if (!automaticUpdateGate.tryAcquire(now, checkJob?.isActive == true)) return
+        } else {
+            checkJob?.cancel()
+        }
+
+        checkJob = viewModelScope.launch {
             _state.value = UpdateState.Loading(userInitiated)
             repository.getLatestVersion()
                 .onSuccess { latest ->
                     if (latest == null) {
                         _state.value = UpdateState.Error(
-                            message = "Unable to check for updates right now.",
+                            message = getApplication<Application>().getString(R.string.update_check_failed),
                             userInitiated = userInitiated
                         )
                         return@onSuccess
@@ -50,7 +62,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     val isBelowMin = currentBuildNumber < latest.minBuildNumber
                     val force = latest.forceUpdate || isBelowMin
                     _state.value = if (shouldUpdate && latest.downloadUrl.isNullOrBlank()) {
-                        UpdateState.Error("新版本没有适用于当前构建的安装包。", userInitiated)
+                        UpdateState.Error(
+                            getApplication<Application>().getString(R.string.update_no_compatible_apk),
+                            userInitiated
+                        )
                     } else if (shouldUpdate) {
                         UpdateState.UpdateAvailable(
                             latest = latest,
@@ -63,10 +78,11 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 .onFailure {
                     _state.value = UpdateState.Error(
-                        message = it.message ?: "Failed to check for updates.",
+                        message = getApplication<Application>().getString(R.string.update_check_failed),
                         userInitiated = userInitiated
                     )
                 }
         }
     }
+
 }

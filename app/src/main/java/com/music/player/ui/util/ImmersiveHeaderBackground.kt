@@ -10,12 +10,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.music.player.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -68,13 +71,16 @@ class ImmersiveHeaderBackground(
         val newTarget = object : CustomTarget<Bitmap>() {
             override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
                 blurJob?.cancel()
-                blurJob = lifecycleOwner.lifecycleScope.launchWhenStarted {
-                    val (blurred, suggestion) = withContext(Dispatchers.Default) {
-                        val blurredBitmap = blurForHeader(resource)
-                        blurredBitmap to suggestSystemBars(blurredBitmap)
+                blurJob = lifecycleOwner.lifecycleScope.launch {
+                    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        val (blurred, suggestion) = withContext(Dispatchers.Default) {
+                            val blurredBitmap = blurForHeader(resource)
+                            blurredBitmap to suggestSystemBars(blurredBitmap)
+                        }
+                        imageView.setImageBitmap(blurred)
+                        suggestion?.let { onSystemBarStyleSuggested?.invoke(it) }
+                        this@launch.cancel()
                     }
-                    imageView.setImageBitmap(blurred)
-                    suggestion?.let { onSystemBarStyleSuggested?.invoke(it) }
                 }
             }
 
