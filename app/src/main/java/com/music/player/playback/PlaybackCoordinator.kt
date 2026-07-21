@@ -634,6 +634,7 @@ object PlaybackCoordinator {
         }
     }
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     private fun playPreparedSong(
         song: Song,
         startPositionMs: Long = 0L,
