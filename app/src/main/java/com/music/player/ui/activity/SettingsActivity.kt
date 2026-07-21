@@ -113,6 +113,9 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::appUpdateInstaller.isInitialized) {
+            appUpdateInstaller.resumePendingWork()
+        }
         if (::binding.isInitialized) {
             updateDownloadedSize()
         }

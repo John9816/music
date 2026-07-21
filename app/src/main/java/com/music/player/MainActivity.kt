@@ -227,6 +227,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::appUpdateInstaller.isInitialized) {
+            appUpdateInstaller.resumePendingWork()
+        }
         refreshForMusicSourceChangeIfNeeded()
     }
 

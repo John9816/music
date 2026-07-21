@@ -1,8 +1,8 @@
 package com.music.player.update
 
 import android.app.DownloadManager
-import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -75,6 +75,27 @@ class AppUpdateInstaller(
         if (!receiverRegistered) return
         activity.unregisterReceiver(downloadReceiver)
         receiverRegistered = false
+    }
+
+    fun resumePendingWork() {
+        val downloadId = prefs.getLong(KEY_DOWNLOAD_ID, activeDownloadId)
+        if (downloadId != -1L) {
+            activeDownloadId = downloadId
+            activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)?.let(::File)
+            resumeDownloadIfFinished(downloadId)
+        }
+
+        val pending = pendingInstallFile
+            ?: prefs.getString(KEY_PENDING_INSTALL_FILE, null)
+                ?.let(::File)
+                ?.takeIf(File::exists)
+                ?.also { pendingInstallFile = it }
+            ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            activity.packageManager.canRequestPackageInstalls()
+        ) {
+            launchInstaller(pending)
+        }
     }
 
     fun downloadAndInstall(downloadUrl: String, versionName: String) {
@@ -188,34 +209,34 @@ class AppUpdateInstaller(
     }
 
     private fun launchInstaller(file: File) {
-        val apkUri = FileProvider.getUriForFile(
-            activity,
-            "${BuildConfig.APPLICATION_ID}.fileprovider",
-            file
-        )
+        if (!file.exists()) {
+            clearPendingInstall()
+            toast(R.string.update_install_failed)
+            return
+        }
+
+        val apkUri = runCatching {
+            FileProvider.getUriForFile(
+                activity,
+                "${BuildConfig.APPLICATION_ID}.fileprovider",
+                file
+            )
+        }.getOrElse {
+            toast(R.string.update_install_failed)
+            return
+        }
         val installIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(apkUri, APK_MIME_TYPE)
+            clipData = ClipData.newRawUri(file.name, apkUri)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
         }
 
         runCatching {
-            activity.grantUriPermission(
-                "com.android.packageinstaller",
-                apkUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
             activity.startActivity(installIntent)
             clearPendingInstall()
         }.onFailure {
-            if (it is ActivityNotFoundException) {
-                toast(R.string.update_install_failed)
-            } else {
-                toast(R.string.update_install_failed)
-            }
+            toast(R.string.update_install_failed)
         }
     }
 
@@ -298,7 +319,8 @@ class AppUpdateInstaller(
             activity,
             downloadReceiver,
             IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            // DownloadManager sends this broadcast from another system process.
+            ContextCompat.RECEIVER_EXPORTED
         )
         receiverRegistered = true
     }
@@ -317,10 +339,6 @@ class AppUpdateInstaller(
             return
         }
 
-        val pending = pendingInstallFile ?: return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.packageManager.canRequestPackageInstalls()) {
-            launchInstaller(pending)
-        }
     }
 
     private fun resumeDownloadIfFinished(downloadId: Long) {
