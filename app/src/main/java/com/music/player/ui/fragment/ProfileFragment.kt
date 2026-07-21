@@ -2,7 +2,6 @@ package com.music.player.ui.fragment
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -19,7 +18,9 @@ import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.resolveThemeColorStateList
+import com.music.player.ui.util.showAvatarPlaceholder
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -289,7 +290,14 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         resources.getDimensionPixelSize(R.dimen.profile_cover_placeholder_padding)
 
     private fun renderUser(user: UserProfile?) {
-        user ?: return
+        if (user == null) {
+            binding.tvNickname.text = getString(R.string.profile_nickname_placeholder)
+            binding.tvSignature.text = getString(R.string.profile_signature_empty)
+            binding.tvProfileMeta.text = getString(R.string.profile_account_placeholder)
+            binding.tvBadge.visibility = View.GONE
+            binding.ivAvatar.showAvatarPlaceholder(18)
+            return
+        }
         binding.tvNickname.text = user.nickname?.takeIf { it.isNotBlank() }
             ?: user.username?.takeIf { it.isNotBlank() }
             ?: user.email?.substringBefore("@")
@@ -297,15 +305,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         binding.tvSignature.text = user.signature?.takeIf { it.isNotBlank() }
             ?: getString(R.string.profile_signature_empty)
         binding.tvProfileMeta.text = buildProfileMeta(user)
-
-        binding.ivAvatar.setPadding(0, 0, 0, 0)
-        binding.ivAvatar.imageTintList = null
-        Glide.with(binding.ivAvatar)
-            .load(resolveAvatarUrl(user))
-            .placeholder(R.drawable.ic_person_24)
-            .error(R.drawable.ic_person_24)
-            .circleCrop()
-            .into(binding.ivAvatar)
+        binding.ivAvatar.loadUserAvatar(user, placeholderPaddingDp = 18)
 
         if (!user.badge.isNullOrEmpty()) {
             binding.tvBadge.text = getString(R.string.profile_badge, user.badge)
@@ -330,15 +330,4 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         return getString(R.string.profile_account_meta, primary, shortId)
     }
 
-    private fun resolveAvatarUrl(user: UserProfile): String {
-        val direct = user.avatar_url?.trim().orEmpty()
-        if (direct.isNotBlank()) return direct
-
-        val seed = user.nickname?.trim().orEmpty()
-            .ifBlank { user.username?.trim().orEmpty() }
-            .ifBlank { user.email?.trim().orEmpty() }
-            .ifBlank { user.id }
-
-        return "https://api.dicebear.com/9.x/initials/png?seed=${Uri.encode(seed)}&radius=50&backgroundType=gradientLinear"
-    }
 }

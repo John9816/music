@@ -14,10 +14,16 @@ import okio.ByteString.Companion.decodeBase64
 
 class AuthSessionManager(context: Context) {
     private val appContext = context.applicationContext
-    private val prefs: SharedPreferences = createPrefs(appContext)
+    /**
+     * Plain mirror so a Keystore/EncryptedSharedPreferences glitch cannot wipe login state.
+     * Must be initialized BEFORE primaryPrefs — createPrimaryPrefs reads the mirror.
+     */
+    private val mirrorPrefs: SharedPreferences =
+        appContext.getSharedPreferences(MIRROR_PREFS_NAME, Context.MODE_PRIVATE)
+    private val primaryPrefs: SharedPreferences = createPrimaryPrefs(appContext)
     private val refreshMutex = Mutex()
 
-    private fun createPrefs(context: Context): SharedPreferences {
+    private fun createPrimaryPrefs(context: Context): SharedPreferences {
         // Tokens are sensitive; store them encrypted at rest. If the Android Keystore is
         // unavailable (rare device/OEM issues), fall back to plain prefs so auth still works.
         return try {
@@ -32,36 +38,59 @@ class AuthSessionManager(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
             migrateLegacyPrefs(context, encrypted)
+            restoreFromMirrorIfPrimaryEmpty(encrypted)
             encrypted
         } catch (t: Throwable) {
             Log.w(TAG, "EncryptedSharedPreferences unavailable, falling back to plain prefs", t)
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).also { plain ->
+                migrateLegacyPrefs(context, plain)
+                restoreFromMirrorIfPrimaryEmpty(plain)
+            }
         }
     }
 
-    /** Moves any tokens saved by older versions in plain prefs into the encrypted store, then wipes them. */
-    private fun migrateLegacyPrefs(context: Context, encrypted: SharedPreferences) {
+    /** Moves any tokens saved by older versions in plain prefs into the primary store, then wipes them. */
+    private fun migrateLegacyPrefs(context: Context, primary: SharedPreferences) {
         val legacy = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (legacy.all.isEmpty()) return
-        if (encrypted.getString(KEY_ACCESS_TOKEN, null) == null) {
-            encrypted.edit()
-                .putString(KEY_ACCESS_TOKEN, legacy.getString(KEY_ACCESS_TOKEN, null))
-                .putString(KEY_REFRESH_TOKEN, legacy.getString(KEY_REFRESH_TOKEN, null))
-                .putLong(KEY_EXPIRES_AT_MS, legacy.getLong(KEY_EXPIRES_AT_MS, 0L))
-                .putString(KEY_USER_ID, legacy.getString(KEY_USER_ID, null))
-                .apply()
+        if (legacy === primary || legacy.all.isEmpty()) return
+        if (primary.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() &&
+            primary.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
+        ) {
+            copySession(from = legacy, to = primary)
         }
-        legacy.edit().clear().apply()
+        legacy.edit().clear().commit()
+    }
+
+    private fun restoreFromMirrorIfPrimaryEmpty(primary: SharedPreferences) {
+        val primaryEmpty = primary.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() &&
+            primary.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
+        val mirrorHasSession = !mirrorPrefs.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() ||
+            !mirrorPrefs.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
+        if (primaryEmpty && mirrorHasSession) {
+            Log.i(TAG, "Restoring auth session from mirror preferences")
+            copySession(from = mirrorPrefs, to = primary)
+        }
+    }
+
+    private fun copySession(from: SharedPreferences, to: SharedPreferences) {
+        to.edit()
+            .putString(KEY_ACCESS_TOKEN, from.getString(KEY_ACCESS_TOKEN, null))
+            .putString(KEY_REFRESH_TOKEN, from.getString(KEY_REFRESH_TOKEN, null))
+            .putLong(KEY_EXPIRES_AT_MS, from.getLong(KEY_EXPIRES_AT_MS, 0L))
+            .putString(KEY_USER_ID, from.getString(KEY_USER_ID, null))
+            .commit()
     }
 
     fun isLoggedIn(): Boolean {
         return !getRefreshToken().isNullOrBlank() || !getAccessToken().isNullOrBlank()
     }
 
-    fun getCachedUserId(): String? = prefs.getString(KEY_USER_ID, null)
+    fun getCachedUserId(): String? =
+        primaryPrefs.getString(KEY_USER_ID, null)
+            ?: mirrorPrefs.getString(KEY_USER_ID, null)
 
     fun cacheUserId(userId: String) {
-        prefs.edit().putString(KEY_USER_ID, userId).apply()
+        writeBoth { editor -> editor.putString(KEY_USER_ID, userId) }
     }
 
     fun syncUserIdFromAccessToken(accessToken: String): String? {
@@ -75,12 +104,12 @@ class AuthSessionManager(context: Context) {
     }
 
     fun clear() {
-        prefs.edit()
-            .remove(KEY_ACCESS_TOKEN)
-            .remove(KEY_REFRESH_TOKEN)
-            .remove(KEY_EXPIRES_AT_MS)
-            .remove(KEY_USER_ID)
-            .apply()
+        writeBoth { editor ->
+            editor.remove(KEY_ACCESS_TOKEN)
+                .remove(KEY_REFRESH_TOKEN)
+                .remove(KEY_EXPIRES_AT_MS)
+                .remove(KEY_USER_ID)
+        }
     }
 
     fun invalidateSession() {
@@ -89,23 +118,26 @@ class AuthSessionManager(context: Context) {
     }
 
     fun saveSession(accessToken: String, refreshToken: String?, expiresInSeconds: Int?, userId: String?) {
-        val expiresAtMs = expiresInSeconds?.takeIf { it > 0 }?.let { seconds ->
-            System.currentTimeMillis() + (seconds.toLong() * 1000L)
-        } ?: JwtTokenParser.expiresAtMs(accessToken)
+        val expiresAtMs = resolveExpiresAtMs(accessToken, expiresInSeconds)
 
         if (refreshToken.isNullOrBlank()) {
-            Log.w(TAG, "Auth response has no refresh token; session will end when the access token expires")
+            Log.w(TAG, "Auth response has no refresh token; session lasts until access token is rejected")
         } else if (expiresAtMs == null) {
-            Log.w(TAG, "Auth response has no expiry and JWT exp claim is missing; refresh will be attempted before protected requests")
+            Log.w(TAG, "Auth response has no expiry and JWT exp claim is missing; will refresh only after 401")
         }
 
-        prefs.edit()
-            .putString(KEY_ACCESS_TOKEN, accessToken)
-            .putString(KEY_REFRESH_TOKEN, refreshToken)
-            .putLong(KEY_EXPIRES_AT_MS, expiresAtMs ?: 0L)
-            .putString(KEY_USER_ID, userId)
-            .apply()
+        writeBoth { editor ->
+            editor.putString(KEY_ACCESS_TOKEN, accessToken)
+                .putString(KEY_REFRESH_TOKEN, refreshToken)
+                // 0 means "unknown" — do NOT treat as expired (see isNearExpiry).
+                .putLong(KEY_EXPIRES_AT_MS, expiresAtMs ?: 0L)
+                .putString(KEY_USER_ID, userId)
+        }
         AuthSessionState.markActive()
+        Log.d(
+            TAG,
+            "Session saved (refresh=${!refreshToken.isNullOrBlank()}, expiresAt=${expiresAtMs ?: 0L})"
+        )
     }
 
     suspend fun getValidAccessToken(authApi: SupabaseAuthApi): String? {
@@ -121,8 +153,8 @@ class AuthSessionManager(context: Context) {
         val expiresAtMs = getExpiresAtMs()
 
         // 无刷新令牌时无法续期：仍返回现有令牌，交由服务端以 401 判定是否失效。
-        // 本地 expiresAtMs 可能因时钟或后端策略不准，提前判定过期会造成误登出。
         if (refreshToken.isNullOrBlank()) return token
+        // 未知过期时间：不要主动刷，避免错误刷新接口把会话清掉。
         if (!isNearExpiry(expiresAtMs)) return token
 
         return refreshMutex.withLock {
@@ -135,6 +167,8 @@ class AuthSessionManager(context: Context) {
 
             when (val result = refreshAccessToken(authApi, existingRefresh)) {
                 is TokenRefreshResult.Success -> result.accessToken
+                // Keep access token if refresh is hard-failed only after server said session is dead.
+                // InvalidSession already cleared storage.
                 TokenRefreshResult.InvalidSession -> null
                 TokenRefreshResult.MissingRefreshToken,
                 TokenRefreshResult.TransientFailure -> existingToken
@@ -157,8 +191,11 @@ class AuthSessionManager(context: Context) {
         return try {
             val response = authApi.refreshToken(RefreshTokenRequest(refreshToken))
             if (!response.isSuccessful) {
-                return when (classifyRefreshFailure(response.code())) {
+                val code = response.code()
+                Log.w(TAG, "Refresh HTTP $code")
+                return when (classifyRefreshFailure(code)) {
                     RefreshFailure.INVALID_SESSION -> {
+                        // Only clear when the server explicitly rejects the session.
                         invalidateSession()
                         TokenRefreshResult.InvalidSession
                     }
@@ -172,8 +209,10 @@ class AuthSessionManager(context: Context) {
 
             saveSession(
                 accessToken = newAccess,
-                refreshToken = body.refresh_token ?: refreshToken,
-                expiresInSeconds = body.expires_in ?: body.expiresInMinutes?.let { (it * 60L).toInt() },
+                // Some backends rotate refresh tokens; keep old if absent.
+                refreshToken = body.refresh_token?.takeIf { it.isNotBlank() } ?: refreshToken,
+                expiresInSeconds = body.expires_in
+                    ?: body.expiresInMinutes?.let { (it * 60L).toInt() },
                 userId = syncUserIdFromAccessToken(newAccess) ?: getCachedUserId()
             )
 
@@ -186,19 +225,49 @@ class AuthSessionManager(context: Context) {
         }
     }
 
-    private fun getAccessToken(): String? = prefs.getString(KEY_ACCESS_TOKEN, null)
-    private fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
-    private fun getExpiresAtMs(): Long = prefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+    private fun getAccessToken(): String? =
+        primaryPrefs.getString(KEY_ACCESS_TOKEN, null)
+            ?: mirrorPrefs.getString(KEY_ACCESS_TOKEN, null)
 
+    private fun getRefreshToken(): String? =
+        primaryPrefs.getString(KEY_REFRESH_TOKEN, null)
+            ?: mirrorPrefs.getString(KEY_REFRESH_TOKEN, null)
+
+    private fun getExpiresAtMs(): Long {
+        val primary = primaryPrefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+        if (primary > 0L) return primary
+        return mirrorPrefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+    }
+
+    /**
+     * Unknown expiry (0) must NOT force refresh — backends without exp claims were refreshing
+     * on every request; a failing refresh endpoint then wiped the session every cold start.
+     */
     private fun isNearExpiry(expiresAtMs: Long): Boolean {
-        if (expiresAtMs <= 0L) return true
+        if (expiresAtMs <= 0L) return false
         return System.currentTimeMillis() >= (expiresAtMs - EXPIRY_SAFETY_WINDOW_MS)
+    }
+
+    private fun resolveExpiresAtMs(accessToken: String, expiresInSeconds: Int?): Long? {
+        expiresInSeconds?.takeIf { it > 0 }?.let { seconds ->
+            return System.currentTimeMillis() + (seconds.toLong() * 1000L)
+        }
+        JwtTokenParser.expiresAtMs(accessToken)?.let { return it }
+        // Unknown: store 0 and only refresh after the server returns 401.
+        return null
+    }
+
+    private fun writeBoth(block: (SharedPreferences.Editor) -> SharedPreferences.Editor) {
+        // commit() so tokens survive process death right after login.
+        primaryPrefs.edit().let { block(it).commit() }
+        mirrorPrefs.edit().let { block(it).commit() }
     }
 
     private companion object {
         private const val TAG = "AuthSessionManager"
         private const val PREFS_NAME = "auth_prefs"
         private const val ENCRYPTED_PREFS_NAME = "auth_prefs_secure"
+        private const val MIRROR_PREFS_NAME = "auth_prefs_mirror"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_EXPIRES_AT_MS = "expires_at_ms"
@@ -248,5 +317,6 @@ internal object JwtTokenParser {
     private fun JsonObject.longOrNull(name: String): Long? {
         val value = get(name) ?: return null
         return runCatching { value.asLong }.getOrNull()
+            ?: runCatching { value.asDouble.toLong() }.getOrNull()
     }
 }

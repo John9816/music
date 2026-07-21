@@ -35,6 +35,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.model.LyricLine
@@ -68,6 +69,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         const val STAGE_ANIMATION_MS = 240L
         const val COVER_PULSE_DURATION_MS = 3600L
         const val HANDLE_DISMISS_DISTANCE_DP = 80f
+        const val COVER_CROSSFADE_MS = 220
     }
 
     private var _binding: BottomSheetNowPlayingBinding? = null
@@ -301,13 +303,6 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
         binding.btnLyrics.setOnClickListener { toggleFavoriteForCurrentSong() }
-        val playerForVolume = (activity as? MainActivity)?.player
-        binding.sliderVolume.value = playerForVolume?.volume ?: 1f
-        binding.sliderVolume.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                (activity as? MainActivity)?.player?.volume = value.coerceIn(0f, 1f)
-            }
-        }
         updateAudioQualityButton()
         updateFavoriteButton()
 
@@ -631,7 +626,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             }
         }
 
-        // Load cover image
+        // Load cover image with crossfade on track change
         val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
         immersiveBackground?.setImageUrl(coverUrl)
         if (coverUrl == null) {
@@ -644,6 +639,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                     .load(coverUrl)
                     .placeholder(R.drawable.ic_music_note_24)
                     .centerCrop()
+                    .transition(DrawableTransitionOptions.withCrossFade(COVER_CROSSFADE_MS))
                     .into(iv)
             }
         }

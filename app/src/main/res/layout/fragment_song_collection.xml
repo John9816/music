@@ -1,247 +1,321 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/content"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/pageBackground"
-    android:paddingStart="@dimen/spacing_m"
-    android:paddingTop="@dimen/spacing_m"
-    android:paddingEnd="@dimen/spacing_m"
-    android:paddingBottom="@dimen/spacing_m">
+    android:fitsSystemWindows="false">
 
-        <TextView
-            android:id="@+id/tvHeaderEyebrow"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
-            android:text="@string/nav_profile"
-            android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
-            android:textColor="?attr/brandPrimary"
-            android:textStyle="bold"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:elevation="0dp"
+        android:fitsSystemWindows="false"
+        app:elevation="0dp"
+        app:liftOnScroll="false">
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/headerCoverContainer"
-            android:layout_width="80dp"
-            android:layout_height="80dp"
-            android:layout_marginTop="@dimen/spacing_xs"
-            app:cardBackgroundColor="?attr/surfaceColor"
-            app:cardCornerRadius="@dimen/radius_xl"
-            app:cardElevation="0dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/tvHeaderTitle"
-            app:strokeColor="?attr/dividerColor"
-            app:strokeWidth="1dp">
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:id="@+id/collapsingHeader"
+            android:layout_width="match_parent"
+            android:layout_height="320dp"
+            android:fitsSystemWindows="false"
+            android:minHeight="?attr/actionBarSize"
+            app:contentScrim="?attr/pageBackground"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed|snap"
+            app:scrimAnimationDuration="200"
+            app:scrimVisibleHeightTrigger="120dp"
+            app:statusBarScrim="@android:color/transparent"
+            app:titleEnabled="false">
 
+            <!-- Immersive backdrop (NetEase-style full-bleed cover) -->
             <FrameLayout
+                android:id="@+id/headerBackdrop"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent">
+                android:layout_height="match_parent"
+                android:fitsSystemWindows="false"
+                app:layout_collapseMode="parallax"
+                app:layout_collapseParallaxMultiplier="0.7">
 
                 <ImageView
-                    android:id="@+id/ivHeaderCover"
+                    android:id="@+id/ivHeaderBackdrop"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:background="@android:color/transparent"
-                    android:contentDescription="@string/current_playing_title"
+                    android:contentDescription="@null"
                     android:scaleType="centerCrop"
-                    android:src="@drawable/ic_music_note_24"
-                    app:tint="?attr/brandPrimary" />
+                    android:src="@drawable/bg_header_default" />
+
+                <View
+                    android:id="@+id/viewHeaderScrim"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_collection_header_scrim" />
+            </FrameLayout>
+
+            <!-- Expanded content over cover -->
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/expandedHeader"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:paddingStart="@dimen/spacing_m"
+                android:paddingTop="88dp"
+                android:paddingEnd="@dimen/spacing_m"
+                android:paddingBottom="20dp"
+                app:layout_collapseMode="parallax"
+                app:layout_collapseParallaxMultiplier="0.45">
 
                 <TextView
-                    android:id="@+id/tvHeaderPlayCount"
+                    android:id="@+id/tvHeaderEyebrow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="top|start"
-                    android:layout_margin="6dp"
-                    android:background="@drawable/bg_play_count_badge"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:paddingStart="6dp"
-                    android:paddingTop="2dp"
-                    android:paddingEnd="6dp"
-                    android:paddingBottom="2dp"
+                    android:text="@string/nav_profile"
+                    android:textAppearance="@style/TextAppearance.MusicPlayer.Eyebrow"
                     android:textColor="@color/white"
-                    android:textSize="11sp"
-                    android:visibility="gone" />
+                    android:textStyle="bold"
+                    android:alpha="0.9"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
 
-                <ImageView
-                    android:id="@+id/ivHeaderOverlay"
-                    android:layout_width="26dp"
-                    android:layout_height="26dp"
-                    android:layout_gravity="bottom|end"
-                    android:layout_margin="8dp"
-                    android:background="@drawable/bg_toolbar_action_button"
-                    android:contentDescription="@string/action_favorite"
-                    android:padding="6dp"
-                    android:src="@drawable/ic_favorite_24"
-                    app:tint="?attr/textPrimary" />
-            </FrameLayout>
-        </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/headerCoverContainer"
+                    android:layout_width="112dp"
+                    android:layout_height="112dp"
+                    android:layout_marginTop="@dimen/spacing_s"
+                    app:cardBackgroundColor="?attr/surfaceColor"
+                    app:cardCornerRadius="@dimen/radius_l"
+                    app:cardElevation="6dp"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toBottomOf="@id/tvHeaderEyebrow"
+                    app:strokeWidth="0dp">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent">
+
+                        <ImageView
+                            android:id="@+id/ivHeaderCover"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:contentDescription="@string/item_playlist_cover_desc"
+                            android:scaleType="centerCrop"
+                            android:src="@drawable/ic_music_note_24"
+                            app:tint="?attr/brandPrimary" />
+
+                        <TextView
+                            android:id="@+id/tvHeaderPlayCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="top|start"
+                            android:layout_margin="6dp"
+                            android:background="@drawable/bg_play_count_badge"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:paddingStart="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingEnd="6dp"
+                            android:paddingBottom="2dp"
+                            android:textColor="@color/white"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
+
+                        <ImageView
+                            android:id="@+id/ivHeaderOverlay"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_gravity="bottom|end"
+                            android:layout_margin="8dp"
+                            android:background="@drawable/bg_toolbar_action_button"
+                            android:contentDescription="@string/action_favorite"
+                            android:padding="6dp"
+                            android:src="@drawable/ic_favorite_24"
+                            android:visibility="gone"
+                            app:tint="?attr/textPrimary" />
+                    </FrameLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    android:id="@+id/tvHeaderTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_m"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:text="@string/profile_liked_title"
+                    android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
+                    android:textColor="@color/white"
+                    android:textStyle="bold"
+                    app:layout_constraintBottom_toTopOf="@id/tvHeaderDescription"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/headerCoverContainer"
+                    app:layout_constraintTop_toTopOf="@id/headerCoverContainer"
+                    app:layout_constraintVertical_chainStyle="packed" />
+
+                <TextView
+                    android:id="@+id/tvHeaderDescription"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_m"
+                    android:layout_marginTop="@dimen/spacing_s"
+                    android:ellipsize="end"
+                    android:maxLines="3"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:textColor="#E0FFFFFF"
+                    android:visibility="gone"
+                    app:layout_constraintBottom_toBottomOf="@id/headerCoverContainer"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/headerCoverContainer"
+                    app:layout_constraintTop_toBottomOf="@id/tvHeaderTitle" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <!-- Pinned top bar: back always visible; title fades in on collapse -->
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbarCollapsed"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:background="@android:color/transparent"
+                app:layout_collapseMode="pin"
+                app:navigationIcon="@drawable/ic_arrow_back_24"
+                app:navigationIconTint="@color/white"
+                app:title=""
+                app:titleCentered="false"
+                app:titleTextAppearance="@style/TextAppearance.Material3.TitleMedium"
+                app:titleTextColor="?attr/textPrimary" />
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
+
+        <!-- Sticky "play all" row (stays under collapsed toolbar) -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/collectionActionRow"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="?attr/pageBackground"
+            android:paddingStart="@dimen/spacing_m"
+            android:paddingEnd="@dimen/spacing_m">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPlayAll"
+                style="@style/Widget.MusicPlayer.Button.Outlined"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minWidth="0dp"
+                android:text="@string/action_play_all"
+                android:textColor="?attr/textPrimary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                app:cornerRadius="@dimen/radius_2xl"
+                app:icon="@drawable/ic_play_24"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:iconTint="?attr/textPrimary"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:strokeColor="?attr/dividerColor"
+                app:strokeWidth="1dp" />
+
+            <HorizontalScrollView
+                android:id="@+id/scrollCollectionStats"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/spacing_s"
+                android:overScrollMode="never"
+                android:scrollbars="none"
+                app:layout_constraintBottom_toBottomOf="@id/btnPlayAll"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toEndOf="@id/btnPlayAll"
+                app:layout_constraintTop_toTopOf="@id/btnPlayAll">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvCollectionCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_duration_chip"
+                        android:paddingStart="@dimen/spacing_m"
+                        android:paddingTop="@dimen/spacing_s"
+                        android:paddingEnd="@dimen/spacing_m"
+                        android:paddingBottom="@dimen/spacing_s"
+                        android:text="@string/collection_count_default"
+                        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                        android:textColor="?attr/brandPrimaryDark" />
+
+                    <TextView
+                        android:id="@+id/tvCollectionMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/spacing_s"
+                        android:background="@drawable/bg_duration_chip"
+                        android:paddingStart="@dimen/spacing_m"
+                        android:paddingTop="@dimen/spacing_s"
+                        android:paddingEnd="@dimen/spacing_m"
+                        android:paddingBottom="@dimen/spacing_s"
+                        android:text="@string/collection_mode_default"
+                        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                        android:textColor="?attr/brandPrimaryDark" />
+                </LinearLayout>
+            </HorizontalScrollView>
+
+            <View
+                android:id="@+id/headerDivider"
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:alpha="0.35"
+                android:background="?attr/colorOutline"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <FrameLayout
+        android:id="@+id/contentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingStart="@dimen/spacing_m"
+        android:paddingTop="@dimen/spacing_s"
+        android:paddingEnd="@dimen/spacing_m"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            android:paddingBottom="@dimen/spacing_xxl" />
+
+        <LinearLayout
+            android:id="@+id/layoutSkeleton"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <include layout="@layout/item_song_skeleton" />
+            <include layout="@layout/item_song_skeleton" />
+            <include layout="@layout/item_song_skeleton" />
+            <include layout="@layout/item_song_skeleton" />
+            <include layout="@layout/item_song_skeleton" />
+        </LinearLayout>
 
         <TextView
-            android:id="@+id/tvHeaderTitle"
-            android:layout_width="0dp"
+            android:id="@+id/tvEmpty"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_s"
-            android:layout_marginEnd="@dimen/spacing_l"
-            android:ellipsize="end"
-            android:maxLines="2"
-            android:text="@string/profile_liked_title"
-            android:textAppearance="@style/TextAppearance.MusicPlayer.SectionTitle"
-            android:textColor="?attr/textPrimary"
-            android:textStyle="bold"
-            app:layout_constraintEnd_toStartOf="@id/headerCoverContainer"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvHeaderEyebrow" />
-
-        <TextView
-            android:id="@+id/tvHeaderDescription"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_s"
-            android:layout_marginEnd="@dimen/spacing_l"
-            android:ellipsize="end"
-            android:maxLines="2"
+            android:layout_gravity="top"
+            android:layout_marginTop="@dimen/spacing_xxl"
+            android:gravity="center"
+            android:paddingHorizontal="@dimen/spacing_xl"
+            android:text="@string/profile_liked_empty"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textSecondary"
-            android:visibility="gone"
-            app:layout_constraintEnd_toStartOf="@id/headerCoverContainer"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/tvHeaderTitle" />
+            android:visibility="gone" />
+    </FrameLayout>
 
-        <androidx.constraintlayout.widget.Barrier
-            android:id="@+id/headerBottomBarrier"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:barrierDirection="bottom"
-            app:constraint_referenced_ids="headerCoverContainer,tvHeaderEyebrow,tvHeaderTitle,tvHeaderDescription" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnPlayAll"
-            style="@style/Widget.MusicPlayer.Button.Outlined"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_m"
-            android:minWidth="0dp"
-            android:text="@string/action_play_all"
-            android:textColor="?attr/textPrimary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            app:cornerRadius="@dimen/radius_2xl"
-            app:icon="@drawable/ic_play_24"
-            app:iconGravity="textStart"
-            app:iconPadding="10dp"
-            app:iconTint="?attr/textPrimary"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/headerBottomBarrier"
-            app:layout_goneMarginTop="@dimen/spacing_l"
-            app:strokeColor="?attr/dividerColor"
-            app:strokeWidth="1dp" />
-
-        <HorizontalScrollView
-            android:id="@+id/scrollCollectionStats"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/spacing_s"
-            android:overScrollMode="never"
-            android:scrollbars="none"
-            app:layout_constraintBottom_toBottomOf="@id/btnPlayAll"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/btnPlayAll"
-            app:layout_constraintTop_toTopOf="@id/btnPlayAll">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="end"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:id="@+id/tvCollectionCount"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_duration_chip"
-                    android:paddingStart="@dimen/spacing_m"
-                    android:paddingTop="@dimen/spacing_s"
-                    android:paddingEnd="@dimen/spacing_m"
-                    android:paddingBottom="@dimen/spacing_s"
-                    android:text="@string/collection_count_default"
-                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                    android:textColor="?attr/brandPrimaryDark" />
-
-                <TextView
-                    android:id="@+id/tvCollectionMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/spacing_s"
-                    android:background="@drawable/bg_duration_chip"
-                    android:paddingStart="@dimen/spacing_m"
-                    android:paddingTop="@dimen/spacing_s"
-                    android:paddingEnd="@dimen/spacing_m"
-                    android:paddingBottom="@dimen/spacing_s"
-                    android:text="@string/collection_mode_default"
-                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-                    android:textColor="?attr/brandPrimaryDark" />
-            </LinearLayout>
-        </HorizontalScrollView>
-
-        <View
-            android:id="@+id/headerDivider"
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_marginTop="@dimen/spacing_l"
-            android:alpha="0.4"
-            android:background="?attr/colorOutline"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/btnPlayAll" />
-
-        <FrameLayout
-            android:id="@+id/contentContainer"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_marginTop="@dimen/spacing_m"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/headerDivider">
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/recyclerView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:overScrollMode="never"
-                android:paddingBottom="@dimen/spacing_xxl" />
-
-            <LinearLayout
-                android:id="@+id/layoutSkeleton"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <include layout="@layout/item_song_skeleton" />
-                <include layout="@layout/item_song_skeleton" />
-                <include layout="@layout/item_song_skeleton" />
-                <include layout="@layout/item_song_skeleton" />
-                <include layout="@layout/item_song_skeleton" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tvEmpty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top"
-                android:layout_marginTop="@dimen/spacing_xxl"
-                android:gravity="center"
-                android:paddingHorizontal="@dimen/spacing_xl"
-                android:text="@string/profile_liked_empty"
-                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                android:textColor="?attr/textSecondary"
-                android:visibility="gone" />
-        </FrameLayout>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

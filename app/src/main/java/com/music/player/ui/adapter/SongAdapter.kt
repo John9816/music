@@ -12,6 +12,7 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.ItemSongBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 
 class SongAdapter(
@@ -19,6 +20,19 @@ class SongAdapter(
     private val onSongLongClick: (Song) -> Unit = {},
     private val onMoreClick: ((anchor: View, song: Song) -> Unit)? = null
 ) : ListAdapter<Song, SongAdapter.SongViewHolder>(SongDiffCallback()) {
+
+    private var currentPlayingId: String? = null
+
+    fun setCurrentPlayingId(songId: String?) {
+        if (currentPlayingId == songId) return
+        val previousId = currentPlayingId
+        currentPlayingId = songId
+        currentList.forEachIndexed { index, song ->
+            if (song.id == previousId || song.id == songId) {
+                notifyItemChanged(index, PAYLOAD_PLAYING)
+            }
+        }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
         val binding = ItemSongBinding.inflate(
@@ -30,7 +44,15 @@ class SongAdapter(
     }
 
     override fun onBindViewHolder(holder: SongViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        holder.bind(getItem(position), currentPlayingId)
+    }
+
+    override fun onBindViewHolder(holder: SongViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains(PAYLOAD_PLAYING)) {
+            holder.bindPlayingState(getItem(position), currentPlayingId)
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
     }
 
     override fun onViewRecycled(holder: SongViewHolder) {
@@ -55,7 +77,7 @@ class SongAdapter(
             }
         }
 
-        fun bind(song: Song) {
+        fun bind(song: Song, playingId: String?) {
             boundSong = song
             val context = binding.root.context
             binding.tvSongName.text = song.name
@@ -85,6 +107,25 @@ class SongAdapter(
                     .dontAnimate()
                     .into(binding.ivCover)
             }
+            bindPlayingState(song, playingId)
+        }
+
+        fun bindPlayingState(song: Song, playingId: String?) {
+            val context = binding.root.context
+            val isPlaying = playingId != null && song.id == playingId
+            val titleColor = if (isPlaying) {
+                context.resolveThemeColor(R.attr.brandPrimary)
+            } else {
+                context.resolveThemeColor(R.attr.textPrimary)
+            }
+            val metaColor = if (isPlaying) {
+                context.resolveThemeColor(R.attr.brandPrimary)
+            } else {
+                context.resolveThemeColor(R.attr.textSecondary)
+            }
+            binding.tvSongName.setTextColor(titleColor)
+            binding.tvArtist.setTextColor(metaColor)
+            binding.root.isSelected = isPlaying
         }
 
         fun recycle() {
@@ -115,5 +156,6 @@ class SongAdapter(
 
     private companion object {
         const val COVER_DECODE_SIZE_PX = 160
+        private const val PAYLOAD_PLAYING = "playing"
     }
 }

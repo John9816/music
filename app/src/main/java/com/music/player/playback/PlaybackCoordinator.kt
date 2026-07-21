@@ -15,6 +15,7 @@ import com.music.player.data.model.Song
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.data.settings.AppSettings
+import com.music.player.ui.util.ImageUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -657,16 +658,24 @@ object PlaybackCoordinator {
         // Avoid crashing on playback start.
         val title = song.name.ifBlank { "Unknown" }
         val artist = song.artists.orEmpty().joinToString(", ") { it.name }.ifBlank { "Unknown" }
-        val artwork = song.album.picUrl
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?.let { Uri.parse(it) }
+        val album = song.album.name.takeIf { it.isNotBlank() }
+        // Prefer HTTPS so the system media notification BitmapLoader can fetch artwork.
+        val artworkUri = ImageUrl.bestQuality(song.album.picUrl)?.let { Uri.parse(it) }
+        // duration from API helps the system QS media player show a progress bar
+        // before (and if) the stream itself reports a duration.
+        val durationMs = song.duration.takeIf { it > 0L }
 
-        val metadata = MediaMetadata.Builder()
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
-            .setArtworkUri(artwork)
-            .build()
+            .setArtworkUri(artworkUri)
+        if (album != null) {
+            metadataBuilder.setAlbumTitle(album)
+        }
+        if (durationMs != null) {
+            metadataBuilder.setDurationMs(durationMs)
+        }
+        val metadata = metadataBuilder.build()
 
         val extras = Bundle().apply {
             putString(EXTRA_SONG_ID, song.id)

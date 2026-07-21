@@ -69,8 +69,9 @@ internal class UserProfilePreferences(context: Context) {
         }
 
         val prefix = keyPrefix(profile.id)
-        prefs.edit().putString(prefix + KEY_AVATAR, target.toURI().toString()).apply()
-        applyTo(profile)
+        // Absolute path is the most reliable Glide load model across Android versions.
+        prefs.edit().putString(prefix + KEY_AVATAR, target.absolutePath).apply()
+        applyTo(profile.copy(avatar_url = target.absolutePath))
     }
 
     private fun valueIfStored(key: String): String? {

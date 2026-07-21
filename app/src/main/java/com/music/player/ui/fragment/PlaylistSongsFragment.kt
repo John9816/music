@@ -10,16 +10,13 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
-import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
-import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.optimizeVerticalScrolling
-import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
 
@@ -60,11 +57,16 @@ class PlaylistSongsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
-        binding.content.applyStatusBarInsetPadding()
 
+        binding.tvHeaderEyebrow.visibility = View.GONE
         binding.tvHeaderTitle.visibility = View.VISIBLE
         binding.ivHeaderOverlay.visibility = View.GONE
         binding.btnPlayAll.setOnClickListener { playAll() }
+        SongCollectionHeaderHelper.setup(
+            fragment = this,
+            binding = binding,
+            initialTitle = headerTitleOverride.orEmpty()
+        )
 
         songAdapter = SongAdapter(
             onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
@@ -78,12 +80,15 @@ class PlaylistSongsFragment : Fragment() {
 
         musicViewModel.currentPlaylist.observe(viewLifecycleOwner) { playlist ->
             playlist ?: return@observe
-            binding.tvHeaderTitle.text = headerTitleOverride ?: playlist.name
+            SongCollectionHeaderHelper.setTitle(
+                binding,
+                headerTitleOverride ?: playlist.name
+            )
             if (playlist.trackCount > 0) {
                 binding.tvCollectionCount.text =
                     getString(R.string.collection_count_value, playlist.trackCount)
             }
-            updateHeaderCover(playlist.coverImgUrl)
+            SongCollectionHeaderHelper.loadCovers(binding, playlist.coverImgUrl)
 
             val description = playlist.description.replace(Regex("\\s+"), " ").trim()
             binding.tvHeaderDescription.text = description
@@ -121,21 +126,6 @@ class PlaylistSongsFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-    }
-
-    private fun updateHeaderCover(coverUrl: String?) {
-        val url = coverUrl?.trim().orEmpty()
-        if (url.isBlank()) {
-            binding.ivHeaderCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHeaderCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
-        } else {
-            binding.ivHeaderCover.imageTintList = null
-            Glide.with(binding.ivHeaderCover)
-                .load(ImageUrl.bestQuality(url))
-                .placeholder(R.drawable.ic_music_note_24)
-                .centerCrop()
-                .into(binding.ivHeaderCover)
-        }
     }
 
     private fun playAll() {

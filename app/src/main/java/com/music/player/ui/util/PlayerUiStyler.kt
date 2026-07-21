@@ -11,6 +11,8 @@ import androidx.annotation.AttrRes
 import androidx.core.graphics.ColorUtils
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.slider.LabelFormatter
+import com.google.android.material.slider.Slider
 import com.music.player.R
 import com.music.player.databinding.ActivityMainBinding
 import com.music.player.databinding.BottomSheetNowPlayingBinding
@@ -39,7 +41,8 @@ object PlayerUiStyler {
         binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 24)
         binding.miniProgress.trackThickness = context.dp(2f)
         binding.tvMiniTitle.setTextColor(textPrimary)
-        binding.tvMiniArtist.visibility = View.GONE
+        binding.tvMiniArtist.setTextColor(textSecondary)
+        binding.tvMiniArtist.visibility = View.VISIBLE
     }
 
     fun applyNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
@@ -159,16 +162,19 @@ object PlayerUiStyler {
             context.resolveThemeColorStateList(R.attr.textPrimary)
         stylePillButton(
             button = binding.btnAudioQuality,
-            backgroundColor = surfaceAlt,
+            backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
-            textColor = textPrimary,
-            iconTintColor = textPrimary,
+            textColor = textSecondary,
+            iconTintColor = textSecondary,
             context = context
         )
-        binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.dividerColor)
-        binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
+        styleNowPlayingSliders(
+            binding = binding,
+            context = context,
+            activeTrack = textPrimary,
+            inactiveTrack = context.resolveThemeColor(R.attr.dividerColor),
+            thumb = textPrimary
+        )
         binding.tvCurrentTime.setTextColor(textSecondary)
         binding.tvTotalTime.setTextColor(textSecondary)
         styleNowPlayingContent(binding, textPrimary, textSecondary)
@@ -207,16 +213,19 @@ object PlayerUiStyler {
         binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
         stylePillButton(
             button = binding.btnAudioQuality,
-            backgroundColor = ColorUtils.setAlphaComponent(surface, 252),
+            backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
-            textColor = textPrimary,
-            iconTintColor = textPrimary,
+            textColor = textSecondary,
+            iconTintColor = textSecondary,
             context = context
         )
-        binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
-        binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
+        styleNowPlayingSliders(
+            binding = binding,
+            context = context,
+            activeTrack = textPrimary,
+            inactiveTrack = context.resolveThemeColor(R.attr.brandPrimaryLight),
+            thumb = textPrimary
+        )
         binding.tvCurrentTime.setTextColor(textSecondary)
         binding.tvTotalTime.setTextColor(textSecondary)
         styleNowPlayingContent(binding, textPrimary, textSecondary)
@@ -249,19 +258,60 @@ object PlayerUiStyler {
         binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
         stylePillButton(
             button = binding.btnAudioQuality,
-            backgroundColor = surfaceAlt,
+            backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
-            textColor = textPrimary,
-            iconTintColor = textPrimary,
+            textColor = textSecondary,
+            iconTintColor = textSecondary,
             context = context
         )
-        binding.sliderProgress.trackActiveTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.trackInactiveTintList = context.resolveThemeColorStateList(R.attr.dividerColor)
-        binding.sliderProgress.thumbTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.sliderProgress.haloTintList = context.resolveThemeColorStateList(R.attr.brandPrimaryLight)
+        styleNowPlayingSliders(
+            binding = binding,
+            context = context,
+            activeTrack = textPrimary,
+            inactiveTrack = context.resolveThemeColor(R.attr.dividerColor),
+            thumb = textPrimary
+        )
         binding.tvCurrentTime.setTextColor(textSecondary)
         binding.tvTotalTime.setTextColor(textSecondary)
         styleNowPlayingContent(binding, textPrimary, textSecondary)
+    }
+
+    private fun styleNowPlayingSliders(
+        binding: BottomSheetNowPlayingBinding,
+        context: Context,
+        activeTrack: Int,
+        inactiveTrack: Int,
+        thumb: Int
+    ) {
+        val thumbRadiusPx = context.dp(4f)
+        val trackHeightPx = context.dp(3f)
+        styleCompactSlider(
+            slider = binding.sliderProgress,
+            thumbRadiusPx = thumbRadiusPx,
+            trackHeightPx = trackHeightPx,
+            activeTrack = activeTrack,
+            inactiveTrack = inactiveTrack,
+            thumb = thumb
+        )
+    }
+
+    private fun styleCompactSlider(
+        slider: Slider,
+        thumbRadiusPx: Int,
+        trackHeightPx: Int,
+        activeTrack: Int,
+        inactiveTrack: Int,
+        thumb: Int
+    ) {
+        slider.thumbRadius = thumbRadiusPx
+        slider.haloRadius = 0
+        slider.trackHeight = trackHeightPx
+        slider.setLabelBehavior(LabelFormatter.LABEL_GONE)
+        slider.trackActiveTintList = ColorStateList.valueOf(activeTrack)
+        slider.trackInactiveTintList = ColorStateList.valueOf(inactiveTrack)
+        slider.thumbTintList = ColorStateList.valueOf(thumb)
+        slider.haloTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+        slider.thumbStrokeWidth = 0f
     }
 
     private fun stylePlayerControlsBar(
@@ -315,10 +365,6 @@ object PlayerUiStyler {
         binding.controlsBar.setCardBackgroundColor(Color.TRANSPARENT)
         binding.controlsBar.strokeWidth = 0
         binding.controlsBar.radius = 0f
-        binding.sliderVolume.trackActiveTintList = ColorStateList.valueOf(primaryText)
-        binding.sliderVolume.trackInactiveTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primaryText, 90))
-        binding.sliderVolume.thumbTintList = ColorStateList.valueOf(primaryText)
-        binding.sliderVolume.haloTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primaryText, 35))
         binding.playerContent.lyricsStage.background = null
         binding.playerContent.rvLyrics.background = null
         binding.playerContent.tvLyricsPlain.background = null

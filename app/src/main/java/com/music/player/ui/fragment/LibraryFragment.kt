@@ -436,6 +436,9 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Observers ─────────────────────────────────────────────────
 
     private fun setupObservers() {
+        musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            songAdapter.setCurrentPlayingId(song?.id)
+        }
         musicViewModel.searchResults.observe(viewLifecycleOwner) { songs ->
             if (searchType != SearchType.SONGS) return@observe
             renderSongs(songs)
@@ -538,7 +541,11 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun renderSongs(songs: List<Song>) {
         showResultLayout(SearchType.SONGS)
-        songAdapter.submitList(songs)
+        songAdapter.submitList(songs) {
+            if (_binding != null) {
+                songAdapter.setCurrentPlayingId(musicViewModel.currentSong.value?.id)
+            }
+        }
         syncEmptyState(songs.isEmpty())
         syncHistoryVisibility()
     }

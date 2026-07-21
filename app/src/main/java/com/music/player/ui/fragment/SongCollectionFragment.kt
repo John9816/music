@@ -8,17 +8,15 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
-import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.optimizeVerticalScrolling
-import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -75,14 +73,13 @@ class SongCollectionFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
-        binding.content.applyStatusBarInsetPadding()
 
         binding.tvHeaderEyebrow.text = when (mode) {
             Mode.LIKED -> getString(R.string.collection_mode_liked)
             Mode.HISTORY -> getString(R.string.collection_mode_history)
             Mode.PLAYLIST -> getString(R.string.collection_mode_playlist)
         }
-        binding.tvHeaderTitle.text = when (mode) {
+        val headerTitle = when (mode) {
             Mode.LIKED -> getString(R.string.profile_liked_title)
             Mode.HISTORY -> getString(R.string.profile_history_title)
             Mode.PLAYLIST -> playlistName.ifBlank { getString(R.string.user_playlist_title) }
@@ -99,6 +96,7 @@ class SongCollectionFragment : Fragment() {
         }
         binding.tvHeaderDescription.visibility = View.VISIBLE
         binding.tvHeaderPlayCount.visibility = View.GONE
+        binding.ivHeaderOverlay.visibility = View.VISIBLE
         binding.ivHeaderOverlay.setImageResource(
             when (mode) {
                 Mode.LIKED -> R.drawable.ic_favorite_24
@@ -106,6 +104,7 @@ class SongCollectionFragment : Fragment() {
                 Mode.PLAYLIST -> R.drawable.ic_playlist_24
             }
         )
+        SongCollectionHeaderHelper.setup(this, binding, headerTitle)
 
         songAdapter = SongAdapter(
             onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
@@ -124,6 +123,10 @@ class SongCollectionFragment : Fragment() {
         }
 
         binding.btnPlayAll.setOnClickListener { playAll() }
+
+        musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            songAdapter.setCurrentPlayingId(song?.id)
+        }
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
             if (mode != Mode.LIKED) return@observe
@@ -164,7 +167,11 @@ class SongCollectionFragment : Fragment() {
     }
 
     private fun renderSongs(songs: List<Song>, emptyRes: Int) {
-        songAdapter.submitList(songs)
+        songAdapter.submitList(songs) {
+            if (_binding != null) {
+                songAdapter.setCurrentPlayingId(musicViewModel.currentSong.value?.id)
+            }
+        }
         binding.tvCollectionCount.text = getString(R.string.collection_count_value, songs.size)
         binding.tvEmpty.setText(emptyRes)
         binding.layoutSkeleton.visibility = View.GONE
@@ -172,7 +179,12 @@ class SongCollectionFragment : Fragment() {
         binding.recyclerView.visibility = if (songs.isEmpty()) View.GONE else View.VISIBLE
         binding.btnPlayAll.isEnabled = songs.isNotEmpty()
         if (mode != Mode.PLAYLIST) {
-            updateHeaderCover(fallbackUrl = songs.firstOrNull()?.album?.picUrl)
+            SongCollectionHeaderHelper.loadCovers(
+                binding,
+                songs.firstOrNull()?.album?.picUrl
+            )
+            binding.ivHeaderOverlay.visibility =
+                if (songs.firstOrNull()?.album?.picUrl.isNullOrBlank()) View.VISIBLE else View.GONE
         }
     }
 
@@ -201,8 +213,11 @@ class SongCollectionFragment : Fragment() {
         songs: List<Song>,
         playlist: UserPlaylist? = libraryViewModel.playlists.value.orEmpty().firstOrNull { it.id == playlistId }
     ) {
-        binding.tvHeaderTitle.text = playlist?.name?.takeIf { it.isNotBlank() }
-            ?: playlistName.ifBlank { getString(R.string.user_playlist_title) }
+        SongCollectionHeaderHelper.setTitle(
+            binding,
+            playlist?.name?.takeIf { it.isNotBlank() }
+                ?: playlistName.ifBlank { getString(R.string.user_playlist_title) }
+        )
 
         val description = playlist?.description
             ?.replace(Regex("\\s+"), " ")
@@ -225,29 +240,10 @@ class SongCollectionFragment : Fragment() {
             else -> getString(R.string.collection_mode_playlist)
         }
 
-        updateHeaderCover(
-            primaryUrl = playlist?.coverUrl,
-            fallbackUrl = songs.firstOrNull()?.album?.picUrl
-        )
-    }
-
-    private fun updateHeaderCover(primaryUrl: String? = null, fallbackUrl: String? = null) {
-        val url = primaryUrl?.trim().takeUnless { it.isNullOrBlank() }
-            ?: fallbackUrl?.trim().takeUnless { it.isNullOrBlank() }
-            .orEmpty()
-        if (url.isBlank()) {
-            binding.ivHeaderCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHeaderCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
-            binding.ivHeaderOverlay.visibility = View.VISIBLE
-        } else {
-            binding.ivHeaderCover.imageTintList = null
-            binding.ivHeaderOverlay.visibility = View.GONE
-            Glide.with(binding.ivHeaderCover)
-                .load(url)
-                .placeholder(R.drawable.ic_music_note_24)
-                .centerCrop()
-                .into(binding.ivHeaderCover)
-        }
+        val cover = playlist?.coverUrl?.trim().takeUnless { it.isNullOrBlank() }
+            ?: songs.firstOrNull()?.album?.picUrl
+        SongCollectionHeaderHelper.loadCovers(binding, cover)
+        binding.ivHeaderOverlay.visibility = if (cover.isNullOrBlank()) View.VISIBLE else View.GONE
     }
 
     private fun playAll() {

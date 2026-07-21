@@ -5,9 +5,11 @@
         <!-- 排除加密的登录凭据：master key 绑定当前设备，恢复到新设备无法解密 -->
         <exclude domain="sharedpref" path="auth_prefs_secure.xml" />
         <exclude domain="sharedpref" path="auth_prefs.xml" />
+        <exclude domain="sharedpref" path="auth_prefs_mirror.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="auth_prefs_secure.xml" />
         <exclude domain="sharedpref" path="auth_prefs.xml" />
+        <exclude domain="sharedpref" path="auth_prefs_mirror.xml" />
     </device-transfer>
 </data-extraction-rules>

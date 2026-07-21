@@ -2,7 +2,8 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="?attr/pageBackground">
 
     <include
         android:id="@+id/immersiveHeader"
@@ -106,13 +107,41 @@
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
                         android:textColor="?attr/textSecondary" />
 
+                    <!-- Login + register: username (backend login key) -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/usernameInputLayout"
+                        style="@style/Widget.MusicPlayer.TextField"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_l"
+                        android:hint="@string/username_hint"
+                        app:boxBackgroundColor="?attr/glassSurfaceStrong"
+                        app:boxStrokeColor="@color/white"
+                        app:boxStrokeWidth="1dp"
+                        app:boxStrokeWidthFocused="1.5dp"
+                        app:startIconDrawable="@drawable/ic_person_24">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etUsername"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:autofillHints="username"
+                            android:imeOptions="actionNext"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textColor="?attr/textPrimary"
+                            android:textSize="16sp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Register only: email (hidden in login mode) -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/emailInputLayout"
                         style="@style/Widget.MusicPlayer.TextField"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_l"
+                        android:layout_marginTop="@dimen/spacing_m"
                         android:hint="@string/email_hint"
+                        android:visibility="gone"
                         app:boxBackgroundColor="?attr/glassSurfaceStrong"
                         app:boxStrokeColor="@color/white"
                         app:boxStrokeWidth="1dp"

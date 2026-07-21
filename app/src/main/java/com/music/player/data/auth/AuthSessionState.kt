@@ -29,9 +29,13 @@ internal enum class RefreshFailure {
     TRANSIENT
 }
 
+/**
+ * Only treat hard auth rejection as session death.
+ * 400 is common for "refresh route missing / bad body" on website backends — wiping the
+ * session there caused users to re-login on every app start.
+ */
 internal fun classifyRefreshFailure(httpCode: Int?): RefreshFailure =
-    if (httpCode == 400 || httpCode == 401) {
-        RefreshFailure.INVALID_SESSION
-    } else {
-        RefreshFailure.TRANSIENT
+    when (httpCode) {
+        401, 403 -> RefreshFailure.INVALID_SESSION
+        else -> RefreshFailure.TRANSIENT
     }

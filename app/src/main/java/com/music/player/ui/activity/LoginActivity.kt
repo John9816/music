@@ -76,6 +76,19 @@ class LoginActivity : AppCompatActivity() {
             submitAuth()
         }
 
+        binding.etUsername.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                if (isLoginMode) {
+                    binding.etPassword.requestFocus()
+                } else {
+                    binding.etEmail.requestFocus()
+                }
+                true
+            } else {
+                false
+            }
+        }
+
         binding.etEmail.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) {
                 binding.etPassword.requestFocus()
@@ -138,17 +151,18 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun submitAuth() {
+        val username = binding.etUsername.text?.toString()?.trim().orEmpty()
         val email = binding.etEmail.text?.toString()?.trim().orEmpty()
         val password = binding.etPassword.text?.toString()?.trim().orEmpty()
 
-        if (!validateInput(email, password)) {
+        if (!validateInput(username, email, password)) {
             return
         }
 
         if (isLoginMode) {
-            authViewModel.signIn(email, password)
+            authViewModel.signIn(username, password)
         } else {
-            authViewModel.signUp(email, password)
+            authViewModel.signUp(username, email, password)
         }
     }
 
@@ -160,6 +174,8 @@ class LoginActivity : AppCompatActivity() {
             binding.tvFormHint.text = getString(R.string.login_helper)
             binding.btnSubmit.text = getString(R.string.login_action)
             binding.tvToggleMode.text = getString(R.string.toggle_to_signup)
+            binding.emailInputLayout.visibility = View.GONE
+            binding.etUsername.imeOptions = EditorInfo.IME_ACTION_NEXT
         } else {
             binding.tvTitle.text = getString(R.string.signup_title)
             binding.tvSubtitle.text = getString(R.string.signup_subtitle)
@@ -167,21 +183,36 @@ class LoginActivity : AppCompatActivity() {
             binding.tvFormHint.text = getString(R.string.signup_helper)
             binding.btnSubmit.text = getString(R.string.signup_action)
             binding.tvToggleMode.text = getString(R.string.toggle_to_login)
+            binding.emailInputLayout.visibility = View.VISIBLE
         }
+        binding.usernameInputLayout.error = null
+        binding.emailInputLayout.error = null
+        binding.passwordInputLayout.error = null
         binding.tvStatus.text = ""
     }
 
-    private fun validateInput(email: String, password: String): Boolean {
+    private fun validateInput(username: String, email: String, password: String): Boolean {
+        binding.usernameInputLayout.error = null
         binding.emailInputLayout.error = null
         binding.passwordInputLayout.error = null
 
-        if (email.isEmpty()) {
-            binding.emailInputLayout.error = getString(R.string.email_required)
+        if (username.isEmpty()) {
+            binding.usernameInputLayout.error = getString(R.string.username_required)
             return false
         }
-        if (!isLoginMode && !QQ_EMAIL_REGEX.matches(email)) {
-            binding.emailInputLayout.error = getString(R.string.email_invalid)
+        if (username.length !in 3..50) {
+            binding.usernameInputLayout.error = getString(R.string.username_invalid)
             return false
+        }
+        if (!isLoginMode) {
+            if (email.isEmpty()) {
+                binding.emailInputLayout.error = getString(R.string.email_required)
+                return false
+            }
+            if (!QQ_EMAIL_REGEX.matches(email)) {
+                binding.emailInputLayout.error = getString(R.string.email_invalid)
+                return false
+            }
         }
         if (password.isEmpty()) {
             binding.passwordInputLayout.error = getString(R.string.password_required)

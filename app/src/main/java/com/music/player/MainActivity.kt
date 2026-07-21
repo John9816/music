@@ -1,17 +1,16 @@
 package com.music.player
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +30,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.auth.AuthSessionState
@@ -80,6 +80,8 @@ class MainActivity : AppCompatActivity() {
 
         private const val NOTIFICATION_PERMISSION_PREFS = "notification_permission_prefs"
         private const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "requested"
+        private const val COVER_CROSSFADE_MS = 220
+        private const val MINI_PLAYER_ANIM_MS = 220L
     }
 
     val player: Player?
@@ -101,6 +103,7 @@ class MainActivity : AppCompatActivity() {
     private var miniProgressJob: Job? = null
     private var hasRestoredRecentSong = false
     private var isNavigatingToLogin = false
+    private var pendingSearchFocus = false
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -487,12 +490,21 @@ class MainActivity : AppCompatActivity() {
         transaction.commitNow()
 
         syncTopBarState()
+        if (tabId == R.id.nav_library) {
+            requestSearchFocusIfNeeded()
+        }
     }
 
     fun pushDetail(fragment: Fragment) {
         val fm = supportFragmentManager
         val transaction = fm.beginTransaction()
             .setReorderingAllowed(true)
+            .setCustomAnimations(
+                R.anim.slide_in_right,
+                R.anim.slide_out_left,
+                R.anim.slide_in_left,
+                R.anim.slide_out_right
+            )
 
         fm.fragments
             .filter { it.id == R.id.fragmentContainer && it.isVisible }
@@ -554,30 +566,18 @@ class MainActivity : AppCompatActivity() {
         musicViewModel.currentSong.observe(this) { song ->
             immersiveHeaderBackground.setImageUrl(null)
             if (song == null) {
-                binding.miniPlayer.visibility = View.GONE
                 binding.miniProgress.isIndeterminate = false
                 binding.miniProgress.progress = 0
                 resetMiniCoverRotation()
-                updateMainContentPadding()
+                setMiniPlayerVisible(false)
                 return@observe
             }
 
-            binding.miniPlayer.visibility = View.VISIBLE
             val artists = song.artists.joinToString(", ") { it.name }
             val artistLabel = artists.ifBlank { getString(R.string.item_artist_placeholder) }
-            binding.tvMiniTitle.text = SpannableStringBuilder()
-                .append(song.name)
-                .append(" - ")
-                .append(artistLabel)
-                .apply {
-                    setSpan(
-                        ForegroundColorSpan(resolveThemeColor(R.attr.textSecondary)),
-                        song.name.length + 3,
-                        length,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                }
+            binding.tvMiniTitle.text = song.name
             binding.tvMiniArtist.text = artistLabel
+            binding.tvMiniArtist.visibility = View.VISIBLE
             binding.miniProgress.isIndeterminate = false
             binding.miniProgress.progress = 0
 
@@ -591,12 +591,13 @@ class MainActivity : AppCompatActivity() {
                     .load(coverUrl)
                     .placeholder(R.drawable.ic_music_note_24)
                     .centerCrop()
+                    .transition(DrawableTransitionOptions.withCrossFade(COVER_CROSSFADE_MS))
                     .into(binding.ivMiniCover)
             }
 
             updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
             libraryViewModel.addToHistory(song)
-            updateMainContentPadding()
+            setMiniPlayerVisible(true)
         }
 
         musicViewModel.error.observe(this) { error ->
@@ -657,6 +658,29 @@ class MainActivity : AppCompatActivity() {
                 NowPlayingBottomSheetFragment().show(supportFragmentManager, "now_playing")
             }
         }
+        binding.miniPlayer.setOnLongClickListener {
+            if (musicViewModel.currentSong.value == null) return@setOnLongClickListener false
+            QueueBottomSheetFragment().show(supportFragmentManager, "queue")
+            true
+        }
+        binding.miniPlayer.contentDescription = getString(R.string.mini_player_open_queue_hint)
+    }
+
+    fun openSearchTab(focus: Boolean = true) {
+        pendingSearchFocus = focus
+        selectRootTab(R.id.nav_library)
+        if (focus) {
+            requestSearchFocusIfNeeded()
+        }
+    }
+
+    private fun requestSearchFocusIfNeeded() {
+        if (!pendingSearchFocus) return
+        val library = supportFragmentManager.findFragmentByTag(TAG_LIBRARY) as? LibraryFragment
+        if (library != null && library.isAdded) {
+            pendingSearchFocus = false
+            library.requestSearchFocus()
+        }
     }
 
     fun animatePlayerBackground(expanded: Boolean) {
@@ -698,6 +722,60 @@ class MainActivity : AppCompatActivity() {
 
     private fun resetMiniCoverRotation() {
         binding.ivMiniCover.rotation = 0f
+    }
+
+    private fun setMiniPlayerVisible(visible: Boolean) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            binding.miniPlayer.animate().cancel()
+            binding.miniPlayer.visibility = if (visible) View.VISIBLE else View.GONE
+            binding.miniPlayer.alpha = 1f
+            binding.miniPlayer.translationY = 0f
+            updateMainContentPadding()
+            return
+        }
+
+        val mini = binding.miniPlayer
+        mini.animate().cancel()
+
+        if (visible) {
+            if (mini.visibility == View.VISIBLE && mini.alpha >= 0.99f && mini.translationY == 0f) {
+                updateMainContentPadding()
+                return
+            }
+            val slide = (mini.height.takeIf { it > 0 } ?: (64 * resources.displayMetrics.density)).toFloat()
+            mini.visibility = View.VISIBLE
+            mini.alpha = 0f
+            mini.translationY = slide
+            updateMainContentPadding()
+            mini.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(MINI_PLAYER_ANIM_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    mini.alpha = 1f
+                    mini.translationY = 0f
+                }
+                .start()
+        } else {
+            if (mini.visibility != View.VISIBLE) {
+                updateMainContentPadding()
+                return
+            }
+            val slide = (mini.height.takeIf { it > 0 } ?: (64 * resources.displayMetrics.density)).toFloat()
+            mini.animate()
+                .alpha(0f)
+                .translationY(slide)
+                .setDuration(MINI_PLAYER_ANIM_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    mini.visibility = View.GONE
+                    mini.alpha = 1f
+                    mini.translationY = 0f
+                    updateMainContentPadding()
+                }
+                .start()
+        }
     }
 
     private fun startMiniProgressUpdates() {

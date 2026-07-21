@@ -22,6 +22,6 @@
     <string name="search_not_found_songs">没有找到匹配歌曲</string>
     <string name="search_not_found_artists">没有找到匹配歌手</string>
     <string name="search_not_found_playlists">没有找到匹配歌单</string>
-    <string name="search_for_artists">Search for artists</string>
-    <string name="search_for_playlists">Search for playlists</string>
+    <string name="search_for_artists">搜索歌手</string>
+    <string name="search_for_playlists">搜索歌单</string>
 </resources>

@@ -2,7 +2,8 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="?attr/pageBackground">
 
     <include
         android:id="@+id/immersiveHeader"
@@ -16,47 +17,42 @@
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="0dp"
-        android:layout_height="1dp"
+        android:layout_height="wrap_content"
         android:background="@android:color/transparent"
+        android:minHeight="?attr/actionBarSize"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationIcon="@drawable/ic_arrow_back_24"
-        app:title="" />
+        app:navigationIconTint="?attr/textPrimary"
+        app:title="@string/settings_title"
+        app:titleTextColor="?attr/textPrimary" />
 
-    <ScrollView
+    <androidx.core.widget.NestedScrollView
         android:id="@+id/scrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
         android:fillViewport="true"
         android:overScrollMode="never"
+        android:scrollbars="vertical"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/toolbar">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="@dimen/spacing_m"
-            android:paddingTop="76dp"
+            android:paddingTop="@dimen/spacing_s"
             android:paddingEnd="@dimen/spacing_m"
             android:paddingBottom="@dimen/spacing_3xl">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/settings_title"
-                android:textAppearance="@style/TextAppearance.MusicPlayer.HeroTitle"
-                android:textColor="?attr/textPrimary"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_m"
                 android:text="@string/settings_profile_section"
                 android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
                 android:textColor="?attr/textPrimary"
@@ -470,11 +466,18 @@
                 android:layout_width="1dp"
                 android:layout_height="1dp"
                 android:visibility="gone" />
+
+            <!-- Account actions: visible when logged in (toggled in SettingsActivity.renderProfile) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLogout"
-                android:layout_width="1dp"
-                android:layout_height="1dp"
-                android:visibility="gone" />
+                style="@style/Widget.MusicPlayer.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xl"
+                android:text="@string/profile_logout"
+                android:textColor="?attr/colorError"
+                android:visibility="gone"
+                app:strokeColor="?attr/colorError" />
         </LinearLayout>
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

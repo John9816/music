@@ -37,7 +37,11 @@ data class SignInRequest(
 )
 
 data class RefreshTokenRequest(
-    val refresh_token: String
+    @com.google.gson.annotations.SerializedName("refresh_token")
+    val refresh_token: String,
+    // Some website backends expect camelCase.
+    @com.google.gson.annotations.SerializedName("refreshToken")
+    val refreshToken: String = refresh_token
 )
 
 data class AuthResponse(
@@ -58,6 +62,9 @@ data class AuthResponse(
 data class UserData(
     val id: String,
     val username: String? = null,
+    val nickname: String? = null,
+    val signature: String? = null,
+    val avatar_url: String? = null,
     val role: String? = null,
     val canManageSystemConfig: Boolean? = null,
     val email: String? = null,

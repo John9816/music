@@ -9,18 +9,15 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.Album
 import com.music.player.data.model.NewestAlbum
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
-import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
-import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.optimizeVerticalScrolling
-import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.viewmodel.MusicViewModel
 
 class AlbumSongsFragment : Fragment() {
@@ -73,10 +70,9 @@ class AlbumSongsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
-        binding.content.applyStatusBarInsetPadding()
 
         binding.tvHeaderEyebrow.text = getString(R.string.album_header_eyebrow)
-        binding.tvHeaderTitle.text = albumName.ifBlank { getString(R.string.album_header_title_fallback) }
+        val title = albumName.ifBlank { getString(R.string.album_header_title_fallback) }
         binding.tvHeaderDescription.text = artistNames.ifBlank { getString(R.string.album_header_description_fallback) }
         binding.tvHeaderDescription.visibility = View.VISIBLE
         binding.tvCollectionMode.text = getString(R.string.album_collection_mode)
@@ -84,6 +80,8 @@ class AlbumSongsFragment : Fragment() {
         binding.ivHeaderOverlay.visibility = View.GONE
         binding.tvHeaderPlayCount.visibility = View.GONE
         binding.btnPlayAll.setOnClickListener { playAll() }
+        SongCollectionHeaderHelper.setup(this, binding, title)
+        SongCollectionHeaderHelper.loadCovers(binding, coverUrl)
 
         songAdapter = SongAdapter(
             onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
@@ -97,10 +95,16 @@ class AlbumSongsFragment : Fragment() {
 
         musicViewModel.currentAlbum.observe(viewLifecycleOwner) { album ->
             if (album == null || album.album.id != albumId) return@observe
-            binding.tvHeaderTitle.text = album.album.name.ifBlank { albumName }
+            SongCollectionHeaderHelper.setTitle(
+                binding,
+                album.album.name.ifBlank { albumName }
+            )
             binding.tvHeaderDescription.text = album.artistNames.ifBlank { artistNames }
             binding.tvHeaderDescription.visibility = View.VISIBLE
-            updateHeaderCover(album.album.picUrl.ifBlank { coverUrl })
+            SongCollectionHeaderHelper.loadCovers(
+                binding,
+                album.album.picUrl.ifBlank { coverUrl }
+            )
         }
 
         musicViewModel.currentAlbumSongs.observe(viewLifecycleOwner) { songs ->
@@ -127,7 +131,6 @@ class AlbumSongsFragment : Fragment() {
             Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
         }
 
-        updateHeaderCover(coverUrl)
         refreshAlbum(forceRefresh = false)
     }
 
@@ -146,21 +149,6 @@ class AlbumSongsFragment : Fragment() {
             artistNames = artistNames
         )
         musicViewModel.loadNewestAlbumDetail(album, forceRefresh = forceRefresh)
-    }
-
-    private fun updateHeaderCover(url: String?) {
-        val normalized = url?.trim().orEmpty()
-        if (normalized.isBlank()) {
-            binding.ivHeaderCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHeaderCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
-            return
-        }
-        binding.ivHeaderCover.imageTintList = null
-        Glide.with(binding.ivHeaderCover)
-            .load(ImageUrl.bestQuality(normalized))
-            .placeholder(R.drawable.ic_music_note_24)
-            .centerCrop()
-            .into(binding.ivHeaderCover)
     }
 
     private fun playAll() {

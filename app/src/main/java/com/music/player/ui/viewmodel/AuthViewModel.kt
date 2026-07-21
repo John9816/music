@@ -31,10 +31,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun signIn(email: String, password: String) {
+    fun signIn(username: String, password: String) {
         viewModelScope.launch {
             _authState.value = AuthState.Loading
-            when (val result = authRepository.signIn(email, password)) {
+            when (val result = authRepository.signIn(username, password)) {
                 is AuthResult.Success -> {
                     _currentUser.value = result.user
                     _authState.value = AuthState.Success("登录成功")
@@ -46,10 +46,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun signUp(email: String, password: String) {
+    fun signUp(username: String, email: String, password: String) {
         viewModelScope.launch {
             _authState.value = AuthState.Loading
-            when (val result = authRepository.signUp(email, password)) {
+            when (val result = authRepository.signUp(username, email, password)) {
                 is AuthResult.Success -> {
                     _currentUser.value = result.user
                     _authState.value = AuthState.Success("注册成功")

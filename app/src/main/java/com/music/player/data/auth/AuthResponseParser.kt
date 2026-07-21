@@ -26,15 +26,24 @@ internal object AuthResponseParser {
     }
 
     private fun parseData(data: JsonObject): AuthResponse {
+        val expiresInMinutes = data.firstLong("expiresInMinutes", "expires_in_minutes")
+        val expiresInSeconds = data.firstInt("expires_in", "expiresIn")
+            ?: expiresInMinutes?.takeIf { it > 0L }?.let { (it * 60L).toInt() }
+
         return AuthResponse(
             token = data.firstString("token", "accessToken", "access_token"),
             tokenType = data.firstString("tokenType", "token_type"),
-            expiresInMinutes = data.longOrNull("expiresInMinutes"),
+            expiresInMinutes = expiresInMinutes,
             username = data.stringOrNull("username"),
             role = data.stringOrNull("role"),
             access_token = data.firstString("access_token", "accessToken", "token"),
-            expires_in = data.firstInt("expires_in", "expiresIn"),
-            refresh_token = data.firstString("refresh_token", "refreshToken")
+            expires_in = expiresInSeconds,
+            refresh_token = data.firstString(
+                "refresh_token",
+                "refreshToken",
+                "refresh",
+                "refresh_token_value"
+            )
         )
     }
 
@@ -51,6 +60,10 @@ internal object AuthResponseParser {
         return names.firstNotNullOfOrNull { intOrNull(it) }
     }
 
+    private fun JsonObject.firstLong(vararg names: String): Long? {
+        return names.firstNotNullOfOrNull { longOrNull(it) }
+    }
+
     private fun JsonObject.stringOrNull(name: String): String? {
         val value = get(name) ?: return null
         if (value.isJsonNull || !value.isJsonPrimitive) return null
@@ -60,10 +73,12 @@ internal object AuthResponseParser {
     private fun JsonObject.intOrNull(name: String): Int? {
         val value = get(name) ?: return null
         return runCatching { value.asInt }.getOrNull()
+            ?: runCatching { value.asDouble.toInt() }.getOrNull()
     }
 
     private fun JsonObject.longOrNull(name: String): Long? {
         val value = get(name) ?: return null
         return runCatching { value.asLong }.getOrNull()
+            ?: runCatching { value.asDouble.toLong() }.getOrNull()
     }
 }

@@ -165,7 +165,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
 
     private fun setupInteractions() {
         binding.cardSongsSearch.setOnClickListener {
-            (activity as? MainActivity)?.selectRootTab(R.id.nav_library)
+            (activity as? MainActivity)?.openSearchTab(focus = true)
         }
         binding.btnPlayAllSongs.setOnClickListener {
             val songs = songAdapter.currentList
@@ -185,6 +185,9 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupObservers() {
+        musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            songAdapter.setCurrentPlayingId(song?.id)
+        }
         musicViewModel.dailyRecommend.observe(viewLifecycleOwner) { songs ->
             renderSongs(songs)
             binding.tvSongListSubtitle.text = getString(R.string.recommend_loaded_count, songs.size)
@@ -247,7 +250,11 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun renderSongs(songs: List<Song>) {
-        songAdapter.submitList(songs)
+        songAdapter.submitList(songs) {
+            if (_binding != null) {
+                songAdapter.setCurrentPlayingId(musicViewModel.currentSong.value?.id)
+            }
+        }
         syncEmptyState(songs.isEmpty())
     }
 

@@ -3,6 +3,7 @@ package com.music.player.data.auth
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.music.player.ui.util.absoluteApiUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -40,10 +41,10 @@ class AuthRepository(context: Context) {
     private val profilePreferences = UserProfilePreferences(context.applicationContext)
     private val authApi = SupabaseClient.authApi
 
-    suspend fun signIn(email: String, password: String): AuthResult = withContext(Dispatchers.IO) {
+    suspend fun signIn(username: String, password: String): AuthResult = withContext(Dispatchers.IO) {
         try {
-            val username = loginNameFromInput(email)
-            val response = authApi.signIn(SignInRequest(username, password))
+            val loginName = username.trim()
+            val response = authApi.signIn(SignInRequest(loginName, password))
             val rawBody = response.body()?.string().orEmpty()
             val apiResponse = parseAuthApiResponse(rawBody)
             val authResponse = apiResponse?.data
@@ -68,10 +69,9 @@ class AuthRepository(context: Context) {
             val currentUser = getCurrentUser()
             AuthResult.Success(
                 currentUser ?: UserProfile(
-                    id = userId ?: authResponse.username ?: username,
-                    email = email.takeIf { it.contains("@") },
-                    username = authResponse.username ?: username,
-                    nickname = authResponse.username ?: username,
+                    id = userId ?: authResponse.username ?: loginName,
+                    username = authResponse.username ?: loginName,
+                    nickname = authResponse.username ?: loginName,
                     badge = authResponse.role
                 )
             )
@@ -80,17 +80,26 @@ class AuthRepository(context: Context) {
         }
     }
 
-    suspend fun signUp(email: String, password: String): AuthResult = withContext(Dispatchers.IO) {
+    /**
+     * Backend requires both [username] (login key, 3–50 chars) and [email].
+     */
+    suspend fun signUp(username: String, email: String, password: String): AuthResult = withContext(Dispatchers.IO) {
         try {
-            val username = usernameFromEmail(email)
-            val response = authApi.signUp(AuthRequest(username, email, password))
+            val name = username.trim()
+            val mail = email.trim()
+            val response = authApi.signUp(AuthRequest(name, mail, password))
             val rawBody = response.body()?.string().orEmpty()
             val apiResponse = parseAuthApiResponse(rawBody)
             val authResponse = apiResponse?.data
 
             if (!response.isSuccessful || apiResponse == null || apiResponse.code != 0 || authResponse == null) {
                 val rawError = runCatching { response.errorBody()?.string().orEmpty() }.getOrDefault("")
-                return@withContext AuthResult.Error(apiResponse?.message ?: extractServerErrorMessage(rawError) ?: "Register failed")
+                return@withContext AuthResult.Error(
+                    apiResponse?.message
+                        ?: extractServerErrorMessage(rawError)
+                        ?: extractServerErrorMessage(rawBody)
+                        ?: "Register failed"
+                )
             }
 
             val token = authResponse.token ?: authResponse.access_token
@@ -109,10 +118,10 @@ class AuthRepository(context: Context) {
             val currentUser = getCurrentUser()
             AuthResult.Success(
                 currentUser ?: UserProfile(
-                    id = userId ?: authResponse.username ?: username,
-                    email = email,
-                    username = authResponse.username ?: username,
-                    nickname = authResponse.username ?: username,
+                    id = userId ?: authResponse.username ?: name,
+                    email = mail,
+                    username = authResponse.username ?: name,
+                    nickname = authResponse.username ?: name,
                     badge = authResponse.role
                 )
             )
@@ -142,10 +151,16 @@ class AuthRepository(context: Context) {
                     is TokenRefreshResult.Success -> {
                         token = refresh.accessToken
                         response = authApi.getUser("Bearer $token")
+                        // Only invalidate when refresh succeeded but token still rejected,
+                        // or there is no refresh token to recover with.
                         if (response.code() == 401) sessionManager.invalidateSession()
                     }
-                    TokenRefreshResult.InvalidSession -> Unit
-                    TokenRefreshResult.MissingRefreshToken -> sessionManager.invalidateSession()
+                    TokenRefreshResult.InvalidSession -> Unit // already cleared
+                    TokenRefreshResult.MissingRefreshToken -> {
+                        // Access token rejected and no way to renew — true logout.
+                        sessionManager.invalidateSession()
+                    }
+                    // Network / missing refresh route: keep local session for next launch.
                     TokenRefreshResult.TransientFailure -> Unit
                 }
             }
@@ -156,14 +171,19 @@ class AuthRepository(context: Context) {
 
             val user = apiResponse.data ?: return@withContext null
             sessionManager.cacheUserId(user.id)
-            profilePreferences.applyTo(UserProfile(
-                id = user.id,
-                email = user.email,
-                username = user.username,
-                nickname = user.username,
-                badge = user.role,
-                created_at = user.created_at
-            ))
+            // Local prefs can override nickname/signature/avatar after client-side edits.
+            profilePreferences.applyTo(
+                UserProfile(
+                    id = user.id,
+                    email = user.email,
+                    username = user.username,
+                    nickname = user.nickname?.takeIf { it.isNotBlank() } ?: user.username,
+                    signature = user.signature,
+                    badge = user.role,
+                    avatar_url = user.avatar_url,
+                    created_at = user.created_at
+                )
+            )
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: IOException) {
@@ -197,18 +217,6 @@ class AuthRepository(context: Context) {
             )
     }
 
-    private fun loginNameFromInput(input: String): String {
-        val value = input.trim()
-        return value.substringBefore("@").takeIf { value.contains("@") } ?: value
-    }
-
-    private fun usernameFromEmail(email: String): String {
-        return email.substringBefore("@")
-            .replace(Regex("[^A-Za-z0-9_\\-]"), "_")
-            .ifBlank { "user" }
-            .take(50)
-    }
-
     private fun parseAuthApiResponse(raw: String): WebsiteApiResponse<AuthResponse>? {
         val parsed = AuthResponseParser.parse(raw) ?: return null
         return WebsiteApiResponse(parsed.code, parsed.message, parsed.data)
@@ -216,15 +224,36 @@ class AuthRepository(context: Context) {
 
     private fun parseUserApiResponse(raw: String): WebsiteApiResponse<UserData>? {
         return parseWebsiteResponse(raw) { data ->
+            // Backend field names vary across website / Supabase-shaped payloads.
+            val meta = data.optJSONObject("user_metadata")
+            val avatarRaw = data.firstNonBlank(
+                "avatar_url", "avatarUrl", "avatar", "avatar_path", "headImg", "headimgurl"
+            ) ?: meta?.firstNonBlank("avatar_url", "avatarUrl", "avatar")
+            // Website returns path-only avatars: "/api/v1/user/avatar/….png"
+            val avatar = absoluteApiUrl(avatarRaw) ?: avatarRaw
+
             UserData(
-                id = data.optString("id"),
-                username = data.optString("username").takeIf { it.isNotBlank() },
-                role = data.optString("role").takeIf { it.isNotBlank() },
+                id = data.firstNonBlank("id", "userId", "user_id").orEmpty(),
+                username = data.firstNonBlank("username", "userName", "name"),
+                nickname = data.firstNonBlank("nickname", "nickName", "displayName", "display_name")
+                    ?: meta?.firstNonBlank("nickname", "full_name", "name"),
+                signature = data.firstNonBlank("signature", "bio", "description", "intro"),
+                avatar_url = avatar,
+                role = data.firstNonBlank("role", "badge"),
                 canManageSystemConfig = data.optBooleanOrNull("canManageSystemConfig"),
-                email = data.optString("email").takeIf { it.isNotBlank() },
-                created_at = data.optString("createdAt").takeIf { it.isNotBlank() }
+                email = data.firstNonBlank("email")
+                    ?: meta?.firstNonBlank("email"),
+                created_at = data.firstNonBlank("createdAt", "created_at")
             )
         }
+    }
+
+    private fun JSONObject.firstNonBlank(vararg names: String): String? {
+        for (name in names) {
+            val value = optString(name).trim()
+            if (value.isNotBlank() && value != "null") return value
+        }
+        return null
     }
 
     private fun <T> parseWebsiteResponse(raw: String, parseData: (JSONObject) -> T): WebsiteApiResponse<T>? {
@@ -254,7 +283,8 @@ class AuthRepository(context: Context) {
 
         return when {
             rawError.contains("Invalid username or password", ignoreCase = true) ||
-                extractedMessage?.contains("Invalid username or password", ignoreCase = true) == true -> "账号或密码错误"
+                extractedMessage?.contains("Invalid username or password", ignoreCase = true) == true ->
+                "账号或密码错误（请使用注册时的用户名登录，不是邮箱）"
             response.code() == 429 -> "请求过于频繁，请稍后再试"
             response.code() in 500..599 -> "登录服务暂时不可用，请稍后再试"
             extractedMessage != null -> "登录失败: $extractedMessage"

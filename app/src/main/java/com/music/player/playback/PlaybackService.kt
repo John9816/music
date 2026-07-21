@@ -14,9 +14,11 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.CacheBitmapLoader
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.datasource.DataSourceBitmapLoader
 import com.music.player.R
 import com.music.player.MainActivity
 
@@ -144,8 +146,11 @@ class PlaybackService : MediaSessionService() {
             }
         })
 
+        // Load remote artwork for the system media notification / QS player / lock screen.
+        val bitmapLoader = CacheBitmapLoader(DataSourceBitmapLoader(this))
         mediaSession = MediaSession.Builder(this, notificationPlayer)
             .setSessionActivity(buildContentIntent())
+            .setBitmapLoader(bitmapLoader)
             .build()
 
         // Register the session with MediaSessionService so its notification manager receives

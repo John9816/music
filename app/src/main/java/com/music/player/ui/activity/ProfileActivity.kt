@@ -12,7 +12,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
-import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.MainActivity
 import com.music.player.R
@@ -20,6 +19,7 @@ import com.music.player.data.auth.UserProfile
 import com.music.player.databinding.ActivityProfileBinding
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.safeDrawingInsets
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
@@ -122,14 +122,7 @@ class ProfileActivity : AppCompatActivity() {
                 binding.tvSignature.text = it.signature ?: getString(R.string.profile_signature_empty)
                 binding.tvUserId.text = getString(R.string.profile_user_id, "${it.id.take(8)}...")
 
-                binding.ivAvatar.setPadding(0, 0, 0, 0)
-                binding.ivAvatar.imageTintList = null
-                Glide.with(binding.ivAvatar)
-                    .load(resolveAvatarUrl(it))
-                    .placeholder(R.drawable.ic_person_24)
-                    .error(R.drawable.ic_person_24)
-                    .circleCrop()
-                    .into(binding.ivAvatar)
+                binding.ivAvatar.loadUserAvatar(it, placeholderPaddingDp = 22)
 
                 if (!it.badge.isNullOrEmpty()) {
                     binding.tvBadge.text = getString(R.string.profile_badge, it.badge)
@@ -211,15 +204,4 @@ class ProfileActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun resolveAvatarUrl(user: UserProfile): String {
-        val direct = user.avatar_url?.trim().orEmpty()
-        if (direct.isNotBlank()) return direct
-
-        val seed = user.nickname?.trim().orEmpty()
-            .ifBlank { user.username?.trim().orEmpty() }
-            .ifBlank { user.email?.trim().orEmpty() }
-            .ifBlank { user.id }
-
-        return "https://api.dicebear.com/9.x/initials/png?seed=${android.net.Uri.encode(seed)}&radius=50&backgroundType=gradientLinear"
-    }
 }

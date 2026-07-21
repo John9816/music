@@ -1,17 +1,11 @@
 package com.music.player.ui.activity
 
 import android.content.Intent
-import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.updatePadding
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -30,6 +24,9 @@ import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.util.FileSizeFormatter
+import com.music.player.ui.util.applyEdgeToEdge
+import com.music.player.ui.util.applyNavigationBarInsetPadding
+import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.UpdateState
@@ -38,7 +35,7 @@ import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
 import com.music.player.ui.util.SongDownloader
-import com.music.player.ui.util.resolveAvatarUrl
+import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.resolveThemeColorStateList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,7 +72,12 @@ class SettingsActivity : AppCompatActivity() {
 
         val isNightMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
-        insetsController = applyEdgeToEdge(binding.root, lightSystemBars = !isNightMode)
+        // Must SHOW system bars (do not hide). The previous local helper called hide(systemBars),
+        // which made settings unusable and crashed on some devices with inset listeners.
+        insetsController = applyEdgeToEdge(
+            rootView = binding.root,
+            lightSystemBars = !isNightMode
+        )
         binding.toolbar.applyStatusBarInsetPadding()
         binding.scrollView.applyNavigationBarInsetPadding()
 
@@ -297,6 +299,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun renderProfile(user: UserProfile?) {
         binding.btnEditProfile.isEnabled = user != null
+        // Logout control was previously 1dp + gone in XML (binding stub only).
+        binding.btnLogout.visibility = if (user != null) android.view.View.VISIBLE else android.view.View.GONE
+        binding.btnLogout.isEnabled = user != null
+
         val displayName = user?.nickname?.trim().orEmpty()
             .ifBlank { user?.username?.trim().orEmpty() }
             .ifBlank { user?.email?.substringBefore("@").orEmpty() }
@@ -309,26 +315,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.tvProfileSignature.text = user?.signature?.takeIf { it.isNotBlank() }
             ?: getString(R.string.profile_signature_empty)
 
-        if (user == null) {
-            Glide.with(binding.ivProfileAvatar).clear(binding.ivProfileAvatar)
-            val padding = (14 * resources.displayMetrics.density).toInt()
-            binding.ivProfileAvatar.setPadding(padding, padding, padding, padding)
-            binding.ivProfileAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER
-            binding.ivProfileAvatar.setImageResource(R.drawable.ic_person_24)
-            binding.ivProfileAvatar.imageTintList =
-                resolveThemeColorStateList(R.attr.brandPrimary)
-            return
-        }
-
-        binding.ivProfileAvatar.setPadding(0, 0, 0, 0)
-        binding.ivProfileAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-        binding.ivProfileAvatar.imageTintList = null
-        Glide.with(binding.ivProfileAvatar)
-            .load(user.resolveAvatarUrl())
-            .placeholder(R.drawable.ic_person_24)
-            .error(R.drawable.ic_person_24)
-            .circleCrop()
-            .into(binding.ivProfileAvatar)
+        binding.ivProfileAvatar.loadUserAvatar(user, placeholderPaddingDp = 14)
     }
 
     private fun showAudioQualityDialog() {
@@ -635,41 +622,5 @@ class SettingsActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(EXTRA_SHOULD_RECREATE_MAIN, shouldRecreateMain)
         super.onSaveInstanceState(outState)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun applyEdgeToEdge(rootView: View, lightSystemBars: Boolean): WindowInsetsControllerCompat {
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        if (Build.VERSION.SDK_INT >= 29) {
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
-        }
-        return WindowInsetsControllerCompat(window, rootView).apply {
-            isAppearanceLightStatusBars = lightSystemBars
-            isAppearanceLightNavigationBars = lightSystemBars
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
-        }
-    }
-
-    private fun View.applyStatusBarInsetPadding() {
-        val initialTop = (layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams)?.topMargin ?: 0
-        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(top = initialTop + bars.top)
-            insets
-        }
-        requestApplyInsets()
-    }
-
-    private fun View.applyNavigationBarInsetPadding() {
-        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = bars.bottom)
-            insets
-        }
-        requestApplyInsets()
     }
 }
