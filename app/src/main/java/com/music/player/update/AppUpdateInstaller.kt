@@ -19,11 +19,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
 import com.music.player.BuildConfig
 import com.music.player.R
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class AppUpdateInstaller(
     private val activity: ComponentActivity
@@ -35,6 +40,7 @@ class AppUpdateInstaller(
         private const val KEY_DOWNLOAD_ID = "download_id"
         private const val KEY_DOWNLOAD_FILE = "download_file"
         private const val KEY_PENDING_INSTALL_FILE = "pending_install_file"
+        private const val DOWNLOAD_STATUS_POLL_INTERVAL_MS = 1_000L
     }
 
     private val downloadManager = activity.getSystemService(DownloadManager::class.java)
@@ -43,6 +49,7 @@ class AppUpdateInstaller(
     private var activeDownloadId = -1L
     private var activeDownloadFile: File? = null
     private var pendingInstallFile: File? = null
+    private var downloadMonitorJob: Job? = null
 
     private val installPermissionLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -50,7 +57,6 @@ class AppUpdateInstaller(
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.packageManager.canRequestPackageInstalls()) {
                 launchInstaller(file)
             } else {
-                clearPendingInstall()
                 toast(R.string.update_install_permission_denied)
             }
         }
@@ -72,9 +78,12 @@ class AppUpdateInstaller(
     }
 
     fun dispose() {
-        if (!receiverRegistered) return
-        activity.unregisterReceiver(downloadReceiver)
-        receiverRegistered = false
+        downloadMonitorJob?.cancel()
+        downloadMonitorJob = null
+        if (receiverRegistered) {
+            activity.unregisterReceiver(downloadReceiver)
+            receiverRegistered = false
+        }
     }
 
     fun resumePendingWork() {
@@ -82,7 +91,9 @@ class AppUpdateInstaller(
         if (downloadId != -1L) {
             activeDownloadId = downloadId
             activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)?.let(::File)
-            resumeDownloadIfFinished(downloadId)
+            if (!resumeDownloadIfFinished(downloadId)) {
+                startDownloadMonitor(downloadId)
+            }
         }
 
         val pending = pendingInstallFile
@@ -147,10 +158,14 @@ class AppUpdateInstaller(
             .putLong(KEY_DOWNLOAD_ID, activeDownloadId)
             .putString(KEY_DOWNLOAD_FILE, targetFile.absolutePath)
             .apply()
+        startDownloadMonitor(activeDownloadId)
         toast(R.string.update_start_download)
     }
 
     private fun handleDownloadComplete(downloadId: Long) {
+        val storedDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
+        if (downloadId != storedDownloadId && downloadId != activeDownloadId) return
+
         val manager = downloadManager ?: return
         val file = activeDownloadFile
         clearActiveDownload()
@@ -193,11 +208,7 @@ class AppUpdateInstaller(
                     !activity.packageManager.canRequestPackageInstalls()
                 ) {
                     toast(R.string.update_install_permission_required)
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:${activity.packageName}")
-                    )
-                    installPermissionLauncher.launch(intent)
+                    openInstallPermissionSettings()
                     return
                 }
                 launchInstaller(file)
@@ -205,6 +216,21 @@ class AppUpdateInstaller(
             PackageValidationResult.InvalidApk -> toast(R.string.update_invalid_apk)
             PackageValidationResult.PackageMismatch -> toast(R.string.update_package_mismatch)
             PackageValidationResult.SignatureMismatch -> toast(R.string.update_signature_mismatch)
+        }
+    }
+
+    private fun openInstallPermissionSettings() {
+        val appSettingsIntent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:${activity.packageName}")
+        )
+        val launched = runCatching {
+            installPermissionLauncher.launch(appSettingsIntent)
+        }.isSuccess || runCatching {
+            installPermissionLauncher.launch(Intent(Settings.ACTION_SECURITY_SETTINGS))
+        }.isSuccess
+        if (!launched) {
+            toast(R.string.update_install_failed)
         }
     }
 
@@ -335,30 +361,54 @@ class AppUpdateInstaller(
             ?.let(::File)
 
         if (activeDownloadId != -1L) {
-            resumeDownloadIfFinished(activeDownloadId)
+            if (!resumeDownloadIfFinished(activeDownloadId)) {
+                startDownloadMonitor(activeDownloadId)
+            }
             return
         }
 
     }
 
-    private fun resumeDownloadIfFinished(downloadId: Long) {
-        val manager = downloadManager ?: return
+    private fun resumeDownloadIfFinished(downloadId: Long): Boolean {
+        val manager = downloadManager ?: return false
         val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
         cursor.use {
             if (it == null || !it.moveToFirst()) {
                 clearActiveDownload()
-                return
+                return true
             }
             val statusIndex = it.getColumnIndex(DownloadManager.COLUMN_STATUS)
             val status = if (statusIndex >= 0) it.getInt(statusIndex) else DownloadManager.STATUS_FAILED
-            when (status) {
-                DownloadManager.STATUS_SUCCESSFUL -> handleDownloadComplete(downloadId)
-                DownloadManager.STATUS_FAILED -> clearActiveDownload()
+            return when (status) {
+                DownloadManager.STATUS_SUCCESSFUL -> {
+                    handleDownloadComplete(downloadId)
+                    true
+                }
+                DownloadManager.STATUS_FAILED -> {
+                    clearActiveDownload()
+                    toast(R.string.update_download_failed)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun startDownloadMonitor(downloadId: Long) {
+        downloadMonitorJob?.cancel()
+        downloadMonitorJob = activity.lifecycleScope.launch {
+            while (isActive && prefs.getLong(KEY_DOWNLOAD_ID, -1L) == downloadId) {
+                if (resumeDownloadIfFinished(downloadId)) {
+                    return@launch
+                }
+                delay(DOWNLOAD_STATUS_POLL_INTERVAL_MS)
             }
         }
     }
 
     private fun clearActiveDownload() {
+        downloadMonitorJob?.cancel()
+        downloadMonitorJob = null
         activeDownloadId = -1L
         activeDownloadFile = null
         prefs.edit().remove(KEY_DOWNLOAD_ID).remove(KEY_DOWNLOAD_FILE).apply()
