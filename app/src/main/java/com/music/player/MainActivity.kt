@@ -725,7 +725,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setMiniPlayerVisible(visible: Boolean) {
-        if (!ValueAnimator.areAnimatorsEnabled()) {
+        // ValueAnimator.areAnimatorsEnabled() is API 26+; minSdk is 24.
+        val animatorsDisabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !ValueAnimator.areAnimatorsEnabled()
+        if (animatorsDisabled) {
             binding.miniPlayer.animate().cancel()
             binding.miniPlayer.visibility = if (visible) View.VISIBLE else View.GONE
             binding.miniPlayer.alpha = 1f
