@@ -459,6 +459,7 @@ class MainActivity : AppCompatActivity() {
 
         val fm = supportFragmentManager
         val transaction = fm.beginTransaction()
+            .setReorderingAllowed(true)
 
         // Hide every fragment that lives in the main container (including overlay/detail pages).
         fm.fragments
@@ -480,7 +481,7 @@ class MainActivity : AppCompatActivity() {
             transaction.show(existing)
         }
 
-        transaction.commit()
+        transaction.commitNow()
 
         syncTopBarState()
     }
@@ -488,6 +489,7 @@ class MainActivity : AppCompatActivity() {
     fun pushDetail(fragment: Fragment) {
         val fm = supportFragmentManager
         val transaction = fm.beginTransaction()
+            .setReorderingAllowed(true)
 
         fm.fragments
             .filter { it.id == R.id.fragmentContainer && it.isVisible }
