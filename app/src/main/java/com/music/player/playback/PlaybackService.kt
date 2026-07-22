@@ -161,6 +161,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // Flush progress / queue before the process may be killed.
+        PlaybackCoordinator.persistSessionNow()
         // 用户从最近任务划掉应用时，若未在播放则停止服务，避免残留通知。
         val p = mediaSession?.player
         if (p == null || !p.playWhenReady || p.mediaItemCount == 0) {
@@ -169,6 +171,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        PlaybackCoordinator.persistSessionNow()
         mediaSession?.run {
             release()
         }

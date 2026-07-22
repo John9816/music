@@ -46,6 +46,8 @@ object PlaybackCoordinator {
     // Lyrics are independent of audio URL resolution and must start as soon as playback begins.
     private const val LYRICS_FETCH_DELAY_MS = 0L
     private const val NEXT_URL_PREFETCH_DELAY_MS = 15_000L
+    private const val PERSIST_DEBOUNCE_MS = 400L
+    private const val POSITION_PERSIST_INTERVAL_MS = 5_000L
 
     private val repository = MusicRepository()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -54,11 +56,18 @@ object PlaybackCoordinator {
     private var prepareJob: Job? = null
     private var lyricsJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var persistJob: Job? = null
+    private var positionPersistJob: Job? = null
     private var prepareToken: Long = 0L
     private var lastStartElapsedMs: Long = 0L
     private var lastRecoverySongId: String? = null
     private var lastRecoveryAtMs: Long = 0L
     private var recoveryAttemptsForSong: Int = 0
+    /** Position to seek after cold-start restore (stream URLs are re-fetched). */
+    private var restoredPositionMs: Long = 0L
+    private var restoredPlayWhenReady: Boolean = false
+    private var sessionRestored: Boolean = false
+    private var stateStore: PlaybackStateStore? = null
 
     private val songUrlCache = object : LinkedHashMap<String, String>(MAX_URL_CACHE_SIZE, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
@@ -104,6 +113,8 @@ object PlaybackCoordinator {
         if (appContext != null) return
         appContext = context.applicationContext
         MusicRepository.setApplicationContext(appContext!!)
+        stateStore = PlaybackStateStore(appContext!!)
+        restoreSessionFromDisk()
         PlaybackService.start(appContext!!)
         restoreSleepTimer()
     }
@@ -111,6 +122,9 @@ object PlaybackCoordinator {
     fun attachPlayer(context: Context, player: Player) {
         appContext = context.applicationContext
         MusicRepository.setApplicationContext(appContext!!)
+        if (stateStore == null) {
+            stateStore = PlaybackStateStore(appContext!!)
+        }
         this.player = player
         _playerAttached.value = true
         restoreSleepTimer()
@@ -127,8 +141,12 @@ object PlaybackCoordinator {
 
         pendingPreparedSong?.let {
             pendingPreparedSong = null
-            playPreparedSong(it)
-        }
+            playPreparedSong(it, restoredPositionMs, restoredPlayWhenReady)
+            restoredPositionMs = 0L
+            restoredPlayWhenReady = false
+        } ?: resumeRestoredCurrentIfNeeded()
+
+        startPositionPersistenceLoop()
     }
 
     /**
@@ -139,9 +157,109 @@ object PlaybackCoordinator {
         // Only clear if the released player is still the one we hold; a newer service may have
         // already re-attached a fresh player.
         if (this.player === player) {
+            persistSessionNow()
+            stopPositionPersistenceLoop()
             this.player = null
             _playerAttached.value = false
         }
+    }
+
+    /** Call when the process is going away (e.g. service destroy) to flush progress. */
+    fun persistSessionNow() {
+        val store = stateStore ?: appContext?.let { PlaybackStateStore(it).also { s -> stateStore = s } }
+            ?: return
+        val current = _currentSong.value
+        val position = player?.currentPosition?.coerceAtLeast(0L) ?: restoredPositionMs
+        val playWhenReady = player?.playWhenReady ?: restoredPlayWhenReady
+        if (current == null && _queue.value.isEmpty() && navigationHistory.isEmpty()) {
+            store.clear()
+            return
+        }
+        val snapshot = PlaybackStateStore.Snapshot(
+            currentSong = current?.let(PlaybackStateStore.SongDto::from),
+            positionMs = position.coerceAtLeast(0L),
+            // Never auto-start audio after cold launch; user taps play. Still keep progress.
+            playWhenReady = false,
+            queue = _queue.value.map(PlaybackStateStore.SongDto::from),
+            history = navigationHistory.map(PlaybackStateStore.SongDto::from),
+            viewMode = _playlistViewMode.value.name
+        )
+        // Capture last known position for the next attach even if we force playWhenReady=false.
+        restoredPositionMs = snapshot.positionMs
+        restoredPlayWhenReady = false
+        store.save(snapshot)
+    }
+
+    private fun schedulePersistSession() {
+        persistJob?.cancel()
+        persistJob = scope.launch {
+            delay(PERSIST_DEBOUNCE_MS)
+            persistSessionNow()
+        }
+    }
+
+    private fun startPositionPersistenceLoop() {
+        stopPositionPersistenceLoop()
+        positionPersistJob = scope.launch {
+            while (true) {
+                delay(POSITION_PERSIST_INTERVAL_MS)
+                val p = player ?: continue
+                if (p.isPlaying || p.playWhenReady) {
+                    persistSessionNow()
+                }
+            }
+        }
+    }
+
+    private fun stopPositionPersistenceLoop() {
+        positionPersistJob?.cancel()
+        positionPersistJob = null
+    }
+
+    private fun restoreSessionFromDisk() {
+        if (sessionRestored) return
+        sessionRestored = true
+        val snapshot = stateStore?.load() ?: return
+        val current = snapshot.currentSong?.toSong()
+        val queue = snapshot.queue.map { it.toSong() }
+        val history = snapshot.history.map { it.toSong() }
+
+        navigationHistory.clear()
+        history.forEach { navigationHistory.addLast(it) }
+        _canSkipPrevious.value = navigationHistory.isNotEmpty()
+        syncRecentlyPlayed()
+        _queue.value = queue
+        _playlistViewMode.value = runCatching {
+            PlaylistViewMode.valueOf(snapshot.viewMode)
+        }.getOrDefault(
+            if (queue.isNotEmpty()) PlaylistViewMode.QUEUE else PlaylistViewMode.RECENT
+        )
+        restoredPositionMs = snapshot.positionMs.coerceAtLeast(0L)
+        restoredPlayWhenReady = false
+        if (current != null) {
+            _currentSong.value = current
+            // Queue prepare until player attaches (or service is up).
+            pendingPreparedSong = null
+            Log.i(
+                TAG,
+                "restored session songId=${current.id} pos=${restoredPositionMs}ms queue=${queue.size}"
+            )
+        }
+    }
+
+    private fun resumeRestoredCurrentIfNeeded() {
+        val song = _currentSong.value ?: return
+        val active = player ?: return
+        // Already has media (e.g. service survived) — keep playing as-is.
+        if (active.mediaItemCount > 0) return
+        if (prepareJob?.isActive == true) return
+        val position = restoredPositionMs
+        startPlayback(
+            song = song,
+            recordHistory = false,
+            startPositionMs = position,
+            shouldAutoPlay = false
+        )
     }
 
     fun playerOrNull(): Player? = player
@@ -151,6 +269,7 @@ object PlaybackCoordinator {
     fun hasPrevious(): Boolean = navigationHistory.isNotEmpty()
 
     fun playSong(song: Song) {
+        restoredPositionMs = 0L
         startPlayback(song, recordHistory = true)
     }
 
@@ -242,9 +361,11 @@ object PlaybackCoordinator {
     }
 
     fun playStandaloneSong(song: Song) {
+        restoredPositionMs = 0L
         _queue.value = emptyList()
         _playlistViewMode.value = PlaylistViewMode.RECENT
         startPlayback(song, recordHistory = true)
+        schedulePersistSession()
     }
 
     fun playFromList(songs: List<Song>, song: Song) {
@@ -255,6 +376,7 @@ object PlaybackCoordinator {
         }
 
         cancelPrepare()
+        restoredPositionMs = 0L
         navigationHistory.clear()
         songs.take(index).forEach { navigationHistory.addLast(it) }
         _canSkipPrevious.value = navigationHistory.isNotEmpty()
@@ -267,6 +389,7 @@ object PlaybackCoordinator {
         _playlistViewMode.value = PlaylistViewMode.QUEUE
 
         startPlayback(song, recordHistory = false)
+        schedulePersistSession()
     }
 
     fun enqueue(song: Song) {
@@ -274,6 +397,7 @@ object PlaybackCoordinator {
             .filterNot { it.id == song.id } + song
         _queue.value = updated
         _playlistViewMode.value = PlaylistViewMode.QUEUE
+        schedulePersistSession()
     }
 
     fun enqueueNext(song: Song) {
@@ -281,14 +405,17 @@ object PlaybackCoordinator {
             .filterNot { it.id == song.id }
         _queue.value = updated
         _playlistViewMode.value = PlaylistViewMode.QUEUE
+        schedulePersistSession()
     }
 
     fun skipNext(): Boolean {
         val queueSnapshot = _queue.value.orEmpty()
         val next = queueSnapshot.firstOrNull() ?: return false
+        restoredPositionMs = 0L
         _queue.value = queueSnapshot.drop(1)
         _playlistViewMode.value = if (_queue.value.isEmpty()) PlaylistViewMode.RECENT else PlaylistViewMode.QUEUE
         startPlayback(next, recordHistory = true)
+        schedulePersistSession()
         return true
     }
 
@@ -299,17 +426,21 @@ object PlaybackCoordinator {
         if (current != null) {
             enqueueNext(current)
         }
+        restoredPositionMs = 0L
         _canSkipPrevious.value = navigationHistory.isNotEmpty()
         startPlayback(previous, recordHistory = false)
+        schedulePersistSession()
         return true
     }
 
     fun playFromQueue(songId: String) {
         val queueSnapshot = _queue.value.orEmpty()
         val song = queueSnapshot.firstOrNull { it.id == songId } ?: return
+        restoredPositionMs = 0L
         _queue.value = queueSnapshot.filterNot { it.id == songId }
         _playlistViewMode.value = if (_queue.value.isEmpty()) PlaylistViewMode.RECENT else PlaylistViewMode.QUEUE
         startPlayback(song, recordHistory = true)
+        schedulePersistSession()
     }
 
     fun playFromRecent(songId: String) {
@@ -317,9 +448,11 @@ object PlaybackCoordinator {
         rebuildNavigationHistory(
             navigationHistory.filterNot { it.id == songId }
         )
+        restoredPositionMs = 0L
         _queue.value = emptyList()
         _playlistViewMode.value = PlaylistViewMode.RECENT
         startPlayback(song, recordHistory = true)
+        schedulePersistSession()
     }
 
     fun removeFromQueue(songId: String) {
@@ -327,11 +460,13 @@ object PlaybackCoordinator {
         if (_queue.value.isEmpty()) {
             _playlistViewMode.value = PlaylistViewMode.RECENT
         }
+        schedulePersistSession()
     }
 
     fun clearQueue() {
         _queue.value = emptyList()
         _playlistViewMode.value = PlaylistViewMode.RECENT
+        schedulePersistSession()
     }
 
     @Synchronized
@@ -348,6 +483,8 @@ object PlaybackCoordinator {
     fun clearNowPlaying() {
         cancelPrepare()
         _currentSong.value = null
+        restoredPositionMs = 0L
+        schedulePersistSession()
     }
 
     fun restorePreviewSong(song: Song) {
@@ -360,7 +497,9 @@ object PlaybackCoordinator {
         _playlistViewMode.value = PlaylistViewMode.RECENT
         pendingPreparedSong = null
         _isLoading.value = false
+        restoredPositionMs = 0L
         _currentSong.value = song
+        schedulePersistSession()
     }
 
     fun resetPlayback() {
@@ -372,8 +511,12 @@ object PlaybackCoordinator {
         _playlistViewMode.value = PlaylistViewMode.RECENT
         _currentSong.value = null
         _isLoading.value = false
+        restoredPositionMs = 0L
+        restoredPlayWhenReady = false
+        pendingPreparedSong = null
         player?.stop()
         player?.clearMediaItems()
+        stateStore?.clear()
     }
 
     fun onPlaybackEndedAutoAdvance() {
@@ -430,7 +573,12 @@ object PlaybackCoordinator {
         }
     }
 
-    private fun startPlayback(song: Song, recordHistory: Boolean) {
+    private fun startPlayback(
+        song: Song,
+        recordHistory: Boolean,
+        startPositionMs: Long = 0L,
+        shouldAutoPlay: Boolean = true
+    ) {
         lastRecoverySongId = null
         recoveryAttemptsForSong = 0
         lastRecoveryAtMs = 0L
@@ -464,7 +612,8 @@ object PlaybackCoordinator {
                     val prepared = song.copy(url = fastUrl)
                     _currentSong.value = prepared
                     Log.d(TAG, "resolved url in ${urlCost}ms (fast path), songId=${song.id}")
-                    playPreparedSong(prepared)
+                    playPreparedSong(prepared, startPositionMs, shouldAutoPlay)
+                    schedulePersistSession()
 
                     schedulePostStartWork(prepared, token)
                 } else {
@@ -476,7 +625,8 @@ object PlaybackCoordinator {
                                 prepared.url?.trim()?.takeIf { it.isNotBlank() }
                                     ?.let { putCachedUrl(prepared.id, prepared.source, it) }
                                 _currentSong.value = prepared
-                                playPreparedSong(prepared)
+                                playPreparedSong(prepared, startPositionMs, shouldAutoPlay)
+                                schedulePersistSession()
                                 schedulePostStartWork(prepared, token)
                             }
                         }
@@ -649,6 +799,8 @@ object PlaybackCoordinator {
         val activePlayer = player
         if (activePlayer == null) {
             pendingPreparedSong = song
+            restoredPositionMs = startPositionMs.coerceAtLeast(0L)
+            restoredPlayWhenReady = shouldAutoPlay
             return
         }
 
@@ -693,6 +845,7 @@ object PlaybackCoordinator {
         activePlayer.prepare()
         if (startPositionMs > 0L) {
             activePlayer.seekTo(startPositionMs)
+            restoredPositionMs = startPositionMs
         }
         activePlayer.playWhenReady = shouldAutoPlay
         if (shouldAutoPlay) {
@@ -700,6 +853,7 @@ object PlaybackCoordinator {
         } else {
             activePlayer.pause()
         }
+        schedulePersistSession()
     }
 
     @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
