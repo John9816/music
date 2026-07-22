@@ -181,7 +181,7 @@ object PlaybackCoordinator {
             // Never auto-start audio after cold launch; user taps play. Still keep progress.
             playWhenReady = false,
             queue = _queue.value.map(PlaybackStateStore.SongDto::from),
-            history = navigationHistory.map(PlaybackStateStore.SongDto::from),
+            history = navigationHistory.toList().map(PlaybackStateStore.SongDto::from),
             viewMode = _playlistViewMode.value.name
         )
         // Capture last known position for the next attach even if we force playWhenReady=false.
@@ -219,47 +219,50 @@ object PlaybackCoordinator {
     private fun restoreSessionFromDisk() {
         if (sessionRestored) return
         sessionRestored = true
-        val snapshot = stateStore?.load() ?: return
-        val current = snapshot.currentSong?.toSong()
-        val queue = snapshot.queue.map { it.toSong() }
-        val history = snapshot.history.map { it.toSong() }
+        runCatching {
+            val snapshot = stateStore?.load() ?: return
+            val current = snapshot.currentSong?.toSong()
+            val queue = snapshot.queue.orEmpty().map { it.toSong() }
+            val history = snapshot.history.orEmpty().map { it.toSong() }
 
-        navigationHistory.clear()
-        history.forEach { navigationHistory.addLast(it) }
-        _canSkipPrevious.value = navigationHistory.isNotEmpty()
-        syncRecentlyPlayed()
-        _queue.value = queue
-        _playlistViewMode.value = runCatching {
-            PlaylistViewMode.valueOf(snapshot.viewMode)
-        }.getOrDefault(
-            if (queue.isNotEmpty()) PlaylistViewMode.QUEUE else PlaylistViewMode.RECENT
-        )
-        restoredPositionMs = snapshot.positionMs.coerceAtLeast(0L)
-        restoredPlayWhenReady = false
-        if (current != null) {
-            _currentSong.value = current
-            // Queue prepare until player attaches (or service is up).
-            pendingPreparedSong = null
-            Log.i(
-                TAG,
-                "restored session songId=${current.id} pos=${restoredPositionMs}ms queue=${queue.size}"
+            navigationHistory.clear()
+            history.forEach { navigationHistory.addLast(it) }
+            _canSkipPrevious.value = navigationHistory.isNotEmpty()
+            syncRecentlyPlayed()
+            _queue.value = queue
+            _playlistViewMode.value = runCatching {
+                PlaylistViewMode.valueOf(snapshot.viewMode.orEmpty())
+            }.getOrDefault(
+                if (queue.isNotEmpty()) PlaylistViewMode.QUEUE else PlaylistViewMode.RECENT
             )
+            restoredPositionMs = snapshot.positionMs.coerceAtLeast(0L)
+            restoredPlayWhenReady = false
+            if (current != null && current.id.isNotBlank()) {
+                _currentSong.value = current
+                // UI-only restore on cold start. Do not auto network/prepare — user taps play.
+                pendingPreparedSong = null
+                Log.i(
+                    TAG,
+                    "restored session songId=${current.id} pos=${restoredPositionMs}ms queue=${queue.size}"
+                )
+            }
+        }.onFailure {
+            Log.e(TAG, "restoreSessionFromDisk failed, clearing store", it)
+            stateStore?.clear()
+            restoredPositionMs = 0L
+            restoredPlayWhenReady = false
+            pendingPreparedSong = null
         }
     }
 
+    /**
+     * After player attaches, only restore if we already have a fully prepared pending item.
+     * Cold-start disk restore is UI-only; preparing the stream is deferred until the user taps play
+     * so a bad URL / network failure cannot crash launch.
+     */
     private fun resumeRestoredCurrentIfNeeded() {
-        val song = _currentSong.value ?: return
-        val active = player ?: return
-        // Already has media (e.g. service survived) — keep playing as-is.
-        if (active.mediaItemCount > 0) return
-        if (prepareJob?.isActive == true) return
-        val position = restoredPositionMs
-        startPlayback(
-            song = song,
-            recordHistory = false,
-            startPositionMs = position,
-            shouldAutoPlay = false
-        )
+        // Intentionally no-op for disk restore. Mini-player play button calls playSong() which
+        // re-resolves the URL and seeks via restoredPositionMs when appropriate.
     }
 
     fun playerOrNull(): Player? = player
@@ -269,8 +272,18 @@ object PlaybackCoordinator {
     fun hasPrevious(): Boolean = navigationHistory.isNotEmpty()
 
     fun playSong(song: Song) {
-        restoredPositionMs = 0L
-        startPlayback(song, recordHistory = true)
+        // Re-tapping the restored current song should keep progress; new songs start at 0.
+        val sameAsCurrent = _currentSong.value?.id == song.id
+        if (!sameAsCurrent) {
+            restoredPositionMs = 0L
+        }
+        val resumeAt = if (sameAsCurrent) restoredPositionMs.coerceAtLeast(0L) else 0L
+        startPlayback(
+            song = song,
+            recordHistory = !sameAsCurrent,
+            startPositionMs = resumeAt,
+            shouldAutoPlay = true
+        )
     }
 
     fun reloadCurrentSongForAudioQualityChange() {

@@ -573,31 +573,36 @@ class MainActivity : AppCompatActivity() {
                 return@observe
             }
 
-            val artists = song.artists.joinToString(", ") { it.name }
-            val artistLabel = artists.ifBlank { getString(R.string.item_artist_placeholder) }
-            binding.tvMiniTitle.text = song.name
-            binding.tvMiniArtist.text = artistLabel
-            binding.tvMiniArtist.visibility = View.VISIBLE
-            binding.miniProgress.isIndeterminate = false
-            binding.miniProgress.progress = 0
+            runCatching {
+                val artists = song.artists.orEmpty().joinToString(", ") { it.name }
+                val artistLabel = artists.ifBlank { getString(R.string.item_artist_placeholder) }
+                binding.tvMiniTitle.text = song.name.ifBlank { "未知歌曲" }
+                binding.tvMiniArtist.text = artistLabel
+                binding.tvMiniArtist.visibility = View.VISIBLE
+                binding.miniProgress.isIndeterminate = false
+                binding.miniProgress.progress = 0
 
-            val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
-            if (coverUrl == null) {
-                binding.ivMiniCover.setImageResource(R.drawable.ic_music_note_24)
-                binding.ivMiniCover.imageTintList = resolveThemeColorStateList(R.attr.brandPrimary)
-            } else {
-                binding.ivMiniCover.imageTintList = null
-                Glide.with(this)
-                    .load(coverUrl)
-                    .placeholder(R.drawable.ic_music_note_24)
-                    .centerCrop()
-                    .transition(DrawableTransitionOptions.withCrossFade(COVER_CROSSFADE_MS))
-                    .into(binding.ivMiniCover)
+                val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
+                if (coverUrl == null) {
+                    binding.ivMiniCover.setImageResource(R.drawable.ic_music_note_24)
+                    binding.ivMiniCover.imageTintList = resolveThemeColorStateList(R.attr.brandPrimary)
+                } else {
+                    binding.ivMiniCover.imageTintList = null
+                    Glide.with(this)
+                        .load(coverUrl)
+                        .placeholder(R.drawable.ic_music_note_24)
+                        .centerCrop()
+                        .transition(DrawableTransitionOptions.withCrossFade(COVER_CROSSFADE_MS))
+                        .into(binding.ivMiniCover)
+                }
+
+                updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
+                libraryViewModel.addToHistory(song)
+                setMiniPlayerVisible(true)
+            }.onFailure {
+                // Never crash the activity over a partial restored song model.
+                setMiniPlayerVisible(false)
             }
-
-            updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
-            libraryViewModel.addToHistory(song)
-            setMiniPlayerVisible(true)
         }
 
         musicViewModel.error.observe(this) { error ->

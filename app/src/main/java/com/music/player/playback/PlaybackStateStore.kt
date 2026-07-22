@@ -11,6 +11,8 @@ import com.music.player.data.model.Song
 /**
  * Disk-backed snapshot of the in-memory playback session so force-stop / process death
  * can restore the current track, progress, and remaining playlist queue.
+ *
+ * All DTO fields use [@SerializedName] so R8/minify cannot break Gson round-trips.
  */
 internal class PlaybackStateStore(context: Context) {
 
@@ -30,47 +32,82 @@ internal class PlaybackStateStore(context: Context) {
         val raw = prefs.getString(KEY_JSON, null)?.trim().orEmpty()
         if (raw.isBlank()) return null
         return runCatching { gson.fromJson(raw, Snapshot::class.java) }
-            .onFailure { Log.w(TAG, "load playback state failed", it) }
+            .onFailure {
+                Log.w(TAG, "load playback state failed, clearing", it)
+                clear()
+            }
             .getOrNull()
-            ?.takeIf { it.currentSong != null || it.queue.isNotEmpty() }
+            ?.sanitize()
+            ?.takeIf { it.currentSong != null || !it.queue.isNullOrEmpty() }
     }
 
     fun clear() {
-        prefs.edit().remove(KEY_JSON).commit()
+        runCatching { prefs.edit().remove(KEY_JSON).commit() }
     }
 
     data class Snapshot(
         @SerializedName("currentSong") val currentSong: SongDto? = null,
         @SerializedName("positionMs") val positionMs: Long = 0L,
         @SerializedName("playWhenReady") val playWhenReady: Boolean = false,
-        @SerializedName("queue") val queue: List<SongDto> = emptyList(),
-        @SerializedName("history") val history: List<SongDto> = emptyList(),
-        @SerializedName("viewMode") val viewMode: String = "RECENT"
-    )
+        @SerializedName("queue") val queue: List<SongDto>? = emptyList(),
+        @SerializedName("history") val history: List<SongDto>? = emptyList(),
+        @SerializedName("viewMode") val viewMode: String? = "RECENT"
+    ) {
+        fun sanitize(): Snapshot {
+            val safeQueue = queue.orEmpty().mapNotNull { it.sanitizeOrNull() }
+            val safeHistory = history.orEmpty().mapNotNull { it.sanitizeOrNull() }
+            return copy(
+                currentSong = currentSong?.sanitizeOrNull(),
+                positionMs = positionMs.coerceAtLeast(0L),
+                queue = safeQueue,
+                history = safeHistory,
+                viewMode = viewMode?.takeIf { it.isNotBlank() } ?: "RECENT"
+            )
+        }
+    }
 
     /** URL / lyric are ephemeral; only identity + display fields are persisted. */
     data class SongDto(
-        val id: String,
-        val name: String,
-        val artists: List<ArtistDto> = emptyList(),
-        val album: AlbumDto = AlbumDto(),
-        val duration: Long = 0L,
-        val source: String = "netease"
+        @SerializedName("id") val id: String? = null,
+        @SerializedName("name") val name: String? = null,
+        @SerializedName("artists") val artists: List<ArtistDto>? = emptyList(),
+        @SerializedName("album") val album: AlbumDto? = null,
+        @SerializedName("duration") val duration: Long = 0L,
+        @SerializedName("source") val source: String? = "netease"
     ) {
-        fun toSong(): Song = Song(
-            id = id,
-            name = name,
-            artists = artists.map { Artist(id = it.id, name = it.name) },
-            album = Album(
-                id = album.id,
-                name = album.name,
-                picUrl = album.picUrl
-            ),
-            duration = duration,
-            url = null,
-            source = source.ifBlank { "netease" },
-            lyric = null
-        )
+        fun sanitizeOrNull(): SongDto? {
+            val safeId = id?.trim().orEmpty()
+            if (safeId.isBlank()) return null
+            return SongDto(
+                id = safeId,
+                name = name?.trim().orEmpty().ifBlank { "Unknown" },
+                artists = artists.orEmpty().mapNotNull { it.sanitizeOrNull() },
+                album = album?.sanitize() ?: AlbumDto(),
+                duration = duration.coerceAtLeast(0L),
+                source = source?.trim().orEmpty().ifBlank { "netease" }
+            )
+        }
+
+        fun toSong(): Song {
+            val safe = sanitizeOrNull()
+                ?: SongDto(id = "unknown", name = "Unknown", artists = emptyList(), album = AlbumDto())
+            return Song(
+                id = safe.id.orEmpty(),
+                name = safe.name.orEmpty(),
+                artists = safe.artists.orEmpty().map {
+                    Artist(id = it.id.orEmpty(), name = it.name.orEmpty().ifBlank { "Unknown" })
+                },
+                album = Album(
+                    id = safe.album?.id.orEmpty(),
+                    name = safe.album?.name.orEmpty(),
+                    picUrl = safe.album?.picUrl.orEmpty()
+                ),
+                duration = safe.duration,
+                url = null,
+                source = safe.source.orEmpty().ifBlank { "netease" },
+                lyric = null
+            )
+        }
 
         companion object {
             fun from(song: Song): SongDto = SongDto(
@@ -89,15 +126,27 @@ internal class PlaybackStateStore(context: Context) {
     }
 
     data class ArtistDto(
-        val id: String = "",
-        val name: String = ""
-    )
+        @SerializedName("id") val id: String? = null,
+        @SerializedName("name") val name: String? = null
+    ) {
+        fun sanitizeOrNull(): ArtistDto? {
+            val n = name?.trim().orEmpty()
+            if (n.isBlank() && id.isNullOrBlank()) return null
+            return ArtistDto(id = id.orEmpty(), name = n.ifBlank { "Unknown" })
+        }
+    }
 
     data class AlbumDto(
-        val id: String = "",
-        val name: String = "",
-        val picUrl: String = ""
-    )
+        @SerializedName("id") val id: String? = null,
+        @SerializedName("name") val name: String? = null,
+        @SerializedName("picUrl") val picUrl: String? = null
+    ) {
+        fun sanitize(): AlbumDto = AlbumDto(
+            id = id.orEmpty(),
+            name = name.orEmpty(),
+            picUrl = picUrl.orEmpty()
+        )
+    }
 
     private companion object {
         private const val TAG = "PlaybackStateStore"

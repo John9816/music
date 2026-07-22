@@ -45,6 +45,10 @@
   @com.google.gson.annotations.SerializedName <fields>;
 }
 
+# Playback session snapshot (Gson reflected fields — must survive R8)
+-keep class com.music.player.playback.PlaybackStateStore { *; }
+-keep class com.music.player.playback.PlaybackStateStore$* { *; }
+
 # Glide
 -keep public class * implements com.bumptech.glide.module.GlideModule
 -keep class * extends com.bumptech.glide.module.AppGlideModule {
