@@ -2,4 +2,7 @@
 <resources>
     <item name="press_feedback_listener_tag" type="id" />
     <item name="press_feedback_style_tag" type="id" />
+    <item name="press_feedback_pressed_tag" type="id" />
+    <item name="press_feedback_down_runnable_tag" type="id" />
+    <item name="tag_player_style_scrim_alpha" type="id" />
 </resources>

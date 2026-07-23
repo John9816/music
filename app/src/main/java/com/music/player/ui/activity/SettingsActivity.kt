@@ -1,13 +1,16 @@
 package com.music.player.ui.activity
 
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import com.bumptech.glide.Glide
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.music.player.BuildConfig
@@ -20,7 +23,9 @@ import com.music.player.data.api.RetrofitClient
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.databinding.ActivitySettingsBinding
+import com.music.player.databinding.DialogThemeSkinBinding
 import com.music.player.playback.PlaybackCoordinator
+import com.music.player.ui.adapter.ThemeSkinAdapter
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.ThemeManager
@@ -99,6 +104,8 @@ class SettingsActivity : AppCompatActivity() {
         updateSleepTimerSummary(AppSettings.remainingSleepMinutes(this))
         updateStreamQualitySummary(AppSettings.mobileStreamQuality(this))
         updateMusicSourceSummary()
+        updateThemeSkinSummary()
+        updatePlayerStyleSummary()
         binding.tvSourceStatusSummary.setText(R.string.settings_source_not_checked)
         updateCacheSize()
         authViewModel.refreshProfile()
@@ -125,6 +132,8 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnEditProfile.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.btnLogout.bindPressFeedback(PressFeedback.Style.BUTTON)
         listOf(
+            binding.layoutThemeSkin,
+            binding.layoutPlayerStyle,
             binding.layoutAudioQuality,
             binding.layoutSleepTimer,
             binding.layoutStreamQuality,
@@ -157,6 +166,10 @@ class SettingsActivity : AppCompatActivity() {
 
         // Cache
         binding.layoutClearCache.setOnClickListener { clearCache() }
+
+        // Appearance (NetEase-style skin picker)
+        binding.layoutThemeSkin.setOnClickListener { showThemeDialog() }
+        binding.layoutPlayerStyle.setOnClickListener { showPlayerStyleDialog() }
 
         // Theme & Update
         binding.layoutCheckUpdate.setOnClickListener {
@@ -464,52 +477,72 @@ class SettingsActivity : AppCompatActivity() {
         binding.tvMusicSourceSummary.text = MusicSourcePreferences.activeSource(this).displayName
     }
 
-    private fun showSkinDialog() {
-        val items = arrayOf(
-            getString(R.string.settings_color_theme),
-            getString(R.string.settings_player_style)
-        )
+    private fun updateThemeSkinSummary() {
+        val skin = ThemeManager.getAppThemeSkin(this)
+        binding.tvThemeSkinSummary.text = getString(skin.titleResId)
+        val density = resources.displayMetrics.density
+        binding.viewThemeSwatch.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(skin.previewColor)
+            setStroke((1.5f * density).toInt().coerceAtLeast(1), skin.previewStrokeColor)
+        }
+    }
 
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.profile_theme)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> showThemeDialog()
-                    1 -> showPlayerStyleDialog()
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    private fun updatePlayerStyleSummary() {
+        val style = ThemeManager.getPlayerStyle(this)
+        binding.tvPlayerStyleSummary.text = getString(style.titleResId)
     }
 
     private fun showThemeDialog() {
         val skins = ThemeManager.AppThemeSkin.entries.toList()
-        val items = skins.map { s -> "${getString(s.titleResId)}\n${getString(s.summaryResId)}" }.toTypedArray()
-        val checked = skins.indexOf(ThemeManager.getAppThemeSkin(this)).coerceAtLeast(0)
-
-        MaterialAlertDialogBuilder(this)
+        val current = ThemeManager.getAppThemeSkin(this)
+        val content = DialogThemeSkinBinding.inflate(LayoutInflater.from(this))
+        val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.theme_dialog_title)
-            .setSingleChoiceItems(items, checked) { dialog, which ->
-                ThemeManager.setAppThemeSkin(this, skins[which])
-                markMainNeedsRecreate()
-                dialog.dismiss()
-                recreate()
-            }
+            .setView(content.root)
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+
+        val adapter = ThemeSkinAdapter(skins, current) { skin ->
+            if (skin == ThemeManager.getAppThemeSkin(this)) {
+                dialog.dismiss()
+                return@ThemeSkinAdapter
+            }
+            ThemeManager.setAppThemeSkin(this, skin)
+            markMainNeedsRecreate()
+            updateThemeSkinSummary()
+            Toast.makeText(
+                this,
+                getString(R.string.settings_skin_applied, getString(skin.titleResId)),
+                Toast.LENGTH_SHORT
+            ).show()
+            dialog.dismiss()
+            recreate()
+        }
+        content.rvThemeSkins.layoutManager = GridLayoutManager(this, 3)
+        content.rvThemeSkins.adapter = adapter
+        content.rvThemeSkins.itemAnimator = null
+        dialog.show()
     }
 
     private fun showPlayerStyleDialog() {
         val styles = ThemeManager.PlayerStyle.entries.toList()
-        val items = styles.map { s -> "${getString(s.titleResId)}\n${getString(s.summaryResId)}" }.toTypedArray()
+        // Title only — long multi-line summaries made the dialog feel noisy.
+        val items = styles.map { getString(it.titleResId) }.toTypedArray()
         val checked = styles.indexOf(ThemeManager.getPlayerStyle(this)).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.player_style_dialog_title)
             .setSingleChoiceItems(items, checked) { dialog, which ->
-                ThemeManager.setPlayerStyle(this, styles[which])
+                val style = styles[which]
+                ThemeManager.setPlayerStyle(this, style)
                 markMainNeedsRecreate()
-                Toast.makeText(this, getString(R.string.settings_restart_hint), Toast.LENGTH_SHORT).show()
+                updatePlayerStyleSummary()
+                Toast.makeText(
+                    this,
+                    getString(R.string.settings_player_style_applied, getString(style.titleResId)),
+                    Toast.LENGTH_SHORT
+                ).show()
                 dialog.dismiss()
             }
             .setNegativeButton(android.R.string.cancel, null)

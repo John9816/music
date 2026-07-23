@@ -77,8 +77,8 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
         const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
 
-        private const val COVER_CROSSFADE_MS = 220
-        private const val MINI_PLAYER_ANIM_MS = 220L
+        private const val COVER_CROSSFADE_MS = 120
+        private const val MINI_PLAYER_ANIM_MS = 160L
         private const val STATE_CURRENT_TAB = "state_current_tab"
     }
 
@@ -713,17 +713,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun animatePlayerBackground(expanded: Boolean) {
-        val targetScale = if (expanded) 0.94f else 1f
-        val targetTranslationY = if (expanded) 24f * resources.displayMetrics.density else 0f
-        val targetAlpha = if (expanded) 0.78f else 1f
-        // Keep in sync with now_playing_enter / now_playing_exit (snappy sheet feel).
+        // Avoid full-tree scaleX/Y (expensive compositor pass on every frame).
+        // A light alpha + tiny Y shift is enough backdrop dim without lag.
+        val targetTranslationY = if (expanded) 8f * resources.displayMetrics.density else 0f
+        val targetAlpha = if (expanded) 0.88f else 1f
         binding.root.animate()
-            .scaleX(targetScale)
-            .scaleY(targetScale)
+            .scaleX(1f)
+            .scaleY(1f)
             .translationY(targetTranslationY)
             .alpha(targetAlpha)
-            .setDuration(if (expanded) 280L else 220L)
-            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .setDuration(if (expanded) 180L else 140L)
+            .setInterpolator(android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f))
             .start()
     }
 

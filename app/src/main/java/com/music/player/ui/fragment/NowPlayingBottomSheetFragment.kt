@@ -75,7 +75,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         private const val STAGE_ANIMATION_MS = 240L
         private const val COVER_PULSE_DURATION_MS = 3600L
         private const val HANDLE_DISMISS_DISTANCE_DP = 80f
-        private const val COVER_CROSSFADE_MS = 220
+        private const val COVER_CROSSFADE_MS = 120
 
         /**
          * Show at most one full player. [DialogFragment.show] only does async [FragmentTransaction.add];

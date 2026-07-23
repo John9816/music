@@ -38,8 +38,8 @@ android {
         applicationId "com.music.player"
         minSdk 24
         targetSdk 35
-        versionCode 26
-        versionName "1.1.15"
+        versionCode 27
+        versionName "1.1.16"
         resConfigs "zh", "en"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

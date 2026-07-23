@@ -786,15 +786,23 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private class SearchItemAnimator : DefaultItemAnimator() {
 
+        init {
+            // Keep list updates snappy; staggered entrance feels laggy on long results.
+            addDuration = 120L
+            moveDuration = 120L
+            removeDuration = 100L
+            changeDuration = 100L
+        }
+
         override fun animateAdd(holder: RecyclerView.ViewHolder): Boolean {
             val view = holder.itemView
             view.alpha = 0f
-            view.translationY = 40f
+            view.translationY = 12f
             view.animate()
                 .alpha(1f)
                 .translationY(0f)
-                .setDuration(250)
-                .setStartDelay((holder.bindingAdapterPosition * 30L).coerceAtMost(150))
+                .setDuration(120)
+                .setStartDelay(0L)
                 .setInterpolator(FastOutSlowInInterpolator())
                 .withEndAction { dispatchAddFinished(holder) }
                 .start()

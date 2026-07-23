@@ -63,6 +63,8 @@ class MusicRepository(context: Context? = null) {
             sharedApplicationContext = context.applicationContext
         }
 
+        fun applicationContextOrNull(): Context? = sharedApplicationContext
+
         fun clearCaches() {
             dailyRecommendCache.clear()
             topListsCache.clear()

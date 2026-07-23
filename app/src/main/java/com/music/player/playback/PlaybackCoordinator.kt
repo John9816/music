@@ -16,6 +16,7 @@ import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.data.settings.AppSettings
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.SongDownloader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -725,19 +726,48 @@ object PlaybackCoordinator {
     }
 
     private suspend fun resolveSongUrl(song: Song, forceRefresh: Boolean = false): Result<String> {
-        val existing = song.url?.trim().orEmpty()
-        if (!forceRefresh && existing.isNotBlank()) return Result.success(existing)
+        // Prefer a previously downloaded file so catalog / search / playlist entries work offline.
+        val localUrl = appContext?.let { SongDownloader.localPlaybackUri(it, song) }?.trim().orEmpty()
 
-        val cached = getCachedUrl(song.id, song.source)
-        if (!forceRefresh && cached != null) return Result.success(cached)
+        if (!forceRefresh) {
+            val existing = song.url?.trim().orEmpty()
+            if (existing.isNotBlank() && SongDownloader.isPlayableLocalUrl(existing)) {
+                return Result.success(existing)
+            }
+            if (localUrl.isNotBlank()) {
+                putCachedUrl(song.id, song.source, localUrl)
+                return Result.success(localUrl)
+            }
+            if (existing.isNotBlank() && !SongDownloader.isLocalFileUrl(existing)) {
+                return Result.success(existing)
+            }
+
+            val cached = getCachedUrl(song.id, song.source)
+            if (cached != null) {
+                if (SongDownloader.isLocalFileUrl(cached) && !SongDownloader.isPlayableLocalUrl(cached)) {
+                    // Stale local cache entry; fall through to network.
+                } else {
+                    return Result.success(cached)
+                }
+            }
+        } else if (localUrl.isNotBlank()) {
+            // Quality re-resolve still keeps offline local as last-resort after network failure.
+        }
 
         val fetched = repository.getSongUrl(
             song.id,
             source = song.source,
             forceRefresh = forceRefresh
         )
-        fetched.getOrNull()?.trim()?.takeIf { it.isNotBlank() }
-            ?.let { putCachedUrl(song.id, song.source, it) }
+        val remote = fetched.getOrNull()?.trim().orEmpty()
+        if (remote.isNotBlank()) {
+            putCachedUrl(song.id, song.source, remote)
+            return Result.success(remote)
+        }
+        if (localUrl.isNotBlank()) {
+            putCachedUrl(song.id, song.source, localUrl)
+            return Result.success(localUrl)
+        }
         return fetched
     }
 

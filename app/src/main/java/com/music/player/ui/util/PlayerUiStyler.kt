@@ -17,13 +17,14 @@ import com.music.player.R
 import com.music.player.databinding.ActivityMainBinding
 import com.music.player.databinding.BottomSheetNowPlayingBinding
 
+/**
+ * - [applyMiniPlayer]: fixed bottom mini bar (unrelated to PlayerStyle).
+ * - [applyNowPlaying]: full-screen page chrome is shared; only the **cover**
+ *   shape changes with Glass / Vinyl / Minimal.
+ */
 object PlayerUiStyler {
 
     fun applyMiniPlayer(binding: ActivityMainBinding, context: Context) {
-        applyCymusicMiniPlayer(binding, context)
-    }
-
-    private fun applyCymusicMiniPlayer(binding: ActivityMainBinding, context: Context) {
         val background = context.resolveThemeColor(R.attr.glassSurfaceStrong)
         val stroke = context.resolveThemeColor(R.attr.glassStrokeSoft)
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
@@ -49,119 +50,47 @@ object PlayerUiStyler {
     }
 
     fun applyNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
+        // Shared bottom chrome (controls / progress / transport) — never per-style.
+        applySharedNowPlayingChrome(binding, context)
+        // PlayerStyle only changes the cover block.
         when (ThemeManager.getPlayerStyle(context)) {
-            ThemeManager.PlayerStyle.GLASS -> applyGlassNowPlaying(binding, context)
-            ThemeManager.PlayerStyle.VINYL -> applyVinylNowPlaying(binding, context)
-            ThemeManager.PlayerStyle.MINIMAL -> applyMinimalNowPlaying(binding, context)
+            ThemeManager.PlayerStyle.GLASS -> styleCover(
+                binding = binding,
+                radiusDp = 16f,
+                strokeColor = ColorUtils.setAlphaComponent(Color.WHITE, 0x28),
+                strokeDp = 1.5f,
+                elevationDp = 12f
+            )
+            ThemeManager.PlayerStyle.VINYL -> styleCover(
+                binding = binding,
+                radiusDp = 999f,
+                strokeColor = ColorUtils.setAlphaComponent(Color.WHITE, 0x40),
+                strokeDp = 2f,
+                elevationDp = 16f
+            )
+            ThemeManager.PlayerStyle.MINIMAL -> styleCover(
+                binding = binding,
+                radiusDp = 8f,
+                strokeColor = 0,
+                strokeDp = 0f,
+                elevationDp = 0f
+            )
         }
     }
 
-    private fun applyGlassMiniPlayer(binding: ActivityMainBinding, context: Context) {
-        val glassStrong = context.resolveThemeColor(R.attr.glassSurfaceStrong)
-        val glassSoft = context.resolveThemeColor(R.attr.glassSurfaceSoft)
-        val glassStrokeSoft = context.resolveThemeColor(R.attr.glassStrokeSoft)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
-
-        binding.miniPlayer.radius = context.dp(18f).toFloat()
-        binding.miniPlayer.strokeWidth = context.dp(1f)
-        binding.miniPlayer.setCardBackgroundColor(glassStrong)
-        binding.miniPlayer.strokeColor = glassStrokeSoft
-
-        binding.coverContainer.radius = context.dp(12f).toFloat()
-        binding.coverContainer.strokeWidth = 0
-        binding.coverContainer.setCardBackgroundColor(glassSoft)
-        binding.coverContainer.strokeColor = 0
-
-        binding.btnMiniPlayPause.background = circleDrawable(glassSoft, 0)
-        binding.btnMiniQueue.background = circleDrawable(glassSoft, 0)
-        binding.btnMiniPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.btnMiniQueue.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.miniProgress.setIndicatorColor(textPrimary)
-        binding.miniProgress.trackColor = glassSoft
-        binding.miniProgress.trackThickness = context.dp(2f)
-        binding.tvMiniTitle.setTextColor(textPrimary)
-        binding.tvMiniArtist.setTextColor(textSecondary)
-    }
-
-    private fun applyVinylMiniPlayer(binding: ActivityMainBinding, context: Context) {
-        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
-        val glassStrong = context.resolveThemeColor(R.attr.glassSurfaceStrong)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
-
-        binding.miniPlayer.radius = context.dp(18f).toFloat()
-        binding.miniPlayer.strokeWidth = context.dp(1f)
-        binding.miniPlayer.setCardBackgroundColor(ColorUtils.setAlphaComponent(glassStrong, 238))
-        binding.miniPlayer.strokeColor = ColorUtils.setAlphaComponent(textPrimary, 24)
-
-        binding.coverContainer.radius = context.dp(12f).toFloat()
-        binding.coverContainer.strokeWidth = 0
-        binding.coverContainer.setCardBackgroundColor(ColorUtils.setAlphaComponent(surfaceAlt, 248))
-        binding.coverContainer.strokeColor = 0
-
-        binding.btnMiniPlayPause.background = circleDrawable(ColorUtils.setAlphaComponent(glassStrong, 210), 0)
-        binding.btnMiniQueue.background = circleDrawable(ColorUtils.setAlphaComponent(glassStrong, 210), 0)
-        binding.btnMiniPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.btnMiniQueue.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.miniProgress.setIndicatorColor(textPrimary)
-        binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 52)
-        binding.miniProgress.trackThickness = context.dp(3f)
-        binding.tvMiniTitle.setTextColor(textPrimary)
-        binding.tvMiniArtist.setTextColor(textSecondary)
-    }
-
-    private fun applyMinimalMiniPlayer(binding: ActivityMainBinding, context: Context) {
-        val surface = context.resolveThemeColor(R.attr.surfaceColor)
-        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
-
-        binding.miniPlayer.radius = context.dp(18f).toFloat()
-        binding.miniPlayer.strokeWidth = context.dp(1f)
-        binding.miniPlayer.setCardBackgroundColor(ColorUtils.setAlphaComponent(surface, 246))
-        binding.miniPlayer.strokeColor = ColorUtils.setAlphaComponent(textPrimary, 22)
-
-        binding.coverContainer.radius = context.dp(12f).toFloat()
-        binding.coverContainer.strokeWidth = 0
-        binding.coverContainer.setCardBackgroundColor(surfaceAlt)
-        binding.coverContainer.strokeColor = 0
-
-        binding.btnMiniPlayPause.background = circleDrawable(surfaceAlt, 0)
-        binding.btnMiniQueue.background = circleDrawable(surfaceAlt, 0)
-        binding.btnMiniPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.btnMiniQueue.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        binding.miniProgress.setIndicatorColor(textPrimary)
-        binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 22)
-        binding.miniProgress.trackThickness = context.dp(2f)
-        binding.tvMiniTitle.setTextColor(textPrimary)
-        binding.tvMiniArtist.setTextColor(textSecondary)
-    }
-
-    private fun applyGlassNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        applyNetEaseNowPlayingChrome(binding, context)
-    }
-
-    private fun applyVinylNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        applyNetEaseNowPlayingChrome(binding, context)
-    }
-
-    private fun applyMinimalNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        applyNetEaseNowPlayingChrome(binding, context)
-    }
-
     /**
-     * Shared full-player chrome: album blur + dark scrim, light controls on top,
-     * white circular play button, thin white progress (NetEase-like).
+     * One NetEase-like control strip for every style: transparent bar,
+     * white play CTA, thin progress, light-on-dark icons.
      */
-    private fun applyNetEaseNowPlayingChrome(binding: BottomSheetNowPlayingBinding, context: Context) {
-        // Always light-on-dark chrome so album blur backgrounds stay readable.
+    private fun applySharedNowPlayingChrome(
+        binding: BottomSheetNowPlayingBinding,
+        context: Context
+    ) {
         val textPrimary = Color.WHITE
         val textSecondary = ColorUtils.setAlphaComponent(Color.WHITE, 0xB3)
         val textTertiary = ColorUtils.setAlphaComponent(Color.WHITE, 0x80)
 
-        applyImmersiveNowPlayingBackground(binding)
-
+        applyImmersiveBackground(binding)
         binding.progressContainer.background = null
         stylePlayerControlsBar(
             card = binding.controlsBar,
@@ -178,56 +107,78 @@ object PlayerUiStyler {
             tintColor = textPrimary
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnFavorite, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(
+                binding.btnFavorite,
+                binding.btnPlayMode,
+                binding.btnPrev,
+                binding.btnNext,
+                binding.btnQueue
+            ),
             backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textSecondary
         )
-        // Prev/next slightly brighter than secondary actions.
         binding.btnPrev.imageTintList = ColorStateList.valueOf(textPrimary)
         binding.btnNext.imageTintList = ColorStateList.valueOf(textPrimary)
-        // Big white play CTA (do not theme-tint away).
-        binding.btnPlayPause.setBackgroundResource(R.drawable.bg_now_playing_play_circle)
+        binding.btnPlayPause.background = circleDrawable(Color.WHITE, 0)
         binding.btnPlayPause.imageTintList = ColorStateList.valueOf(Color.parseColor("#1A1A1A"))
         stylePillButton(
             button = binding.btnAudioQuality,
-            backgroundColor = Color.TRANSPARENT,
-            strokeColor = 0,
+            backgroundColor = ColorUtils.setAlphaComponent(Color.WHITE, 0x18),
+            strokeColor = ColorUtils.setAlphaComponent(Color.WHITE, 0x28),
             textColor = textSecondary,
             iconTintColor = textSecondary,
             context = context
         )
-        styleNowPlayingSliders(
-            binding = binding,
-            context = context,
+        binding.tvSheetTitle.setTextColor(textPrimary)
+        binding.tvSheetSubtitle.setTextColor(textSecondary)
+        binding.tvSheetMetaDetail.setTextColor(textTertiary)
+        binding.playerContent.tvLyricsPlain.setTextColor(textSecondary)
+
+        styleCompactSlider(
+            slider = binding.sliderProgress,
+            thumbRadiusPx = context.dp(5f),
+            trackHeightPx = context.dp(2f),
             activeTrack = textPrimary,
-            inactiveTrack = ColorUtils.setAlphaComponent(Color.WHITE, 40),
+            inactiveTrack = ColorUtils.setAlphaComponent(Color.WHITE, 42),
             thumb = textPrimary
         )
         binding.tvCurrentTime.setTextColor(textTertiary)
         binding.tvTotalTime.setTextColor(textTertiary)
         binding.tvControlSongTitle.setTextColor(textPrimary)
         binding.tvControlSongArtist.setTextColor(textSecondary)
-        styleNowPlayingContent(binding, textPrimary, textSecondary)
     }
 
-    private fun styleNowPlayingSliders(
+    private fun applyImmersiveBackground(binding: BottomSheetNowPlayingBinding) {
+        binding.root.setBackgroundResource(R.drawable.bg_now_playing_cymusic_scrim)
+        binding.ivBlurBackground.visibility = View.VISIBLE
+        binding.ivBlurBackground.alpha = 0.92f
+        binding.viewScrim.setBackgroundResource(R.drawable.bg_now_playing_blur_scrim)
+        binding.viewScrim.alpha = 1f
+        binding.viewScrim.setTag(R.id.tag_player_style_scrim_alpha, 1f)
+    }
+
+    /** Cover-only chrome — the only piece driven by PlayerStyle. */
+    private fun styleCover(
         binding: BottomSheetNowPlayingBinding,
-        context: Context,
-        activeTrack: Int,
-        inactiveTrack: Int,
-        thumb: Int
+        radiusDp: Float,
+        strokeColor: Int,
+        strokeDp: Float,
+        elevationDp: Float
     ) {
-        val thumbRadiusPx = context.dp(6f)
-        val trackHeightPx = context.dp(3f)
-        styleCompactSlider(
-            slider = binding.sliderProgress,
-            thumbRadiusPx = thumbRadiusPx,
-            trackHeightPx = trackHeightPx,
-            activeTrack = activeTrack,
-            inactiveTrack = inactiveTrack,
-            thumb = thumb
-        )
+        val density = binding.root.resources.displayMetrics.density
+        val card = binding.playerContent.cardCoverBig
+        card.radius = radiusDp * density
+        card.strokeWidth = if (strokeColor == 0 || strokeDp <= 0f) {
+            0
+        } else {
+            (strokeDp * density).toInt().coerceAtLeast(1)
+        }
+        card.strokeColor = strokeColor
+        card.cardElevation = elevationDp * density
+        binding.playerContent.lyricsStage.background = null
+        binding.playerContent.rvLyrics.background = null
+        binding.playerContent.tvLyricsPlain.background = null
     }
 
     private fun styleCompactSlider(
@@ -272,7 +223,7 @@ object PlayerUiStyler {
         val background = circleDrawable(backgroundColor, strokeColor)
         buttons.forEach { button ->
             button.background = background.constantState?.newDrawable()?.mutate()
-            button.imageTintList = android.content.res.ColorStateList.valueOf(tintColor)
+            button.imageTintList = ColorStateList.valueOf(tintColor)
         }
     }
 
@@ -291,70 +242,6 @@ object PlayerUiStyler {
         button.iconTint = ColorStateList.valueOf(iconTintColor)
     }
 
-    private fun styleNowPlayingContent(
-        binding: BottomSheetNowPlayingBinding,
-        primaryText: Int,
-        secondaryText: Int
-    ) {
-        // Continuous immersive surface — no floating control card.
-        binding.controlsBar.setCardBackgroundColor(Color.TRANSPARENT)
-        binding.controlsBar.strokeWidth = 0
-        binding.controlsBar.radius = 0f
-        binding.playerContent.lyricsStage.background = null
-        binding.playerContent.rvLyrics.background = null
-        binding.playerContent.tvLyricsPlain.background = null
-        binding.playerContent.cardCoverBig.strokeWidth = 0
-        binding.playerContent.cardCoverBig.strokeColor = 0
-        binding.playerContent.cardCoverBig.radius =
-            binding.root.resources.displayMetrics.density * 12f
-        binding.playerContent.tvLyricsPlain.setTextColor(secondaryText)
-        binding.tvSheetTitle.setTextColor(primaryText)
-        binding.tvSheetSubtitle.setTextColor(secondaryText)
-        binding.tvSheetMetaDetail.setTextColor(ColorUtils.setAlphaComponent(Color.WHITE, 0x80))
-    }
-
-    private fun applyImmersiveNowPlayingBackground(binding: BottomSheetNowPlayingBinding) {
-        // Fallback gradient while blur loads; album art blur sits under a dark scrim.
-        binding.root.setBackgroundResource(R.drawable.bg_now_playing_cymusic_scrim)
-        binding.ivBlurBackground.visibility = View.VISIBLE
-        binding.ivBlurBackground.alpha = 0.92f
-        binding.viewScrim.setBackgroundResource(R.drawable.bg_now_playing_blur_scrim)
-        binding.viewScrim.alpha = 1f
-    }
-
-    private fun roundedPanelDrawable(
-        backgroundColor: Int,
-        strokeColor: Int,
-        radiusDp: Float,
-        context: Context
-    ): GradientDrawable {
-        return GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = context.dp(radiusDp).toFloat()
-            setColor(backgroundColor)
-            if (strokeColor != 0) {
-                setStroke(context.dp(1f), strokeColor)
-            }
-        }
-    }
-
-    private fun layeredPanelDrawable(
-        startColor: Int,
-        endColor: Int,
-        strokeColor: Int,
-        radiusDp: Float,
-        context: Context
-    ): GradientDrawable {
-        return GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(startColor, endColor)
-        ).apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = context.dp(radiusDp).toFloat()
-            setStroke(context.dp(1f), strokeColor)
-        }
-    }
-
     private fun circleDrawable(backgroundColor: Int, strokeColor: Int): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -362,15 +249,6 @@ object PlayerUiStyler {
             if (strokeColor != 0) {
                 setStroke(2, strokeColor)
             }
-        }
-    }
-
-    private fun glowCircleDrawable(coreColor: Int, edgeColor: Int): GradientDrawable {
-        return GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(ColorUtils.setAlphaComponent(coreColor, 255), ColorUtils.setAlphaComponent(edgeColor, 230))
-        ).apply {
-            shape = GradientDrawable.OVAL
         }
     }
 
@@ -382,9 +260,5 @@ object PlayerUiStyler {
         val typedValue = TypedValue()
         theme.resolveAttribute(attrResId, typedValue, true)
         return typedValue.data
-    }
-
-    private fun Context.resolveThemeColorStateList(@AttrRes attrResId: Int): ColorStateList {
-        return ColorStateList.valueOf(resolveThemeColor(attrResId))
     }
 }

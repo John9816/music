@@ -7,18 +7,21 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import android.widget.ImageView
-import android.widget.Toast
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentProfileBinding
+import com.music.player.databinding.ItemProfileBodyBinding
 import com.music.player.ui.activity.DownloadsActivity
 import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.util.FileSizeFormatter
@@ -37,15 +40,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Profile tab: fixed top bar + RecyclerView body (same scroll model as search / radio).
+ */
 class ProfileFragment : Fragment(), RootTabInteraction {
 
     private var _binding: FragmentProfileBinding? = null
     private val binding: FragmentProfileBinding
         get() = _binding!!
 
+    private var _body: ItemProfileBodyBinding? = null
+    private val body: ItemProfileBodyBinding
+        get() = _body!!
+
     private lateinit var authViewModel: AuthViewModel
     private lateinit var libraryViewModel: LibraryViewModel
     private var currentUser: UserProfile? = null
+
     private val avatarPicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             uri ?: return@registerForActivityResult
@@ -76,11 +87,8 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
         binding.layoutHeroContent.applyStatusBarInsetPadding()
-        binding.stickyProfileTitle.applyStatusBarInsetPadding()
-        binding.scrollContent.setOnScrollChangeListener { _, scrollY, _, _, _ ->
-            binding.stickyProfileTitle.visibility = if (scrollY > 0) View.VISIBLE else View.GONE
-        }
-        setupUi()
+        setupRecycler()
+        setupHeroUi()
         setupObservers()
         warmProfileData()
         refreshDownloadsMeta()
@@ -92,17 +100,104 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     override fun onDestroyView() {
+        binding.recyclerView.adapter = null
+        _body = null
         super.onDestroyView()
         _binding = null
     }
 
     override fun onTabReselected() {
         val binding = _binding ?: return
-        if (binding.scrollContent.scrollY > 0) {
-            binding.scrollContent.smoothScrollTo(0, 0)
+        val lm = binding.recyclerView.layoutManager as? LinearLayoutManager
+        val offset = lm?.findFirstVisibleItemPosition() ?: 0
+        val top = lm?.findViewByPosition(offset)?.top ?: 0
+        if (offset > 0 || top < 0) {
+            binding.recyclerView.smoothScrollToPosition(0)
             return
         }
         refresh(userInitiated = true)
+    }
+
+    private fun setupRecycler() {
+        binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerView.overScrollMode = View.OVER_SCROLL_NEVER
+        binding.recyclerView.setHasFixedSize(true)
+        binding.recyclerView.adapter = object : RecyclerView.Adapter<ProfileBodyHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ProfileBodyHolder {
+                val bodyBinding = ItemProfileBodyBinding.inflate(
+                    LayoutInflater.from(parent.context),
+                    parent,
+                    false
+                )
+                _body = bodyBinding
+                setupBodyUi(bodyBinding)
+                // Re-apply latest observed state after rebind (e.g. config change).
+                renderUser(currentUser)
+                libraryViewModel.favorites.value?.let { updateLikedSection(it) }
+                libraryViewModel.history.value?.let { updateHistorySection(it) }
+                libraryViewModel.playlists.value?.let { updatePlaylistsSection(it) }
+                refreshDownloadsMeta()
+                return ProfileBodyHolder(bodyBinding)
+            }
+
+            override fun onBindViewHolder(holder: ProfileBodyHolder, position: Int) = Unit
+
+            override fun getItemCount(): Int = 1
+        }
+    }
+
+    private fun setupHeroUi() {
+        binding.btnSettings.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnSettings.setOnClickListener {
+            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
+        }
+    }
+
+    private fun setupBodyUi(body: ItemProfileBodyBinding) {
+        body.ivAvatar.bindPressFeedback(PressFeedback.Style.ICON)
+        body.layoutUserHeader.bindPressFeedback(PressFeedback.Style.ROW)
+        body.cardLiked.bindPressFeedback(PressFeedback.Style.CARD)
+        listOf(
+            body.rowLiked,
+            body.rowHistory,
+            body.rowDownloads,
+            body.rowPlaylists,
+            body.gridLiked,
+            body.gridHistory,
+            body.gridDownloads,
+            body.gridPlaylists
+        ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
+
+        body.ivAvatar.setOnClickListener {
+            avatarPicker.launch("image/*")
+        }
+        body.layoutUserHeader.setOnClickListener {
+            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
+        }
+
+        val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
+        val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
+        val openDownloads = View.OnClickListener {
+            startActivity(Intent(requireContext(), DownloadsActivity::class.java))
+        }
+        val openPlaylists = View.OnClickListener { openCollection(UserPlaylistsFragment()) }
+
+        body.cardLiked.setOnClickListener(openLiked)
+        body.tvLikedTitle.setOnClickListener(openLiked)
+        body.gridLiked.setOnClickListener(openLiked)
+        body.rowLiked.setOnClickListener(openLiked)
+
+        body.gridHistory.setOnClickListener(openHistory)
+        body.rowHistory.setOnClickListener(openHistory)
+        body.tvHistoryTitle.setOnClickListener(openHistory)
+
+        body.gridDownloads.setOnClickListener(openDownloads)
+        body.rowDownloads.setOnClickListener(openDownloads)
+        body.tvDownloadsTitle.setOnClickListener(openDownloads)
+
+        body.gridPlaylists.setOnClickListener(openPlaylists)
+        body.rowPlaylists.setOnClickListener(openPlaylists)
+        body.tvPlaylistsTitle.setOnClickListener(openPlaylists)
     }
 
     private fun refresh() {
@@ -123,81 +218,31 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         }
 
         authViewModel.refreshProfile()
-        // Soft revalidate: memory/disk first, network when stale (大厂 stale-while-revalidate)
         libraryViewModel.prefetch(forceRefresh = userInitiated)
         refreshDownloadsMeta()
     }
 
-    private fun setupUi() {
-        binding.ivAvatar.bindPressFeedback(PressFeedback.Style.ICON)
-        binding.layoutUserHeader.bindPressFeedback(PressFeedback.Style.ROW)
-        binding.btnSettings.bindPressFeedback(PressFeedback.Style.ICON)
-        binding.btnSettingsSticky.bindPressFeedback(PressFeedback.Style.ICON)
-        binding.cardLiked.bindPressFeedback(PressFeedback.Style.CARD)
-        listOf(
-            binding.rowLiked,
-            binding.rowHistory,
-            binding.rowDownloads,
-            binding.rowPlaylists,
-            binding.gridLiked,
-            binding.gridHistory,
-            binding.gridDownloads,
-            binding.gridPlaylists
-        ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
-
-        binding.ivAvatar.setOnClickListener {
-            avatarPicker.launch("image/*")
-        }
-        binding.layoutUserHeader.setOnClickListener {
-            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
-        }
-        val openSettings = View.OnClickListener {
-            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
-        }
-        binding.btnSettings.setOnClickListener(openSettings)
-        binding.btnSettingsSticky.setOnClickListener(openSettings)
-
-        val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
-        val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
-        val openDownloads = View.OnClickListener {
-            startActivity(Intent(requireContext(), DownloadsActivity::class.java))
-        }
-        val openPlaylists = View.OnClickListener { openCollection(UserPlaylistsFragment()) }
-
-        binding.cardLiked.setOnClickListener(openLiked)
-        binding.tvLikedTitle.setOnClickListener(openLiked)
-        binding.gridLiked.setOnClickListener(openLiked)
-        binding.rowLiked.setOnClickListener(openLiked)
-
-        binding.gridHistory.setOnClickListener(openHistory)
-        binding.rowHistory.setOnClickListener(openHistory)
-        binding.tvHistoryTitle.setOnClickListener(openHistory)
-
-        binding.gridDownloads.setOnClickListener(openDownloads)
-        binding.rowDownloads.setOnClickListener(openDownloads)
-        binding.tvDownloadsTitle.setOnClickListener(openDownloads)
-
-        binding.gridPlaylists.setOnClickListener(openPlaylists)
-        binding.rowPlaylists.setOnClickListener(openPlaylists)
-        binding.tvPlaylistsTitle.setOnClickListener(openPlaylists)
-    }
-
     private fun refreshDownloadsMeta() {
-        val binding = _binding ?: return
+        if (_body == null || _binding == null) return
         viewLifecycleOwner.lifecycleScope.launch {
             val summary = withContext(Dispatchers.IO) {
+                // One song writes audio + sidecar .json/.cover; only count real audio files.
                 val files = SongDownloader.downloadDirs(requireContext())
                     .flatMap { it.listFiles().orEmpty().asIterable() }
-                    .filter { it.isFile && !it.name.endsWith(".part", ignoreCase = true) }
+                    .filter { file ->
+                        file.isFile &&
+                            !file.name.endsWith(".part", ignoreCase = true) &&
+                            file.extension.lowercase() in DOWNLOAD_AUDIO_EXTENSIONS
+                    }
                     .distinctBy { it.absolutePath }
                 val count = files.size
                 val totalSize = files.sumOf { it.length().coerceAtLeast(0L) }
                 count to totalSize
             }
-            if (_binding == null) return@launch
+            val body = _body ?: return@launch
             val (count, totalSize) = summary
-            binding.tvGridDownloadsCount.text = NumberFormat.getIntegerInstance().format(count)
-            binding.tvDownloadsMeta.text = if (count == 0) {
+            body.tvGridDownloadsCount.text = NumberFormat.getIntegerInstance().format(count)
+            body.tvDownloadsMeta.text = if (count == 0) {
                 getString(R.string.profile_downloads_empty)
             } else {
                 getString(
@@ -224,7 +269,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     private fun setupObservers() {
         authViewModel.currentUser.observe(viewLifecycleOwner) { user ->
             currentUser = user
-            renderUser(user)
+            if (_body != null) renderUser(user)
         }
 
         authViewModel.authState.observe(viewLifecycleOwner) { state ->
@@ -245,24 +290,25 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         }
 
         libraryViewModel.favorites.observe(viewLifecycleOwner) { songs ->
-            updateLikedSection(songs)
+            if (_body != null) updateLikedSection(songs)
         }
 
         libraryViewModel.history.observe(viewLifecycleOwner) { songs ->
-            updateHistorySection(songs)
+            if (_body != null) updateHistorySection(songs)
         }
 
         libraryViewModel.playlists.observe(viewLifecycleOwner) { playlists ->
-            updatePlaylistsSection(playlists)
+            if (_body != null) updatePlaylistsSection(playlists)
         }
     }
 
     private fun updateLikedSection(songs: List<Song>) {
+        val body = _body ?: return
         val countText = NumberFormat.getIntegerInstance().format(songs.size)
-        binding.tvLikedCount.text = countText
-        binding.tvGridLikedCount.text = countText
+        body.tvLikedCount.text = countText
+        body.tvGridLikedCount.text = countText
         updateLikedCover(songs.firstOrNull()?.album?.picUrl)
-        binding.tvLikedMeta.text = if (songs.isEmpty()) {
+        body.tvLikedMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_liked_empty)
         } else {
             getString(R.string.profile_liked_card_subtitle, songs.size)
@@ -270,11 +316,12 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateHistorySection(songs: List<Song>) {
+        val body = _body ?: return
         val countText = NumberFormat.getIntegerInstance().format(songs.size)
-        binding.tvHistoryCount.text = countText
-        binding.tvGridHistoryCount.text = countText
+        body.tvHistoryCount.text = countText
+        body.tvGridHistoryCount.text = countText
         updateHistoryCover(songs.firstOrNull()?.album?.picUrl)
-        binding.tvHistoryMeta.text = if (songs.isEmpty()) {
+        body.tvHistoryMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_history_empty)
         } else {
             getString(R.string.profile_history_meta, songs.size, describeSong(songs.first()))
@@ -282,11 +329,12 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updatePlaylistsSection(playlists: List<UserPlaylist>) {
+        val body = _body ?: return
         val countText = NumberFormat.getIntegerInstance().format(playlists.size)
-        binding.tvPlaylistCount.text = countText
-        binding.tvGridPlaylistsCount.text = countText
+        body.tvPlaylistCount.text = countText
+        body.tvGridPlaylistsCount.text = countText
         updatePlaylistCover(playlists.firstOrNull()?.coverUrl)
-        binding.tvPlaylistsMeta.text = if (playlists.isEmpty()) {
+        body.tvPlaylistsMeta.text = if (playlists.isEmpty()) {
             getString(R.string.user_playlist_empty)
         } else {
             val first = playlists.first().name
@@ -308,62 +356,67 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateLikedCover(coverUrl: String?) {
+        val body = _body ?: return
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
-            binding.ivLikedCover.setPadding(coverPlaceholderPadding())
-            binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER
-            binding.ivLikedCover.setImageResource(R.drawable.ic_favorite_24)
-            binding.ivLikedCover.imageTintList =
+            body.ivLikedCover.setPadding(coverPlaceholderPadding())
+            body.ivLikedCover.scaleType = ImageView.ScaleType.CENTER
+            body.ivLikedCover.setImageResource(R.drawable.ic_favorite_24)
+            body.ivLikedCover.imageTintList =
                 android.content.res.ColorStateList.valueOf(Color.WHITE)
         } else {
-            binding.ivLikedCover.setPadding(0, 0, 0, 0)
-            binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER_CROP
-            binding.ivLikedCover.imageTintList = null
-            Glide.with(binding.ivLikedCover)
+            body.ivLikedCover.setPadding(0, 0, 0, 0)
+            body.ivLikedCover.scaleType = ImageView.ScaleType.CENTER_CROP
+            body.ivLikedCover.imageTintList = null
+            Glide.with(body.ivLikedCover)
                 .load(url)
                 .placeholder(R.drawable.ic_favorite_24)
                 .centerCrop()
-                .into(binding.ivLikedCover)
+                .into(body.ivLikedCover)
         }
     }
 
     private fun updateHistoryCover(coverUrl: String?) {
+        val body = _body ?: return
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
-            binding.ivHistoryCover.setPadding(coverPlaceholderPadding())
-            binding.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER
-            binding.ivHistoryCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivHistoryCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
+            body.ivHistoryCover.setPadding(coverPlaceholderPadding())
+            body.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER
+            body.ivHistoryCover.setImageResource(R.drawable.ic_music_note_24)
+            body.ivHistoryCover.imageTintList =
+                requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
         } else {
-            binding.ivHistoryCover.setPadding(0, 0, 0, 0)
-            binding.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER_CROP
-            binding.ivHistoryCover.imageTintList = null
-            Glide.with(binding.ivHistoryCover)
+            body.ivHistoryCover.setPadding(0, 0, 0, 0)
+            body.ivHistoryCover.scaleType = ImageView.ScaleType.CENTER_CROP
+            body.ivHistoryCover.imageTintList = null
+            Glide.with(body.ivHistoryCover)
                 .load(url)
                 .placeholder(R.drawable.ic_music_note_24)
                 .centerCrop()
-                .into(binding.ivHistoryCover)
+                .into(body.ivHistoryCover)
         }
     }
 
     private fun updatePlaylistCover(coverUrl: String?) {
+        val body = _body ?: return
         val url = coverUrl?.trim().orEmpty()
         if (url.isBlank()) {
-            binding.ivPlaylistCover.setPadding(coverPlaceholderPadding())
-            binding.ivPlaylistCover.setImageResource(R.drawable.ic_playlist_24)
-            binding.ivPlaylistCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
-            binding.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER
+            body.ivPlaylistCover.setPadding(coverPlaceholderPadding())
+            body.ivPlaylistCover.setImageResource(R.drawable.ic_playlist_24)
+            body.ivPlaylistCover.imageTintList =
+                requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
+            body.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER
             return
         }
 
-        binding.ivPlaylistCover.setPadding(0, 0, 0, 0)
-        binding.ivPlaylistCover.imageTintList = null
-        binding.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER_CROP
-        Glide.with(binding.ivPlaylistCover)
+        body.ivPlaylistCover.setPadding(0, 0, 0, 0)
+        body.ivPlaylistCover.imageTintList = null
+        body.ivPlaylistCover.scaleType = ImageView.ScaleType.CENTER_CROP
+        Glide.with(body.ivPlaylistCover)
             .load(url)
             .placeholder(R.drawable.ic_playlist_24)
             .centerCrop()
-            .into(binding.ivPlaylistCover)
+            .into(body.ivPlaylistCover)
     }
 
     private fun ImageView.setPadding(padding: Int) {
@@ -374,34 +427,36 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         resources.getDimensionPixelSize(R.dimen.profile_cover_placeholder_padding)
 
     private fun renderUser(user: UserProfile?) {
+        val body = _body ?: return
         if (user == null) {
-            binding.tvNickname.text = getString(R.string.profile_nickname_placeholder)
-            binding.tvSignature.text = getString(R.string.profile_signature_empty)
-            binding.tvProfileMeta.text = getString(R.string.profile_account_placeholder)
-            binding.tvBadge.visibility = View.GONE
-            binding.ivAvatar.showAvatarPlaceholder(18)
+            body.tvNickname.text = getString(R.string.profile_nickname_placeholder)
+            body.tvSignature.text = getString(R.string.profile_signature_empty)
+            body.tvProfileMeta.text = getString(R.string.profile_account_placeholder)
+            body.tvBadge.visibility = View.GONE
+            body.ivAvatar.showAvatarPlaceholder(18)
             return
         }
-        binding.tvNickname.text = user.nickname?.takeIf { it.isNotBlank() }
+        body.tvNickname.text = user.nickname?.takeIf { it.isNotBlank() }
             ?: user.username?.takeIf { it.isNotBlank() }
             ?: user.email?.substringBefore("@")
             ?: getString(R.string.profile_nickname_placeholder)
-        binding.tvSignature.text = user.signature?.takeIf { it.isNotBlank() }
+        body.tvSignature.text = user.signature?.takeIf { it.isNotBlank() }
             ?: getString(R.string.profile_signature_empty)
-        binding.tvProfileMeta.text = buildProfileMeta(user)
-        binding.ivAvatar.loadUserAvatar(user, placeholderPaddingDp = 16)
+        body.tvProfileMeta.text = buildProfileMeta(user)
+        body.ivAvatar.loadUserAvatar(user, placeholderPaddingDp = 16)
 
         if (!user.badge.isNullOrEmpty()) {
-            binding.tvBadge.text = getString(R.string.profile_badge, user.badge)
-            binding.tvBadge.visibility = View.VISIBLE
+            body.tvBadge.text = getString(R.string.profile_badge, user.badge)
+            body.tvBadge.visibility = View.VISIBLE
         } else {
-            binding.tvBadge.visibility = View.GONE
+            body.tvBadge.visibility = View.GONE
         }
     }
 
     private fun setProfileActionsEnabled(enabled: Boolean) {
-        binding.ivAvatar.isEnabled = enabled
-        binding.ivAvatar.alpha = if (enabled) 1f else 0.6f
+        val body = _body ?: return
+        body.ivAvatar.isEnabled = enabled
+        body.ivAvatar.alpha = if (enabled) 1f else 0.6f
     }
 
     private fun buildProfileMeta(user: UserProfile): String {
@@ -414,4 +469,11 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         return getString(R.string.profile_account_meta, primary, shortId)
     }
 
+    private class ProfileBodyHolder(
+        binding: ItemProfileBodyBinding
+    ) : RecyclerView.ViewHolder(binding.root)
+
+    private companion object {
+        private val DOWNLOAD_AUDIO_EXTENSIONS = setOf("mp3", "flac", "aac", "m4a", "wav", "ogg")
+    }
 }

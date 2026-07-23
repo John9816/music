@@ -13,10 +13,13 @@ import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
+import com.music.player.ui.util.SongDownloader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 
 class MusicViewModel : ViewModel() {
 
@@ -629,6 +632,16 @@ class MusicViewModel : ViewModel() {
             if (cachedUrl.isNotBlank()) {
                 onResult(Result.success(cachedUrl))
                 return@launch
+            }
+            val appContext = MusicRepository.applicationContextOrNull()
+            if (appContext != null) {
+                val localUrl = withContext(Dispatchers.IO) {
+                    SongDownloader.localPlaybackUri(appContext, song)
+                }?.trim().orEmpty()
+                if (localUrl.isNotBlank()) {
+                    onResult(Result.success(localUrl))
+                    return@launch
+                }
             }
             onResult(repository.getSongUrl(song.id, source = song.source))
         }

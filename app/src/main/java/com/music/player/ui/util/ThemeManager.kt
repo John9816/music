@@ -16,19 +16,27 @@ object ThemeManager {
         val storageValue: String,
         val themeResId: Int,
         @StringRes val titleResId: Int,
-        @StringRes val summaryResId: Int
+        @StringRes val summaryResId: Int,
+        /** NetEase-style swatch color (ARGB). */
+        val previewColor: Int,
+        /** Optional ring / border for light-colored swatches. */
+        val previewStrokeColor: Int = 0x33000000
     ) {
+        // Order mirrors NetEase: red / dark / warm / cool / accent.
         LIGHT(
             storageValue = "light",
             themeResId = R.style.Theme_MusicPlayer_Light,
             titleResId = R.string.app_theme_light_title,
-            summaryResId = R.string.app_theme_light_summary
+            summaryResId = R.string.app_theme_light_summary,
+            previewColor = 0xFFFF2D55.toInt()
         ),
         DARK(
             storageValue = "dark",
             themeResId = R.style.Theme_MusicPlayer_Dark,
             titleResId = R.string.app_theme_dark_title,
-            summaryResId = R.string.app_theme_dark_summary
+            summaryResId = R.string.app_theme_dark_summary,
+            previewColor = 0xFF1C1C1E.toInt(),
+            previewStrokeColor = 0x55FFFFFF
         ),
 
         // These skins define both a light (values/) and dark (values-night/) variant,
@@ -37,19 +45,22 @@ object ThemeManager {
             storageValue = "sunset",
             themeResId = R.style.Theme_MusicPlayer_Sunset,
             titleResId = R.string.app_theme_sunset_title,
-            summaryResId = R.string.app_theme_sunset_summary
+            summaryResId = R.string.app_theme_sunset_summary,
+            previewColor = 0xFFFF756C.toInt()
         ),
         OCEAN(
             storageValue = "ocean",
             themeResId = R.style.Theme_MusicPlayer_Ocean,
             titleResId = R.string.app_theme_ocean_title,
-            summaryResId = R.string.app_theme_ocean_summary
+            summaryResId = R.string.app_theme_ocean_summary,
+            previewColor = 0xFF0E9FC2.toInt()
         ),
         GRAPHITE(
             storageValue = "graphite",
             themeResId = R.style.Theme_MusicPlayer_Graphite,
             titleResId = R.string.app_theme_graphite_title,
-            summaryResId = R.string.app_theme_graphite_summary
+            summaryResId = R.string.app_theme_graphite_summary,
+            previewColor = 0xFFB3E63E.toInt()
         );
 
         companion object {

@@ -17,8 +17,8 @@ class LyricsAdapter : ListAdapter<LyricLine, LyricsAdapter.LyricViewHolder>(LYRI
     private var activeIndex: Int = -1
 
     private companion object {
-        const val ANIMATION_DURATION = 200L
-        const val SCALE_ACTIVE = 1.05f
+        const val ANIMATION_DURATION = 120L
+        const val SCALE_ACTIVE = 1.03f
         const val SCALE_INACTIVE = 1.0f
         const val PAYLOAD_ACTIVATE = "activate"
         const val PAYLOAD_DEACTIVATE = "deactivate"

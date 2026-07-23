@@ -79,6 +79,68 @@ object SongDownloader {
         )
     }
 
+    /**
+     * Resolve a playable local URI for a catalog song that was previously downloaded.
+     * Matches metadata `id` first, then falls back to the download filename pattern.
+     */
+    fun findLocalAudioFile(context: Context, song: Song): File? {
+        val songId = song.id.trim()
+        if (songId.isBlank() || songId.startsWith("local:")) return null
+
+        val dirs = downloadDirs(context)
+        val byId = dirs.asSequence()
+            .flatMap { dir -> dir.listFiles().orEmpty().asSequence() }
+            .filter { it.isFile && isAudioFile(it) && it.length() > 0L }
+            .firstOrNull { file ->
+                readMetadataId(file)?.trim() == songId
+            }
+        if (byId != null) return byId
+
+        val baseName = buildBaseFileName(song)
+        return dirs.asSequence()
+            .flatMap { dir -> dir.listFiles().orEmpty().asSequence() }
+            .filter { it.isFile && isAudioFile(it) && it.length() > 0L }
+            .firstOrNull { it.nameWithoutExtension.equals(baseName, ignoreCase = true) }
+    }
+
+    fun localPlaybackUri(context: Context, song: Song): String? {
+        val file = findLocalAudioFile(context, song) ?: return null
+        return Uri.fromFile(file).toString()
+    }
+
+    fun isLocalFileUrl(url: String): Boolean {
+        val value = url.trim()
+        if (value.isEmpty()) return false
+        return value.startsWith("file:", ignoreCase = true) ||
+            value.startsWith("/") ||
+            value.startsWith("content:", ignoreCase = true)
+    }
+
+    fun isPlayableLocalUrl(url: String): Boolean {
+        val value = url.trim()
+        if (value.isEmpty()) return false
+        return when {
+            value.startsWith("content:", ignoreCase = true) -> true
+            value.startsWith("file:", ignoreCase = true) -> {
+                runCatching { File(Uri.parse(value).path ?: return false).isFile }.getOrDefault(false)
+            }
+            value.startsWith("/") -> File(value).isFile
+            else -> false
+        }
+    }
+
+    private fun isAudioFile(file: File): Boolean {
+        if (file.name.endsWith(".part", ignoreCase = true)) return false
+        return file.extension.lowercase() in AUDIO_EXTENSIONS
+    }
+
+    private fun readMetadataId(audioFile: File): String? = runCatching {
+        val metaFile = File(audioFile.parentFile, "${audioFile.name}.json")
+        if (!metaFile.isFile) return@runCatching null
+        val root = gson.fromJson(metaFile.readText(Charsets.UTF_8), JsonObject::class.java)
+        root?.get("id")?.asString
+    }.getOrNull()
+
     private fun downloadResolvedUrl(context: Context, song: Song, url: String) {
         val targetDir = primaryDownloadDir(context)
         if (targetDir == null) {
@@ -259,4 +321,6 @@ object SongDownloader {
     private fun toast(context: Context, message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
+
+    private val AUDIO_EXTENSIONS = setOf("mp3", "flac", "aac", "m4a", "wav", "ogg")
 }
