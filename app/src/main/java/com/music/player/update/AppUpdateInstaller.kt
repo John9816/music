@@ -55,6 +55,8 @@ class AppUpdateInstaller(
         private const val KEY_DOWNLOAD_VERSION = "download_version"
         private const val KEY_DOWNLOAD_URL = "download_url"
         private const val PROGRESS_TOAST_STEP_PERCENT = 25
+        /** Reject obviously truncated / HTML error bodies before PackageManager. */
+        private const val MIN_APK_BYTES = 64 * 1024L
     }
 
     private val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -244,6 +246,15 @@ class AppUpdateInstaller(
                         output.flush()
                     }
                 }
+
+                if (total > 0L && partFile.length() != total) {
+                    Log.w(
+                        TAG,
+                        "download size mismatch expected=$total actual=${partFile.length()} url=$url"
+                    )
+                    partFile.delete()
+                    return false
+                }
             }
         } catch (e: CancellationException) {
             partFile.delete()
@@ -258,12 +269,17 @@ class AppUpdateInstaller(
             partFile.delete()
             return false
         }
+        if (!looksLikeApkFile(partFile)) {
+            Log.w(TAG, "download is not a zip/apk magic size=${partFile.length()}")
+            partFile.delete()
+            return false
+        }
         if (targetFile.exists()) targetFile.delete()
         if (!partFile.renameTo(targetFile)) {
             partFile.copyTo(targetFile, overwrite = true)
             partFile.delete()
         }
-        return targetFile.exists() && targetFile.length() > 0L
+        return targetFile.exists() && targetFile.length() > 0L && looksLikeApkFile(targetFile)
     }
 
     private fun installDownloadedApk(file: File, notifyUser: Boolean) {
@@ -283,23 +299,39 @@ class AppUpdateInstaller(
                 }
                 launchInstaller(file)
             }
-            PackageValidationResult.InvalidApk,
-            PackageValidationResult.PackageMismatch,
             PackageValidationResult.SignatureMismatch -> {
-                Log.w(TAG, "reject downloaded apk result=$result file=${file.absolutePath}")
-                if (notifyUser) {
-                    val messageRes = when (result) {
-                        PackageValidationResult.InvalidApk -> R.string.update_invalid_apk
-                        PackageValidationResult.PackageMismatch -> R.string.update_package_mismatch
-                        PackageValidationResult.SignatureMismatch -> R.string.update_signature_mismatch
-                        PackageValidationResult.Valid -> R.string.update_invalid_apk
-                    }
-                    toast(messageRes)
+                Log.w(TAG, "signature mismatch file=${file.absolutePath}")
+                if (notifyUser) toast(R.string.update_signature_mismatch)
+                discardFailedDownload(file)
+            }
+            PackageValidationResult.PackageMismatch -> {
+                Log.w(TAG, "package mismatch file=${file.absolutePath}")
+                if (notifyUser) toast(R.string.update_package_mismatch)
+                discardFailedDownload(file)
+            }
+            PackageValidationResult.InvalidApk -> {
+                Log.w(TAG, "invalid apk file=${file.absolutePath} size=${file.length()}")
+                // Last resort: still hand a zip-looking APK to the system installer. Many OEMs
+                // fail PackageManager archive parsing even when the file is installable.
+                if (looksLikeApkFile(file) && launchInstaller(file, notifyOnFailure = false)) {
+                    if (notifyUser) toast(R.string.update_download_complete)
+                    return
                 }
-                // Drop bad/stale file so resume cannot spam the same toast.
+                if (notifyUser) toast(R.string.update_invalid_apk)
+                openBrowserDownloadFallback()
                 discardFailedDownload(file)
             }
         }
+    }
+
+    private fun openBrowserDownloadFallback() {
+        val url = prefs.getString(KEY_DOWNLOAD_URL, null)?.trim().orEmpty()
+        if (url.isBlank()) return
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { activity.startActivity(intent) }
+            .onFailure { Log.w(TAG, "browser fallback failed for $url", it) }
     }
 
     private fun discardFailedDownload(file: File) {
@@ -330,11 +362,11 @@ class AppUpdateInstaller(
         }
     }
 
-    private fun launchInstaller(file: File) {
+    private fun launchInstaller(file: File, notifyOnFailure: Boolean = true): Boolean {
         if (!file.exists()) {
             clearPendingInstall()
-            toast(R.string.update_install_failed)
-            return
+            if (notifyOnFailure) toast(R.string.update_install_failed)
+            return false
         }
 
         val apkUri = runCatching {
@@ -345,8 +377,8 @@ class AppUpdateInstaller(
             )
         }.getOrElse {
             Log.w(TAG, "FileProvider uri failed", it)
-            toast(R.string.update_install_failed)
-            return
+            if (notifyOnFailure) toast(R.string.update_install_failed)
+            return false
         }
         val installIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(apkUri, APK_MIME_TYPE)
@@ -356,29 +388,43 @@ class AppUpdateInstaller(
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
-        runCatching {
+        return runCatching {
             activity.startActivity(installIntent)
             // Installer is open; clear "waiting for permission" only. Keep the APK on disk so
             // the user can re-open install from the update dialog if they cancel the system UI.
             clearPendingInstall()
-        }.onFailure {
+            true
+        }.getOrElse {
             Log.w(TAG, "start installer failed", it)
-            toast(R.string.update_install_failed)
+            if (notifyOnFailure) toast(R.string.update_install_failed)
+            false
         }
     }
 
+    /**
+     * Soft validation: never block install only because archive signing metadata is unreadable.
+     * That path is OEM-flaky for [PackageManager.getPackageArchiveInfo] and was the main
+     * source of false "安装包无效" toasts. The system package installer is the final authority.
+     */
     private fun validateDownloadedPackage(file: File): PackageValidationResult {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (!file.exists() || file.length() < MIN_APK_BYTES || !looksLikeApkFile(file)) {
+            return PackageValidationResult.InvalidApk
+        }
+
+        val path = file.absolutePath
+        val signingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             PackageManager.GET_SIGNING_CERTIFICATES
         } else {
             @Suppress("DEPRECATION")
             PackageManager.GET_SIGNATURES
         }
 
-        val path = file.absolutePath
-        val archiveInfo = activity.packageManager.getPackageArchiveInfo(path, flags)
-            ?: return PackageValidationResult.InvalidApk
-        // Required on many OEMs: otherwise archive signingInfo / resources stay empty.
+        // Prefer a no-flag parse first — some devices return null when signing flags are set.
+        val archiveInfo =
+            activity.packageManager.getPackageArchiveInfo(path, 0)
+                ?: activity.packageManager.getPackageArchiveInfo(path, signingFlags)
+                ?: return PackageValidationResult.InvalidApk
+
         archiveInfo.applicationInfo?.let { appInfo ->
             appInfo.sourceDir = path
             appInfo.publicSourceDir = path
@@ -387,43 +433,69 @@ class AppUpdateInstaller(
             return PackageValidationResult.PackageMismatch
         }
 
+        val signedArchive = activity.packageManager.getPackageArchiveInfo(path, signingFlags)
+        signedArchive?.applicationInfo?.let { appInfo ->
+            appInfo.sourceDir = path
+            appInfo.publicSourceDir = path
+        }
+
         val installedInfo = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 activity.packageManager.getPackageInfo(
                     activity.packageName,
-                    PackageManager.PackageInfoFlags.of(flags.toLong())
+                    PackageManager.PackageInfoFlags.of(signingFlags.toLong())
                 )
             } else {
                 @Suppress("DEPRECATION")
-                activity.packageManager.getPackageInfo(activity.packageName, flags)
+                activity.packageManager.getPackageInfo(activity.packageName, signingFlags)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "failed to read installed package for signature check", e)
-            return PackageValidationResult.InvalidApk
+            Log.w(TAG, "installed package unreadable; allow system installer", e)
+            return PackageValidationResult.Valid
         }
 
-        // Prefer current APK contents signers for archives: signingCertificateHistory is often
-        // empty for getPackageArchiveInfo, which previously caused a false "invalid APK" toast.
-        val archiveSigners = extractSignerDigests(archiveInfo, preferApkContents = true)
+        val archiveSigners = extractSignerDigests(
+            signedArchive ?: archiveInfo,
+            preferApkContents = true
+        )
         val installedSigners = extractSignerDigests(installedInfo, preferApkContents = false)
-        if (archiveSigners.isEmpty()) {
-            Log.w(TAG, "archive has no readable signing certs path=$path size=${file.length()}")
-            return PackageValidationResult.InvalidApk
-        }
-        if (installedSigners.isEmpty()) {
-            Log.w(TAG, "installed app has no readable signing certs")
-            return PackageValidationResult.InvalidApk
-        }
 
-        return if (archiveSigners.intersect(installedSigners).isNotEmpty()) {
-            PackageValidationResult.Valid
-        } else {
+        // Readable certs on both sides and they disagree → hard stop (debug vs release, etc.).
+        if (archiveSigners.isNotEmpty() &&
+            installedSigners.isNotEmpty() &&
+            archiveSigners.intersect(installedSigners).isEmpty()
+        ) {
             Log.w(
                 TAG,
                 "signature mismatch archive=$archiveSigners installed=$installedSigners"
             )
-            PackageValidationResult.SignatureMismatch
+            return PackageValidationResult.SignatureMismatch
         }
+
+        // Empty archive/installed signer metadata is common for archive scans — still Valid.
+        if (archiveSigners.isEmpty() || installedSigners.isEmpty()) {
+            Log.i(
+                TAG,
+                "signer metadata incomplete archiveEmpty=${archiveSigners.isEmpty()} " +
+                    "installedEmpty=${installedSigners.isEmpty()}; defer to system installer"
+            )
+        }
+        return PackageValidationResult.Valid
+    }
+
+    private fun looksLikeApkFile(file: File): Boolean {
+        if (!file.exists() || file.length() < MIN_APK_BYTES) return false
+        return runCatching {
+            file.inputStream().use { input ->
+                val header = ByteArray(4)
+                if (input.read(header) != 4) return@use false
+                // ZIP local file header "PK\u0003\u0004"
+                header[0] == 0x50.toByte() &&
+                    header[1] == 0x4B.toByte() &&
+                    header[2] == 0x03.toByte() &&
+                    header[3] == 0x04.toByte()
+            }
+        }.getOrDefault(false)
     }
 
     private fun extractSignerDigests(
@@ -432,19 +504,12 @@ class AppUpdateInstaller(
     ): Set<String> {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val signingInfo = packageInfo.signingInfo ?: return emptySet()
-            val primary = if (preferApkContents || signingInfo.hasMultipleSigners()) {
-                signingInfo.apkContentsSigners
-            } else {
-                signingInfo.signingCertificateHistory
-            }
-            val fallback = if (preferApkContents) {
-                signingInfo.signingCertificateHistory
-            } else {
-                signingInfo.apkContentsSigners
-            }
+            val contents = signingInfo.apkContentsSigners
+            val history = signingInfo.signingCertificateHistory
             val signers = when {
-                !primary.isNullOrEmpty() -> primary
-                !fallback.isNullOrEmpty() -> fallback
+                preferApkContents && !contents.isNullOrEmpty() -> contents
+                !history.isNullOrEmpty() -> history
+                !contents.isNullOrEmpty() -> contents
                 else -> emptyArray()
             }
             signers.map(::digestSignature).toSet()
