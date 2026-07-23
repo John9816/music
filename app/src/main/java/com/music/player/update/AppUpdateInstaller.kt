@@ -94,27 +94,27 @@ class AppUpdateInstaller(
     }
 
     fun resumePendingWork() {
+        // Only resume after the user was redirected to "install unknown apps" settings.
+        // Do NOT re-run install on KEY_DOWNLOAD_FILE here — a failed validation would toast
+        // "invalid APK" on every onResume (home switch, dialog dismiss, etc.).
         val pending = pendingInstallFile
             ?: prefs.getString(KEY_PENDING_INSTALL_FILE, null)
                 ?.let(::File)
                 ?.takeIf(File::exists)
                 ?.also { pendingInstallFile = it }
-            ?: prefs.getString(KEY_DOWNLOAD_FILE, null)
-                ?.let(::File)
-                ?.takeIf { it.exists() && it.length() > 0L }
-                ?.also { pendingInstallFile = it }
+            ?: return
 
-        if (pending != null && pending.exists()) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                activity.packageManager.canRequestPackageInstalls()
-            ) {
-                installDownloadedApk(pending)
-            }
+        if (!pending.exists()) {
+            clearPendingInstall()
             return
         }
-
-        // Incomplete in-app download: user can re-trigger from the update dialog.
-        if (downloadJob?.isActive == true) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            // Still waiting for the user to grant install permission; do not toast again.
+            return
+        }
+        installDownloadedApk(pending, notifyUser = true)
     }
 
     fun downloadAndInstall(downloadUrl: String, versionName: String) {
@@ -173,7 +173,7 @@ class AppUpdateInstaller(
                     return@launch
                 }
                 toast(R.string.update_download_complete)
-                installDownloadedApk(targetFile)
+                installDownloadedApk(targetFile, notifyUser = true)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -266,23 +266,52 @@ class AppUpdateInstaller(
         return targetFile.exists() && targetFile.length() > 0L
     }
 
-    private fun installDownloadedApk(file: File) {
-        when (validateDownloadedPackage(file)) {
+    private fun installDownloadedApk(file: File, notifyUser: Boolean) {
+        when (val result = validateDownloadedPackage(file)) {
             PackageValidationResult.Valid -> {
                 pendingInstallFile = file
-                prefs.edit().putString(KEY_PENDING_INSTALL_FILE, file.absolutePath).apply()
+                prefs.edit()
+                    .putString(KEY_PENDING_INSTALL_FILE, file.absolutePath)
+                    .putString(KEY_DOWNLOAD_FILE, file.absolutePath)
+                    .apply()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                     !activity.packageManager.canRequestPackageInstalls()
                 ) {
-                    toast(R.string.update_install_permission_required)
+                    if (notifyUser) toast(R.string.update_install_permission_required)
                     openInstallPermissionSettings()
                     return
                 }
                 launchInstaller(file)
             }
-            PackageValidationResult.InvalidApk -> toast(R.string.update_invalid_apk)
-            PackageValidationResult.PackageMismatch -> toast(R.string.update_package_mismatch)
-            PackageValidationResult.SignatureMismatch -> toast(R.string.update_signature_mismatch)
+            PackageValidationResult.InvalidApk,
+            PackageValidationResult.PackageMismatch,
+            PackageValidationResult.SignatureMismatch -> {
+                Log.w(TAG, "reject downloaded apk result=$result file=${file.absolutePath}")
+                if (notifyUser) {
+                    val messageRes = when (result) {
+                        PackageValidationResult.InvalidApk -> R.string.update_invalid_apk
+                        PackageValidationResult.PackageMismatch -> R.string.update_package_mismatch
+                        PackageValidationResult.SignatureMismatch -> R.string.update_signature_mismatch
+                        PackageValidationResult.Valid -> R.string.update_invalid_apk
+                    }
+                    toast(messageRes)
+                }
+                // Drop bad/stale file so resume cannot spam the same toast.
+                discardFailedDownload(file)
+            }
+        }
+    }
+
+    private fun discardFailedDownload(file: File) {
+        clearPendingInstall()
+        prefs.edit()
+            .remove(KEY_DOWNLOAD_FILE)
+            .remove(KEY_DOWNLOAD_VERSION)
+            .remove(KEY_DOWNLOAD_URL)
+            .apply()
+        runCatching {
+            if (file.exists()) file.delete()
+            File("${file.absolutePath}.part").takeIf(File::exists)?.delete()
         }
     }
 
@@ -329,7 +358,8 @@ class AppUpdateInstaller(
 
         runCatching {
             activity.startActivity(installIntent)
-            // Keep pending file until install succeeds / next launch; clear soft state only.
+            // Installer is open; clear "waiting for permission" only. Keep the APK on disk so
+            // the user can re-open install from the update dialog if they cancel the system UI.
             clearPendingInstall()
         }.onFailure {
             Log.w(TAG, "start installer failed", it)
