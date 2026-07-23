@@ -345,8 +345,14 @@ class AppUpdateInstaller(
             PackageManager.GET_SIGNATURES
         }
 
-        val archiveInfo = activity.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
+        val path = file.absolutePath
+        val archiveInfo = activity.packageManager.getPackageArchiveInfo(path, flags)
             ?: return PackageValidationResult.InvalidApk
+        // Required on many OEMs: otherwise archive signingInfo / resources stay empty.
+        archiveInfo.applicationInfo?.let { appInfo ->
+            appInfo.sourceDir = path
+            appInfo.publicSourceDir = path
+        }
         if (archiveInfo.packageName != activity.packageName) {
             return PackageValidationResult.PackageMismatch
         }
@@ -361,32 +367,57 @@ class AppUpdateInstaller(
                 @Suppress("DEPRECATION")
                 activity.packageManager.getPackageInfo(activity.packageName, flags)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "failed to read installed package for signature check", e)
             return PackageValidationResult.InvalidApk
         }
 
-        val archiveSigners = extractSignerDigests(archiveInfo)
-        val installedSigners = extractSignerDigests(installedInfo)
-        if (archiveSigners.isEmpty() || installedSigners.isEmpty()) {
+        // Prefer current APK contents signers for archives: signingCertificateHistory is often
+        // empty for getPackageArchiveInfo, which previously caused a false "invalid APK" toast.
+        val archiveSigners = extractSignerDigests(archiveInfo, preferApkContents = true)
+        val installedSigners = extractSignerDigests(installedInfo, preferApkContents = false)
+        if (archiveSigners.isEmpty()) {
+            Log.w(TAG, "archive has no readable signing certs path=$path size=${file.length()}")
+            return PackageValidationResult.InvalidApk
+        }
+        if (installedSigners.isEmpty()) {
+            Log.w(TAG, "installed app has no readable signing certs")
             return PackageValidationResult.InvalidApk
         }
 
         return if (archiveSigners.intersect(installedSigners).isNotEmpty()) {
             PackageValidationResult.Valid
         } else {
+            Log.w(
+                TAG,
+                "signature mismatch archive=$archiveSigners installed=$installedSigners"
+            )
             PackageValidationResult.SignatureMismatch
         }
     }
 
-    private fun extractSignerDigests(packageInfo: PackageInfo): Set<String> {
+    private fun extractSignerDigests(
+        packageInfo: PackageInfo,
+        preferApkContents: Boolean
+    ): Set<String> {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val signingInfo = packageInfo.signingInfo ?: return emptySet()
-            val signers = if (signingInfo.hasMultipleSigners()) {
+            val primary = if (preferApkContents || signingInfo.hasMultipleSigners()) {
                 signingInfo.apkContentsSigners
             } else {
                 signingInfo.signingCertificateHistory
             }
-            signers.orEmpty().map(::digestSignature).toSet()
+            val fallback = if (preferApkContents) {
+                signingInfo.signingCertificateHistory
+            } else {
+                signingInfo.apkContentsSigners
+            }
+            val signers = when {
+                !primary.isNullOrEmpty() -> primary
+                !fallback.isNullOrEmpty() -> fallback
+                else -> emptyArray()
+            }
+            signers.map(::digestSignature).toSet()
         } else {
             @Suppress("DEPRECATION")
             packageInfo.signatures.orEmpty().map(::digestSignature).toSet()
