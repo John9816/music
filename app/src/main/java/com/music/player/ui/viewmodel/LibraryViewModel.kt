@@ -40,6 +40,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var lastPrefetchAtMs: Long = 0L
     private var diskHydrated: Boolean = false
     private var diskSavedAtMs: Long = 0L
+    /** playlistId → last successful remote sync (auto or manual). */
+    private val lastRemoteSyncAtMs = mutableMapOf<String, Long>()
+    private val syncJobs = mutableMapOf<String, Job>()
 
     private val _favorites = MutableLiveData<List<Song>>(emptyList())
     val favorites: LiveData<List<Song>> = _favorites
@@ -384,6 +387,78 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Sync an imported remote playlist (QQ/NetEase) from source.
+     * @param silent when true (open detail auto-sync), only toast on failure / track count change
+     */
+    fun syncRemotePlaylist(playlistId: String, silent: Boolean = false) {
+        val playlist = _playlists.value.orEmpty().firstOrNull { it.id == playlistId }
+        val canSync = !playlist?.sourceUrl.isNullOrBlank() ||
+            (!playlist?.source.isNullOrBlank() &&
+                !playlist.source.equals("local", ignoreCase = true) &&
+                !playlist.sourceId.isNullOrBlank())
+        if (playlist != null && !canSync) {
+            if (!silent) _message.value = "本地歌单无需同步"
+            return
+        }
+        if (syncJobs[playlistId]?.isActive == true) return
+
+        syncJobs[playlistId] = viewModelScope.launch {
+            val previousCount = _playlistSongs.value.orEmpty().size
+            if (!silent) _isLoading.value = true
+            repository.syncRemotePlaylist(playlistId)
+                .onSuccess { updated ->
+                    _playlists.value = _playlists.value.orEmpty().map {
+                        if (it.id == playlistId || it.id == updated.id) updated else it
+                    }
+                    lastRemoteSyncAtMs[playlistId] = System.currentTimeMillis()
+                    repository.listPlaylistSongs(playlistId, forceRefresh = true)
+                        .onSuccess { songs ->
+                            _playlistSongs.value = songs
+                            persistSnapshotAsync()
+                            val changed = songs.size != previousCount ||
+                                songs.size != updated.trackCount
+                            when {
+                                !silent -> _message.value =
+                                    "已同步「${updated.name}」· ${songs.size} 首"
+                                changed -> _message.value =
+                                    "歌单「${updated.name}」已更新 · ${songs.size} 首"
+                            }
+                        }
+                        .onFailure {
+                            if (!silent) _message.value = it.message ?: "同步后刷新歌曲失败"
+                        }
+                }
+                .onFailure {
+                    if (!silent) _message.value = it.message ?: "同步歌单失败"
+                }
+            if (!silent) _isLoading.value = false
+        }
+    }
+
+    /** Auto-sync when opening a remote playlist detail (throttled). */
+    fun maybeAutoSyncRemotePlaylist(playlistId: String) {
+        if (playlistId.isBlank()) return
+        val playlist = _playlists.value.orEmpty().firstOrNull { it.id == playlistId } ?: return
+        val remote = !playlist.sourceUrl.isNullOrBlank() ||
+            (!playlist.source.isNullOrBlank() &&
+                !playlist.source.equals("local", ignoreCase = true) &&
+                !playlist.sourceId.isNullOrBlank())
+        if (!remote) return
+        val last = lastRemoteSyncAtMs[playlistId] ?: 0L
+        if (System.currentTimeMillis() - last < AUTO_SYNC_MIN_INTERVAL_MS) return
+        syncRemotePlaylist(playlistId, silent = true)
+    }
+
+    fun isRemotePlaylist(playlistId: String): Boolean {
+        val playlist = _playlists.value.orEmpty().firstOrNull { it.id == playlistId } ?: return false
+        if (!playlist.sourceUrl.isNullOrBlank()) return true
+        val source = playlist.source?.trim().orEmpty()
+        return source.isNotEmpty() &&
+            !source.equals("local", ignoreCase = true) &&
+            !playlist.sourceId.isNullOrBlank()
+    }
+
     fun addSongToPlaylist(playlistId: String, song: Song) {
         viewModelScope.launch {
             repository.addSongToPlaylist(playlistId, song)
@@ -496,5 +571,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         /** Skip soft network bootstrap when disk snapshot is fresher than this. */
         private const val DISK_FRESH_MS = 12 * 60 * 1000L
         private const val PERSIST_DEBOUNCE_MS = 350L
+        /** Min interval between auto remote playlist syncs per playlist. */
+        private const val AUTO_SYNC_MIN_INTERVAL_MS = 30 * 60 * 1000L
     }
 }

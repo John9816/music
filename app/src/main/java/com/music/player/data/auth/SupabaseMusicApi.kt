@@ -65,6 +65,13 @@ interface SupabaseMusicApi {
         @Body request: PlaylistImportRequest
     ): Response<ResponseBody>
 
+    /** Re-fetch remote tracks for an imported playlist; remote track list wins. */
+    @POST("api/user/music/playlists/{id}/sync")
+    suspend fun syncPlaylist(
+        @Header("Authorization") token: String,
+        @Path("id") id: Long
+    ): Response<ResponseBody>
+
     @GET("api/user/music/playlists/{id}")
     suspend fun playlistDetail(
         @Header("Authorization") token: String,

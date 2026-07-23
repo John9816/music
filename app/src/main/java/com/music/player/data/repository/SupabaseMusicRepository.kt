@@ -500,6 +500,36 @@ class SupabaseMusicRepository(context: Context) {
         }
     }
 
+    /**
+     * Re-pull tracks from QQ/NetEase for an imported playlist (server-side remote-wins).
+     * Updates playlist metadata + song list caches.
+     */
+    suspend fun syncRemotePlaylist(playlistId: String): Result<UserPlaylist> = withContext(Dispatchers.IO) {
+        runCatching {
+            val (token, userId) = requireSession()
+            val id = playlistId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+            val response = executeAuthorized(token) { api.syncPlaylist(it, id) }
+            val data = parseDataObject(response, "Failed to sync playlist")
+            val updated = data.toUserPlaylist()
+            val key = "playlists|$userId"
+            val current = knownPlaylists(userId)
+            playlistsCache.put(
+                key,
+                if (current != null) {
+                    current.map { if (it.id == playlistId || it.id == updated.id) updated else it }
+                } else {
+                    listOf(updated)
+                }
+            )
+            // Song list changed on server; force next detail load from network.
+            playlistSongsCache.remove("playlist_songs|$playlistId")
+            playlistSongsCache.remove("playlist_songs|${updated.id}")
+            playlistItemIds.remove("playlist_items|$playlistId")
+            playlistItemIds.remove("playlist_items|${updated.id}")
+            updated
+        }
+    }
+
     suspend fun listPlaylistSongs(playlistId: String, forceRefresh: Boolean = false): Result<List<Song>> =
         withContext(Dispatchers.IO) {
             val (token, _) = sessionOrFailure()

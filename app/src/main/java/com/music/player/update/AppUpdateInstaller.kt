@@ -1,11 +1,8 @@
 package com.music.player.update
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.Signature
@@ -13,11 +10,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.webkit.URLUtil
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.music.player.BuildConfig
@@ -25,178 +22,248 @@ import com.music.player.R
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
+/**
+ * In-app APK download + install handoff.
+ *
+ * Uses OkHttp (not [android.app.DownloadManager]) so completion stays in-process and we can
+ * immediately validate the package and open the system installer — system downloads often
+ * finish only in the notification shade with no install prompt.
+ */
 class AppUpdateInstaller(
     private val activity: ComponentActivity
 ) {
 
     companion object {
+        private const val TAG = "AppUpdateInstaller"
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val PREFS_NAME = "app_update_download"
-        private const val KEY_DOWNLOAD_ID = "download_id"
         private const val KEY_DOWNLOAD_FILE = "download_file"
         private const val KEY_PENDING_INSTALL_FILE = "pending_install_file"
-        private const val DOWNLOAD_STATUS_POLL_INTERVAL_MS = 1_000L
+        private const val KEY_DOWNLOAD_VERSION = "download_version"
+        private const val KEY_DOWNLOAD_URL = "download_url"
+        private const val PROGRESS_TOAST_STEP_PERCENT = 25
     }
 
-    private val downloadManager = activity.getSystemService(DownloadManager::class.java)
     private val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private var receiverRegistered = false
-    private var activeDownloadId = -1L
-    private var activeDownloadFile: File? = null
+    private val httpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.MINUTES)
+        .build()
+
+    private var downloadJob: Job? = null
+    private var activeCall: okhttp3.Call? = null
     private var pendingInstallFile: File? = null
-    private var downloadMonitorJob: Job? = null
+    private val downloadInFlight = AtomicBoolean(false)
 
     private val installPermissionLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             val file = pendingInstallFile ?: return@registerForActivityResult
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || activity.packageManager.canRequestPackageInstalls()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                activity.packageManager.canRequestPackageInstalls()
+            ) {
                 launchInstaller(file)
             } else {
                 toast(R.string.update_install_permission_denied)
             }
         }
 
-    private val downloadReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
-            val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-            if (downloadId != prefs.getLong(KEY_DOWNLOAD_ID, -1L)) return
-            activeDownloadId = downloadId
-            activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)?.let(::File)
-            handleDownloadComplete(downloadId)
-        }
-    }
-
     init {
-        registerReceiver()
         restorePendingState()
     }
 
     fun dispose() {
-        downloadMonitorJob?.cancel()
-        downloadMonitorJob = null
-        if (receiverRegistered) {
-            activity.unregisterReceiver(downloadReceiver)
-            receiverRegistered = false
-        }
+        cancelActiveDownload()
     }
 
     fun resumePendingWork() {
-        val downloadId = prefs.getLong(KEY_DOWNLOAD_ID, activeDownloadId)
-        if (downloadId != -1L) {
-            activeDownloadId = downloadId
-            activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)?.let(::File)
-            if (!resumeDownloadIfFinished(downloadId)) {
-                startDownloadMonitor(downloadId)
-            }
-        }
-
         val pending = pendingInstallFile
             ?: prefs.getString(KEY_PENDING_INSTALL_FILE, null)
                 ?.let(::File)
                 ?.takeIf(File::exists)
                 ?.also { pendingInstallFile = it }
-            ?: return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            activity.packageManager.canRequestPackageInstalls()
-        ) {
-            launchInstaller(pending)
-        }
-    }
+            ?: prefs.getString(KEY_DOWNLOAD_FILE, null)
+                ?.let(::File)
+                ?.takeIf { it.exists() && it.length() > 0L }
+                ?.also { pendingInstallFile = it }
 
-    fun downloadAndInstall(downloadUrl: String, versionName: String) {
-        val manager = downloadManager
-        if (manager == null) {
-            toast(R.string.update_download_failed)
+        if (pending != null && pending.exists()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                activity.packageManager.canRequestPackageInstalls()
+            ) {
+                installDownloadedApk(pending)
+            }
             return
         }
 
-        val uri = runCatching { Uri.parse(downloadUrl.trim()) }.getOrNull()
-        if (uri == null || uri.toString().isBlank()) {
+        // Incomplete in-app download: user can re-trigger from the update dialog.
+        if (downloadJob?.isActive == true) return
+    }
+
+    fun downloadAndInstall(downloadUrl: String, versionName: String) {
+        val url = downloadUrl.trim()
+        if (url.isBlank()) {
             toast(R.string.update_no_url)
+            return
+        }
+        val uri = runCatching { Uri.parse(url) }.getOrNull()
+        if (uri == null || uri.scheme.isNullOrBlank()) {
+            toast(R.string.update_no_url)
+            return
+        }
+
+        if (!downloadInFlight.compareAndSet(false, true)) {
+            toast(R.string.update_download_in_progress)
             return
         }
 
         val downloadsDir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
         if (downloadsDir == null) {
+            downloadInFlight.set(false)
             toast(R.string.update_download_failed)
             return
         }
+        if (!downloadsDir.exists()) downloadsDir.mkdirs()
 
-        if (!downloadsDir.exists()) {
-            downloadsDir.mkdirs()
-        }
+        val targetFile = File(downloadsDir, buildDownloadFileName(uri, versionName))
+        val partFile = File(downloadsDir, "${targetFile.name}.part")
 
-        val targetFileName = buildDownloadFileName(uri, versionName)
-        val targetFile = File(downloadsDir, targetFileName)
+        cancelActiveDownload(keepInFlightFlag = true)
+        if (partFile.exists()) partFile.delete()
+        // Keep a previously finished good APK only if we are re-downloading the same path after failure.
 
-        val previousDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, activeDownloadId)
-        if (previousDownloadId != -1L) {
-            manager.remove(previousDownloadId)
-        }
-        if (targetFile.exists()) {
-            targetFile.delete()
-        }
-
-        val request = DownloadManager.Request(uri)
-            .setMimeType(APK_MIME_TYPE)
-            .setTitle(activity.getString(R.string.update_title))
-            .setDescription(activity.getString(R.string.update_downloading_description, versionName))
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            .setDestinationUri(Uri.fromFile(targetFile))
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
-
-        activeDownloadFile = targetFile
-        activeDownloadId = manager.enqueue(request)
         prefs.edit()
-            .putLong(KEY_DOWNLOAD_ID, activeDownloadId)
             .putString(KEY_DOWNLOAD_FILE, targetFile.absolutePath)
+            .putString(KEY_DOWNLOAD_VERSION, versionName)
+            .putString(KEY_DOWNLOAD_URL, url)
+            .remove(KEY_PENDING_INSTALL_FILE)
             .apply()
-        startDownloadMonitor(activeDownloadId)
+        pendingInstallFile = null
+
         toast(R.string.update_start_download)
+
+        downloadJob = activity.lifecycleScope.launch {
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    downloadToFile(url, partFile, targetFile)
+                }
+                if (!ok) {
+                    toast(R.string.update_download_failed)
+                    return@launch
+                }
+                if (!targetFile.exists() || targetFile.length() <= 0L) {
+                    toast(R.string.update_download_failed)
+                    return@launch
+                }
+                toast(R.string.update_download_complete)
+                installDownloadedApk(targetFile)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "in-app update download failed", e)
+                toast(R.string.update_download_failed)
+            } finally {
+                activeCall = null
+                downloadInFlight.set(false)
+            }
+        }
     }
 
-    private fun handleDownloadComplete(downloadId: Long) {
-        val storedDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
-        if (downloadId != storedDownloadId && downloadId != activeDownloadId) return
+    private suspend fun downloadToFile(url: String, partFile: File, targetFile: File): Boolean {
+        if (partFile.exists()) partFile.delete()
+        if (targetFile.exists()) targetFile.delete()
 
-        val manager = downloadManager ?: return
-        val file = activeDownloadFile
-        clearActiveDownload()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "DuckMusic/${BuildConfig.VERSION_NAME}")
+            .get()
+            .build()
+        val call = httpClient.newCall(request)
+        activeCall = call
 
-        val query = DownloadManager.Query().setFilterById(downloadId)
-        val cursor = manager.query(query)
-        cursor.use {
-            if (it == null || !it.moveToFirst()) {
-                toast(R.string.update_download_failed)
-                return
-            }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "update HTTP ${response.code} for $url")
+                    return false
+                }
+                val body = response.body ?: return false
+                val total = body.contentLength()
+                var downloaded = 0L
+                var lastToastPercent = -PROGRESS_TOAST_STEP_PERCENT
+                var chunks = 0
 
-            val statusIndex = it.getColumnIndex(DownloadManager.COLUMN_STATUS)
-            val status = if (statusIndex >= 0) {
-                it.getInt(statusIndex)
-            } else {
-                DownloadManager.STATUS_FAILED
+                partFile.outputStream().use { output ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            if (call.isCanceled()) return false
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            chunks++
+                            // Yield occasionally so Job cancellation is observed promptly.
+                            if (chunks % 32 == 0) yield()
+                            if (total > 0L) {
+                                val percent = ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
+                                if (percent >= lastToastPercent + PROGRESS_TOAST_STEP_PERCENT) {
+                                    lastToastPercent =
+                                        (percent / PROGRESS_TOAST_STEP_PERCENT) * PROGRESS_TOAST_STEP_PERCENT
+                                    withContext(Dispatchers.Main.immediate) {
+                                        Toast.makeText(
+                                            activity,
+                                            activity.getString(
+                                                R.string.update_download_progress,
+                                                lastToastPercent.coerceAtMost(100)
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }
+                        output.flush()
+                    }
+                }
             }
-            if (status != DownloadManager.STATUS_SUCCESSFUL) {
-                toast(R.string.update_download_failed)
-                return
-            }
+        } catch (e: CancellationException) {
+            partFile.delete()
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "download stream failed", e)
+            partFile.delete()
+            return false
         }
 
-        if (file == null || !file.exists()) {
-            toast(R.string.update_download_failed)
-            return
+        if (call.isCanceled() || partFile.length() <= 0L) {
+            partFile.delete()
+            return false
         }
-
-        toast(R.string.update_download_complete)
-        installDownloadedApk(file)
+        if (targetFile.exists()) targetFile.delete()
+        if (!partFile.renameTo(targetFile)) {
+            partFile.copyTo(targetFile, overwrite = true)
+            partFile.delete()
+        }
+        return targetFile.exists() && targetFile.length() > 0L
     }
 
     private fun installDownloadedApk(file: File) {
@@ -248,6 +315,7 @@ class AppUpdateInstaller(
                 file
             )
         }.getOrElse {
+            Log.w(TAG, "FileProvider uri failed", it)
             toast(R.string.update_install_failed)
             return
         }
@@ -256,12 +324,15 @@ class AppUpdateInstaller(
             clipData = ClipData.newRawUri(file.name, apkUri)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
         runCatching {
             activity.startActivity(installIntent)
+            // Keep pending file until install succeeds / next launch; clear soft state only.
             clearPendingInstall()
         }.onFailure {
+            Log.w(TAG, "start installer failed", it)
             toast(R.string.update_install_failed)
         }
     }
@@ -334,84 +405,29 @@ class AppUpdateInstaller(
         val normalized = if (guessed.endsWith(".apk", ignoreCase = true)) {
             guessed
         } else {
-            "duck-music-$versionName.apk"
+            "DuckMusic-v$versionName.apk"
         }
         return normalized.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    }
-
-    private fun registerReceiver() {
-        if (receiverRegistered) return
-        ContextCompat.registerReceiver(
-            activity,
-            downloadReceiver,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            // DownloadManager sends this broadcast from another system process.
-            ContextCompat.RECEIVER_EXPORTED
-        )
-        receiverRegistered = true
     }
 
     private fun restorePendingState() {
         pendingInstallFile = prefs.getString(KEY_PENDING_INSTALL_FILE, null)
             ?.let(::File)
             ?.takeIf(File::exists)
-
-        activeDownloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
-        activeDownloadFile = prefs.getString(KEY_DOWNLOAD_FILE, null)
-            ?.let(::File)
-
-        if (activeDownloadId != -1L) {
-            if (!resumeDownloadIfFinished(activeDownloadId)) {
-                startDownloadMonitor(activeDownloadId)
-            }
-            return
-        }
-
-    }
-
-    private fun resumeDownloadIfFinished(downloadId: Long): Boolean {
-        val manager = downloadManager ?: return false
-        val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
-        cursor.use {
-            if (it == null || !it.moveToFirst()) {
-                clearActiveDownload()
-                return true
-            }
-            val statusIndex = it.getColumnIndex(DownloadManager.COLUMN_STATUS)
-            val status = if (statusIndex >= 0) it.getInt(statusIndex) else DownloadManager.STATUS_FAILED
-            return when (status) {
-                DownloadManager.STATUS_SUCCESSFUL -> {
-                    handleDownloadComplete(downloadId)
-                    true
-                }
-                DownloadManager.STATUS_FAILED -> {
-                    clearActiveDownload()
-                    toast(R.string.update_download_failed)
-                    true
-                }
-                else -> false
-            }
+        // Drop legacy DownloadManager ids if present.
+        if (prefs.contains("download_id")) {
+            prefs.edit().remove("download_id").apply()
         }
     }
 
-    private fun startDownloadMonitor(downloadId: Long) {
-        downloadMonitorJob?.cancel()
-        downloadMonitorJob = activity.lifecycleScope.launch {
-            while (isActive && prefs.getLong(KEY_DOWNLOAD_ID, -1L) == downloadId) {
-                if (resumeDownloadIfFinished(downloadId)) {
-                    return@launch
-                }
-                delay(DOWNLOAD_STATUS_POLL_INTERVAL_MS)
-            }
+    private fun cancelActiveDownload(keepInFlightFlag: Boolean = false) {
+        downloadJob?.cancel()
+        downloadJob = null
+        activeCall?.cancel()
+        activeCall = null
+        if (!keepInFlightFlag) {
+            downloadInFlight.set(false)
         }
-    }
-
-    private fun clearActiveDownload() {
-        downloadMonitorJob?.cancel()
-        downloadMonitorJob = null
-        activeDownloadId = -1L
-        activeDownloadFile = null
-        prefs.edit().remove(KEY_DOWNLOAD_ID).remove(KEY_DOWNLOAD_FILE).apply()
     }
 
     private fun clearPendingInstall() {

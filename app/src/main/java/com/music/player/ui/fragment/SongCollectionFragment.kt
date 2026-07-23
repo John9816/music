@@ -2,6 +2,8 @@ package com.music.player.ui.fragment
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -147,6 +149,9 @@ class SongCollectionFragment : Fragment() {
         libraryViewModel.playlists.observe(viewLifecycleOwner) { playlists ->
             if (mode != Mode.PLAYLIST) return@observe
             syncPlaylistHeader(songAdapter.currentList, playlists.firstOrNull { it.id == playlistId })
+            updateRemoteSyncMenu()
+            // Once playlist meta is available, auto-sync remote sources (throttled in VM).
+            libraryViewModel.maybeAutoSyncRemotePlaylist(playlistId)
         }
 
         libraryViewModel.message.observe(viewLifecycleOwner) { message ->
@@ -158,7 +163,33 @@ class SongCollectionFragment : Fragment() {
             updateLoadingState(loading)
         }
 
+        if (mode == Mode.PLAYLIST) {
+            installRemoteSyncMenu()
+        }
+
         refreshCurrentCollection()
+    }
+
+    private fun installRemoteSyncMenu() {
+        val toolbar = binding.toolbarCollapsed
+        toolbar.menu.clear()
+        toolbar.inflateMenu(R.menu.menu_user_playlist_detail)
+        toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_sync_playlist) {
+                libraryViewModel.syncRemotePlaylist(playlistId, silent = false)
+                true
+            } else {
+                false
+            }
+        }
+        updateRemoteSyncMenu()
+    }
+
+    private fun updateRemoteSyncMenu() {
+        if (mode != Mode.PLAYLIST || _binding == null) return
+        val menu: Menu = binding.toolbarCollapsed.menu
+        val item: MenuItem? = menu.findItem(R.id.action_sync_playlist)
+        item?.isVisible = libraryViewModel.isRemotePlaylist(playlistId)
     }
 
     override fun onDestroyView() {
@@ -207,6 +238,8 @@ class SongCollectionFragment : Fragment() {
             Mode.PLAYLIST -> {
                 libraryViewModel.refreshPlaylists(silent = true, forceRefresh = false)
                 libraryViewModel.loadPlaylistSongs(playlistId, forceRefresh = false)
+                // Auto-sync if meta already in memory (observer also covers late list load).
+                libraryViewModel.maybeAutoSyncRemotePlaylist(playlistId)
             }
         }
     }

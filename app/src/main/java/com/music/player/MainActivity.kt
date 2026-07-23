@@ -1,9 +1,7 @@
 package com.music.player
 
-import android.Manifest
 import android.animation.ValueAnimator
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
@@ -13,8 +11,6 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -53,6 +49,7 @@ import com.music.player.ui.viewmodel.UpdateViewModel
 import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
+import com.music.player.ui.util.AppPermissionBootstrap
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.ThemeManager
@@ -77,8 +74,6 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
         const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
 
-        private const val NOTIFICATION_PERMISSION_PREFS = "notification_permission_prefs"
-        private const val KEY_NOTIFICATION_PERMISSION_REQUESTED = "requested"
         private const val COVER_CROSSFADE_MS = 220
         private const val MINI_PLAYER_ANIM_MS = 220L
     }
@@ -95,6 +90,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appUpdatePreferences: AppUpdatePreferences
     private lateinit var immersiveHeaderBackground: ImmersiveHeaderBackground
     private lateinit var insetsController: WindowInsetsControllerCompat
+    private lateinit var permissionBootstrap: AppPermissionBootstrap
 
     private var suppressNavCallback = false
     private var currentTabId: Int = R.id.nav_discover
@@ -103,9 +99,8 @@ class MainActivity : AppCompatActivity() {
     private var hasRestoredRecentSong = false
     private var isNavigatingToLogin = false
     private var pendingSearchFocus = false
-
-    private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    /** Debounce mini-player → full player; pairs with NowPlayingBottomSheetFragment.showIfAbsent. */
+    private var lastOpenNowPlayingElapsedMs: Long = 0L
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -116,12 +111,6 @@ class MainActivity : AppCompatActivity() {
             val p = player ?: return
             updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
             updateMiniProgress()
-        }
-
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (playWhenReady) {
-                requestNotificationPermissionForPlaybackIfNeeded()
-            }
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -164,6 +153,8 @@ class MainActivity : AppCompatActivity() {
         updateViewModel = ViewModelProvider(this)[UpdateViewModel::class.java]
         appUpdateInstaller = AppUpdateInstaller(this)
         appUpdatePreferences = AppUpdatePreferences(this)
+        // Must register ActivityResult contracts before STARTED; construct early.
+        permissionBootstrap = AppPermissionBootstrap(this)
 
         PlaybackCoordinator.init(applicationContext)
         observePlayerAttachment()
@@ -183,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         refreshForMusicSourceChangeIfNeeded()
 
         libraryViewModel.prefetch()
+        requestStartupPermissions()
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -259,16 +251,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermissionForPlaybackIfNeeded() {
-        if (Build.VERSION.SDK_INT < 33) return
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) return
-
-        val prefs = getSharedPreferences(NOTIFICATION_PERMISSION_PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, false)) return
-        prefs.edit().putBoolean(KEY_NOTIFICATION_PERMISSION_REQUESTED, true).apply()
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    /**
+     * After login (or first main entry while logged in), ask for every permission the product needs
+     * before the user hits play / update — notifications + install-unknown-apps.
+     */
+    private fun requestStartupPermissions() {
+        if (!::permissionBootstrap.isInitialized) return
+        val fromLogin = intent.getBooleanExtra(EXTRA_FROM_LOGIN, false)
+        if (fromLogin) {
+            intent.removeExtra(EXTRA_FROM_LOGIN)
+        }
+        // Defer one frame so the first screen paints before system permission UI.
+        binding.root.post {
+            if (isFinishing || isDestroyed) return@post
+            permissionBootstrap.requestAllNeeded(force = fromLogin)
+        }
     }
 
     private fun setupUpdateObservers() {
@@ -396,14 +393,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBottomNavigation(savedInstanceState: Bundle?) {
-        binding.bottomNav.isItemActiveIndicatorEnabled = false
-        binding.bottomNav.setOnItemSelectedListener { item ->
+        val nav = binding.bottomNav
+        nav.isItemActiveIndicatorEnabled = false
+        // Kill the M3 pill so selected/unselected icon containers share the same height.
+        runCatching {
+            nav.itemActiveIndicatorWidth = 0
+            nav.itemActiveIndicatorHeight = 0
+        }
+        nav.isItemHorizontalTranslationEnabled = false
+        // Fixed edge padding from resources (do not re-apply in a layout loop).
+        nav.itemPaddingTop = resources.getDimensionPixelSize(R.dimen.bottom_nav_item_padding_top)
+        nav.itemPaddingBottom = resources.getDimensionPixelSize(R.dimen.bottom_nav_item_padding_bottom)
+
+        nav.setOnItemSelectedListener { item ->
             if (!suppressNavCallback) {
                 switchToTab(item.itemId)
             }
             true
         }
-        binding.bottomNav.setOnItemReselectedListener { item ->
+        nav.setOnItemReselectedListener { item ->
             val fragment = supportFragmentManager.findFragmentByTag(tagForTab(item.itemId))
             (fragment as? RootTabInteraction)?.onTabReselected()
         }
@@ -411,90 +419,74 @@ class MainActivity : AppCompatActivity() {
         val initialTab = if (savedInstanceState == null) {
             intent.getIntExtra(EXTRA_INITIAL_TAB_ID, R.id.nav_discover)
         } else {
-            binding.bottomNav.selectedItemId
+            nav.selectedItemId
         }
         suppressNavCallback = true
-        binding.bottomNav.selectedItemId = initialTab
+        nav.selectedItemId = initialTab
         suppressNavCallback = false
         switchToTab(initialTab)
-        // Material places leftover height between icon and label; pack after first layout
-        // (and again after insets) so MIUI / small devices match the emulator density.
-        binding.bottomNav.post { tuneBottomNavigationItemSpacing() }
-        binding.bottomNavContainer.doOnLayout { tuneBottomNavigationItemSpacing() }
+
+        // One-shot packing after first measure. Continuous layout listeners + forcing
+        // scale/margins fought Material's selection animation and made icons/labels jitter.
+        nav.post { packBottomNavigationItemsOnce() }
     }
 
     /**
-     * Material BottomNavigationView lays out each item as:
-     *   [itemPaddingTop] → icon → (free space) → label → [itemPaddingBottom]
-     * With padding 0, free space becomes a large icon–label gap that varies by font metrics.
-     * Absorb slack into edge padding and collapse icon-container margins for a stable pack.
+     * Apply fixed icon↔label gap and hide the active-indicator view once.
+     * Do not attach layout listeners or reset scale — Material animates label scale on select.
      */
-    private fun tuneBottomNavigationItemSpacing() {
+    private fun packBottomNavigationItemsOnce() {
         if (!::binding.isInitialized) return
         val nav = binding.bottomNav
         val menuView = nav.getChildAt(0) as? ViewGroup ?: return
+        if (menuView.childCount == 0) {
+            nav.post { packBottomNavigationItemsOnce() }
+            return
+        }
 
-        val density = resources.displayMetrics.density
-        val iconSize = (24f * density).toInt()
         val desiredGap = resources.getDimensionPixelSize(R.dimen.bottom_nav_icon_label_gap)
-        val minEdge = (4f * density).toInt()
-
-        // Measure a label once (inactive small label is the usual visible one).
-        val sampleLabel = menuView.getChildAt(0)
-            ?.findViewById<android.widget.TextView>(
-                com.google.android.material.R.id.navigation_bar_item_small_label_view
-            )
-        val labelHeight = (sampleLabel?.let {
-            if (it.height > 0) it.height else {
-                it.measure(
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                )
-                it.measuredHeight
-            }
-        } ?: (12f * density).toInt()).coerceAtLeast(1)
-
-        val barHeight = nav.height.takeIf { it > 0 }
-            ?: resources.getDimensionPixelSize(R.dimen.bottom_nav_content_height)
-        val content = iconSize + desiredGap + labelHeight
-        val slack = (barHeight - content).coerceAtLeast(0)
-        // Prefer a bit more bottom padding so labels sit slightly higher than the system nav edge.
-        var topPad = (slack * 0.4f).toInt().coerceAtLeast(minEdge)
-        var bottomPad = (slack - topPad).coerceAtLeast(minEdge)
-        if (topPad + bottomPad > slack && slack >= minEdge * 2) {
-            topPad = (slack * 0.4f).toInt()
-            bottomPad = slack - topPad
-        }
-
-        if (nav.itemPaddingTop != topPad || nav.itemPaddingBottom != bottomPad) {
-            nav.itemPaddingTop = topPad
-            nav.itemPaddingBottom = bottomPad
-        }
-
+        val labelSizePx = resources.getDimension(R.dimen.bottom_nav_label_text_size)
         val iconContainerId = com.google.android.material.R.id.navigation_bar_item_icon_container
         val labelsGroupId = com.google.android.material.R.id.navigation_bar_item_labels_group
+        val smallLabelId = com.google.android.material.R.id.navigation_bar_item_small_label_view
+        val largeLabelId = com.google.android.material.R.id.navigation_bar_item_large_label_view
+
         for (index in 0 until menuView.childCount) {
             val item = menuView.getChildAt(index) ?: continue
             item.findViewById<View>(iconContainerId)?.let { iconContainer ->
-                val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams ?: return@let
-                if (params.topMargin != 0 || params.bottomMargin != desiredGap) {
+                iconContainer.findViewById<View>(
+                    com.google.android.material.R.id.navigation_bar_item_active_indicator_view
+                )?.let { indicator ->
+                    val lp = indicator.layoutParams
+                    if (lp != null && (lp.width != 0 || lp.height != 0)) {
+                        lp.width = 0
+                        lp.height = 0
+                        indicator.layoutParams = lp
+                    }
+                    indicator.visibility = View.GONE
+                    indicator.alpha = 0f
+                }
+                val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams
+                if (params != null && (params.topMargin != 0 || params.bottomMargin != desiredGap)) {
                     params.topMargin = 0
                     params.bottomMargin = desiredGap
                     iconContainer.layoutParams = params
                 }
             }
             item.findViewById<View>(labelsGroupId)?.let { labels ->
-                if (labels.paddingBottom != 0 || labels.paddingTop != 0) {
+                if (labels.paddingTop != 0 || labels.paddingBottom != 0) {
                     labels.setPadding(labels.paddingLeft, 0, labels.paddingRight, 0)
                 }
             }
-            // Extra font padding on OEM fonts (MIUI) inflates label height and looks uneven.
-            item.findViewById<android.widget.TextView>(
-                com.google.android.material.R.id.navigation_bar_item_small_label_view
-            )?.includeFontPadding = false
-            item.findViewById<android.widget.TextView>(
-                com.google.android.material.R.id.navigation_bar_item_large_label_view
-            )?.includeFontPadding = false
+            // Same text size for active/inactive; leave scale alone (Material selection animation).
+            listOf(smallLabelId, largeLabelId).forEach { labelId ->
+                item.findViewById<android.widget.TextView>(labelId)?.let { label ->
+                    label.includeFontPadding = false
+                    if (kotlin.math.abs(label.textSize - labelSizePx) > 0.5f) {
+                        label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, labelSizePx)
+                    }
+                }
+            }
         }
     }
 
@@ -725,16 +717,28 @@ class MainActivity : AppCompatActivity() {
             it.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).withEndAction {
                 it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
             }.start()
-            if (musicViewModel.currentSong.value != null) {
-                NowPlayingBottomSheetFragment().show(supportFragmentManager, "now_playing")
-            }
+            openNowPlayingPlayer()
         }
         binding.miniPlayer.setOnLongClickListener {
             if (musicViewModel.currentSong.value == null) return@setOnLongClickListener false
             QueueBottomSheetFragment().show(supportFragmentManager, "queue")
             true
         }
+        // Child controls must consume clicks so they never bubble into openNowPlayingPlayer.
+        binding.btnMiniPlayPause.isClickable = true
+        binding.btnMiniQueue.isClickable = true
+        binding.miniPlayPauseContainer.isClickable = true
         binding.miniPlayer.contentDescription = getString(R.string.mini_player_open_queue_hint)
+    }
+
+    /** Single entry for expanding the full player from mini bar / deep links. */
+    fun openNowPlayingPlayer() {
+        if (musicViewModel.currentSong.value == null) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastOpenNowPlayingElapsedMs < 450L) return
+        if (NowPlayingBottomSheetFragment.isShowing(supportFragmentManager)) return
+        lastOpenNowPlayingElapsedMs = now
+        NowPlayingBottomSheetFragment.showIfAbsent(supportFragmentManager)
     }
 
     fun openSearchTab(focus: Boolean = true) {
@@ -758,13 +762,14 @@ class MainActivity : AppCompatActivity() {
         val targetScale = if (expanded) 0.94f else 1f
         val targetTranslationY = if (expanded) 24f * resources.displayMetrics.density else 0f
         val targetAlpha = if (expanded) 0.78f else 1f
+        // Keep in sync with now_playing_enter / now_playing_exit (snappy sheet feel).
         binding.root.animate()
             .scaleX(targetScale)
             .scaleY(targetScale)
             .translationY(targetTranslationY)
             .alpha(targetAlpha)
-            .setDuration(if (expanded) 600L else 500L)
-            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
+            .setDuration(if (expanded) 280L else 220L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
             .start()
     }
 

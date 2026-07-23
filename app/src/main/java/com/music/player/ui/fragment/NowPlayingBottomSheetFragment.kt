@@ -31,6 +31,7 @@ import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -67,11 +68,36 @@ import java.util.Locale
 
 class NowPlayingBottomSheetFragment : DialogFragment() {
 
-    private companion object {
-        const val STAGE_ANIMATION_MS = 240L
-        const val COVER_PULSE_DURATION_MS = 3600L
-        const val HANDLE_DISMISS_DISTANCE_DP = 80f
-        const val COVER_CROSSFADE_MS = 220
+    companion object {
+        const val TAG = "now_playing"
+        private const val STAGE_ANIMATION_MS = 240L
+        private const val COVER_PULSE_DURATION_MS = 3600L
+        private const val HANDLE_DISMISS_DISTANCE_DP = 80f
+        private const val COVER_CROSSFADE_MS = 220
+
+        /**
+         * Show at most one full player. [DialogFragment.show] only does async [FragmentTransaction.add];
+         * two quick taps create two instances with the same tag before the first commit lands.
+         */
+        fun showIfAbsent(fragmentManager: FragmentManager) {
+            if (fragmentManager.isStateSaved) return
+            if (isShowing(fragmentManager)) return
+            runCatching { fragmentManager.executePendingTransactions() }
+            if (isShowing(fragmentManager)) return
+            NowPlayingBottomSheetFragment().show(fragmentManager, TAG)
+        }
+
+        fun isShowing(fragmentManager: FragmentManager): Boolean {
+            val existing = fragmentManager.findFragmentByTag(TAG) ?: return false
+            if (!existing.isAdded && existing.isRemoving) return false
+            if (existing is DialogFragment) {
+                val dialog = existing.dialog
+                if (dialog != null && dialog.isShowing) return true
+                // Added but dialog not created yet (between show() and onStart).
+                if (existing.isAdded && !existing.isRemoving) return true
+            }
+            return existing.isAdded && !existing.isRemoving
+        }
     }
 
     private var _binding: BottomSheetNowPlayingBinding? = null
