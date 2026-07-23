@@ -46,7 +46,9 @@ import com.music.player.ui.adapter.LyricsAdapter
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.installDownwardDragToDismiss
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackMode
@@ -290,6 +292,24 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.progressContainer.doOnLayout { updateFullscreenContentPadding() }
         binding.controlsBar.doOnLayout { updateFullscreenContentPadding() }
 
+        binding.btnClose.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnAudioQuality.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnOverflow.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnQueue.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnFavorite.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnPrev.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnNext.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnPlayPause.bindPressFeedback(PressFeedback.Style.PLAY)
+        binding.btnPlayMode.bindPressFeedback(PressFeedback.Style.ICON)
+        listOf(
+            binding.menuShowLyrics,
+            binding.menuFavoriteSong,
+            binding.menuShareSong,
+            binding.menuDownloadSong,
+            binding.menuAddPlaylist,
+            binding.menuShowAlbum
+        ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
+
         binding.btnClose.setOnClickListener {
             (activity as? MainActivity)?.animatePlayerBackground(expanded = false)
             dismiss()
@@ -360,21 +380,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
 
         binding.btnPrev.setOnClickListener {
-            it.animate().scaleX(0.8f).scaleY(0.8f).setDuration(60).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
-            }.start()
             musicViewModel.skipPrevious()
         }
         binding.btnNext.setOnClickListener {
-            it.animate().scaleX(0.8f).scaleY(0.8f).setDuration(60).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
-            }.start()
             musicViewModel.skipNext()
         }
         binding.btnPlayPause.setOnClickListener {
-            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
-            }.start()
             val p = (activity as? MainActivity)?.player ?: return@setOnClickListener
             val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {

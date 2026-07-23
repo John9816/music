@@ -14,8 +14,10 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.MusicViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -61,6 +63,7 @@ class PlaylistSongsFragment : Fragment() {
         binding.tvHeaderEyebrow.visibility = View.GONE
         binding.tvHeaderTitle.visibility = View.VISIBLE
         binding.ivHeaderOverlay.visibility = View.GONE
+        binding.btnPlayAll.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.btnPlayAll.setOnClickListener { playAll() }
         SongCollectionHeaderHelper.setup(
             fragment = this,
@@ -99,8 +102,16 @@ class PlaylistSongsFragment : Fragment() {
             binding.tvHeaderPlayCount.visibility = if (playlist.playCount > 0) View.VISIBLE else View.GONE
         }
 
+        musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            songAdapter.setCurrentPlayingId(song?.id)
+        }
+
         musicViewModel.playlistSongs.observe(viewLifecycleOwner) { songs ->
-            songAdapter.submitList(songs)
+            songAdapter.submitList(songs) {
+                if (_binding != null) {
+                    songAdapter.setCurrentPlayingId(musicViewModel.currentSong.value?.id)
+                }
+            }
             if (musicViewModel.currentPlaylist.value?.trackCount ?: 0 <= 0) {
                 binding.tvCollectionCount.text =
                     getString(R.string.collection_count_value, songs.size)

@@ -16,8 +16,10 @@ import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -124,6 +126,7 @@ class SongCollectionFragment : Fragment() {
             optimizeVerticalScrolling()
         }
 
+        binding.btnPlayAll.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.btnPlayAll.setOnClickListener { playAll() }
 
         musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->

@@ -12,6 +12,8 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.ItemSongBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
 
@@ -67,6 +69,8 @@ class SongAdapter(
         private var boundSong: Song? = null
 
         init {
+            binding.root.bindPressFeedback(PressFeedback.Style.ROW)
+            binding.btnMore.bindPressFeedback(PressFeedback.Style.ICON)
             binding.root.setOnClickListener { boundSong?.let(onSongClick) }
             binding.root.setOnLongClickListener {
                 boundSong?.let(onSongLongClick)
@@ -126,6 +130,7 @@ class SongAdapter(
             binding.tvSongName.setTextColor(titleColor)
             binding.tvArtist.setTextColor(metaColor)
             binding.root.isSelected = isPlaying
+            binding.playingIndicator.visibility = if (isPlaying) View.VISIBLE else View.GONE
         }
 
         fun recycle() {
@@ -155,7 +160,7 @@ class SongAdapter(
     }
 
     private companion object {
-        const val COVER_DECODE_SIZE_PX = 160
+        const val COVER_DECODE_SIZE_PX = 192
         private const val PAYLOAD_PLAYING = "playing"
     }
 }

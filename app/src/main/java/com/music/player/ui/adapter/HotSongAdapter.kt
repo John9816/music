@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.ItemHotSongBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColorStateList
 
 class HotSongAdapter(
@@ -30,7 +32,19 @@ class HotSongAdapter(
         private val binding: ItemHotSongBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var boundSong: Song? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.ROW)
+            binding.root.setOnClickListener { boundSong?.let(onSongClick) }
+            binding.root.setOnLongClickListener {
+                boundSong?.let(onSongLongClick)
+                boundSong != null
+            }
+        }
+
         fun bind(song: Song) {
+            boundSong = song
             val context = binding.root.context
             binding.tvSongName.text = song.name
             val artists = song.artists.joinToString(", ") { it.name }.trim()
@@ -53,20 +67,6 @@ class HotSongAdapter(
                     .centerCrop()
                     .dontAnimate()
                     .into(binding.ivCover)
-            }
-
-            binding.root.setOnClickListener {
-                it.animate().scaleX(0.92f).scaleY(0.92f).setDuration(60).withEndAction {
-                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
-                }.start()
-                onSongClick(song)
-            }
-            binding.root.setOnLongClickListener {
-                it.animate().scaleX(0.92f).scaleY(0.92f).setDuration(60).withEndAction {
-                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
-                }.start()
-                onSongLongClick(song)
-                true
             }
         }
     }

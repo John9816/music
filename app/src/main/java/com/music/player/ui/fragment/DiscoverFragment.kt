@@ -22,8 +22,10 @@ import com.music.player.databinding.FragmentDiscoverBinding
 import com.music.player.ui.adapter.HotSongAdapter
 import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.LibraryViewModel
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -164,6 +166,9 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupInteractions() {
+        binding.cardSongsSearch.bindPressFeedback(PressFeedback.Style.CARD)
+        binding.btnPlayAllSongs.bindPressFeedback(PressFeedback.Style.BUTTON)
+        binding.btnShuffleSongs.bindPressFeedback(PressFeedback.Style.ICON)
         binding.cardSongsSearch.setOnClickListener {
             (activity as? MainActivity)?.openSearchTab(focus = true)
         }
@@ -260,7 +265,9 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
 
     private fun syncEmptyState(forceEmpty: Boolean = songAdapter.currentList.isEmpty()) {
         val anyLoading = isMusicLoading || isLibraryLoading
-        binding.tvEmptyState.visibility = if (anyLoading || !forceEmpty) View.GONE else View.VISIBLE
+        val showEmpty = !anyLoading && forceEmpty
+        binding.layoutEmptyState.visibility = if (showEmpty) View.VISIBLE else View.GONE
+        binding.tvEmptyState.visibility = if (showEmpty) View.VISIBLE else View.GONE
         binding.tvEmptyState.text = getString(R.string.song_list_empty_recommend)
     }
 

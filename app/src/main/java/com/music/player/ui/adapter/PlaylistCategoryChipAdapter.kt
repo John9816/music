@@ -9,6 +9,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.music.player.R
 import com.music.player.data.model.PlaylistCategory
 import com.music.player.databinding.ItemPlaylistCategoryChipBinding
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColor
 
 class PlaylistCategoryChipAdapter(
@@ -51,7 +53,15 @@ class PlaylistCategoryChipAdapter(
         private val showGroupName: Boolean,
         private val onClick: (PlaylistCategory) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
+        private var bound: PlaylistCategory? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.BUTTON)
+            binding.root.setOnClickListener { bound?.let(onClick) }
+        }
+
         fun bind(item: PlaylistCategory, selectedApiName: String?) {
+            bound = item
             binding.tvName.text = if (showGroupName) item.displayName else item.name
             val selected = selectedApiName == item.apiName
             val context = binding.root.context
@@ -64,7 +74,6 @@ class PlaylistCategoryChipAdapter(
             binding.tvName.setTextColor(
                 context.resolveThemeColor(if (selected) R.attr.brandPrimaryDark else R.attr.textSecondary)
             )
-            binding.root.setOnClickListener { onClick(item) }
         }
     }
 

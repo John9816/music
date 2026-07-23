@@ -2,17 +2,22 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="94dp"
-    android:background="@drawable/ripple_rect_primary"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_song_item"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:minHeight="76dp"
+    android:paddingStart="@dimen/spacing_xs"
+    android:paddingTop="@dimen/spacing_s"
+    android:paddingEnd="@dimen/spacing_s"
+    android:paddingBottom="@dimen/spacing_s">
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardCover"
-        android:layout_width="70dp"
-        android:layout_height="70dp"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
         app:cardBackgroundColor="?attr/surfaceAltColor"
-        app:cardCornerRadius="8dp"
+        app:cardCornerRadius="@dimen/playlist_cover_radius"
         app:cardElevation="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -32,12 +37,12 @@
         android:id="@+id/tvName"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="14dp"
+        android:layout_marginStart="@dimen/spacing_sm"
         android:layout_marginEnd="@dimen/spacing_s"
         android:ellipsize="end"
-        android:maxLines="1"
+        android:maxLines="2"
         android:textColor="?attr/textPrimary"
-        android:textSize="17sp"
+        android:textSize="15sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="@id/cardCover"
         app:layout_constraintEnd_toStartOf="@id/ivChevron"
@@ -46,8 +51,8 @@
 
     <ImageView
         android:id="@+id/ivChevron"
-        android:layout_width="22dp"
-        android:layout_height="22dp"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
         android:contentDescription="@null"
         android:rotation="-90"
         android:src="@drawable/ic_chevron_down_24"
@@ -55,14 +60,5 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:tint="?attr/textSecondary" />
-
-    <View
-        android:layout_width="0dp"
-        android:layout_height="1dp"
-        android:layout_marginStart="80dp"
-        android:background="?attr/dividerColor"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

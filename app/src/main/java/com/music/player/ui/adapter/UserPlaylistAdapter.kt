@@ -9,6 +9,8 @@ import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.ItemUserPlaylistBinding
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 
 class UserPlaylistAdapter(
     private val onPlaylistClick: (UserPlaylist) -> Unit,
@@ -28,7 +30,19 @@ class UserPlaylistAdapter(
         private val binding: ItemUserPlaylistBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: UserPlaylist? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.CARD)
+            binding.root.setOnClickListener { bound?.let(onPlaylistClick) }
+            binding.root.setOnLongClickListener {
+                bound?.let(onPlaylistLongClick)
+                bound != null
+            }
+        }
+
         fun bind(playlist: UserPlaylist) {
+            bound = playlist
             val context = binding.root.context
             binding.tvPlaylistName.text = playlist.name
             binding.tvPlaylistMeta.text = buildMeta(context, playlist)
@@ -42,12 +56,6 @@ class UserPlaylistAdapter(
                 .placeholder(R.drawable.ic_playlist_placeholder)
                 .centerCrop()
                 .into(binding.ivCover)
-
-            binding.root.setOnClickListener { onPlaylistClick(playlist) }
-            binding.root.setOnLongClickListener {
-                onPlaylistLongClick(playlist)
-                true
-            }
         }
 
         private fun buildMeta(context: android.content.Context, playlist: UserPlaylist): String {

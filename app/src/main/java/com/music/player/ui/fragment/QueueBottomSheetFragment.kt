@@ -18,6 +18,8 @@ import com.music.player.data.model.Song
 import com.music.player.databinding.BottomSheetQueueBinding
 import com.music.player.databinding.ItemQueueSongBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -94,6 +96,8 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
             }
         })
 
+        binding.btnClose.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnClear.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.btnClose.setOnClickListener { dismiss() }
         binding.btnClear.setOnClickListener {
             musicViewModel.clearQueue()
@@ -167,6 +171,22 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
         class ViewHolder(
             private val binding: ItemQueueSongBinding
         ) : RecyclerView.ViewHolder(binding.root) {
+            private var boundSong: Song? = null
+            private var canRemove = false
+            private var isPlayingItem = false
+            private var playAction: ((Song) -> Unit)? = null
+            private var removeAction: ((Song) -> Unit)? = null
+
+            init {
+                binding.root.bindPressFeedback(PressFeedback.Style.ROW)
+                binding.btnRemove.bindPressFeedback(PressFeedback.Style.ICON)
+                binding.root.setOnClickListener { boundSong?.let { playAction?.invoke(it) } }
+                binding.btnRemove.setOnClickListener {
+                    val song = boundSong ?: return@setOnClickListener
+                    if (!isPlayingItem && canRemove) removeAction?.invoke(song)
+                }
+            }
+
             fun bind(
                 song: Song,
                 currentSongId: String?,
@@ -174,11 +194,14 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
                 onPlay: (Song) -> Unit,
                 onRemove: (Song) -> Unit
             ) {
-                val isPlaying = currentSongId != null && currentSongId == song.id
-                binding.ivPlaying.visibility = if (isPlaying) View.VISIBLE else View.GONE
-                binding.root.setBackgroundResource(
-                    if (isPlaying) R.drawable.bg_queue_item_active else R.drawable.bg_queue_item
-                )
+                boundSong = song
+                playAction = onPlay
+                removeAction = onRemove
+                canRemove = showRemove
+                isPlayingItem = currentSongId != null && currentSongId == song.id
+                binding.ivPlaying.visibility = if (isPlayingItem) View.VISIBLE else View.GONE
+                binding.playingBar.visibility = if (isPlayingItem) View.VISIBLE else View.GONE
+                binding.root.isSelected = isPlayingItem
                 binding.tvSong.text = song.name
                 binding.tvArtist.text = song.artists.joinToString(", ") { it.name }
 
@@ -186,9 +209,9 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
                 val playingColor = context.resolveThemeColor(R.attr.brandPrimary)
                 val songColor = context.resolveThemeColor(R.attr.textPrimary)
                 val artistColor = context.resolveThemeColor(R.attr.textSecondary)
-                binding.tvSong.setTextColor(if (isPlaying) playingColor else songColor)
-                binding.tvArtist.setTextColor(if (isPlaying) playingColor else artistColor)
-                binding.tvDot.setTextColor(if (isPlaying) playingColor else artistColor)
+                binding.tvSong.setTextColor(if (isPlayingItem) playingColor else songColor)
+                binding.tvArtist.setTextColor(if (isPlayingItem) playingColor else artistColor)
+                binding.tvDot.setTextColor(if (isPlayingItem) playingColor else artistColor)
                 binding.btnRemove.visibility = View.VISIBLE
                 val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
                 if (coverUrl == null) {
@@ -200,10 +223,6 @@ class QueueBottomSheetFragment : BottomSheetDialogFragment() {
                         .centerCrop()
                         .dontAnimate()
                         .into(binding.ivCover)
-                }
-                binding.root.setOnClickListener { onPlay(song) }
-                binding.btnRemove.setOnClickListener {
-                    if (!isPlaying && showRemove) onRemove(song)
                 }
             }
         }

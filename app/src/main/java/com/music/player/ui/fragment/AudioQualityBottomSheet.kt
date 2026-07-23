@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.databinding.BottomSheetAudioQualityBinding
 import com.music.player.databinding.ItemAudioQualityBinding
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -61,6 +63,7 @@ class AudioQualityBottomSheet : BottomSheetDialogFragment() {
             val level = levels[position]
             holder.binding.tvQualityName.text = level.displayName
             holder.binding.ivCheck.visibility = if (level == current) View.VISIBLE else View.INVISIBLE
+            holder.binding.root.bindPressFeedback(PressFeedback.Style.ROW)
             holder.binding.root.setOnClickListener { onClick(level) }
         }
     }

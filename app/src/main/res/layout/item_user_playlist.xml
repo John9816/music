@@ -20,7 +20,7 @@
             android:layout_width="match_parent"
             android:layout_height="150dp"
             app:cardBackgroundColor="?attr/surfaceColor"
-            app:cardCornerRadius="14dp"
+            app:cardCornerRadius="@dimen/playlist_cover_radius"
             app:cardElevation="0dp"
             app:strokeColor="@android:color/transparent"
             app:strokeWidth="0dp">
@@ -38,13 +38,13 @@
             android:id="@+id/tvPlaylistName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_sm"
+            android:layout_marginTop="@dimen/spacing_s"
             android:ellipsize="end"
             android:maxLines="2"
             android:text="@string/item_playlist_name_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
             android:textColor="?attr/textPrimary"
-            android:textStyle="normal" />
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvPlaylistMeta"

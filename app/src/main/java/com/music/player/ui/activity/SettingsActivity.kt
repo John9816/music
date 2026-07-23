@@ -22,11 +22,13 @@ import com.music.player.data.repository.AlbumRepository
 import com.music.player.databinding.ActivitySettingsBinding
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.ui.util.ImmersiveHeaderBackground
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.util.FileSizeFormatter
 import com.music.player.ui.util.applyEdgeToEdge
 import com.music.player.ui.util.applyNavigationBarInsetPadding
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.UpdateState
@@ -120,6 +122,22 @@ class SettingsActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.tvAppVersion.text = BuildConfig.VERSION_NAME
         renderProfile(null)
+        binding.btnEditProfile.bindPressFeedback(PressFeedback.Style.BUTTON)
+        binding.btnLogout.bindPressFeedback(PressFeedback.Style.BUTTON)
+        listOf(
+            binding.layoutAudioQuality,
+            binding.layoutSleepTimer,
+            binding.layoutStreamQuality,
+            binding.layoutMusicSource,
+            binding.layoutSourceStatus,
+            binding.layoutClearCache,
+            binding.layoutCheckUpdate,
+            binding.layoutHelpFeedback,
+            binding.layoutUserAgreement,
+            binding.layoutPrivacyPolicy,
+            binding.layoutOpenSourceLicenses
+        ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
+
         binding.btnEditProfile.setOnClickListener { showEditProfileDialog() }
 
         binding.btnLogout.setOnClickListener { showLogoutConfirmation() }

@@ -11,20 +11,19 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="@dimen/spacing_sm"
         android:layout_marginBottom="@dimen/spacing_xs"
-        android:background="?attr/colorOutline"
-        android:alpha="0.4" />
+        android:background="@drawable/bg_cymusic_sheet_handle" />
 
     <TextView
         android:id="@+id/tvSongTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="@dimen/spacing_l"
+        android:paddingHorizontal="@dimen/spacing_m"
         android:paddingTop="@dimen/spacing_s"
-        android:paddingBottom="@dimen/spacing_m"
+        android:paddingBottom="@dimen/spacing_s"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-        android:textColor="?attr/textSecondary" />
+        android:textColor="?attr/textSecondary"
+        android:textSize="13sp" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvOptions"

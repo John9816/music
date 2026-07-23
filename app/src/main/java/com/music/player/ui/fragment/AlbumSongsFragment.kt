@@ -15,8 +15,10 @@ import com.music.player.data.model.NewestAlbum
 import com.music.player.data.model.Song
 import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.MusicViewModel
 
@@ -79,6 +81,7 @@ class AlbumSongsFragment : Fragment() {
         binding.tvCollectionCount.text = getString(R.string.collection_count_default)
         binding.ivHeaderOverlay.visibility = View.GONE
         binding.tvHeaderPlayCount.visibility = View.GONE
+        binding.btnPlayAll.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.btnPlayAll.setOnClickListener { playAll() }
         SongCollectionHeaderHelper.setup(this, binding, title)
         SongCollectionHeaderHelper.loadCovers(binding, coverUrl)
@@ -107,8 +110,16 @@ class AlbumSongsFragment : Fragment() {
             )
         }
 
+        musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
+            songAdapter.setCurrentPlayingId(song?.id)
+        }
+
         musicViewModel.currentAlbumSongs.observe(viewLifecycleOwner) { songs ->
-            songAdapter.submitList(songs)
+            songAdapter.submitList(songs) {
+                if (_binding != null) {
+                    songAdapter.setCurrentPlayingId(musicViewModel.currentSong.value?.id)
+                }
+            }
             binding.tvCollectionCount.text = getString(R.string.collection_count_value, songs.size)
             binding.layoutSkeleton.visibility = View.GONE
             binding.recyclerView.visibility = if (songs.isEmpty()) View.GONE else View.VISIBLE

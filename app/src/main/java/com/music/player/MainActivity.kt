@@ -24,6 +24,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
+import androidx.core.content.ContextCompat
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.music.player.data.repository.AlbumRepository
@@ -52,7 +53,9 @@ import com.music.player.update.AppUpdatePreferences
 import com.music.player.ui.util.AppPermissionBootstrap
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.PlayerUiStyler
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.ThemeManager
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.safeDrawingInsets
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.util.resolveThemeColor
@@ -76,6 +79,7 @@ class MainActivity : AppCompatActivity() {
 
         private const val COVER_CROSSFADE_MS = 220
         private const val MINI_PLAYER_ANIM_MS = 220L
+        private const val STATE_CURRENT_TAB = "state_current_tab"
     }
 
     val player: Player?
@@ -92,7 +96,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var insetsController: WindowInsetsControllerCompat
     private lateinit var permissionBootstrap: AppPermissionBootstrap
 
-    private var suppressNavCallback = false
     private var currentTabId: Int = R.id.nav_discover
     private var topSystemBarInset: Int = 0
     private var miniProgressJob: Job? = null
@@ -121,6 +124,11 @@ class MainActivity : AppCompatActivity() {
             ).show()
             updateMiniPlayPauseIcon(false)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_CURRENT_TAB, currentTabId)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -192,7 +200,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     if (currentTabId != R.id.nav_discover) {
-                        binding.bottomNav.selectedItemId = R.id.nav_discover
+                        selectRootTab(R.id.nav_discover)
                     } else {
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
@@ -392,101 +400,50 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupBottomNavigation(savedInstanceState: Bundle?) {
-        val nav = binding.bottomNav
-        nav.isItemActiveIndicatorEnabled = false
-        // Kill the M3 pill so selected/unselected icon containers share the same height.
-        runCatching {
-            nav.itemActiveIndicatorWidth = 0
-            nav.itemActiveIndicatorHeight = 0
-        }
-        nav.isItemHorizontalTranslationEnabled = false
-        // Fixed edge padding from resources (do not re-apply in a layout loop).
-        nav.itemPaddingTop = resources.getDimensionPixelSize(R.dimen.bottom_nav_item_padding_top)
-        nav.itemPaddingBottom = resources.getDimensionPixelSize(R.dimen.bottom_nav_item_padding_bottom)
+    private fun bottomNavEntries() = listOf(
+        Triple(R.id.nav_discover, binding.navDiscover, R.drawable.ic_music_note_24 to R.string.nav_songs),
+        Triple(R.id.nav_playlists, binding.navPlaylists, R.drawable.ic_playlist_24 to R.string.nav_playlists),
+        Triple(R.id.nav_library, binding.navLibrary, R.drawable.ic_search_24 to R.string.nav_search),
+        Triple(R.id.nav_profile, binding.navProfile, R.drawable.ic_person_24 to R.string.nav_profile)
+    )
 
-        nav.setOnItemSelectedListener { item ->
-            if (!suppressNavCallback) {
-                switchToTab(item.itemId)
+    private fun setupBottomNavigation(savedInstanceState: Bundle?) {
+        bottomNavEntries().forEach { (tabId, tab, assets) ->
+            val (iconRes, titleRes) = assets
+            tab.ivTabIcon.setImageResource(iconRes)
+            tab.tvTabLabel.setText(titleRes)
+            tab.root.contentDescription = getString(titleRes)
+            tab.root.bindPressFeedback(PressFeedback.Style.ICON)
+            tab.root.setOnClickListener {
+                if (currentTabId == tabId) {
+                    val fragment = supportFragmentManager.findFragmentByTag(tagForTab(tabId))
+                    (fragment as? RootTabInteraction)?.onTabReselected()
+                } else {
+                    switchToTab(tabId)
+                    renderBottomNavSelection(tabId)
+                }
             }
-            true
-        }
-        nav.setOnItemReselectedListener { item ->
-            val fragment = supportFragmentManager.findFragmentByTag(tagForTab(item.itemId))
-            (fragment as? RootTabInteraction)?.onTabReselected()
         }
 
         val initialTab = if (savedInstanceState == null) {
             intent.getIntExtra(EXTRA_INITIAL_TAB_ID, R.id.nav_discover)
         } else {
-            nav.selectedItemId
+            savedInstanceState.getInt(STATE_CURRENT_TAB, currentTabId)
         }
-        suppressNavCallback = true
-        nav.selectedItemId = initialTab
-        suppressNavCallback = false
+        renderBottomNavSelection(initialTab)
         switchToTab(initialTab)
-
-        // One-shot packing after first measure. Continuous layout listeners + forcing
-        // scale/margins fought Material's selection animation and made icons/labels jitter.
-        nav.post { packBottomNavigationItemsOnce() }
     }
 
-    /**
-     * Apply fixed icon↔label gap and hide the active-indicator view once.
-     * Do not attach layout listeners or reset scale — Material animates label scale on select.
-     */
-    private fun packBottomNavigationItemsOnce() {
+    private fun renderBottomNavSelection(selectedId: Int) {
         if (!::binding.isInitialized) return
-        val nav = binding.bottomNav
-        val menuView = nav.getChildAt(0) as? ViewGroup ?: return
-        if (menuView.childCount == 0) {
-            nav.post { packBottomNavigationItemsOnce() }
-            return
-        }
-
-        val desiredGap = resources.getDimensionPixelSize(R.dimen.bottom_nav_icon_label_gap)
-        val labelSizePx = resources.getDimension(R.dimen.bottom_nav_label_text_size)
-        val iconContainerId = com.google.android.material.R.id.navigation_bar_item_icon_container
-        val labelsGroupId = com.google.android.material.R.id.navigation_bar_item_labels_group
-        val smallLabelId = com.google.android.material.R.id.navigation_bar_item_small_label_view
-        val largeLabelId = com.google.android.material.R.id.navigation_bar_item_large_label_view
-
-        for (index in 0 until menuView.childCount) {
-            val item = menuView.getChildAt(index) ?: continue
-            item.findViewById<View>(iconContainerId)?.let { iconContainer ->
-                iconContainer.findViewById<View>(
-                    com.google.android.material.R.id.navigation_bar_item_active_indicator_view
-                )?.let { indicator ->
-                    val lp = indicator.layoutParams
-                    if (lp != null && (lp.width != 0 || lp.height != 0)) {
-                        lp.width = 0
-                        lp.height = 0
-                        indicator.layoutParams = lp
-                    }
-                    indicator.visibility = View.GONE
-                    indicator.alpha = 0f
-                }
-                val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams
-                if (params != null && (params.topMargin != 0 || params.bottomMargin != desiredGap)) {
-                    params.topMargin = 0
-                    params.bottomMargin = desiredGap
-                    iconContainer.layoutParams = params
-                }
-            }
-            item.findViewById<View>(labelsGroupId)?.let { labels ->
-                if (labels.paddingTop != 0 || labels.paddingBottom != 0) {
-                    labels.setPadding(labels.paddingLeft, 0, labels.paddingRight, 0)
-                }
-            }
-            // Same text size for active/inactive; leave scale alone (Material selection animation).
-            listOf(smallLabelId, largeLabelId).forEach { labelId ->
-                item.findViewById<android.widget.TextView>(labelId)?.let { label ->
-                    label.includeFontPadding = false
-                    if (kotlin.math.abs(label.textSize - labelSizePx) > 0.5f) {
-                        label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, labelSizePx)
-                    }
-                }
-            }
+        val selectedColor = ContextCompat.getColor(this, R.color.cymusic_red)
+        val normalColor = resolveThemeColor(R.attr.textSecondary)
+        bottomNavEntries().forEach { (tabId, tab, _) ->
+            val selected = tabId == selectedId
+            tab.root.isSelected = selected
+            val color = if (selected) selectedColor else normalColor
+            tab.ivTabIcon.imageTintList = android.content.res.ColorStateList.valueOf(color)
+            tab.tvTabLabel.setTextColor(color)
         }
     }
 
@@ -497,8 +454,8 @@ class MainActivity : AppCompatActivity() {
     private fun handleInitialTabIntent() {
         val requestedTab = intent.getIntExtra(EXTRA_INITIAL_TAB_ID, View.NO_ID)
         if (requestedTab == View.NO_ID) return
-        if (::binding.isInitialized && binding.bottomNav.selectedItemId != requestedTab) {
-            binding.bottomNav.selectedItemId = requestedTab
+        if (::binding.isInitialized && currentTabId != requestedTab) {
+            selectRootTab(requestedTab)
         }
         intent.removeExtra(EXTRA_INITIAL_TAB_ID)
     }
@@ -577,11 +534,13 @@ class MainActivity : AppCompatActivity() {
 
     fun selectRootTab(tabId: Int) {
         if (!::binding.isInitialized) return
-        if (binding.bottomNav.selectedItemId == tabId) {
+        if (currentTabId == tabId) {
             switchToTab(tabId)
+            renderBottomNavSelection(tabId)
             return
         }
-        binding.bottomNav.selectedItemId = tabId
+        switchToTab(tabId)
+        renderBottomNavSelection(tabId)
     }
 
     private fun syncTopBarState() {
@@ -687,10 +646,11 @@ class MainActivity : AppCompatActivity() {
     private fun setupMiniPlayer() {
         binding.miniProgress.max = 1000
 
+        binding.miniPlayer.bindPressFeedback(PressFeedback.Style.ROW)
+        binding.btnMiniPlayPause.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnMiniQueue.bindPressFeedback(PressFeedback.Style.ICON)
+
         binding.btnMiniPlayPause.setOnClickListener {
-            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
-            }.start()
             val p = player ?: return@setOnClickListener
             val currentSong = musicViewModel.currentSong.value
             if (p.isPlaying) {
@@ -707,16 +667,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnMiniQueue.setOnClickListener {
-            it.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
-            }.start()
             musicViewModel.skipNext()
         }
 
         binding.miniPlayer.setOnClickListener {
-            it.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).withEndAction {
-                it.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
-            }.start()
             openNowPlayingPlayer()
         }
         binding.miniPlayer.setOnLongClickListener {

@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.data.model.NewestAlbum
 import com.music.player.databinding.ItemNewestAlbumBannerBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColorStateList
 
 class NewestAlbumBannerAdapter(
@@ -29,7 +31,15 @@ class NewestAlbumBannerAdapter(
         private val binding: ItemNewestAlbumBannerBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: NewestAlbum? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.CARD)
+            binding.root.setOnClickListener { bound?.let(onAlbumClick) }
+        }
+
         fun bind(item: NewestAlbum) {
+            bound = item
             val context = binding.root.context
             binding.tvAlbumName.text = item.album.name
             binding.tvArtist.text = item.artistNames
@@ -47,8 +57,6 @@ class NewestAlbumBannerAdapter(
                     .dontAnimate()
                     .into(binding.ivCover)
             }
-
-            binding.root.setOnClickListener { onAlbumClick(item) }
         }
     }
 

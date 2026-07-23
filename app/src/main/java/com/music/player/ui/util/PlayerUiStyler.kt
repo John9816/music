@@ -25,20 +25,23 @@ object PlayerUiStyler {
 
     private fun applyCymusicMiniPlayer(binding: ActivityMainBinding, context: Context) {
         val background = context.resolveThemeColor(R.attr.glassSurfaceStrong)
+        val stroke = context.resolveThemeColor(R.attr.glassStrokeSoft)
         val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
         val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
+        val brand = context.resolveThemeColor(R.attr.brandPrimary)
 
-        binding.miniPlayer.radius = context.dp(12f).toFloat()
-        binding.miniPlayer.strokeWidth = 0
+        binding.miniPlayer.radius = context.dp(14f).toFloat()
+        binding.miniPlayer.strokeWidth = context.dp(1f)
+        binding.miniPlayer.strokeColor = stroke
         binding.miniPlayer.setCardBackgroundColor(background)
-        binding.coverContainer.radius = context.dp(8f).toFloat()
+        binding.coverContainer.radius = context.dp(9f).toFloat()
         binding.coverContainer.strokeWidth = 0
         binding.btnMiniPlayPause.background = circleDrawable(Color.TRANSPARENT, 0)
         binding.btnMiniQueue.background = circleDrawable(Color.TRANSPARENT, 0)
         binding.btnMiniPlayPause.imageTintList = ColorStateList.valueOf(textPrimary)
-        binding.btnMiniQueue.imageTintList = ColorStateList.valueOf(textPrimary)
-        binding.miniProgress.setIndicatorColor(ColorUtils.setAlphaComponent(textSecondary, 190))
-        binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 24)
+        binding.btnMiniQueue.imageTintList = ColorStateList.valueOf(textSecondary)
+        binding.miniProgress.setIndicatorColor(brand)
+        binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 28)
         binding.miniProgress.trackThickness = context.dp(2f)
         binding.tvMiniTitle.setTextColor(textPrimary)
         binding.tvMiniArtist.setTextColor(textSecondary)

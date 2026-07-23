@@ -78,20 +78,20 @@
                         <LinearLayout
                             android:id="@+id/cardSongsSearch"
                             android:layout_width="match_parent"
-                            android:layout_height="@dimen/toolbar_search_height"
-                            android:layout_marginTop="@dimen/spacing_s"
+                            android:layout_height="@dimen/search_field_height"
+                            android:layout_marginTop="@dimen/spacing_sm"
                             android:background="@drawable/bg_toolbar_search_surface"
                             android:clickable="true"
                             android:focusable="true"
                             android:foreground="?attr/selectableItemBackground"
                             android:gravity="center_vertical"
                             android:orientation="horizontal"
-                            android:paddingStart="@dimen/spacing_s"
-                            android:paddingEnd="@dimen/spacing_s">
+                            android:paddingStart="@dimen/spacing_sm"
+                            android:paddingEnd="@dimen/spacing_sm">
 
                             <ImageView
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
+                                android:layout_width="18dp"
+                                android:layout_height="18dp"
                                 android:contentDescription="@string/action_search"
                                 android:src="@drawable/ic_search_24"
                                 app:tint="?attr/textSecondary" />
@@ -104,8 +104,8 @@
                                 android:ellipsize="end"
                                 android:maxLines="1"
                                 android:text="@string/songs_find_global_hint"
-                                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                                android:textColor="?attr/textSecondary" />
+                                android:textColor="?attr/textSecondary"
+                                android:textSize="14sp" />
                         </LinearLayout>
                     </LinearLayout>
 
@@ -141,7 +141,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="?attr/pageBackground"
-            android:elevation="6dp"
+            android:elevation="2dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingBottom="@dimen/spacing_xs"
@@ -233,19 +233,38 @@
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:clipToPadding="false"
-                        android:paddingBottom="@dimen/spacing_xxl"
-                        android:scrollbars="none" />
+                        android:paddingTop="@dimen/spacing_xs"
+                        android:paddingBottom="@dimen/spacing_l"
+                        android:scrollbars="none"
+                        android:overScrollMode="never" />
 
-                    <TextView
-                        android:id="@+id/tvEmptyState"
+                    <LinearLayout
+                        android:id="@+id/layoutEmptyState"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:gravity="center"
+                        android:orientation="vertical"
                         android:paddingHorizontal="@dimen/spacing_xl"
-                        android:text="@string/song_list_empty_recommend"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textSecondary"
-                        android:visibility="gone" />
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:alpha="0.45"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_music_note_24"
+                            app:tint="?attr/textSecondary" />
+
+                        <TextView
+                            android:id="@+id/tvEmptyState"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_sm"
+                            android:gravity="center"
+                            android:text="@string/song_list_empty_recommend"
+                            android:textColor="?attr/textSecondary"
+                            android:textSize="14sp" />
+                    </LinearLayout>
 
                     <ProgressBar
                         android:id="@+id/progressBar"

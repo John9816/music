@@ -12,6 +12,8 @@ import com.music.player.R
 import com.music.player.data.model.Playlist
 import com.music.player.databinding.ItemPlaylistBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 
 class PlaylistAdapter(
     private val onPlaylistClick: (Playlist) -> Unit
@@ -30,7 +32,15 @@ class PlaylistAdapter(
         private val binding: ItemPlaylistBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: Playlist? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.CARD)
+            binding.root.setOnClickListener { bound?.let(onPlaylistClick) }
+        }
+
         fun bind(playlist: Playlist) {
+            bound = playlist
             val context = binding.root.context
             binding.tvPlaylistName.text = playlist.name
 
@@ -53,8 +63,6 @@ class PlaylistAdapter(
                 .centerCrop()
                 .dontAnimate()
                 .into(binding.ivCover)
-
-            binding.root.setOnClickListener { onPlaylistClick(playlist) }
         }
     }
 

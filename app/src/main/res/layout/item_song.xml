@@ -1,112 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/ripple_rect_primary"
+    android:background="@drawable/bg_song_item"
     android:clickable="true"
     android:focusable="true"
-    android:orientation="vertical"
-    android:paddingTop="@dimen/spacing_s">
-
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingBottom="@dimen/spacing_sm">
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/iconContainer"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            app:cardBackgroundColor="?attr/surfaceAltColor"
-            app:cardCornerRadius="6dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@android:color/transparent"
-            app:strokeWidth="0dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent">
-
-            <ImageView
-                android:id="@+id/ivCover"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:importantForAccessibility="no"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_music_note_24"
-                app:tint="?attr/brandPrimary" />
-        </com.google.android.material.card.MaterialCardView>
-
-        <TextView
-            android:id="@+id/tvSongName"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/spacing_m"
-            android:layout_marginEnd="@dimen/spacing_sm"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/item_song_name_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
-            android:textColor="?attr/textPrimary"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            app:layout_constraintEnd_toStartOf="@id/btnMore"
-            app:layout_constraintStart_toEndOf="@id/iconContainer"
-            app:layout_constraintTop_toTopOf="@id/iconContainer" />
-
-        <TextView
-            android:id="@+id/tvArtist"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/spacing_m"
-            android:layout_marginTop="2dp"
-            android:layout_marginEnd="@dimen/spacing_s"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/item_artist_placeholder"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="?attr/textSecondary"
-            android:textSize="12sp"
-            app:layout_constraintEnd_toStartOf="@id/btnMore"
-            app:layout_constraintStart_toEndOf="@id/iconContainer"
-            app:layout_constraintTop_toBottomOf="@id/tvSongName" />
-
-        <TextView
-            android:id="@+id/tvDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/spacing_s"
-            android:background="@drawable/bg_duration_chip"
-            android:gravity="center"
-            android:paddingStart="@dimen/spacing_s"
-            android:paddingTop="4dp"
-            android:paddingEnd="@dimen/spacing_s"
-            android:paddingBottom="4dp"
-            android:text="@string/time_zero"
-            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-            android:textColor="?attr/brandPrimary"
-            android:visibility="gone"
-            app:layout_constraintBaseline_toBaselineOf="@id/tvArtist"
-            app:layout_constraintEnd_toStartOf="@id/btnMore" />
-
-        <ImageButton
-            android:id="@+id/btnMore"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/content_desc_more"
-            android:padding="12dp"
-            android:src="@drawable/ic_more_vert_24"
-            app:tint="?attr/textPrimary"
-            app:layout_constraintBottom_toBottomOf="@id/iconContainer"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/iconContainer" />
-    </androidx.constraintlayout.widget.ConstraintLayout>
+    android:minHeight="@dimen/song_row_min_height"
+    android:paddingStart="0dp"
+    android:paddingTop="@dimen/song_row_vertical_padding"
+    android:paddingEnd="0dp"
+    android:paddingBottom="@dimen/song_row_vertical_padding">
 
     <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginStart="56dp"
-        android:alpha="0.5"
-        android:background="?attr/colorOutline" />
-</LinearLayout>
+        android:id="@+id/playingIndicator"
+        android:layout_width="3dp"
+        android:layout_height="28dp"
+        android:background="@drawable/bg_playing_bar"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/iconContainer" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/iconContainer"
+        android:layout_width="@dimen/song_cover_size"
+        android:layout_height="@dimen/song_cover_size"
+        android:layout_marginStart="@dimen/spacing_xs"
+        app:cardBackgroundColor="?attr/surfaceAltColor"
+        app:cardCornerRadius="@dimen/song_cover_radius"
+        app:cardElevation="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:strokeColor="@android:color/transparent"
+        app:strokeWidth="0dp">
+
+        <ImageView
+            android:id="@+id/ivCover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_note_24"
+            app:tint="?attr/brandPrimary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <TextView
+        android:id="@+id/tvSongName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginEnd="@dimen/spacing_s"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/item_song_name_placeholder"
+        android:textColor="?attr/textPrimary"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@id/tvArtist"
+        app:layout_constraintEnd_toStartOf="@id/btnMore"
+        app:layout_constraintStart_toEndOf="@id/iconContainer"
+        app:layout_constraintTop_toTopOf="@id/iconContainer"
+        app:layout_constraintVertical_chainStyle="packed" />
+
+    <TextView
+        android:id="@+id/tvArtist"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:layout_marginTop="3dp"
+        android:layout_marginEnd="@dimen/spacing_s"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/item_artist_placeholder"
+        android:textColor="?attr/textSecondary"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+        app:layout_constraintEnd_toStartOf="@id/btnMore"
+        app:layout_constraintStart_toEndOf="@id/iconContainer"
+        app:layout_constraintTop_toBottomOf="@id/tvSongName" />
+
+    <TextView
+        android:id="@+id/tvDuration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintEnd_toStartOf="@id/btnMore"
+        app:layout_constraintTop_toTopOf="@id/tvArtist" />
+
+    <ImageButton
+        android:id="@+id/btnMore"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/content_desc_more"
+        android:padding="12dp"
+        android:src="@drawable/ic_more_vert_24"
+        app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/iconContainer"
+        app:tint="?attr/textSecondary" />
+</androidx.constraintlayout.widget.ConstraintLayout>

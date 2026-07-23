@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.data.model.Playlist
 import com.music.player.databinding.ItemRadioPlaylistBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 
 class RadioPlaylistAdapter(
     private val onPlaylistClick: (Playlist) -> Unit
@@ -28,7 +30,15 @@ class RadioPlaylistAdapter(
         private val binding: ItemRadioPlaylistBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: Playlist? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.CARD)
+            binding.root.setOnClickListener { bound?.let(onPlaylistClick) }
+        }
+
         fun bind(playlist: Playlist) {
+            bound = playlist
             binding.tvName.text = playlist.name
             Glide.with(binding.ivCover)
                 .load(ImageUrl.bestQuality(playlist.coverImgUrl))
@@ -37,7 +47,6 @@ class RadioPlaylistAdapter(
                 .centerCrop()
                 .dontAnimate()
                 .into(binding.ivCover)
-            binding.root.setOnClickListener { onPlaylistClick(playlist) }
         }
     }
 

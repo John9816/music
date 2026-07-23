@@ -3,18 +3,22 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/ripple_rect_primary"
+    android:background="@drawable/bg_song_item"
     android:clickable="true"
     android:focusable="true"
     android:gravity="center_vertical"
+    android:minHeight="@dimen/song_row_min_height"
     android:orientation="horizontal"
-    android:paddingVertical="@dimen/spacing_s">
+    android:paddingStart="@dimen/spacing_xs"
+    android:paddingTop="@dimen/song_row_vertical_padding"
+    android:paddingEnd="@dimen/spacing_m"
+    android:paddingBottom="@dimen/song_row_vertical_padding">
 
     <com.google.android.material.card.MaterialCardView
-        android:layout_width="52dp"
-        android:layout_height="52dp"
+        android:layout_width="@dimen/song_cover_size"
+        android:layout_height="@dimen/song_cover_size"
         app:cardBackgroundColor="?attr/surfaceAltColor"
-        app:cardCornerRadius="26dp"
+        app:cardCornerRadius="24dp"
         app:cardElevation="0dp"
         app:strokeWidth="0dp">
 
@@ -31,7 +35,7 @@
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/spacing_m"
+        android:layout_marginStart="@dimen/spacing_sm"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -41,18 +45,18 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
             android:textColor="?attr/textPrimary"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvArtistMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_xs"
+            android:layout_marginTop="3dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-            android:textColor="?attr/textSecondary" />
+            android:textColor="?attr/textSecondary"
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

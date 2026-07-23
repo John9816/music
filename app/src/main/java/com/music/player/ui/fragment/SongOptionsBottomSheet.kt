@@ -9,6 +9,8 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.BottomSheetSongOptionsBinding
 import com.music.player.databinding.ItemSongOptionBinding
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -52,6 +54,7 @@ class SongOptionsBottomSheet : BottomSheetDialogFragment() {
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             holder.binding.tvOptionLabel.text = items[position].label
+            holder.binding.root.bindPressFeedback(PressFeedback.Style.ROW)
             holder.binding.root.setOnClickListener {
                 items[position].action()
                 dismiss()

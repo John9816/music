@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.data.model.SearchArtist
 import com.music.player.databinding.ItemSearchArtistBinding
 import com.music.player.ui.util.ImageUrl
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 
 class SearchArtistAdapter(
     private val onArtistClick: (SearchArtist) -> Unit
@@ -17,16 +19,28 @@ class SearchArtistAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         return ViewHolder(
-            ItemSearchArtistBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+            ItemSearchArtistBinding.inflate(LayoutInflater.from(parent.context), parent, false),
+            onArtistClick
         )
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(getItem(position), onArtistClick)
+        holder.bind(getItem(position))
     }
 
-    class ViewHolder(private val binding: ItemSearchArtistBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(artist: SearchArtist, onArtistClick: (SearchArtist) -> Unit) {
+    class ViewHolder(
+        private val binding: ItemSearchArtistBinding,
+        private val onArtistClick: (SearchArtist) -> Unit
+    ) : RecyclerView.ViewHolder(binding.root) {
+        private var bound: SearchArtist? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.ROW)
+            binding.root.setOnClickListener { bound?.let(onArtistClick) }
+        }
+
+        fun bind(artist: SearchArtist) {
+            bound = artist
             binding.tvArtistName.text = artist.name
             binding.tvArtistMeta.text = if (artist.songCount > 0) {
                 binding.root.context.getString(R.string.search_artist_song_count, artist.songCount)
@@ -42,7 +56,6 @@ class SearchArtistAdapter(
                 .circleCrop()
                 .dontAnimate()
                 .into(binding.ivAvatar)
-            binding.root.setOnClickListener { onArtistClick(artist) }
         }
     }
 

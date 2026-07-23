@@ -10,6 +10,8 @@ import com.music.player.R
 import com.music.player.databinding.ItemDownloadedSongBinding
 import com.music.player.ui.activity.DownloadsActivity
 import com.music.player.ui.util.FileSizeFormatter
+import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.bindPressFeedback
 import java.io.File
 
 class DownloadedSongAdapter(
@@ -34,7 +36,17 @@ class DownloadedSongAdapter(
         private val binding: ItemDownloadedSongBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: DownloadsActivity.DownloadInfo? = null
+
+        init {
+            binding.root.bindPressFeedback(PressFeedback.Style.ROW)
+            binding.btnDelete.bindPressFeedback(PressFeedback.Style.ICON)
+            binding.root.setOnClickListener { bound?.let(onPlay) }
+            binding.btnDelete.setOnClickListener { bound?.let(onDelete) }
+        }
+
         fun bind(download: DownloadsActivity.DownloadInfo) {
+            bound = download
             binding.tvTitle.text = download.title
             Glide.with(binding.ivCover)
                 .load(download.coverPath?.let(::File))
@@ -45,17 +57,6 @@ class DownloadedSongAdapter(
             binding.tvSize.text = listOf(download.artist, FileSizeFormatter.format(download.size))
                 .filter { it.isNotBlank() }
                 .joinToString(" · ")
-
-            binding.root.setOnClickListener {
-                it.animate().scaleX(0.97f).scaleY(0.97f).setDuration(60).withEndAction {
-                    it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
-                    onPlay(download)
-                }.start()
-            }
-
-            binding.btnDelete.setOnClickListener {
-                onDelete(download)
-            }
         }
 
     }

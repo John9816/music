@@ -22,8 +22,10 @@ import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.ui.activity.DownloadsActivity
 import com.music.player.ui.activity.SettingsActivity
 import com.music.player.ui.util.FileSizeFormatter
+import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
+import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.resolveThemeColorStateList
 import com.music.player.ui.util.showAvatarPlaceholder
@@ -127,6 +129,22 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun setupUi() {
+        binding.ivAvatar.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.layoutUserHeader.bindPressFeedback(PressFeedback.Style.ROW)
+        binding.btnSettings.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnSettingsSticky.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.cardLiked.bindPressFeedback(PressFeedback.Style.CARD)
+        listOf(
+            binding.rowLiked,
+            binding.rowHistory,
+            binding.rowDownloads,
+            binding.rowPlaylists,
+            binding.gridLiked,
+            binding.gridHistory,
+            binding.gridDownloads,
+            binding.gridPlaylists
+        ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
+
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
