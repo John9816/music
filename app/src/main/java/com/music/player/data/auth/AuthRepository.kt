@@ -133,6 +133,7 @@ class AuthRepository(context: Context) {
     suspend fun signOut() {
         withContext(Dispatchers.IO) {
             val token = runCatching { sessionManager.getValidAccessToken(authApi) }.getOrNull()
+            // clear() also drops this user's library disk + process RAM caches.
             sessionManager.clear()
             runCatching {
                 if (!token.isNullOrBlank()) {

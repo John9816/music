@@ -43,8 +43,7 @@ object PlaybackCoordinator {
     private const val MAX_URL_CACHE_SIZE = 200
     private const val RECOVERY_WINDOW_MS = 45_000L
     private const val MAX_RECOVERY_ATTEMPTS = 1
-    // Lyrics are independent of audio URL resolution and must start as soon as playback begins.
-    private const val LYRICS_FETCH_DELAY_MS = 0L
+    // Lyrics are independent of audio URL resolution — fetch as soon as the current track is known.
     private const val NEXT_URL_PREFETCH_DELAY_MS = 15_000L
     private const val PERSIST_DEBOUNCE_MS = 400L
     private const val POSITION_PERSIST_INTERVAL_MS = 5_000L
@@ -55,6 +54,8 @@ object PlaybackCoordinator {
     private val navigationHistory = ArrayDeque<Song>()
     private var prepareJob: Job? = null
     private var lyricsJob: Job? = null
+    /** Song id currently being fetched for lyrics (dedupe concurrent calls). */
+    private var lyricsTargetId: String? = null
     private var sleepTimerJob: Job? = null
     private var persistJob: Job? = null
     private var positionPersistJob: Job? = null
@@ -240,6 +241,8 @@ object PlaybackCoordinator {
             if (current != null && current.id.isNotBlank()) {
                 _currentSong.value = current
                 // UI-only restore on cold start. Do not auto network/prepare — user taps play.
+                // Lyrics are cheap and not tied to streaming: prefetch so the full player can show them.
+                ensureLyricsLoaded(current)
                 pendingPreparedSong = null
                 Log.i(
                     TAG,
@@ -271,6 +274,47 @@ object PlaybackCoordinator {
 
     fun hasPrevious(): Boolean = navigationHistory.isNotEmpty()
 
+    /**
+     * UI progress for mini-player / full player. Prefers live [Player] position when media is
+     * loaded; otherwise uses the cold-start restored position + song metadata duration so the
+     * progress bar is not stuck at 0 after reopening the app.
+     */
+    fun displayPositionMs(): Long {
+        val song = _currentSong.value
+        val p = player
+        val durationHint = displayDurationMs()
+        if (p != null && p.mediaItemCount > 0) {
+            val live = p.currentPosition.coerceAtLeast(0L)
+            val state = p.playbackState
+            // Before prepare/seek settles, ExoPlayer often reports 0; keep restored progress.
+            if (live <= 0L &&
+                restoredPositionMs > 0L &&
+                (state == Player.STATE_IDLE || state == Player.STATE_BUFFERING || !p.isPlaying)
+            ) {
+                return clampPosition(restoredPositionMs, durationHint)
+            }
+            return clampPosition(live, durationHint)
+        }
+        return clampPosition(restoredPositionMs, durationHint)
+    }
+
+    fun displayDurationMs(): Long {
+        val songDuration = _currentSong.value?.duration?.coerceAtLeast(0L) ?: 0L
+        val p = player
+        if (p != null && p.mediaItemCount > 0) {
+            val d = p.duration
+            if (d > 0L && d != C.TIME_UNSET) {
+                return d
+            }
+        }
+        return songDuration
+    }
+
+    private fun clampPosition(positionMs: Long, durationMs: Long): Long {
+        val pos = positionMs.coerceAtLeast(0L)
+        return if (durationMs > 0L) pos.coerceAtMost(durationMs) else pos
+    }
+
     fun playSong(song: Song) {
         // Re-tapping the restored current song should keep progress; new songs start at 0.
         val sameAsCurrent = _currentSong.value?.id == song.id
@@ -293,7 +337,7 @@ object PlaybackCoordinator {
         val shouldAutoPlay = activePlayer?.playWhenReady ?: true
 
         prepareJob?.cancel()
-        lyricsJob?.cancel()
+        // Same track: keep lyrics; only stream URL changes.
 
         val token = ++prepareToken
         lastStartElapsedMs = SystemClock.elapsedRealtime()
@@ -324,7 +368,7 @@ object PlaybackCoordinator {
                         shouldAutoPlay = shouldAutoPlay,
                         token = token
                     )
-                    schedulePostStartWork(prepared, token)
+                    schedulePostStartWork(prepared)
                 } else {
                     _error.tryEmit(urlResult.exceptionOrNull()?.message ?: "切换音质失败")
                 }
@@ -512,6 +556,7 @@ object PlaybackCoordinator {
         _isLoading.value = false
         restoredPositionMs = 0L
         _currentSong.value = song
+        ensureLyricsLoaded(song)
         schedulePersistSession()
     }
 
@@ -553,7 +598,7 @@ object PlaybackCoordinator {
         }
 
         prepareJob?.cancel()
-        lyricsJob?.cancel()
+        // Keep lyrics for the same track during recovery.
 
         val token = ++prepareToken
         prepareJob = scope.launch {
@@ -569,6 +614,7 @@ object PlaybackCoordinator {
                 if (urlResult.isSuccess && refreshedUrl.isNotBlank()) {
                     val prepared = song.copy(url = refreshedUrl)
                     _currentSong.value = prepared
+                    ensureLyricsLoaded(prepared)
                     playPreparedSong(
                         song = prepared,
                         startPositionMs = resumePositionMs,
@@ -606,7 +652,17 @@ object PlaybackCoordinator {
         }
 
         prepareJob?.cancel()
-        lyricsJob?.cancel()
+
+        // Keep existing LRC when re-selecting the same track (e.g. resume after restore).
+        val seed = if (current?.id == song.id && !current.lyric.isNullOrBlank()) {
+            song.copy(lyric = current.lyric, url = song.url ?: current.url)
+        } else {
+            song
+        }
+        // Paint cover / title immediately; do not wait for stream URL.
+        _currentSong.value = seed
+        // Lyrics run in parallel with URL resolve — not after playback starts.
+        ensureLyricsLoaded(seed)
 
         val token = ++prepareToken
         lastStartElapsedMs = SystemClock.elapsedRealtime()
@@ -616,31 +672,42 @@ object PlaybackCoordinator {
                 ensureServiceRunning()
 
                 val urlStart = SystemClock.elapsedRealtime()
-                val urlResult = withContext(Dispatchers.IO) { resolveSongUrl(song) }
+                val urlResult = withContext(Dispatchers.IO) { resolveSongUrl(seed) }
                 val urlCost = SystemClock.elapsedRealtime() - urlStart
                 val fastUrl = urlResult.getOrNull()?.trim().orEmpty()
                 if (urlResult.isSuccess && fastUrl.isNotBlank()) {
                     if (prepareToken != token) return@launch
 
-                    val prepared = song.copy(url = fastUrl)
+                    // Preserve lyric filled in by the parallel fetch while URL was resolving.
+                    val lyricNow = _currentSong.value?.takeIf { it.id == seed.id }?.lyric
+                    val prepared = seed.copy(
+                        url = fastUrl,
+                        lyric = lyricNow?.takeIf { it.isNotBlank() } ?: seed.lyric
+                    )
                     _currentSong.value = prepared
-                    Log.d(TAG, "resolved url in ${urlCost}ms (fast path), songId=${song.id}")
+                    Log.d(TAG, "resolved url in ${urlCost}ms (fast path), songId=${seed.id}")
                     playPreparedSong(prepared, startPositionMs, shouldAutoPlay)
                     schedulePersistSession()
 
-                    schedulePostStartWork(prepared, token)
+                    schedulePostStartWork(prepared)
                 } else {
                     // Fallback to legacy prepare path (may include additional server-side requirements).
-                    Log.d(TAG, "url fast path failed in ${urlCost}ms, fallback prepareSong(), songId=${song.id}")
-                    repository.prepareSong(song)
+                    Log.d(TAG, "url fast path failed in ${urlCost}ms, fallback prepareSong(), songId=${seed.id}")
+                    repository.prepareSong(seed)
                         .onSuccess { prepared ->
                             if (prepareToken == token) {
                                 prepared.url?.trim()?.takeIf { it.isNotBlank() }
                                     ?.let { putCachedUrl(prepared.id, prepared.source, it) }
-                                _currentSong.value = prepared
-                                playPreparedSong(prepared, startPositionMs, shouldAutoPlay)
+                                val lyricNow = _currentSong.value?.takeIf { it.id == prepared.id }?.lyric
+                                val merged = if (!lyricNow.isNullOrBlank() && prepared.lyric.isNullOrBlank()) {
+                                    prepared.copy(lyric = lyricNow)
+                                } else {
+                                    prepared
+                                }
+                                _currentSong.value = merged
+                                playPreparedSong(merged, startPositionMs, shouldAutoPlay)
                                 schedulePersistSession()
-                                schedulePostStartWork(prepared, token)
+                                schedulePostStartWork(merged)
                             }
                         }
                         .onFailure { throwable ->
@@ -674,35 +741,50 @@ object PlaybackCoordinator {
         return fetched
     }
 
-    private fun schedulePostStartWork(prepared: Song, token: Long) {
-        if (prepared.lyric.isNullOrBlank()) {
-            fetchLyricsInBackground(prepared, token)
-        }
-        prefetchNextUrl(token)
+    private fun schedulePostStartWork(prepared: Song) {
+        ensureLyricsLoaded(prepared)
+        prefetchNextUrl()
     }
 
-    private fun fetchLyricsInBackground(prepared: Song, token: Long) {
+    /**
+     * Load lyrics as soon as the current track identity is known (restore, open player, play).
+     * Independent of ExoPlayer prepare / stream URL so cover + LRC can appear before audio is ready.
+     */
+    fun ensureLyricsForCurrentSong() {
+        _currentSong.value?.let { ensureLyricsLoaded(it) }
+    }
+
+    private fun ensureLyricsLoaded(song: Song) {
+        val id = song.id.trim()
+        if (id.isBlank()) return
+        if (!song.lyric.isNullOrBlank()) return
+        val live = _currentSong.value
+        if (live?.id == id && !live.lyric.isNullOrBlank()) return
+        if (lyricsTargetId == id && lyricsJob?.isActive == true) return
+
+        lyricsTargetId = id
         lyricsJob?.cancel()
+        val source = song.source
         lyricsJob = scope.launch {
-            delay(LYRICS_FETCH_DELAY_MS)
-            if (prepareToken != token) return@launch
             val lyric = withContext(Dispatchers.IO) {
-                repository.getLyrics(prepared.id, source = prepared.source).getOrNull()
+                repository.getLyrics(id, source = source).getOrNull()
             }
                 ?.trim()
                 .orEmpty()
             if (lyric.isBlank()) return@launch
-            if (prepareToken != token) return@launch
+            if (lyricsTargetId != id) return@launch
 
             val current = _currentSong.value ?: return@launch
-            if (current.id != prepared.id) return@launch
+            if (current.id != id) return@launch
+            if (!current.lyric.isNullOrBlank()) return@launch
             _currentSong.value = current.copy(lyric = lyric)
         }
     }
 
-    private fun prefetchNextUrl(token: Long) {
+    private fun prefetchNextUrl() {
         val next = _queue.value.firstOrNull() ?: return
         if (getCachedUrl(next.id, next.source) != null) return
+        val token = prepareToken
         scope.launch {
             delay(NEXT_URL_PREFETCH_DELAY_MS)
             if (prepareToken != token) return@launch
@@ -880,6 +962,7 @@ object PlaybackCoordinator {
         prepareJob = null
         lyricsJob?.cancel()
         lyricsJob = null
+        lyricsTargetId = null
         prepareToken += 1
     }
 

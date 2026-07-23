@@ -27,7 +27,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.media3.common.C
 import androidx.media3.common.Player
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
@@ -418,18 +417,84 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNav.selectedItemId = initialTab
         suppressNavCallback = false
         switchToTab(initialTab)
+        // Material places leftover height between icon and label; pack after first layout
+        // (and again after insets) so MIUI / small devices match the emulator density.
         binding.bottomNav.post { tuneBottomNavigationItemSpacing() }
+        binding.bottomNavContainer.doOnLayout { tuneBottomNavigationItemSpacing() }
     }
 
+    /**
+     * Material BottomNavigationView lays out each item as:
+     *   [itemPaddingTop] → icon → (free space) → label → [itemPaddingBottom]
+     * With padding 0, free space becomes a large icon–label gap that varies by font metrics.
+     * Absorb slack into edge padding and collapse icon-container margins for a stable pack.
+     */
     private fun tuneBottomNavigationItemSpacing() {
-        val menuView = binding.bottomNav.getChildAt(0) as? ViewGroup ?: return
+        if (!::binding.isInitialized) return
+        val nav = binding.bottomNav
+        val menuView = nav.getChildAt(0) as? ViewGroup ?: return
+
+        val density = resources.displayMetrics.density
+        val iconSize = (24f * density).toInt()
+        val desiredGap = resources.getDimensionPixelSize(R.dimen.bottom_nav_icon_label_gap)
+        val minEdge = (4f * density).toInt()
+
+        // Measure a label once (inactive small label is the usual visible one).
+        val sampleLabel = menuView.getChildAt(0)
+            ?.findViewById<android.widget.TextView>(
+                com.google.android.material.R.id.navigation_bar_item_small_label_view
+            )
+        val labelHeight = (sampleLabel?.let {
+            if (it.height > 0) it.height else {
+                it.measure(
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                it.measuredHeight
+            }
+        } ?: (12f * density).toInt()).coerceAtLeast(1)
+
+        val barHeight = nav.height.takeIf { it > 0 }
+            ?: resources.getDimensionPixelSize(R.dimen.bottom_nav_content_height)
+        val content = iconSize + desiredGap + labelHeight
+        val slack = (barHeight - content).coerceAtLeast(0)
+        // Prefer a bit more bottom padding so labels sit slightly higher than the system nav edge.
+        var topPad = (slack * 0.4f).toInt().coerceAtLeast(minEdge)
+        var bottomPad = (slack - topPad).coerceAtLeast(minEdge)
+        if (topPad + bottomPad > slack && slack >= minEdge * 2) {
+            topPad = (slack * 0.4f).toInt()
+            bottomPad = slack - topPad
+        }
+
+        if (nav.itemPaddingTop != topPad || nav.itemPaddingBottom != bottomPad) {
+            nav.itemPaddingTop = topPad
+            nav.itemPaddingBottom = bottomPad
+        }
+
         val iconContainerId = com.google.android.material.R.id.navigation_bar_item_icon_container
-        val iconBottomMargin = (2 * resources.displayMetrics.density).toInt()
+        val labelsGroupId = com.google.android.material.R.id.navigation_bar_item_labels_group
         for (index in 0 until menuView.childCount) {
-            val iconContainer = menuView.getChildAt(index).findViewById<View>(iconContainerId) ?: continue
-            val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams ?: continue
-            params.bottomMargin = iconBottomMargin
-            iconContainer.layoutParams = params
+            val item = menuView.getChildAt(index) ?: continue
+            item.findViewById<View>(iconContainerId)?.let { iconContainer ->
+                val params = iconContainer.layoutParams as? ViewGroup.MarginLayoutParams ?: return@let
+                if (params.topMargin != 0 || params.bottomMargin != desiredGap) {
+                    params.topMargin = 0
+                    params.bottomMargin = desiredGap
+                    iconContainer.layoutParams = params
+                }
+            }
+            item.findViewById<View>(labelsGroupId)?.let { labels ->
+                if (labels.paddingBottom != 0 || labels.paddingTop != 0) {
+                    labels.setPadding(labels.paddingLeft, 0, labels.paddingRight, 0)
+                }
+            }
+            // Extra font padding on OEM fonts (MIUI) inflates label height and looks uneven.
+            item.findViewById<android.widget.TextView>(
+                com.google.android.material.R.id.navigation_bar_item_small_label_view
+            )?.includeFontPadding = false
+            item.findViewById<android.widget.TextView>(
+                com.google.android.material.R.id.navigation_bar_item_large_label_view
+            )?.includeFontPadding = false
         }
     }
 
@@ -580,7 +645,8 @@ class MainActivity : AppCompatActivity() {
                 binding.tvMiniArtist.text = artistLabel
                 binding.tvMiniArtist.visibility = View.VISIBLE
                 binding.miniProgress.isIndeterminate = false
-                binding.miniProgress.progress = 0
+                // Apply restored / live progress immediately — do not force 0 on cold start.
+                updateMiniProgress()
 
                 val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
                 if (coverUrl == null) {
@@ -798,16 +864,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateMiniProgress() {
         if (binding.miniPlayer.visibility != View.VISIBLE) return
-        val p = player ?: return
-        val durationMs = p.duration
-        if (durationMs <= 0L || durationMs == C.TIME_UNSET) {
-            binding.miniProgress.isIndeterminate = false
-            binding.miniProgress.progress = 0
+        binding.miniProgress.isIndeterminate = false
+        val durationMs = PlaybackCoordinator.displayDurationMs()
+        if (durationMs <= 0L) {
+            // Duration unknown: keep last progress if any, otherwise 0.
+            if (PlaybackCoordinator.displayPositionMs() <= 0L) {
+                binding.miniProgress.progress = 0
+            }
             return
         }
-        binding.miniProgress.isIndeterminate = false
-        val positionMs = p.currentPosition.coerceAtLeast(0L)
-        val progress = ((positionMs * 1000) / durationMs).toInt().coerceIn(0, 1000)
+        val positionMs = PlaybackCoordinator.displayPositionMs()
+        val progress = ((positionMs * 1000L) / durationMs).toInt().coerceIn(0, 1000)
         binding.miniProgress.progress = progress
     }
 

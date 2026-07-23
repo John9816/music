@@ -2,6 +2,7 @@ package com.music.player.ui.fragment
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,14 +10,19 @@ import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import android.widget.ImageView
+import android.widget.Toast
 import com.bumptech.glide.Glide
 import com.music.player.R
 import com.music.player.data.auth.UserProfile
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentProfileBinding
+import com.music.player.ui.activity.DownloadsActivity
 import com.music.player.ui.activity.SettingsActivity
+import com.music.player.ui.util.FileSizeFormatter
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.resolveThemeColorStateList
@@ -24,8 +30,10 @@ import com.music.player.ui.util.showAvatarPlaceholder
 import com.music.player.ui.viewmodel.AuthState
 import com.music.player.ui.viewmodel.AuthViewModel
 import com.music.player.ui.viewmodel.LibraryViewModel
-import android.widget.Toast
 import java.text.NumberFormat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ProfileFragment : Fragment(), RootTabInteraction {
 
@@ -73,6 +81,12 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         setupUi()
         setupObservers()
         warmProfileData()
+        refreshDownloadsMeta()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshDownloadsMeta()
     }
 
     override fun onDestroyView() {
@@ -107,29 +121,74 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         }
 
         authViewModel.refreshProfile()
-        libraryViewModel.refreshFavorites(silent = true, forceRefresh = true)
-        libraryViewModel.refreshHistory(silent = true, forceRefresh = true)
-        libraryViewModel.refreshPlaylists(silent = true, forceRefresh = true)
+        // Soft revalidate: memory/disk first, network when stale (大厂 stale-while-revalidate)
+        libraryViewModel.prefetch(forceRefresh = userInitiated)
+        refreshDownloadsMeta()
     }
 
     private fun setupUi() {
         binding.ivAvatar.setOnClickListener {
             avatarPicker.launch("image/*")
         }
+        binding.layoutUserHeader.setOnClickListener {
+            settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
+        }
         val openSettings = View.OnClickListener {
             settingsLauncher.launch(Intent(requireContext(), SettingsActivity::class.java))
         }
         binding.btnSettings.setOnClickListener(openSettings)
         binding.btnSettingsSticky.setOnClickListener(openSettings)
+
         val openLiked = View.OnClickListener { openCollection(SongCollectionFragment.newLiked()) }
         val openHistory = View.OnClickListener { openCollection(SongCollectionFragment.newHistory()) }
-        binding.rowLiked.setOnClickListener(openLiked)
+        val openDownloads = View.OnClickListener {
+            startActivity(Intent(requireContext(), DownloadsActivity::class.java))
+        }
+        val openPlaylists = View.OnClickListener { openCollection(UserPlaylistsFragment()) }
+
+        binding.cardLiked.setOnClickListener(openLiked)
         binding.tvLikedTitle.setOnClickListener(openLiked)
+        binding.gridLiked.setOnClickListener(openLiked)
+        binding.rowLiked.setOnClickListener(openLiked)
+
+        binding.gridHistory.setOnClickListener(openHistory)
         binding.rowHistory.setOnClickListener(openHistory)
         binding.tvHistoryTitle.setOnClickListener(openHistory)
-        val openPlaylists = View.OnClickListener { openCollection(UserPlaylistsFragment()) }
+
+        binding.gridDownloads.setOnClickListener(openDownloads)
+        binding.rowDownloads.setOnClickListener(openDownloads)
+        binding.tvDownloadsTitle.setOnClickListener(openDownloads)
+
+        binding.gridPlaylists.setOnClickListener(openPlaylists)
         binding.rowPlaylists.setOnClickListener(openPlaylists)
         binding.tvPlaylistsTitle.setOnClickListener(openPlaylists)
+    }
+
+    private fun refreshDownloadsMeta() {
+        val binding = _binding ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val summary = withContext(Dispatchers.IO) {
+                val files = SongDownloader.downloadDirs(requireContext())
+                    .flatMap { it.listFiles().orEmpty().asIterable() }
+                    .filter { it.isFile && !it.name.endsWith(".part", ignoreCase = true) }
+                    .distinctBy { it.absolutePath }
+                val count = files.size
+                val totalSize = files.sumOf { it.length().coerceAtLeast(0L) }
+                count to totalSize
+            }
+            if (_binding == null) return@launch
+            val (count, totalSize) = summary
+            binding.tvGridDownloadsCount.text = NumberFormat.getIntegerInstance().format(count)
+            binding.tvDownloadsMeta.text = if (count == 0) {
+                getString(R.string.profile_downloads_empty)
+            } else {
+                getString(
+                    R.string.profile_downloads_meta,
+                    count,
+                    FileSizeFormatter.format(totalSize)
+                )
+            }
+        }
     }
 
     private fun openCollection(fragment: Fragment) {
@@ -181,17 +240,21 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updateLikedSection(songs: List<Song>) {
-        binding.tvLikedCount.text = NumberFormat.getIntegerInstance().format(songs.size)
+        val countText = NumberFormat.getIntegerInstance().format(songs.size)
+        binding.tvLikedCount.text = countText
+        binding.tvGridLikedCount.text = countText
         updateLikedCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvLikedMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_liked_empty)
         } else {
-            getString(R.string.profile_liked_meta, songs.size, describeSong(songs.first()))
+            getString(R.string.profile_liked_card_subtitle, songs.size)
         }
     }
 
     private fun updateHistorySection(songs: List<Song>) {
-        binding.tvHistoryCount.text = NumberFormat.getIntegerInstance().format(songs.size)
+        val countText = NumberFormat.getIntegerInstance().format(songs.size)
+        binding.tvHistoryCount.text = countText
+        binding.tvGridHistoryCount.text = countText
         updateHistoryCover(songs.firstOrNull()?.album?.picUrl)
         binding.tvHistoryMeta.text = if (songs.isEmpty()) {
             getString(R.string.profile_history_empty)
@@ -201,7 +264,9 @@ class ProfileFragment : Fragment(), RootTabInteraction {
     }
 
     private fun updatePlaylistsSection(playlists: List<UserPlaylist>) {
-        binding.tvPlaylistCount.text = NumberFormat.getIntegerInstance().format(playlists.size)
+        val countText = NumberFormat.getIntegerInstance().format(playlists.size)
+        binding.tvPlaylistCount.text = countText
+        binding.tvGridPlaylistsCount.text = countText
         updatePlaylistCover(playlists.firstOrNull()?.coverUrl)
         binding.tvPlaylistsMeta.text = if (playlists.isEmpty()) {
             getString(R.string.user_playlist_empty)
@@ -229,15 +294,16 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         if (url.isBlank()) {
             binding.ivLikedCover.setPadding(coverPlaceholderPadding())
             binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER
-            binding.ivLikedCover.setImageResource(R.drawable.ic_music_note_24)
-            binding.ivLikedCover.imageTintList = requireContext().resolveThemeColorStateList(R.attr.brandPrimary)
+            binding.ivLikedCover.setImageResource(R.drawable.ic_favorite_24)
+            binding.ivLikedCover.imageTintList =
+                android.content.res.ColorStateList.valueOf(Color.WHITE)
         } else {
             binding.ivLikedCover.setPadding(0, 0, 0, 0)
             binding.ivLikedCover.scaleType = ImageView.ScaleType.CENTER_CROP
             binding.ivLikedCover.imageTintList = null
             Glide.with(binding.ivLikedCover)
                 .load(url)
-                .placeholder(R.drawable.ic_music_note_24)
+                .placeholder(R.drawable.ic_favorite_24)
                 .centerCrop()
                 .into(binding.ivLikedCover)
         }
@@ -305,7 +371,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         binding.tvSignature.text = user.signature?.takeIf { it.isNotBlank() }
             ?: getString(R.string.profile_signature_empty)
         binding.tvProfileMeta.text = buildProfileMeta(user)
-        binding.ivAvatar.loadUserAvatar(user, placeholderPaddingDp = 18)
+        binding.ivAvatar.loadUserAvatar(user, placeholderPaddingDp = 16)
 
         if (!user.badge.isNullOrEmpty()) {
             binding.tvBadge.text = getString(R.string.profile_badge, user.badge)

@@ -12,6 +12,11 @@
     <string name="profile_account_meta">%1$s · ID %2$s</string>
     <string name="profile_account_placeholder">已登录账号</string>
     <string name="profile_stat_liked">喜欢</string>
-    <string name="profile_stat_history">历史</string>
+    <string name="profile_stat_history">最近</string>
+    <string name="profile_stat_downloads">下载</string>
     <string name="profile_stat_playlists">歌单</string>
+    <string name="profile_quick_section">我的音乐</string>
+    <string name="profile_created_playlists_section">创建的歌单</string>
+    <string name="profile_liked_card_subtitle">%1$d 首已收藏</string>
+    <string name="profile_grid_count">%1$d</string>
 </resources>

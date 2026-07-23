@@ -199,12 +199,14 @@ class SongCollectionFragment : Fragment() {
     }
 
     private fun refreshCurrentCollection() {
+        // Soft revalidate: use memory/disk first; network only when TTL expired.
+        // User pull-to-refresh can pass force later if we add a dedicated swipe flag.
         when (mode) {
-            Mode.LIKED -> libraryViewModel.refreshFavorites(silent = true, forceRefresh = true)
-            Mode.HISTORY -> libraryViewModel.refreshHistory(silent = true, forceRefresh = true)
+            Mode.LIKED -> libraryViewModel.refreshFavorites(silent = true, forceRefresh = false)
+            Mode.HISTORY -> libraryViewModel.refreshHistory(silent = true, forceRefresh = false)
             Mode.PLAYLIST -> {
-                libraryViewModel.refreshPlaylists(silent = true, forceRefresh = true)
-                libraryViewModel.loadPlaylistSongs(playlistId, forceRefresh = true)
+                libraryViewModel.refreshPlaylists(silent = true, forceRefresh = false)
+                libraryViewModel.loadPlaylistSongs(playlistId, forceRefresh = false)
             }
         }
     }

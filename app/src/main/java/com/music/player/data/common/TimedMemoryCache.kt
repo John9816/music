@@ -18,6 +18,10 @@ class TimedMemoryCache<K, V>(private val maxSize: Int = 100) {
         return entry.value
     }
 
+    /** Returns cached value even if TTL expired (does not remove the entry). */
+    @Synchronized
+    fun getStale(key: K): V? = store[key]?.value
+
     @Synchronized
     fun put(key: K, value: V, nowMs: Long = System.currentTimeMillis()) {
         // Evict oldest entries if at capacity (LinkedHashMap access-order keeps track of LRU)

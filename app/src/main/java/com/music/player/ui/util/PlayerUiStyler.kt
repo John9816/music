@@ -136,30 +136,56 @@ object PlayerUiStyler {
     }
 
     private fun applyGlassNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        val surface = context.resolveThemeColor(R.attr.surfaceColor)
-        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
+        applyNetEaseNowPlayingChrome(binding, context)
+    }
+
+    private fun applyVinylNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
+        applyNetEaseNowPlayingChrome(binding, context)
+    }
+
+    private fun applyMinimalNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
+        applyNetEaseNowPlayingChrome(binding, context)
+    }
+
+    /**
+     * Shared full-player chrome: album blur + dark scrim, light controls on top,
+     * white circular play button, thin white progress (NetEase-like).
+     */
+    private fun applyNetEaseNowPlayingChrome(binding: BottomSheetNowPlayingBinding, context: Context) {
+        // Always light-on-dark chrome so album blur backgrounds stay readable.
+        val textPrimary = Color.WHITE
+        val textSecondary = ColorUtils.setAlphaComponent(Color.WHITE, 0xB3)
+        val textTertiary = ColorUtils.setAlphaComponent(Color.WHITE, 0x80)
 
         applyImmersiveNowPlayingBackground(binding)
 
         binding.progressContainer.background = null
-        stylePlayerControlsBar(binding.controlsBar, ColorUtils.setAlphaComponent(surface, 246), ColorUtils.setAlphaComponent(textPrimary, 22), 18f, 1f, context)
+        stylePlayerControlsBar(
+            card = binding.controlsBar,
+            backgroundColor = Color.TRANSPARENT,
+            strokeColor = 0,
+            radiusDp = 0f,
+            strokeWidthDp = 0f,
+            context = context
+        )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnFavorite),
-            backgroundColor = ColorUtils.setAlphaComponent(surfaceAlt, 246),
+            buttons = listOf(binding.btnClose, binding.btnOverflow),
+            backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textPrimary
         )
         styleSecondaryButtons(
-            buttons = listOf(binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
+            buttons = listOf(binding.btnFavorite, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
             backgroundColor = Color.TRANSPARENT,
             strokeColor = 0,
             tintColor = textSecondary
         )
-        binding.btnPlayPause.background = circleDrawable(Color.TRANSPARENT, 0)
-        binding.btnPlayPause.imageTintList =
-            context.resolveThemeColorStateList(R.attr.textPrimary)
+        // Prev/next slightly brighter than secondary actions.
+        binding.btnPrev.imageTintList = ColorStateList.valueOf(textPrimary)
+        binding.btnNext.imageTintList = ColorStateList.valueOf(textPrimary)
+        // Big white play CTA (do not theme-tint away).
+        binding.btnPlayPause.setBackgroundResource(R.drawable.bg_now_playing_play_circle)
+        binding.btnPlayPause.imageTintList = ColorStateList.valueOf(Color.parseColor("#1A1A1A"))
         stylePillButton(
             button = binding.btnAudioQuality,
             backgroundColor = Color.TRANSPARENT,
@@ -172,107 +198,13 @@ object PlayerUiStyler {
             binding = binding,
             context = context,
             activeTrack = textPrimary,
-            inactiveTrack = context.resolveThemeColor(R.attr.dividerColor),
+            inactiveTrack = ColorUtils.setAlphaComponent(Color.WHITE, 40),
             thumb = textPrimary
         )
-        binding.tvCurrentTime.setTextColor(textSecondary)
-        binding.tvTotalTime.setTextColor(textSecondary)
-        styleNowPlayingContent(binding, textPrimary, textSecondary)
-    }
-
-    private fun applyVinylNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        val surface = context.resolveThemeColor(R.attr.surfaceColor)
-        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
-
-        applyImmersiveNowPlayingBackground(binding)
-
-        binding.progressContainer.background = null
-        stylePlayerControlsBar(
-            binding.controlsBar,
-            backgroundColor = ColorUtils.setAlphaComponent(surfaceAlt, 246),
-            strokeColor = ColorUtils.setAlphaComponent(textPrimary, 22),
-            radiusDp = 18f,
-            strokeWidthDp = 1f,
-            context = context
-        )
-        styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnFavorite),
-            backgroundColor = ColorUtils.setAlphaComponent(surface, 252),
-            strokeColor = 0,
-            tintColor = textPrimary
-        )
-        styleSecondaryButtons(
-            buttons = listOf(binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
-            backgroundColor = Color.TRANSPARENT,
-            strokeColor = 0,
-            tintColor = textPrimary
-        )
-        binding.btnPlayPause.background = circleDrawable(Color.TRANSPARENT, 0)
-        binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        stylePillButton(
-            button = binding.btnAudioQuality,
-            backgroundColor = Color.TRANSPARENT,
-            strokeColor = 0,
-            textColor = textSecondary,
-            iconTintColor = textSecondary,
-            context = context
-        )
-        styleNowPlayingSliders(
-            binding = binding,
-            context = context,
-            activeTrack = textPrimary,
-            inactiveTrack = context.resolveThemeColor(R.attr.brandPrimaryLight),
-            thumb = textPrimary
-        )
-        binding.tvCurrentTime.setTextColor(textSecondary)
-        binding.tvTotalTime.setTextColor(textSecondary)
-        styleNowPlayingContent(binding, textPrimary, textSecondary)
-    }
-
-    private fun applyMinimalNowPlaying(binding: BottomSheetNowPlayingBinding, context: Context) {
-        val surface = context.resolveThemeColor(R.attr.surfaceColor)
-        val surfaceAlt = context.resolveThemeColor(R.attr.surfaceAltColor)
-        val textPrimary = context.resolveThemeColor(R.attr.textPrimary)
-        val textSecondary = context.resolveThemeColor(R.attr.textSecondary)
-
-        applyImmersiveNowPlayingBackground(binding)
-
-        binding.progressContainer.background = null
-        stylePlayerControlsBar(
-            binding.controlsBar,
-            ColorUtils.setAlphaComponent(surface, 246),
-            ColorUtils.setAlphaComponent(textPrimary, 22),
-            18f,
-            1f,
-            context
-        )
-        styleSecondaryButtons(
-            buttons = listOf(binding.btnClose, binding.btnFavorite, binding.btnLyrics, binding.btnPlayMode, binding.btnPrev, binding.btnNext, binding.btnQueue),
-            backgroundColor = Color.TRANSPARENT,
-            strokeColor = 0,
-            tintColor = textPrimary
-        )
-        binding.btnPlayPause.background = circleDrawable(Color.TRANSPARENT, 0)
-        binding.btnPlayPause.imageTintList = context.resolveThemeColorStateList(R.attr.textPrimary)
-        stylePillButton(
-            button = binding.btnAudioQuality,
-            backgroundColor = Color.TRANSPARENT,
-            strokeColor = 0,
-            textColor = textSecondary,
-            iconTintColor = textSecondary,
-            context = context
-        )
-        styleNowPlayingSliders(
-            binding = binding,
-            context = context,
-            activeTrack = textPrimary,
-            inactiveTrack = context.resolveThemeColor(R.attr.dividerColor),
-            thumb = textPrimary
-        )
-        binding.tvCurrentTime.setTextColor(textSecondary)
-        binding.tvTotalTime.setTextColor(textSecondary)
+        binding.tvCurrentTime.setTextColor(textTertiary)
+        binding.tvTotalTime.setTextColor(textTertiary)
+        binding.tvControlSongTitle.setTextColor(textPrimary)
+        binding.tvControlSongArtist.setTextColor(textSecondary)
         styleNowPlayingContent(binding, textPrimary, textSecondary)
     }
 
@@ -283,7 +215,7 @@ object PlayerUiStyler {
         inactiveTrack: Int,
         thumb: Int
     ) {
-        val thumbRadiusPx = context.dp(4f)
+        val thumbRadiusPx = context.dp(6f)
         val trackHeightPx = context.dp(3f)
         styleCompactSlider(
             slider = binding.sliderProgress,
@@ -361,7 +293,7 @@ object PlayerUiStyler {
         primaryText: Int,
         secondaryText: Int
     ) {
-        // The reference player uses one continuous dark surface instead of a floating control card.
+        // Continuous immersive surface — no floating control card.
         binding.controlsBar.setCardBackgroundColor(Color.TRANSPARENT)
         binding.controlsBar.strokeWidth = 0
         binding.controlsBar.radius = 0f
@@ -370,16 +302,20 @@ object PlayerUiStyler {
         binding.playerContent.tvLyricsPlain.background = null
         binding.playerContent.cardCoverBig.strokeWidth = 0
         binding.playerContent.cardCoverBig.strokeColor = 0
+        binding.playerContent.cardCoverBig.radius =
+            binding.root.resources.displayMetrics.density * 12f
         binding.playerContent.tvLyricsPlain.setTextColor(secondaryText)
         binding.tvSheetTitle.setTextColor(primaryText)
         binding.tvSheetSubtitle.setTextColor(secondaryText)
+        binding.tvSheetMetaDetail.setTextColor(ColorUtils.setAlphaComponent(Color.WHITE, 0x80))
     }
 
     private fun applyImmersiveNowPlayingBackground(binding: BottomSheetNowPlayingBinding) {
-        binding.root.setBackgroundColor(Color.TRANSPARENT)
-        // Match the reference player: a stable gray-to-black backdrop shared by cover and lyrics.
-        binding.ivBlurBackground.visibility = View.GONE
-        binding.viewScrim.setBackgroundResource(R.drawable.bg_now_playing_cymusic_scrim)
+        // Fallback gradient while blur loads; album art blur sits under a dark scrim.
+        binding.root.setBackgroundResource(R.drawable.bg_now_playing_cymusic_scrim)
+        binding.ivBlurBackground.visibility = View.VISIBLE
+        binding.ivBlurBackground.alpha = 0.92f
+        binding.viewScrim.setBackgroundResource(R.drawable.bg_now_playing_blur_scrim)
         binding.viewScrim.alpha = 1f
     }
 

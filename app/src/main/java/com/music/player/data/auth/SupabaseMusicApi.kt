@@ -102,35 +102,35 @@ interface SupabaseMusicApi {
 }
 
 data class MusicFavoriteRequest(
-    val source: String,
-    val songId: String,
-    val name: String,
-    val artist: String?,
-    val album: String?,
-    val coverUrl: String?,
-    val durationSec: Int?
+    @com.google.gson.annotations.SerializedName("source") val source: String,
+    @com.google.gson.annotations.SerializedName("songId") val songId: String,
+    @com.google.gson.annotations.SerializedName("name") val name: String,
+    @com.google.gson.annotations.SerializedName("artist") val artist: String?,
+    @com.google.gson.annotations.SerializedName("album") val album: String?,
+    @com.google.gson.annotations.SerializedName("coverUrl") val coverUrl: String?,
+    @com.google.gson.annotations.SerializedName("durationSec") val durationSec: Int?
 )
 
 data class PlaylistImportRequest(
-    val url: String
+    @com.google.gson.annotations.SerializedName("url") val url: String
 )
 
 data class PlaylistCreateRequest(
-    val name: String,
-    val description: String? = null,
-    val coverUrl: String? = null
+    @com.google.gson.annotations.SerializedName("name") val name: String,
+    @com.google.gson.annotations.SerializedName("description") val description: String? = null,
+    @com.google.gson.annotations.SerializedName("coverUrl") val coverUrl: String? = null
 )
 
 data class PlaylistRenameRequest(
-    val name: String
+    @com.google.gson.annotations.SerializedName("name") val name: String
 )
 
 data class PlaylistItemRequest(
-    val source: String,
-    val songId: String,
-    val name: String,
-    val artist: String?,
-    val album: String?,
-    val coverUrl: String?,
-    val durationSec: Int?
+    @com.google.gson.annotations.SerializedName("source") val source: String,
+    @com.google.gson.annotations.SerializedName("songId") val songId: String,
+    @com.google.gson.annotations.SerializedName("name") val name: String,
+    @com.google.gson.annotations.SerializedName("artist") val artist: String?,
+    @com.google.gson.annotations.SerializedName("album") val album: String?,
+    @com.google.gson.annotations.SerializedName("coverUrl") val coverUrl: String?,
+    @com.google.gson.annotations.SerializedName("durationSec") val durationSec: Int?
 )

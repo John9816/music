@@ -253,34 +253,6 @@
                 android:showDividers="middle">
 
                 <LinearLayout
-                    android:id="@+id/layoutManageDownloads"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:background="@drawable/ripple_rect_primary"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="@dimen/spacing_m">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/settings_manage_downloads"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textPrimary" />
-
-                    <TextView
-                        android:id="@+id/tvDownloadedSize"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/storage_size_zero"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textColor="?attr/textSecondary" />
-                </LinearLayout>
-
-                <LinearLayout
                     android:id="@+id/layoutAudioQuality"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"

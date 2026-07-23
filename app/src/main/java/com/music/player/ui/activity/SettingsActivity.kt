@@ -34,12 +34,9 @@ import com.music.player.ui.viewmodel.UpdateViewModel
 import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
-import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.loadUserAvatar
 import com.music.player.ui.util.resolveThemeColorStateList
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class SettingsActivity : AppCompatActivity() {
@@ -102,7 +99,6 @@ class SettingsActivity : AppCompatActivity() {
         updateMusicSourceSummary()
         binding.tvSourceStatusSummary.setText(R.string.settings_source_not_checked)
         updateCacheSize()
-        updateDownloadedSize()
         authViewModel.refreshProfile()
     }
 
@@ -117,9 +113,6 @@ class SettingsActivity : AppCompatActivity() {
         super.onResume()
         if (::appUpdateInstaller.isInitialized) {
             appUpdateInstaller.resumePendingWork()
-        }
-        if (::binding.isInitialized) {
-            updateDownloadedSize()
         }
     }
 
@@ -145,9 +138,6 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Cache
-        binding.layoutManageDownloads.setOnClickListener {
-            startActivity(Intent(this, DownloadsActivity::class.java))
-        }
         binding.layoutClearCache.setOnClickListener { clearCache() }
 
         // Theme & Update
@@ -561,19 +551,6 @@ class SettingsActivity : AppCompatActivity() {
         val imageCacheSize = cacheDir?.let { calculateDirSize(it) } ?: 0L
         val size = imageCacheSize + RetrofitClient.httpCacheSizeBytes()
         binding.tvCacheSize.text = getString(R.string.settings_cache_size, FileSizeFormatter.format(size))
-    }
-
-    private fun updateDownloadedSize() {
-        lifecycleScope.launch {
-            val totalSize = withContext(Dispatchers.IO) {
-                SongDownloader.downloadDirs(this@SettingsActivity)
-                    .flatMap { it.listFiles().orEmpty().asIterable() }
-                    .filter { it.isFile && !it.name.endsWith(".part", ignoreCase = true) }
-                    .distinctBy { it.absolutePath }
-                    .sumOf { it.length().coerceAtLeast(0L) }
-            }
-            binding.tvDownloadedSize.text = FileSizeFormatter.format(totalSize)
-        }
     }
 
     private fun clearCache() {

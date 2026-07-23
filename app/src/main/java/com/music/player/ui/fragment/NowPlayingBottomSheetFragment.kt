@@ -14,6 +14,7 @@ import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import androidx.core.graphics.ColorUtils
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.WindowManager
@@ -46,6 +47,7 @@ import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.installDownwardDragToDismiss
+import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackMode
 import com.music.player.playback.PlaybackModeController
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -161,11 +163,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 window.isNavigationBarContrastEnforced = false
             }
             val controller = WindowInsetsControllerCompat(window, binding.root)
-            val isNightMode =
-                (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                    android.content.res.Configuration.UI_MODE_NIGHT_YES
-            controller.isAppearanceLightStatusBars = !isNightMode
-            controller.isAppearanceLightNavigationBars = !isNightMode
+            // Full player is always dark chrome over album blur — light icons in system bars.
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.show(WindowInsetsCompat.Type.systemBars())
@@ -197,8 +197,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
-        // The playback and lyrics screens use the fixed reference gradient, never album blur.
-        binding.ivBlurBackground.visibility = View.GONE
+        // Album-art blur under a dark scrim (NetEase-style immersive player).
+        binding.ivBlurBackground.visibility = View.VISIBLE
         immersiveBackground = ImmersiveHeaderBackground(
             lifecycleOwner = viewLifecycleOwner,
             imageView = binding.ivBlurBackground
@@ -270,7 +270,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
         installHandleDragToDismiss()
         binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
-        binding.btnFavorite.setOnClickListener {
+        binding.btnOverflow.setOnClickListener {
             binding.layoutSongMenu.isVisible = !binding.layoutSongMenu.isVisible
         }
         binding.menuShowLyrics.setOnClickListener {
@@ -302,7 +302,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
-        binding.btnLyrics.setOnClickListener { toggleFavoriteForCurrentSong() }
+        binding.btnFavorite.setOnClickListener { toggleFavoriteForCurrentSong() }
         updateAudioQualityButton()
         updateFavoriteButton()
 
@@ -400,11 +400,21 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 applySongToViews(null)
                 return@observe
             }
+            // Cover is in local metadata; lyrics need a network (or memory) fetch — kick it off
+            // as soon as the full player opens, without waiting for stream prepare / play.
+            if (song.lyric.isNullOrBlank()) {
+                PlaybackCoordinator.ensureLyricsForCurrentSong()
+            }
             applySongToViews(song)
         }
 
         // Apply current song immediately if available
-        musicViewModel.currentSong.value?.let { applySongToViews(it) }
+        musicViewModel.currentSong.value?.let { song ->
+            if (song.lyric.isNullOrBlank()) {
+                PlaybackCoordinator.ensureLyricsForCurrentSong()
+            }
+            applySongToViews(song)
+        }
     }
 
     private fun installHandleDragToDismiss() {
@@ -459,7 +469,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                     }.show(parentFragmentManager, "create_playlist")
                 }
                 .show()
-            libraryViewModel.refreshPlaylists(silent = true)
+            libraryViewModel.refreshPlaylists(silent = true, forceRefresh = false)
             return
         }
 
@@ -488,23 +498,21 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         if (_binding == null) return
         val song = musicViewModel.currentSong.value
         val isFavorite = song != null && favoriteIds.contains(song.id)
-        binding.btnFavorite.isEnabled = song != null
-        binding.btnFavorite.alpha = if (song == null) 0.38f else 1f
+        // Top-right overflow is always-enabled chrome.
+        binding.btnOverflow.isEnabled = true
+        binding.btnOverflow.alpha = 1f
+        binding.btnOverflow.imageTintList = ColorStateList.valueOf(Color.WHITE)
+        binding.btnOverflow.contentDescription = getString(R.string.content_desc_more)
+        // Heart uses brand red when liked; otherwise soft white on dark chrome.
+        val likedRed = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.favorite_red)
+        val unliked = ColorUtils.setAlphaComponent(Color.WHITE, 0xB3)
         binding.btnFavorite.imageTintList = ColorStateList.valueOf(
-            themeColor(R.attr.textPrimary)
+            if (isFavorite) likedRed else unliked
         )
-        binding.btnLyrics.imageTintList = ColorStateList.valueOf(
-            if (isFavorite) {
-                androidx.core.content.ContextCompat.getColor(requireContext(), R.color.favorite_red)
-            } else {
-                themeColor(R.attr.textSecondary)
-            }
-        )
-        binding.btnLyrics.contentDescription = getString(
-            if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
-        )
+        binding.btnFavorite.alpha = if (song == null) 0.38f else 1f
+        binding.btnFavorite.isEnabled = song != null
         binding.btnFavorite.contentDescription = getString(
-            R.string.content_desc_more
+            if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
         )
         binding.menuFavoriteSong.text = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
@@ -655,6 +663,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             return
         }
         showingLyrics = false
+        // Keep transport bar visible on both cover and lyrics (NetEase).
         binding.controlsBar.visibility = View.VISIBLE
         if (immediate) {
             coverStage?.animate()?.cancel()
@@ -664,7 +673,6 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             coverStage?.scaleX = 1f
             coverStage?.scaleY = 1f
             lyricsStage?.visibility = View.GONE
-            binding.controlsBar.visibility = View.VISIBLE
         } else {
             coverStage?.animate()?.cancel()
             lyricsStage?.animate()?.cancel()
@@ -699,7 +707,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             return
         }
         showingLyrics = true
-        binding.controlsBar.visibility = View.GONE
+        binding.controlsBar.visibility = View.VISIBLE
         lyricsStage?.visibility = View.VISIBLE
         coverStage?.animate()?.cancel()
         lyricsStage?.animate()?.cancel()
@@ -839,8 +847,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
         binding.btnPlayMode.setImageResource(icon)
         binding.btnPlayMode.contentDescription = getString(desc)
+        // Soft white on immersive chrome (not brand primary).
         binding.btnPlayMode.imageTintList =
-            ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
+            ColorStateList.valueOf(ColorUtils.setAlphaComponent(Color.WHITE, 0xB3))
     }
 
     // ── Lyrics sync ───────────────────────────────────────────────
@@ -895,19 +904,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         progressJob?.cancel()
         progressJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
-                val player = (activity as? MainActivity)?.player
-                if (player == null) {
-                    delay(250)
-                    continue
-                }
-                val durationMs = player.duration
-                val hasDuration = durationMs > 0L && durationMs != C.TIME_UNSET
+                val durationMs = PlaybackCoordinator.displayDurationMs()
+                val positionMs = PlaybackCoordinator.displayPositionMs()
+                val hasDuration = durationMs > 0L
                 val safeDuration = if (hasDuration) durationMs else 1L
 
                 binding.sliderProgress.valueTo = safeDuration.toFloat()
                 binding.sliderProgress.isEnabled = hasDuration
 
-                val positionMs = player.currentPosition.coerceAtLeast(0L)
                 binding.tvTotalTime.text = if (hasDuration) {
                     "-${formatTime((durationMs - positionMs).coerceAtLeast(0L))}"
                 } else {

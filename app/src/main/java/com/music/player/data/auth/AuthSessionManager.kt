@@ -7,6 +7,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.music.player.data.repository.SupabaseMusicRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -104,12 +105,18 @@ class AuthSessionManager(context: Context) {
     }
 
     fun clear() {
+        // Capture before wipe so library disk/RAM can be dropped for this account.
+        val userId = getCachedUserId()
         writeBoth { editor ->
             editor.remove(KEY_ACCESS_TOKEN)
                 .remove(KEY_REFRESH_TOKEN)
                 .remove(KEY_EXPIRES_AT_MS)
                 .remove(KEY_USER_ID)
         }
+        // Business library cache is not stored in session prefs — clear explicitly.
+        runCatching {
+            SupabaseMusicRepository(appContext).clearLocalLibraryForUser(userId)
+        }.onFailure { Log.w(TAG, "clear local library on session end failed", it) }
     }
 
     fun invalidateSession() {

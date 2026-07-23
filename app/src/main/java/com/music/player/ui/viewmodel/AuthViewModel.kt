@@ -63,6 +63,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun signOut() {
         viewModelScope.launch {
+            // Disk + process library caches cleared inside AuthRepository.signOut.
             authRepository.signOut()
             PlaybackCoordinator.resetPlayback()
             _currentUser.value = null

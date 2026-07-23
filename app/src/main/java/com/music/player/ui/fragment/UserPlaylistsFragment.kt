@@ -62,7 +62,8 @@ class UserPlaylistsFragment : Fragment() {
             libraryViewModel.consumeMessage()
         }
 
-        libraryViewModel.refreshPlaylists(silent = true, forceRefresh = true)
+        // Prefer cached playlists; network only when memory TTL expired.
+        libraryViewModel.refreshPlaylists(silent = true, forceRefresh = false)
     }
 
     override fun onDestroyView() {

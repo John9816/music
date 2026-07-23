@@ -1,12 +1,9 @@
 # Add project specific ProGuard rules here.
-# Keep data models and auth payloads that may be read reflectively.
+# Keep data models and auth / music-library payloads that Gson reflects on.
+# Release minify renames fields unless kept — broken JSON breaks favorites, playlists, login.
 -keep class com.music.player.data.model.** { *; }
--keep class com.music.player.data.auth.AuthRequest { *; }
--keep class com.music.player.data.auth.SignInRequest { *; }
--keep class com.music.player.data.auth.RefreshTokenRequest { *; }
--keep class com.music.player.data.auth.AuthResponse { *; }
--keep class com.music.player.data.auth.UserData { *; }
--keep class com.music.player.data.auth.UserIdentity { *; }
+-keep class com.music.player.data.auth.** { *; }
+-keepclassmembers class com.music.player.data.auth.** { <fields>; }
 
 # Retrofit
 -keepattributes Signature, InnerClasses, EnclosingMethod
@@ -48,6 +45,10 @@
 # Playback session snapshot (Gson reflected fields — must survive R8)
 -keep class com.music.player.playback.PlaybackStateStore { *; }
 -keep class com.music.player.playback.PlaybackStateStore$* { *; }
+
+# Library disk cache (favorites / history / playlists)
+-keep class com.music.player.data.repository.LibraryDiskCache { *; }
+-keep class com.music.player.data.repository.LibraryDiskCache$* { *; }
 
 # Glide
 -keep public class * implements com.bumptech.glide.module.GlideModule

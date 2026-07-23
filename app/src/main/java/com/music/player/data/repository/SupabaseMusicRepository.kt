@@ -27,24 +27,91 @@ import retrofit2.Response
 data class MusicLibraryBootstrap(
     val favorites: List<Song>,
     val history: List<Song>,
-    val playlists: List<UserPlaylist>
+    val playlists: List<UserPlaylist>,
+    /** Wall-clock when the disk snapshot was last written; 0 if from RAM/network only. */
+    val savedAtMs: Long = 0L
 )
 
 class SupabaseMusicRepository(context: Context) {
 
-    private val sessionManager = AuthSessionManager(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val sessionManager = AuthSessionManager(appContext)
     private val authApi = SupabaseClient.authApi
     private val api = SupabaseClient.musicApi
+    private val diskCache = LibraryDiskCache(appContext)
+
+    fun cachedUserId(): String? = sessionManager.getCachedUserId()
+
+    /** Synchronous disk read for cold-start UI (call off main if needed). */
+    fun loadDiskLibrarySnapshot(): MusicLibraryBootstrap? {
+        val userId = sessionManager.getCachedUserId() ?: return null
+        val snap = diskCache.load(userId) ?: return null
+        val bootstrap = snap.toBootstrap()
+        // Seed in-memory caches so subsequent list* calls hit RAM first.
+        favoritesCache.put("favorites|$userId", bootstrap.favorites)
+        historyCache.put("history|$userId|100", bootstrap.history)
+        playlistsCache.put("playlists|$userId", bootstrap.playlists)
+        return bootstrap
+    }
+
+    fun persistLibrarySnapshot(
+        favorites: List<Song>,
+        history: List<Song>,
+        playlists: List<UserPlaylist>
+    ) {
+        val userId = sessionManager.getCachedUserId() ?: return
+        synchronized(diskWriteLock) {
+            diskCache.save(userId, LibraryDiskCache.Snapshot.from(favorites, history, playlists))
+        }
+        favoritesCache.put("favorites|$userId", favorites)
+        historyCache.put("history|$userId|100", history)
+        playlistsCache.put("playlists|$userId", playlists)
+    }
+
+    fun updateMemoryFavorites(userId: String, favorites: List<Song>) {
+        favoritesCache.put("favorites|$userId", favorites)
+    }
+
+    fun updateMemoryHistory(userId: String, history: List<Song>) {
+        historyCache.put("history|$userId|100", history)
+    }
+
+    fun updateMemoryPlaylists(userId: String, playlists: List<UserPlaylist>) {
+        playlistsCache.put("playlists|$userId", playlists)
+    }
+
+    /**
+     * Drop this user's disk library snapshot and all process-wide library RAM caches.
+     * Call on explicit logout after capturing [userId] and clearing the session so
+     * in-flight [persistLibrarySnapshot] calls no-op.
+     */
+    fun clearLocalLibraryForUser(userId: String?) {
+        val id = userId?.trim().orEmpty()
+        if (id.isNotEmpty()) {
+            synchronized(diskWriteLock) {
+                diskCache.clear(id)
+            }
+        }
+        favoritesCache.clear()
+        historyCache.clear()
+        playlistsCache.clear()
+        playlistSongsCache.clear()
+        historyRecordIds.clear()
+        // Playlist item ids are keyed by playlist id only — wipe on logout.
+        playlistItemIds.clear()
+    }
 
     private companion object {
-        private const val FAVORITES_TTL_MS = 30 * 1000L
-        private const val HISTORY_TTL_MS = 20 * 1000L
-        private const val PLAYLISTS_TTL_MS = 30 * 1000L
-        private const val PLAYLIST_SONGS_TTL_MS = 30 * 1000L
+        private const val MSG_NOT_SIGNED_IN = "请先登录后再使用收藏"
+        // Soft memory TTL: disk is durable; RAM is for hot re-entry within a session.
+        private const val FAVORITES_TTL_MS = 5 * 60 * 1000L
+        private const val HISTORY_TTL_MS = 3 * 60 * 1000L
+        private const val PLAYLISTS_TTL_MS = 5 * 60 * 1000L
+        private const val PLAYLIST_SONGS_TTL_MS = 2 * 60 * 1000L
 
-        private val favoritesCache = TimedMemoryCache<String, List<Song>>()
-        private val historyCache = TimedMemoryCache<String, List<Song>>()
-        private val playlistsCache = TimedMemoryCache<String, List<UserPlaylist>>()
+        private val favoritesCache = TimedMemoryCache<String, List<Song>>(maxSize = 8)
+        private val historyCache = TimedMemoryCache<String, List<Song>>(maxSize = 8)
+        private val playlistsCache = TimedMemoryCache<String, List<UserPlaylist>>(maxSize = 8)
         private val playlistSongsCache = TimedMemoryCache<String, List<Song>>()
 
         private val favoriteRequests = RequestCoalescer<String, Result<List<Song>>>()
@@ -55,13 +122,16 @@ class SupabaseMusicRepository(context: Context) {
 
         private val historyRecordIds = mutableMapOf<String, Map<String, Long>>()
         private val playlistItemIds = mutableMapOf<String, Map<String, Long>>()
+
+        /** Serializes partial disk snapshot RMW so concurrent field updates cannot clobber siblings. */
+        private val diskWriteLock = Any()
     }
 
     private suspend fun requireSession(): Pair<String, String> {
         val hadStoredSession = sessionManager.isLoggedIn()
         var token = sessionManager.getValidAccessToken(authApi) ?: run {
             if (!hadStoredSession) sessionManager.invalidateSession()
-            throw IllegalStateException("Not signed in")
+            throw IllegalStateException(MSG_NOT_SIGNED_IN)
         }
         sessionManager.syncUserIdFromAccessToken(token)?.let { return token to it }
 
@@ -155,9 +225,11 @@ class SupabaseMusicRepository(context: Context) {
                         MusicLibraryBootstrap(
                             favorites = favoritesDeferred.await().getOrThrow(),
                             history = historyDeferred.await().getOrThrow(),
-                            playlists = playlistsDeferred.await().getOrThrow()
+                            playlists = playlistsDeferred.await().getOrThrow(),
+                            savedAtMs = 0L
                         )
                     }
+                    // Disk write is owned by LibraryViewModel.persistLibrarySnapshot (debounced).
                 }
             }
         }
@@ -176,10 +248,15 @@ class SupabaseMusicRepository(context: Context) {
             }
 
             runCatching {
-                val response = executeAuthorized(token) { api.listFavorites(token = it, page = 0, size = 100) }
-                val items = parsePageItems(response, "Failed to load favorites")
-                items.map { it.toSong() }
-            }.onSuccess { favoritesCache.put(cacheKey, it) }
+                fetchAllPages(
+                    pageSize = LibraryPageParser.DEFAULT_PAGE_SIZE,
+                    fallbackMessage = "Failed to load favorites"
+                ) { page, size ->
+                    executeAuthorized(token) { api.listFavorites(token = it, page = page, size = size) }
+                }.map { it.toSong() }
+            }.onSuccess { list ->
+                favoritesCache.put(cacheKey, list)
+            }
         }
     }
 
@@ -197,8 +274,42 @@ class SupabaseMusicRepository(context: Context) {
                     throw IllegalStateException(errorMessage(response, "Failed to delete favorite"))
                 }
             }
-            favoritesCache.remove("favorites|$userId")
+            // Memory only — ViewModel owns debounced full-snapshot disk writes.
+            val current = knownFavorites(userId)
+            if (current != null) {
+                val next = if (isFavorite) {
+                    if (current.any { it.id == song.id }) current else listOf(song) + current
+                } else {
+                    current.filterNot { it.id == song.id }
+                }
+                favoritesCache.put("favorites|$userId", next)
+            } else if (isFavorite) {
+                favoritesCache.put("favorites|$userId", listOf(song))
+            } else {
+                favoritesCache.remove("favorites|$userId")
+            }
         }
+    }
+
+    private fun knownFavorites(userId: String): List<Song>? {
+        val key = "favorites|$userId"
+        favoritesCache.get(key, FAVORITES_TTL_MS)?.let { return it }
+        favoritesCache.getStale(key)?.let { return it }
+        return diskCache.load(userId)?.toBootstrap()?.favorites
+    }
+
+    private fun knownHistory(userId: String): List<Song>? {
+        val key = "history|$userId|100"
+        historyCache.get(key, HISTORY_TTL_MS)?.let { return it }
+        historyCache.getStale(key)?.let { return it }
+        return diskCache.load(userId)?.toBootstrap()?.history
+    }
+
+    private fun knownPlaylists(userId: String): List<UserPlaylist>? {
+        val key = "playlists|$userId"
+        playlistsCache.get(key, PLAYLISTS_TTL_MS)?.let { return it }
+        playlistsCache.getStale(key)?.let { return it }
+        return diskCache.load(userId)?.toBootstrap()?.playlists
     }
 
     suspend fun listPlayHistory(limit: Int = 100, forceRefresh: Boolean = false): Result<List<Song>> =
@@ -216,13 +327,30 @@ class SupabaseMusicRepository(context: Context) {
                 }
 
                 runCatching {
-                    val response = executeAuthorized(token) {
-                        api.listPlayHistory(token = it, page = 0, size = limit.coerceAtMost(100))
+                    val pageSize = LibraryPageParser.DEFAULT_PAGE_SIZE
+                    val capped = limit.coerceAtLeast(1)
+                    // When caller asks for a small window, one page is enough; bootstrap uses large limits.
+                    val objects = if (capped <= pageSize) {
+                        val response = executeAuthorized(token) {
+                            api.listPlayHistory(token = it, page = 0, size = capped.coerceAtMost(pageSize))
+                        }
+                        parsePageItems(response, "Failed to load play history")
+                    } else {
+                        fetchAllPages(
+                            pageSize = pageSize,
+                            fallbackMessage = "Failed to load play history",
+                            maxItems = capped
+                        ) { page, size ->
+                            executeAuthorized(token) {
+                                api.listPlayHistory(token = it, page = page, size = size)
+                            }
+                        }
                     }
-                    val items = parsePageItems(response, "Failed to load play history")
-                    historyRecordIds["history_ids|$userId"] = items.toRecordIdMap()
-                    items.map { it.toSong() }
-                }.onSuccess { historyCache.put(cacheKey, it) }
+                    historyRecordIds["history_ids|$userId"] = objects.toRecordIdMap()
+                    objects.map { it.toSong() }.take(capped)
+                }.onSuccess { list ->
+                    historyCache.put(cacheKey, list)
+                }
             }
         }
 
@@ -230,23 +358,30 @@ class SupabaseMusicRepository(context: Context) {
     suspend fun addPlayHistory(song: Song): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (_, userId) = requireSession()
-            historyCache.remove("history|$userId|100")
-            // The website backend records history when /api/v1/music/play is called with Authorization.
+            val key = "history|$userId|100"
+            val current = knownHistory(userId).orEmpty()
+            val next = (listOf(song) + current.filterNot { it.id == song.id }).take(100)
+            historyCache.put(key, next)
+            // Disk via ViewModel; backend records history on /api/v1/music/play.
         }
     }
 
     suspend fun clearPlayHistory(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val (token, userId) = requireSession()
-            val response = executeAuthorized(token) { api.listPlayHistory(it, page = 0, size = 100) }
-            val items = parsePageItems(response, "Failed to load play history")
+            val items = fetchAllPages(
+                pageSize = LibraryPageParser.DEFAULT_PAGE_SIZE,
+                fallbackMessage = "Failed to load play history"
+            ) { page, size ->
+                executeAuthorized(token) { api.listPlayHistory(it, page = page, size = size) }
+            }
             items.mapNotNull { it.optLongOrNull("id") }
                 .forEach { id ->
                     val deleteResponse = executeAuthorized(token) { api.deletePlayHistoryItem(it, id) }
                     ensureSuccessful(deleteResponse, "Failed to clear play history")
                 }
             historyRecordIds.remove("history_ids|$userId")
-            historyCache.remove("history|$userId|100")
+            historyCache.put("history|$userId|100", emptyList())
         }
     }
 
@@ -271,7 +406,13 @@ class SupabaseMusicRepository(context: Context) {
             if (!response.isSuccessful && response.code() != 404) {
                 throw IllegalStateException(errorMessage(response, "Failed to delete history item"))
             }
-            historyCache.remove("history|$userId|100")
+            val key = "history|$userId|100"
+            val baseline = knownHistory(userId)
+            if (baseline != null) {
+                historyCache.put(key, baseline.filterNot { it.id == trimmed })
+            } else {
+                historyCache.remove(key)
+            }
         }
     }
 
@@ -290,11 +431,17 @@ class SupabaseMusicRepository(context: Context) {
                 }
 
                 runCatching {
-                    val response = executeAuthorized(token) {
-                        api.listUserPlaylists(token = it, page = 0, size = 100)
-                    }
-                    parsePageItems(response, "Failed to load playlists").map { it.toUserPlaylist() }
-                }.onSuccess { playlistsCache.put(cacheKey, it) }
+                    fetchAllPages(
+                        pageSize = LibraryPageParser.DEFAULT_PAGE_SIZE,
+                        fallbackMessage = "Failed to load playlists"
+                    ) { page, size ->
+                        executeAuthorized(token) {
+                            api.listUserPlaylists(token = it, page = page, size = size)
+                        }
+                    }.map { it.toUserPlaylist() }
+                }.onSuccess { list ->
+                    playlistsCache.put(cacheKey, list)
+                }
             }
         }
 
@@ -317,8 +464,18 @@ class SupabaseMusicRepository(context: Context) {
                 }
             }
             val data = parseDataObject(response, "Failed to import playlist")
-            playlistsCache.remove("playlists|$userId")
-            data.toUserPlaylist()
+            val created = data.toUserPlaylist()
+            val key = "playlists|$userId"
+            val current = knownPlaylists(userId)
+            playlistsCache.put(
+                key,
+                if (current != null) {
+                    listOf(created) + current.filterNot { it.id == created.id }
+                } else {
+                    listOf(created)
+                }
+            )
+            created
         }
     }
 
@@ -330,7 +487,13 @@ class SupabaseMusicRepository(context: Context) {
             if (!response.isSuccessful && response.code() != 404) {
                 throw IllegalStateException(errorMessage(response, "Failed to delete playlist"))
             }
-            playlistsCache.remove("playlists|$userId")
+            val key = "playlists|$userId"
+            val current = knownPlaylists(userId)
+            if (current != null) {
+                playlistsCache.put(key, current.filterNot { it.id == playlistId })
+            } else {
+                playlistsCache.remove(key)
+            }
             playlistSongsCache.remove("playlist_songs|$playlistId")
             playlistItemIds.remove("playlist_items|$playlistId")
             Unit
@@ -356,13 +519,7 @@ class SupabaseMusicRepository(context: Context) {
 
                 runCatching {
                     val id = normalizedId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
-                    val response = executeAuthorized(token) {
-                        api.playlistDetail(it, id = id, page = 0, size = 100)
-                    }
-                    val data = parseDataObject(response, "Failed to load playlist songs")
-                    val itemPage = data.optJSONObject("items") ?: JSONObject()
-                    val items = itemPage.optJSONArray("items") ?: JSONArray()
-                    val objects = items.toObjectList()
+                    val objects = fetchAllPlaylistTrackPages(token, id)
                     playlistItemIds["playlist_items|$normalizedId"] = objects.toRecordIdMap()
                     objects.map { it.toSong() }
                 }.onSuccess { playlistSongsCache.put(cacheKey, it) }
@@ -405,6 +562,93 @@ class SupabaseMusicRepository(context: Context) {
             playlistItemIds.remove(itemCacheKey)
             Unit
         }
+    }
+
+    private suspend fun fetchAllPages(
+        pageSize: Int,
+        fallbackMessage: String,
+        maxItems: Int = Int.MAX_VALUE,
+        fetch: suspend (page: Int, size: Int) -> Response<ResponseBody>
+    ): List<JSONObject> {
+        val all = ArrayList<JSONObject>()
+        var page = 0
+        while (page < LibraryPageParser.MAX_PAGES && all.size < maxItems) {
+            val response = fetch(page, pageSize)
+            val data = parseDataObject(response, fallbackMessage)
+            val items = data.optJSONArray("items") ?: JSONArray()
+            val pageObjects = items.toObjectList()
+            if (pageObjects.isEmpty()) break
+            val remaining = maxItems - all.size
+            if (pageObjects.size <= remaining) {
+                all.addAll(pageObjects)
+            } else {
+                all.addAll(pageObjects.take(remaining))
+                break
+            }
+            val meta = pageMetaFromData(data)
+            if (!LibraryPageParser.shouldFetchNextPage(
+                    page = page,
+                    pageSize = pageSize,
+                    pageItemCount = pageObjects.size,
+                    totalElements = meta.first,
+                    totalPages = meta.second
+                )
+            ) {
+                break
+            }
+            page++
+        }
+        return all
+    }
+
+    /** Playlist detail nests tracks under data.items.items (page object). */
+    private suspend fun fetchAllPlaylistTrackPages(
+        token: String,
+        playlistId: Long
+    ): List<JSONObject> {
+        val all = ArrayList<JSONObject>()
+        val pageSize = LibraryPageParser.DEFAULT_PAGE_SIZE
+        var page = 0
+        while (page < LibraryPageParser.MAX_PAGES) {
+            val response = executeAuthorized(token) {
+                api.playlistDetail(it, id = playlistId, page = page, size = pageSize)
+            }
+            val data = parseDataObject(response, "Failed to load playlist songs")
+            val itemPage = data.optJSONObject("items") ?: JSONObject()
+            val items = itemPage.optJSONArray("items") ?: JSONArray()
+            val pageObjects = items.toObjectList()
+            if (pageObjects.isEmpty()) break
+            all.addAll(pageObjects)
+            val meta = pageMetaFromData(itemPage).let { nested ->
+                if (nested.first != null || nested.second != null) nested
+                else pageMetaFromData(data)
+            }
+            if (!LibraryPageParser.shouldFetchNextPage(
+                    page = page,
+                    pageSize = pageSize,
+                    pageItemCount = pageObjects.size,
+                    totalElements = meta.first,
+                    totalPages = meta.second
+                )
+            ) {
+                break
+            }
+            page++
+        }
+        return all
+    }
+
+    private fun pageMetaFromData(data: JSONObject): Pair<Int?, Int?> {
+        val keys = mapOf(
+            "totalElements" to data.opt("totalElements"),
+            "total" to data.opt("total"),
+            "totalCount" to data.opt("totalCount"),
+            "count" to data.opt("count"),
+            "totalPages" to data.opt("totalPages"),
+            "pages" to data.opt("pages"),
+            "pageCount" to data.opt("pageCount")
+        )
+        return LibraryPageParser.readTotalElements(keys) to LibraryPageParser.readTotalPages(keys)
     }
 
     private fun parsePageItems(response: Response<ResponseBody>, fallbackMessage: String): List<JSONObject> {

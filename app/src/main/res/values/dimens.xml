@@ -29,9 +29,20 @@
     <dimen name="toolbar_search_height">48dp</dimen>
     <dimen name="toolbar_search_badge_size">32dp</dimen>
     <dimen name="toolbar_search_trailing_size">28dp</dimen>
-    <dimen name="profile_cover_size">70dp</dimen>
-    <dimen name="profile_cover_placeholder_padding">18dp</dimen>
+    <dimen name="profile_cover_size">56dp</dimen>
+    <dimen name="profile_cover_placeholder_padding">14dp</dimen>
+    <dimen name="profile_avatar_size">64dp</dimen>
+    <dimen name="profile_grid_icon_size">48dp</dimen>
+    <dimen name="profile_liked_card_height">88dp</dimen>
+    <dimen name="profile_liked_cover_size">64dp</dimen>
+    <!-- Fixed chrome height; icon/label gap is controlled by itemPadding, not free-space spread. -->
     <dimen name="bottom_nav_content_height">56dp</dimen>
+    <!-- Material places remaining height BETWEEN icon and label; edge padding must absorb slack. -->
+    <dimen name="bottom_nav_item_padding_top">6dp</dimen>
+    <dimen name="bottom_nav_item_padding_bottom">8dp</dimen>
+    <dimen name="bottom_nav_icon_label_gap">2dp</dimen>
+    <!-- Use dp so large system font scale does not blow icon–label spacing on small phones. -->
+    <dimen name="bottom_nav_label_text_size">11dp</dimen>
     <dimen name="immersive_root_content_top_offset">0dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
     <dimen name="immersive_top_scrim_height">200dp</dimen>
@@ -44,6 +55,7 @@
     <dimen name="now_playing_disc_rim_size">196dp</dimen>
     <dimen name="now_playing_disc_inner_size">176dp</dimen>
     <!-- Hit target sizes; glyph stays ~24dp via padding + centerInside -->
-    <dimen name="now_playing_primary_control_size">64dp</dimen>
-    <dimen name="now_playing_secondary_control_size">48dp</dimen>
+    <dimen name="now_playing_primary_control_size">72dp</dimen>
+    <dimen name="now_playing_secondary_control_size">52dp</dimen>
+    <dimen name="now_playing_action_size">44dp</dimen>
 </resources>

@@ -172,11 +172,14 @@
     <string name="profile_title">个人资料</string>
     <string name="profile_signed_in">已登录账号</string>
     <string name="profile_info_title">账号信息</string>
-    <string name="profile_library_section">我的音乐库</string>
+    <string name="profile_library_section">更多</string>
     <string name="profile_liked_title">我喜欢的音乐</string>
     <string name="profile_liked_empty">还没有喜欢的音乐</string>
     <string name="profile_history_title">最近播放</string>
     <string name="profile_history_empty">还没有播放记录</string>
+    <string name="profile_downloads_title">已下载歌曲</string>
+    <string name="profile_downloads_empty">还没有下载歌曲</string>
+    <string name="profile_downloads_meta">%1$d 首 · %2$s</string>
     <string name="profile_check_update">检查更新</string>
     <string name="update_title">发现新版本</string>
     <string name="update_latest">已是最新版本</string>
@@ -286,8 +289,6 @@
     <string name="settings_cache_cleared">缓存已清除</string>
     <string name="settings_cache_size">缓存大小：%1$s</string>
     <string name="settings_downloaded_size">已下载歌曲：%1$s</string>
-    <string name="settings_manage_downloads">管理已下载歌曲</string>
-    <string name="settings_manage_downloads_summary">查看、删除已下载的歌曲</string>
 
     <!-- Settings: Theme & Update -->
     <string name="settings_category_theme_update">主题与更新</string>
@@ -321,7 +322,7 @@
     <string name="help_feedback_email_summary">遇到问题或有好建议？告诉我们</string>
     <string name="help_faq">常见问题</string>
     <string name="help_faq_1_q">如何下载歌曲到本地？</string>
-    <string name="help_faq_1_a">在歌曲列表中点击右侧「更多」按钮，选择「下载」。下载完成后可在「设置 → 管理已下载歌曲」中查看。</string>
+    <string name="help_faq_1_a">在歌曲列表中点击右侧「更多」按钮，选择「下载」。下载完成后可在「我的 → 已下载歌曲」中查看与管理。</string>
     <string name="help_faq_2_q">如何创建和管理歌单？</string>
     <string name="help_faq_2_a">在「我的」页面点击「新建歌单」即可创建。在歌单页面长按歌曲可添加至歌单。</string>
     <string name="help_faq_3_q">音乐无法播放怎么办？</string>

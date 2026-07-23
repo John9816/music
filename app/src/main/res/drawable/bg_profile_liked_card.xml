@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fixed colors: theme attrs often fail inside shape gradients (card becomes white). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="135"
+        android:endColor="#FFC41E3A"
+        android:startColor="#FFFC3C44"
+        android:type="linear" />
+    <corners android:radius="@dimen/radius_m" />
+</shape>
