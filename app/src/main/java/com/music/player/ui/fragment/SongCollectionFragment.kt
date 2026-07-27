@@ -15,10 +15,11 @@ import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentSongCollectionBinding
+import com.music.player.ui.activity.AiDrawActivity
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
-import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.SongOptionsHelper
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -111,7 +112,15 @@ class SongCollectionFragment : Fragment() {
         SongCollectionHeaderHelper.setup(this, binding, headerTitle)
 
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            // NetEase/QQ style: tap a row keeps the full list as play context.
+            onSongClick = { song ->
+                val songs = songAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onMoreClick = { _, song ->
                 when (mode) {
                     Mode.LIKED -> showLikedSongMenu(song)
@@ -157,11 +166,6 @@ class SongCollectionFragment : Fragment() {
             libraryViewModel.maybeAutoSyncRemotePlaylist(playlistId)
         }
 
-        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
-            message ?: return@observe
-            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
-            libraryViewModel.consumeMessage()
-        }
         libraryViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
             updateLoadingState(loading)
         }
@@ -178,11 +182,16 @@ class SongCollectionFragment : Fragment() {
         toolbar.menu.clear()
         toolbar.inflateMenu(R.menu.menu_user_playlist_detail)
         toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_sync_playlist) {
-                libraryViewModel.syncRemotePlaylist(playlistId, silent = false)
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.action_ai_cover -> {
+                    openAiCover()
+                    true
+                }
+                R.id.action_sync_playlist -> {
+                    libraryViewModel.syncRemotePlaylist(playlistId, silent = false)
+                    true
+                }
+                else -> false
             }
         }
         updateRemoteSyncMenu()
@@ -193,6 +202,21 @@ class SongCollectionFragment : Fragment() {
         val menu: Menu = binding.toolbarCollapsed.menu
         val item: MenuItem? = menu.findItem(R.id.action_sync_playlist)
         item?.isVisible = libraryViewModel.isRemotePlaylist(playlistId)
+        menu.findItem(R.id.action_ai_cover)?.isVisible = true
+    }
+
+    private fun openAiCover() {
+        val meta = libraryViewModel.playlists.value.orEmpty().firstOrNull { it.id == playlistId }
+        val ref = meta?.coverUrl
+            ?: songAdapter.currentList.firstOrNull()?.album?.picUrl?.takeIf { it.isNotBlank() }
+        startActivity(
+            AiDrawActivity.intent(
+                context = requireContext(),
+                playlistId = playlistId,
+                playlistName = playlistName.ifBlank { meta?.name.orEmpty() },
+                ref1 = ref
+            )
+        )
     }
 
     override fun onDestroyView() {
@@ -291,56 +315,73 @@ class SongCollectionFragment : Fragment() {
     }
 
     private fun showLikedSongMenu(song: Song) {
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(R.string.action_unlike)) {
-            libraryViewModel.setFavorite(song, false)
-        }
-        options += SongOption(getString(R.string.action_add_to_playlist)) { showAddToPlaylistDialog(song) }
-        options += SongOption(getString(R.string.action_download_song)) {
-            SongDownloader.download(requireContext(), musicViewModel, song)
-        }
         val pinned = libraryViewModel.isPinnedFavorite(song.id)
-        options += SongOption(getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)) {
-            libraryViewModel.togglePinFavorite(song.id)
-        }
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        SongOptionsHelper.show(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            config = SongOptionsHelper.Config(
+                includePlayNext = true,
+                includeAddToQueue = true,
+                isFavorite = true,
+                onToggleFavorite = { libraryViewModel.setFavorite(song, false) },
+                favoriteLabels = R.string.action_unlike to R.string.action_like,
+                extraTrailing = listOf(
+                    SongOption(getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)) {
+                        libraryViewModel.togglePinFavorite(song.id)
+                    }
+                )
+            )
+        )
     }
 
     private fun showHistorySongMenu(song: Song) {
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(if (isFavorite) R.string.action_unlike else R.string.action_like)) {
-            libraryViewModel.setFavorite(song, !isFavorite)
-        }
         val pinned = libraryViewModel.isPinnedHistory(song.id)
-        options += SongOption(getString(R.string.action_add_to_playlist)) { showAddToPlaylistDialog(song) }
-        options += SongOption(getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)) {
-            libraryViewModel.togglePinHistory(song.id)
-        }
-        options += SongOption(getString(R.string.action_delete_history_record)) {
-            libraryViewModel.deleteHistoryItem(song.id)
-        }
-        options += SongOption(getString(R.string.action_download_song)) {
-            SongDownloader.download(requireContext(), musicViewModel, song)
-        }
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        SongOptionsHelper.show(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            config = SongOptionsHelper.Config(
+                isFavorite = isFavorite,
+                onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) },
+                favoriteLabels = R.string.action_unlike to R.string.action_like,
+                extraTrailing = listOf(
+                    SongOption(getString(if (pinned) R.string.action_unpin else R.string.action_pin_to_top)) {
+                        libraryViewModel.togglePinHistory(song.id)
+                    },
+                    SongOption(getString(R.string.action_delete_history_record)) {
+                        libraryViewModel.deleteHistoryItem(song.id)
+                    }
+                )
+            )
+        )
     }
 
     private fun showPlaylistSongMenu(song: Song) {
         if (playlistId.isBlank()) return
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(if (isFavorite) R.string.action_unlike else R.string.action_like)) {
-            libraryViewModel.setFavorite(song, !isFavorite)
-        }
-        options += SongOption(getString(R.string.action_add_to_playlist)) { showAddToPlaylistDialog(song) }
-        options += SongOption(getString(R.string.action_remove_from_playlist)) {
-            libraryViewModel.removeSongFromPlaylist(playlistId, song.id)
-        }
-        options += SongOption(getString(R.string.action_download_song)) {
-                SongDownloader.download(requireContext(), musicViewModel, song)
-        }
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        SongOptionsHelper.show(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            config = SongOptionsHelper.Config(
+                isFavorite = isFavorite,
+                onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) },
+                favoriteLabels = R.string.action_unlike to R.string.action_like,
+                extraTrailing = listOf(
+                    SongOption(getString(R.string.action_remove_from_playlist)) {
+                        libraryViewModel.removeSongFromPlaylist(playlistId, song.id)
+                    }
+                )
+            )
+        )
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

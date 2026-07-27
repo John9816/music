@@ -4,8 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.PopupMenu
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,7 +14,7 @@ import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
-import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.SongOptionsHelper
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -72,7 +70,15 @@ class PlaylistSongsFragment : Fragment() {
         )
 
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            // Catalog playlist: play from this row, keep remaining tracks in queue.
+            onSongClick = { song ->
+                val songs = songAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onMoreClick = { anchor, song -> showSongMenu(anchor, song) }
         )
         binding.recyclerView.apply {
@@ -116,16 +122,43 @@ class PlaylistSongsFragment : Fragment() {
                 binding.tvCollectionCount.text =
                     getString(R.string.collection_count_value, songs.size)
             }
+            val hasError = !musicViewModel.playlistDetailError.value.isNullOrBlank()
             binding.tvEmpty.setText(R.string.song_list_empty_playlist)
-            binding.tvEmpty.visibility = if (songs.isEmpty()) View.VISIBLE else View.GONE
+            binding.tvEmpty.visibility =
+                if (songs.isEmpty() && !hasError) View.VISIBLE else View.GONE
             binding.recyclerView.visibility = if (songs.isEmpty()) View.GONE else View.VISIBLE
             binding.btnPlayAll.isEnabled = songs.isNotEmpty()
+            if (songs.isNotEmpty()) {
+                binding.layoutContentError.visibility = View.GONE
+            }
         }
 
-        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
-            message?.takeIf { it.isNotBlank() }?.let {
-                Toast.makeText(requireContext(), it, Toast.LENGTH_SHORT).show()
-                libraryViewModel.consumeMessage()
+        musicViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
+            val empty = songAdapter.currentList.isEmpty()
+            binding.layoutSkeleton.visibility =
+                if (loading == true && empty) View.VISIBLE else View.GONE
+            if (loading == true) {
+                binding.layoutContentError.visibility = View.GONE
+                binding.tvEmpty.visibility = View.GONE
+            }
+        }
+
+        musicViewModel.playlistDetailError.observe(viewLifecycleOwner) { message ->
+            val empty = songAdapter.currentList.isEmpty()
+            val loading = musicViewModel.isLoading.value == true
+            val show = !message.isNullOrBlank() && empty && !loading
+            binding.layoutContentError.visibility = if (show) View.VISIBLE else View.GONE
+            if (show) {
+                binding.tvContentError.text = message
+                binding.tvEmpty.visibility = View.GONE
+                binding.recyclerView.visibility = View.GONE
+            }
+        }
+
+        binding.btnContentRetry.setOnClickListener {
+            musicViewModel.clearPlaylistDetailError()
+            if (playlistId.isNotBlank()) {
+                musicViewModel.loadPlaylistDetailById(playlistId, forceRefresh = true)
             }
         }
 
@@ -145,44 +178,17 @@ class PlaylistSongsFragment : Fragment() {
         musicViewModel.playFromList(songs, songs.first())
     }
 
-    private fun showSongMenu(anchor: View, song: Song) {
-        val popup = PopupMenu(requireContext(), anchor)
+    private fun showSongMenu(@Suppress("UNUSED_PARAMETER") anchor: View, song: Song) {
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
-        popup.menu.add(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)
-        popup.menu.add(R.string.action_add_to_playlist)
-        popup.menu.add(R.string.action_play_next)
-        popup.menu.add(R.string.action_add_to_queue)
-        popup.menu.add(R.string.action_download_song)
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.title) {
-                getString(R.string.action_favorite), getString(R.string.action_unfavorite) -> {
-                    libraryViewModel.setFavorite(song, !isFavorite)
-                    true
-                }
-                getString(R.string.action_add_to_playlist) -> {
-                    showAddToPlaylistDialog(song)
-                    true
-                }
-                getString(R.string.action_play_next) -> {
-                    musicViewModel.enqueueNext(song)
-                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                getString(R.string.action_add_to_queue) -> {
-                    musicViewModel.enqueue(song)
-                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                getString(R.string.action_download_song) -> {
-                    SongDownloader.download(requireContext(), musicViewModel, song)
-                    true
-                }
-                else -> false
-            }
-        }
-
-        popup.show()
+        SongOptionsHelper.showStandard(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            isFavorite = isFavorite,
+            onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) }
+        )
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

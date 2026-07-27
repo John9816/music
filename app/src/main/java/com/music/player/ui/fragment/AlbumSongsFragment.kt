@@ -4,8 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.PopupMenu
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -17,7 +15,7 @@ import com.music.player.databinding.FragmentSongCollectionBinding
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongCollectionHeaderHelper
-import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.SongOptionsHelper
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
 import com.music.player.ui.viewmodel.MusicViewModel
@@ -87,7 +85,15 @@ class AlbumSongsFragment : Fragment() {
         SongCollectionHeaderHelper.loadCovers(binding, coverUrl)
 
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            // Album track list context — same as "play all" but start at the tapped song.
+            onSongClick = { song ->
+                val songs = songAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onMoreClick = { anchor, song -> showSongMenu(anchor, song) }
         )
         binding.recyclerView.apply {
@@ -137,9 +143,21 @@ class AlbumSongsFragment : Fragment() {
             }
         }
 
-        musicViewModel.error.observe(viewLifecycleOwner) { message ->
-            if (message.isNullOrBlank()) return@observe
-            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        musicViewModel.albumDetailError.observe(viewLifecycleOwner) { message ->
+            val empty = songAdapter.currentList.isEmpty()
+            val loading = musicViewModel.currentAlbumLoading.value == true
+            val show = !message.isNullOrBlank() && empty && !loading
+            binding.layoutContentError.visibility = if (show) View.VISIBLE else View.GONE
+            if (show) {
+                binding.tvContentError.text = message
+                binding.tvEmpty.visibility = View.GONE
+                binding.recyclerView.visibility = View.GONE
+            }
+        }
+
+        binding.btnContentRetry.setOnClickListener {
+            musicViewModel.clearAlbumDetailError()
+            refreshAlbum(forceRefresh = true)
         }
 
         refreshAlbum(forceRefresh = false)
@@ -168,31 +186,14 @@ class AlbumSongsFragment : Fragment() {
         musicViewModel.playFromList(songs, songs.first())
     }
 
-    private fun showSongMenu(anchor: View, song: Song) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.menu.add(R.string.action_play_next)
-        popup.menu.add(R.string.action_add_to_queue)
-        popup.menu.add(R.string.action_download_song)
-
-        popup.setOnMenuItemClickListener { item ->
-            when (item.title) {
-                getString(R.string.action_play_next) -> {
-                    musicViewModel.enqueueNext(song)
-                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                getString(R.string.action_add_to_queue) -> {
-                    musicViewModel.enqueue(song)
-                    Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
-                    true
-                }
-                getString(R.string.action_download_song) -> {
-                    SongDownloader.download(requireContext(), musicViewModel, song)
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
+    private fun showSongMenu(@Suppress("UNUSED_PARAMETER") anchor: View, song: Song) {
+        SongOptionsHelper.show(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = { /* album list: no playlist picker wired */ },
+            config = SongOptionsHelper.Config(includeAddToPlaylist = false)
+        )
     }
 }

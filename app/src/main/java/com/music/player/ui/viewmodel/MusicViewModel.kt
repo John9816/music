@@ -13,6 +13,7 @@ import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
+import com.music.player.playback.PlaybackMode
 import com.music.player.ui.util.SongDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -134,11 +135,37 @@ class MusicViewModel : ViewModel() {
     private val _canSkipPrevious = MutableLiveData(false)
     val canSkipPrevious: LiveData<Boolean> = _canSkipPrevious
 
+    /** Content fetch loading (Discover / playlist detail). Never mixed with stream prepare. */
     private val _isLoading = MutableLiveData(false)
     val isLoading: LiveData<Boolean> = _isLoading
 
+    /** Stream URL resolve / prepare — bind only to player UI. */
+    private val _playbackLoading = MutableLiveData(false)
+    val playbackLoading: LiveData<Boolean> = _playbackLoading
+
+    private val _playbackMode = MutableLiveData(PlaybackMode.REPEAT_ALL)
+    val playbackMode: LiveData<PlaybackMode> = _playbackMode
+
+    /** Playback / stream errors (Toast on Main). */
     private val _error = MutableLiveData<String>()
     val error: LiveData<String> = _error
+
+    /**
+     * Content-page failures. Separate channels so Discover does not flash when a
+     * playlist/album page fails (and vice versa). Never mixed into playback Toast.
+     */
+    private val _discoverError = MutableLiveData<String?>()
+    val discoverError: LiveData<String?> = _discoverError
+
+    private val _playlistDetailError = MutableLiveData<String?>()
+    val playlistDetailError: LiveData<String?> = _playlistDetailError
+
+    private val _albumDetailError = MutableLiveData<String?>()
+    val albumDetailError: LiveData<String?> = _albumDetailError
+
+    /** Soft signal when search load-more fails (keep existing results). */
+    private val _loadMoreError = MutableLiveData<String?>()
+    val loadMoreError: LiveData<String?> = _loadMoreError
 
     init {
         viewModelScope.launch { PlaybackCoordinator.currentSong.collect { _currentSong.value = it } }
@@ -146,14 +173,33 @@ class MusicViewModel : ViewModel() {
         viewModelScope.launch { PlaybackCoordinator.recentlyPlayed.collect { _recentlyPlayed.value = it } }
         viewModelScope.launch { PlaybackCoordinator.playlistViewMode.collect { _playlistViewMode.value = it } }
         viewModelScope.launch { PlaybackCoordinator.canSkipPrevious.collect { _canSkipPrevious.value = it } }
-        viewModelScope.launch { PlaybackCoordinator.isLoading.collect { _isLoading.value = it } }
+        viewModelScope.launch { PlaybackCoordinator.isLoading.collect { _playbackLoading.value = it } }
+        viewModelScope.launch { PlaybackCoordinator.playbackMode.collect { _playbackMode.value = it } }
         viewModelScope.launch { PlaybackCoordinator.error.collect { _error.value = it } }
+    }
+
+    fun clearDiscoverError() {
+        _discoverError.value = null
+    }
+
+    fun clearPlaylistDetailError() {
+        _playlistDetailError.value = null
+    }
+
+    fun clearAlbumDetailError() {
+        _albumDetailError.value = null
+    }
+
+    fun consumeLoadMoreError() {
+        _loadMoreError.value = null
     }
 
     fun prefetchDiscover(limit: Int = 10, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             _weeklyHotLoading.value = true
+            if (forceRefresh) _discoverError.value = null
+            var firstFailure: String? = null
             try {
                 supervisorScope {
                     val dailyDeferred = async { repository.getDailyRecommend(forceRefresh = forceRefresh) }
@@ -167,20 +213,27 @@ class MusicViewModel : ViewModel() {
                     val newestDeferred = async { albumRepository.getNewestAlbums(forceRefresh = forceRefresh) }
 
                     dailyDeferred.await()
-                        .onSuccess { _dailyRecommend.value = it }
-                        .onFailure { _error.value = it.message ?: "获取每日推荐失败" }
+                        .onSuccess {
+                            _dailyRecommend.value = it
+                            if (it.isNotEmpty()) _discoverError.value = null
+                        }
+                        .onFailure { firstFailure = firstFailure ?: (it.message ?: "获取每日推荐失败") }
 
                     weeklyDeferred.await()
                         .onSuccess { _weeklyHotSongs.value = it }
-                        .onFailure { _error.value = it.message ?: "获取本周热门失败" }
+                        .onFailure { firstFailure = firstFailure ?: (it.message ?: "获取本周热门失败") }
 
                     newestDeferred.await()
                         .onSuccess { _newestAlbums.value = it }
-                        .onFailure { _error.value = it.message ?: "获取最新专辑失败" }
+                        .onFailure { firstFailure = firstFailure ?: (it.message ?: "获取最新专辑失败") }
                 }
             } finally {
                 _isLoading.value = false
                 _weeklyHotLoading.value = false
+                // Only surface content error when daily list is empty (page is unusable).
+                if (_dailyRecommend.value.isNullOrEmpty() && firstFailure != null) {
+                    _discoverError.value = firstFailure
+                }
             }
         }
     }
@@ -188,9 +241,13 @@ class MusicViewModel : ViewModel() {
     fun loadDailyRecommend(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
+            if (forceRefresh) _discoverError.value = null
             repository.getDailyRecommend(forceRefresh = forceRefresh)
-                .onSuccess { _dailyRecommend.value = it }
-                .onFailure { _error.value = it.message ?: "获取每日推荐失败" }
+                .onSuccess {
+                    _dailyRecommend.value = it
+                    _discoverError.value = null
+                }
+                .onFailure { _discoverError.value = it.message ?: "获取每日推荐失败" }
             _isLoading.value = false
         }
     }
@@ -204,7 +261,7 @@ class MusicViewModel : ViewModel() {
                 forceRefresh = forceRefresh
             )
                 .onSuccess { _weeklyHotSongs.value = it }
-                .onFailure { _error.value = it.message ?: "获取本周热门失败" }
+                .onFailure { /* weekly is secondary; chips stay at 0 */ }
             _weeklyHotLoading.value = false
         }
     }
@@ -213,7 +270,7 @@ class MusicViewModel : ViewModel() {
         viewModelScope.launch {
             albumRepository.getNewestAlbums(forceRefresh = forceRefresh)
                 .onSuccess { _newestAlbums.value = it }
-                .onFailure { _error.value = it.message ?: "获取最新专辑失败" }
+                .onFailure { /* secondary strip */ }
         }
     }
 
@@ -221,6 +278,7 @@ class MusicViewModel : ViewModel() {
         _currentAlbum.value = album
         viewModelScope.launch {
             _currentAlbumLoading.value = true
+            if (forceRefresh) _albumDetailError.value = null
             try {
                 val primaryQuery = listOf(album.album.name, album.artistNames)
                     .filter { it.isNotBlank() }
@@ -249,13 +307,14 @@ class MusicViewModel : ViewModel() {
 
                 if (resolvedSongs.isNotEmpty()) {
                     _currentAlbumSongs.value = resolvedSongs
+                    _albumDetailError.value = null
                 } else {
                     _currentAlbumSongs.value = emptyList()
-                    _error.value = "暂时没有加载到这张专辑的歌曲"
+                    _albumDetailError.value = "暂时没有加载到这张专辑的歌曲"
                 }
             } catch (t: Throwable) {
                 _currentAlbumSongs.value = emptyList()
-                _error.value = t.message ?: "获取专辑歌曲失败"
+                _albumDetailError.value = t.message ?: "获取专辑歌曲失败"
             } finally {
                 _currentAlbumLoading.value = false
             }
@@ -354,6 +413,11 @@ class MusicViewModel : ViewModel() {
         return previous != null && previous != sourceValue
     }
 
+    /** Always pin tracking to [sourceValue] (used by unified source switch). */
+    fun forceActiveSource(sourceValue: String) {
+        activeSourceValue = sourceValue
+    }
+
     fun loadSectionPlaylists(
         categoriesByGroupId: Map<Int, String>,
         limit: Int = 12,
@@ -401,12 +465,14 @@ class MusicViewModel : ViewModel() {
     fun loadPlaylistDetail(playlist: Playlist, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
+            if (forceRefresh) _playlistDetailError.value = null
             repository.getPlaylistDetail(playlist.id, forceRefresh = forceRefresh)
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs
+                    _playlistDetailError.value = null
                 }
-                .onFailure { _error.value = it.message ?: "获取歌单详情失败" }
+                .onFailure { _playlistDetailError.value = it.message ?: "获取歌单详情失败" }
             _isLoading.value = false
         }
     }
@@ -414,12 +480,14 @@ class MusicViewModel : ViewModel() {
     fun loadPlaylistDetailById(playlistId: String, forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
+            if (forceRefresh) _playlistDetailError.value = null
             repository.getPlaylistDetail(playlistId, forceRefresh = forceRefresh)
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs
+                    _playlistDetailError.value = null
                 }
-                .onFailure { _error.value = it.message ?: "获取歌单详情失败" }
+                .onFailure { _playlistDetailError.value = it.message ?: "获取歌单详情失败" }
             _isLoading.value = false
         }
     }
@@ -601,10 +669,11 @@ class MusicViewModel : ViewModel() {
                             hasMoreSearchResults = newSongs.size >= 30
                         }
                     }
-                    .onFailure {
+                    .onFailure { error ->
                         if (requestVersion != searchRequestVersion || query != currentSearchKeywords) {
                             return@onFailure
                         }
+                        _loadMoreError.value = error.message ?: "加载更多失败，请重试"
                     }
             } finally {
                 if (requestVersion == searchRequestVersion && query == currentSearchKeywords) {
@@ -655,6 +724,8 @@ class MusicViewModel : ViewModel() {
 
     fun skipPrevious(): Boolean = PlaybackCoordinator.skipPrevious()
 
+    fun cyclePlaybackMode(): PlaybackMode = PlaybackCoordinator.cyclePlaybackMode()
+
     fun playFromQueue(songId: String) = PlaybackCoordinator.playFromQueue(songId)
 
     fun playFromRecent(songId: String) = PlaybackCoordinator.playFromRecent(songId)
@@ -664,6 +735,9 @@ class MusicViewModel : ViewModel() {
     fun removeFromRecentlyPlayed(songId: String) = PlaybackCoordinator.removeFromRecentlyPlayed(songId)
 
     fun clearQueue() = PlaybackCoordinator.clearQueue()
+
+    fun setPlaylistViewMode(mode: PlaylistViewMode) =
+        PlaybackCoordinator.setPlaylistViewMode(mode)
 
     fun clearNowPlaying() = PlaybackCoordinator.clearNowPlaying()
 

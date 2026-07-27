@@ -29,6 +29,8 @@ def resolveSecret = { String key, String defaultValue ->
 }
 def supabaseUrl = resolveSecret('SUPABASE_URL', 'https://api.751152.xyz')
 def supabaseAnonKey = resolveSecret('SUPABASE_ANON_KEY', '')
+// 聚合解析 apikey：local.properties �?VIDEO_PARSE_API_KEY，或环境变量同名
+def videoParseApiKey = resolveSecret('VIDEO_PARSE_API_KEY', '')
 
 android {
     namespace 'com.music.player'
@@ -38,14 +40,15 @@ android {
         applicationId "com.music.player"
         minSdk 24
         targetSdk 35
-        versionCode 27
-        versionName "1.1.16"
+        versionCode 32
+        versionName "1.1.21"
         resConfigs "zh", "en"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
         buildConfigField "String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\""
+        buildConfigField "String", "VIDEO_PARSE_API_KEY", "\"${videoParseApiKey}\""
     }
 
     signingConfigs {
@@ -121,8 +124,9 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.8.7'
 
-    // ExoPlayer for audio playback
+    // ExoPlayer for audio playback (+ HLS for live radio m3u8)
     implementation 'androidx.media3:media3-exoplayer:1.5.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
     implementation 'androidx.media3:media3-ui:1.5.1'
     // MediaSession: lock screen / bluetooth / headset media controls, system media panel
     implementation 'androidx.media3:media3-session:1.5.1'
@@ -132,6 +136,7 @@ dependencies {
 
     // RecyclerView
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
 
     // Gson for JSON
     implementation 'com.google.code.gson:gson:2.11.0'
@@ -143,6 +148,8 @@ dependencies {
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     testImplementation 'junit:junit:4.13.2'
+    // Real org.json for JVM unit tests (Android stubs throw "not mocked")
+    testImplementation 'org.json:json:20240303'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

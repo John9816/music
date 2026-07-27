@@ -355,6 +355,33 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updatePlaylistCover(playlistId: String, coverUrl: String) {
+        val url = coverUrl.trim()
+        if (playlistId.isBlank() || url.isBlank()) {
+            _message.value = "封面地址无效"
+            return
+        }
+        val previous = _playlists.value.orEmpty()
+        _playlists.value = previous.map {
+            if (it.id == playlistId) it.copy(coverUrl = url) else it
+        }
+        persistSnapshotAsync()
+        viewModelScope.launch {
+            repository.updatePlaylist(playlistId = playlistId, coverUrl = url)
+                .onSuccess { updated ->
+                    _playlists.value = _playlists.value.orEmpty().map {
+                        if (it.id == playlistId || it.id == updated.id) updated else it
+                    }
+                    persistSnapshotAsync()
+                    _message.value = "歌单封面已更新"
+                }
+                .onFailure {
+                    // Keep optimistic local cover so UI still shows AI result.
+                    _message.value = it.message ?: "封面已生成本地预览，云端同步失败"
+                }
+        }
+    }
+
     fun deletePlaylist(playlistId: String) {
         val previous = _playlists.value.orEmpty()
         _playlists.value = previous.filterNot { it.id == playlistId }

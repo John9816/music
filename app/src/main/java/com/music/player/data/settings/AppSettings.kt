@@ -8,6 +8,10 @@ object AppSettings {
     private const val KEY_SLEEP_TIMER_END_TIME = "sleep_timer_end_time"
     private const val KEY_DOWNLOAD_WIFI_ONLY = "download_wifi_only"
     private const val KEY_MOBILE_STREAM_QUALITY = "stream_quality"
+    private const val KEY_OFFLINE_ONLY = "offline_only"
+    private const val KEY_LYRIC_OFFSET_MS = "lyric_offset_ms"
+    private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
+    private const val KEY_VIDEO_PARSE_API_KEY = "video_parse_api_key"
 
     enum class MobileStreamQuality(val storageValue: String) {
         WIFI_ONLY("wifi_only"),
@@ -58,6 +62,46 @@ object AppSettings {
 
     fun setMobileStreamQuality(context: Context, quality: MobileStreamQuality) {
         prefs(context).edit().putString(KEY_MOBILE_STREAM_QUALITY, quality.storageValue).apply()
+    }
+
+    fun isOfflineOnly(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_OFFLINE_ONLY, false)
+
+    fun setOfflineOnly(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_OFFLINE_ONLY, enabled).apply()
+    }
+
+    /** User lyric offset in milliseconds (positive = lyrics later). */
+    fun lyricOffsetMs(context: Context): Int =
+        prefs(context).getInt(KEY_LYRIC_OFFSET_MS, 0)
+
+    fun setLyricOffsetMs(context: Context, offsetMs: Int) {
+        prefs(context).edit().putInt(KEY_LYRIC_OFFSET_MS, offsetMs.coerceIn(-10_000, 10_000)).apply()
+    }
+
+    fun equalizerPreset(context: Context): com.music.player.playback.AudioEqualizerController.Preset {
+        return com.music.player.playback.AudioEqualizerController.Preset.fromStorage(
+            prefs(context).getString(KEY_EQUALIZER_PRESET, null)
+        )
+    }
+
+    fun setEqualizerPreset(
+        context: Context,
+        preset: com.music.player.playback.AudioEqualizerController.Preset
+    ) {
+        prefs(context).edit().putString(KEY_EQUALIZER_PRESET, preset.storageValue).apply()
+    }
+
+    /** Optional override for 聚合解析 apikey; empty falls back to BuildConfig. */
+    fun videoParseApiKey(context: Context): String =
+        prefs(context).getString(KEY_VIDEO_PARSE_API_KEY, null)?.trim().orEmpty()
+
+    fun setVideoParseApiKey(context: Context, key: String) {
+        val trimmed = key.trim()
+        prefs(context).edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_VIDEO_PARSE_API_KEY)
+            else putString(KEY_VIDEO_PARSE_API_KEY, trimmed)
+        }.apply()
     }
 
     private fun prefs(context: Context) =

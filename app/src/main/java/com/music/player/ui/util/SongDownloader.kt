@@ -20,8 +20,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -34,6 +37,8 @@ object SongDownloader {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _progress = MutableStateFlow<List<DownloadProgress>>(emptyList())
     val progress: StateFlow<List<DownloadProgress>> = _progress.asStateFlow()
+    private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 16)
+    val events: SharedFlow<DownloadEvent> = _events.asSharedFlow()
     private val gson = Gson()
     private val httpClient = OkHttpClient.Builder()
         .followRedirects(true)
@@ -47,6 +52,12 @@ object SongDownloader {
 
     fun download(context: Context, viewModel: MusicViewModel, song: Song) {
         val appContext = context.applicationContext
+        if (song.source.equals("radio", ignoreCase = true) ||
+            song.id.startsWith("radio:", ignoreCase = true)
+        ) {
+            toast(appContext, appContext.getString(R.string.radio_action_unavailable))
+            return
+        }
         viewModel.resolveSongUrl(song) { result ->
             result
                 .onSuccess { url ->
@@ -176,7 +187,7 @@ object SongDownloader {
                     val targetFile = File(targetDir, "${buildBaseFileName(song)}.$extension")
                     val tempFile = File(targetDir, "${targetFile.name}.part")
                     val totalBytes = body.contentLength()
-                    updateProgress(targetFile, 0L, totalBytes)
+                    updateProgress(targetFile, song.name, 0L, totalBytes)
 
                     if (tempFile.exists() && !tempFile.delete()) {
                         throw IllegalStateException("无法清理临时文件")
@@ -191,7 +202,7 @@ object SongDownloader {
                                 if (count < 0) break
                                 output.write(buffer, 0, count)
                                 downloadedBytes += count
-                                updateProgress(targetFile, downloadedBytes, totalBytes)
+                                updateProgress(targetFile, song.name, downloadedBytes, totalBytes)
                             }
                         }
                     }
@@ -218,10 +229,14 @@ object SongDownloader {
                 }
             }.onSuccess { file ->
                 Log.d(TAG, "download success file=${file.absolutePath}")
+                _events.tryEmit(DownloadEvent.Completed(file.absolutePath, song.name))
                 toastOnMain(context, context.getString(R.string.msg_song_download_complete, file.name))
             }.onFailure { t ->
                 removeProgress(File(targetDir, "${buildBaseFileName(song)}.mp3"))
                 Log.e(TAG, "download failed for ${song.name}", t)
+                _events.tryEmit(
+                    DownloadEvent.Failed(song.name, t.message ?: "未知错误")
+                )
                 toastOnMain(
                     context,
                     context.getString(
@@ -262,8 +277,13 @@ object SongDownloader {
         }.onFailure { Log.w(TAG, "cover download failed for ${audioFile.name}", it) }
     }
 
-    private fun updateProgress(file: File, downloadedBytes: Long, totalBytes: Long) {
-        val item = DownloadProgress(file.absolutePath, downloadedBytes, totalBytes)
+    private fun updateProgress(file: File, songName: String, downloadedBytes: Long, totalBytes: Long) {
+        val item = DownloadProgress(
+            filePath = file.absolutePath,
+            songName = songName,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes
+        )
         _progress.value = (_progress.value.filterNot { it.filePath == item.filePath } + item)
     }
 
@@ -275,11 +295,17 @@ object SongDownloader {
 
     data class DownloadProgress(
         val filePath: String,
+        val songName: String,
         val downloadedBytes: Long,
         val totalBytes: Long
     ) {
         val percent: Int
             get() = if (totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100) else 0
+    }
+
+    sealed class DownloadEvent {
+        data class Completed(val filePath: String, val songName: String) : DownloadEvent()
+        data class Failed(val songName: String, val reason: String) : DownloadEvent()
     }
 
     private fun isActiveNetworkMetered(context: Context): Boolean {

@@ -41,4 +41,26 @@ class AudioQualityPreferencesTest {
             )
         )
     }
+
+    @Test
+    fun orderedLevelsStartsAtPreferredAndCapsAttempts() {
+        val levels = AudioQualityPreferences.orderedLevels(AudioQualityPreferences.Level.JYMASTER)
+        assertEquals(AudioQualityPreferences.Level.JYMASTER, levels.first())
+        assertEquals(3, levels.size)
+        // Only descend in quality — never try unrelated higher tiers after preferred.
+        assertEquals(
+            listOf(
+                AudioQualityPreferences.Level.JYMASTER,
+                AudioQualityPreferences.Level.SKY,
+                AudioQualityPreferences.Level.JYEFFECT
+            ),
+            levels
+        )
+    }
+
+    @Test
+    fun orderedLevelsForStandardIsShort() {
+        val levels = AudioQualityPreferences.orderedLevels(AudioQualityPreferences.Level.STANDARD)
+        assertEquals(listOf(AudioQualityPreferences.Level.STANDARD), levels)
+    }
 }

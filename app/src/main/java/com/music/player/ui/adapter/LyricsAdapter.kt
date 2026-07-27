@@ -12,7 +12,9 @@ import com.music.player.data.model.LyricLine
 import com.music.player.databinding.ItemLyricLineBinding
 import com.music.player.ui.util.resolveThemeColor
 
-class LyricsAdapter : ListAdapter<LyricLine, LyricsAdapter.LyricViewHolder>(LYRIC_DIFF) {
+class LyricsAdapter(
+    private val onLineClick: ((LyricLine) -> Unit)? = null
+) : ListAdapter<LyricLine, LyricsAdapter.LyricViewHolder>(LYRIC_DIFF) {
 
     private var activeIndex: Int = -1
 
@@ -64,11 +66,20 @@ class LyricsAdapter : ListAdapter<LyricLine, LyricsAdapter.LyricViewHolder>(LYRI
         }
     }
 
-    class LyricViewHolder(
+    inner class LyricViewHolder(
         private val binding: ItemLyricLineBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var bound: LyricLine? = null
+
+        init {
+            binding.root.setOnClickListener {
+                bound?.let { onLineClick?.invoke(it) }
+            }
+        }
+
         fun bind(line: LyricLine, isActive: Boolean, animate: Boolean) {
+            bound = line
             binding.tvLine.animate().cancel()
             binding.tvLine.text = line.text
             val context = binding.root.context

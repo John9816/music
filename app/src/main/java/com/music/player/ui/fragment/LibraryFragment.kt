@@ -30,7 +30,7 @@ import com.music.player.MainActivity
 import com.music.player.ui.adapter.SongAdapter
 import com.music.player.ui.adapter.PlaylistGridAdapter
 import com.music.player.ui.adapter.SearchArtistAdapter
-import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.SongOptionsHelper
 import com.music.player.ui.util.addSlopAwareHeaderCollapseListener
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.optimizeVerticalScrolling
@@ -196,10 +196,17 @@ class LibraryFragment : Fragment(), RootTabInteraction {
         val current = MusicSourcePreferences.activeSource(requireContext())
         if (current == source) return
 
-        MusicSourcePreferences.setActiveSource(requireContext(), source)
-        musicViewModel.updateActiveSource(source.storageValue)
-        musicViewModel.clearSourceDependentState()
-        onMusicSourceChanged()
+        val main = activity as? MainActivity
+        if (main != null) {
+            main.applyMusicSourceChange(source, persist = true)
+        } else {
+            com.music.player.ui.util.MusicSourceSwitcher.apply(
+                context = requireContext(),
+                source = source,
+                musicViewModel = musicViewModel
+            )
+            onMusicSourceChanged()
+        }
     }
 
     private fun setupSearchTypeSelector() {
@@ -254,7 +261,15 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
     private fun setupRecyclerView() {
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            // Search hit list is also a context: queue the remaining search results.
+            onSongClick = { song ->
+                val songs = songAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onSongLongClick = { song -> showSongActions(song) },
             onMoreClick = { _, song -> showSongActions(song) }
         )
@@ -475,6 +490,16 @@ class LibraryFragment : Fragment(), RootTabInteraction {
 
         musicViewModel.isLoadingMore.observe(viewLifecycleOwner) { loading ->
             binding.progressLoadMore.visibility = if (loading) View.VISIBLE else View.GONE
+        }
+
+        musicViewModel.loadMoreError.observe(viewLifecycleOwner) { message ->
+            if (message.isNullOrBlank()) return@observe
+            Toast.makeText(
+                requireContext(),
+                message.ifBlank { getString(R.string.search_load_more_failed) },
+                Toast.LENGTH_SHORT
+            ).show()
+            musicViewModel.consumeLoadMoreError()
         }
 
         libraryViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
@@ -703,28 +728,16 @@ class LibraryFragment : Fragment(), RootTabInteraction {
     // ── Song Actions Dialog ───────────────────────────────────────
 
     private fun showSongActions(song: Song) {
-        val favoriteIds = libraryViewModel.favoriteIds.value.orEmpty()
-        val isFavorite = favoriteIds.contains(song.id)
-
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)) {
-            libraryViewModel.setFavorite(song, !isFavorite)
-        }
-        options += SongOption(getString(R.string.action_play_next)) {
-            musicViewModel.enqueueNext(song)
-            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-        }
-        options += SongOption(getString(R.string.action_add_to_queue)) {
-            musicViewModel.enqueue(song)
-            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
-        }
-        options += SongOption(getString(R.string.action_add_to_playlist)) {
-            showAddToPlaylistDialog(song)
-        }
-        options += SongOption(getString(R.string.action_download_song)) {
-            SongDownloader.download(requireContext(), musicViewModel, song)
-        }
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
+        SongOptionsHelper.showStandard(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            isFavorite = isFavorite,
+            onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) }
+        )
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

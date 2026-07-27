@@ -136,6 +136,8 @@ class SettingsActivity : AppCompatActivity() {
             binding.layoutPlayerStyle,
             binding.layoutAudioQuality,
             binding.layoutSleepTimer,
+            binding.layoutEqualizer,
+            binding.layoutOfflineOnly,
             binding.layoutStreamQuality,
             binding.layoutMusicSource,
             binding.layoutSourceStatus,
@@ -154,6 +156,17 @@ class SettingsActivity : AppCompatActivity() {
         // Playback
         binding.layoutAudioQuality.setOnClickListener { showAudioQualityDialog() }
         binding.layoutSleepTimer.setOnClickListener { showSleepTimerDialog() }
+        binding.layoutEqualizer.setOnClickListener { showEqualizerDialog() }
+        binding.switchOfflineOnly.isChecked = AppSettings.isOfflineOnly(this)
+        binding.switchOfflineOnly.setOnCheckedChangeListener { _, isChecked ->
+            AppSettings.setOfflineOnly(this, isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) R.string.settings_offline_only_on else R.string.settings_offline_only_off,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        updateEqualizerSummary()
 
         // Network
         binding.layoutStreamQuality.setOnClickListener { showStreamQualityDialog() }
@@ -437,8 +450,7 @@ class SettingsActivity : AppCompatActivity() {
                 ).show()
                 return@launch
             }
-            MusicSourcePreferences.setActiveSource(this@SettingsActivity, source)
-            onMusicSourceChanged()
+            onMusicSourceChanged(source)
             Toast.makeText(
                 this@SettingsActivity,
                 getString(R.string.settings_source_switched, source.displayName),
@@ -464,10 +476,9 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun onMusicSourceChanged() {
-        MusicRepository.clearCaches()
-        AlbumRepository.clearCaches()
-        PlaybackCoordinator.clearResolvedUrlCache()
+    private fun onMusicSourceChanged(source: MusicSourcePreferences.Source) {
+        // Persist + clear caches; Main resume detects source change and refreshes tabs.
+        com.music.player.ui.util.MusicSourceSwitcher.apply(context = this, source = source)
         updateMusicSourceSummary()
         binding.tvSourceStatusSummary.setText(R.string.settings_source_not_checked)
         markMainNeedsRecreate()
@@ -585,6 +596,39 @@ class SettingsActivity : AppCompatActivity() {
             binding.tvSleepTimerSummary.setText(R.string.settings_sleep_timer_off_summary)
         } else {
             binding.tvSleepTimerSummary.text = getString(R.string.settings_sleep_timer_minutes, minutes)
+        }
+    }
+
+    private fun showEqualizerDialog() {
+        val presets = com.music.player.playback.AudioEqualizerController.Preset.entries
+        val labels = presets.map { equalizerLabel(it) }.toTypedArray()
+        val current = AppSettings.equalizerPreset(this)
+        val checked = presets.indexOf(current).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_equalizer)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                com.music.player.playback.AudioEqualizerController.setPreset(this, presets[which])
+                updateEqualizerSummary()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateEqualizerSummary() {
+        binding.tvEqualizerSummary.text = equalizerLabel(AppSettings.equalizerPreset(this))
+    }
+
+    private fun equalizerLabel(preset: com.music.player.playback.AudioEqualizerController.Preset): String {
+        return when (preset) {
+            com.music.player.playback.AudioEqualizerController.Preset.OFF -> getString(R.string.eq_preset_off)
+            com.music.player.playback.AudioEqualizerController.Preset.FLAT -> getString(R.string.eq_preset_flat)
+            com.music.player.playback.AudioEqualizerController.Preset.POP -> getString(R.string.eq_preset_pop)
+            com.music.player.playback.AudioEqualizerController.Preset.ROCK -> getString(R.string.eq_preset_rock)
+            com.music.player.playback.AudioEqualizerController.Preset.JAZZ -> getString(R.string.eq_preset_jazz)
+            com.music.player.playback.AudioEqualizerController.Preset.CLASSICAL -> getString(R.string.eq_preset_classical)
+            com.music.player.playback.AudioEqualizerController.Preset.BASS_BOOST -> getString(R.string.eq_preset_bass)
+            com.music.player.playback.AudioEqualizerController.Preset.TREBLE_BOOST -> getString(R.string.eq_preset_treble)
         }
     }
 

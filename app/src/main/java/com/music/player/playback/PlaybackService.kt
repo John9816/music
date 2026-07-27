@@ -61,20 +61,19 @@ class PlaybackService : MediaSessionService() {
         )
 
         val loadControl = DefaultLoadControl.Builder()
-            // Prefer stable audio over the fastest possible start. Short buffers caused
-            // repeated rebuffering on unstable music URLs.
+            // Fast first-byte for start/skip; keep a deep buffer once playing to cut rebuffers.
             .setBufferDurationsMs(
-                /* minBufferMs = */ 20_000,
-                /* maxBufferMs = */ 90_000,
-                /* bufferForPlaybackMs = */ 2_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 8_000
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 120_000,
+                /* bufferForPlaybackMs = */ 1_200,
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         val httpFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(15_000)
+            .setConnectTimeoutMs(8_000)
+            .setReadTimeoutMs(12_000)
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent("MusicPlayer/1.0 (Android)")
 
@@ -135,6 +134,11 @@ class PlaybackService : MediaSessionService() {
                         PlaybackCoordinator.onPlaybackEndedAutoAdvance()
                     }
                 }
+                PlaybackCoordinator.notifyWidgetExternal()
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                PlaybackCoordinator.notifyWidgetExternal()
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -143,6 +147,7 @@ class PlaybackService : MediaSessionService() {
                     resumePositionMs = player.currentPosition.coerceAtLeast(0L),
                     reason = "播放异常，正在重连"
                 )
+                PlaybackCoordinator.notifyWidgetExternal()
             }
         })
 

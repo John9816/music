@@ -63,6 +63,7 @@ class UserPlaylistAdapter(
                 "local" -> context.getString(R.string.user_playlist_local)
                 "qq" -> context.getString(R.string.user_playlist_source_qq)
                 "netease" -> context.getString(R.string.user_playlist_source_netease)
+                "kuwo" -> context.getString(R.string.user_playlist_source_kuwo)
                 else -> context.getString(
                     if (playlist.isPublic) R.string.user_playlist_public else R.string.user_playlist_private
                 )

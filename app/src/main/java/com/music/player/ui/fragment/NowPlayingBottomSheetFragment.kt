@@ -1,6 +1,5 @@
 package com.music.player.ui.fragment
 
-import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.os.Build
@@ -48,11 +47,11 @@ import com.music.player.ui.lyrics.LyricsParser
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.ThemeManager
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.installDownwardDragToDismiss
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackMode
-import com.music.player.playback.PlaybackModeController
 import com.music.player.ui.viewmodel.MusicViewModel
 import androidx.media3.common.Player
 import androidx.media3.common.C
@@ -73,6 +72,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     companion object {
         const val TAG = "now_playing"
         private const val STAGE_ANIMATION_MS = 240L
+        /** One full spin of the vinyl disc cover (slow, NetEase-like). */
+        private const val VINYL_ROTATION_DURATION_MS = 24_000L
         private const val COVER_PULSE_DURATION_MS = 3600L
         private const val HANDLE_DISMISS_DISTANCE_DP = 80f
         private const val COVER_CROSSFADE_MS = 120
@@ -114,6 +115,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private var coverStage: View? = null
     private var lyricsStage: View? = null
     private var discContainer: View? = null
+    private var cardCoverBig: View? = null
     private var ivCoverBig: ImageView? = null
     private var rvLyrics: RecyclerView? = null
     private var tvLyricsPlain: TextView? = null
@@ -221,7 +223,14 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
-        lyricsAdapter = LyricsAdapter()
+        lyricsAdapter = LyricsAdapter { line ->
+            val player = (activity as? MainActivity)?.player ?: return@LyricsAdapter
+            val offsetMs = com.music.player.data.settings.AppSettings.lyricOffsetMs(requireContext())
+            val targetMs = ((line.time * 1000f).toLong() - offsetMs).coerceAtLeast(0L)
+            player.seekTo(targetMs)
+            isUserScrollingLyrics = false
+            syncActiveLyric(scroll = true)
+        }
         PlayerUiStyler.applyNowPlaying(binding, requireContext())
         binding.topBar.applyStatusBarInsetPadding()
         binding.controlsBar.applyNavigationBarInsetPadding()
@@ -242,12 +251,19 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         coverStage = contentRoot.findViewById(R.id.coverStage)
         lyricsStage = contentRoot.findViewById(R.id.lyricsStage)
         discContainer = contentRoot.findViewById(R.id.discContainer)
+        cardCoverBig = contentRoot.findViewById(R.id.cardCoverBig)
         ivCoverBig = contentRoot.findViewById(R.id.ivCoverBig)
         rvLyrics = contentRoot.findViewById(R.id.rvLyrics)
         tvLyricsPlain = contentRoot.findViewById(R.id.tvLyricsPlain)
         viewGlowHalo = contentRoot.findViewById(R.id.viewGlowHalo)
 
-        coverStage?.setOnClickListener { showLyricsStage() }
+        coverStage?.setOnClickListener {
+            if (isCurrentRadio()) {
+                toastRadioUnavailable()
+                return@setOnClickListener
+            }
+            showLyricsStage()
+        }
         lyricsStage?.setOnClickListener { showCoverStage() }
         showCoverStage(immediate = true)
 
@@ -263,22 +279,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 }
             }
         })
-        rvLyrics?.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-            private val tapDetector = GestureDetector(
-                requireContext(),
-                object : GestureDetector.SimpleOnGestureListener() {
-                    override fun onSingleTapUp(e: MotionEvent): Boolean = true
-                }
-            )
-
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                if (tapDetector.onTouchEvent(e)) {
-                    showCoverStage()
-                    return true
-                }
-                return false
-            }
-        })
+        // Line taps seek; empty-area double-tap returns to cover via lyricsStage click.
         rvLyrics?.doOnLayout { rv ->
             val minInset = dp(24)
             val inset = (rv.height / 2 - minInset).coerceAtLeast(minInset)
@@ -304,10 +305,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         listOf(
             binding.menuShowLyrics,
             binding.menuFavoriteSong,
-            binding.menuShareSong,
             binding.menuDownloadSong,
             binding.menuAddPlaylist,
-            binding.menuShowAlbum
+            binding.menuShowAlbum,
+            binding.menuSleepTimer,
+            binding.menuEqualizer,
+            binding.menuLyricOffset
         ).forEach { it.bindPressFeedback(PressFeedback.Style.ROW) }
 
         binding.btnClose.setOnClickListener {
@@ -315,42 +318,63 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
             dismiss()
         }
         installHandleDragToDismiss()
-        binding.btnAudioQuality.setOnClickListener { showAudioQualityDialog() }
+        binding.btnAudioQuality.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
+            showAudioQualityDialog()
+        }
         binding.btnOverflow.setOnClickListener {
             binding.layoutSongMenu.isVisible = !binding.layoutSongMenu.isVisible
         }
         binding.menuShowLyrics.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
             binding.layoutSongMenu.isVisible = false
             showLyricsStage()
         }
         binding.menuFavoriteSong.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
             binding.layoutSongMenu.isVisible = false
             toggleFavoriteForCurrentSong()
         }
-        binding.menuShareSong.setOnClickListener {
-            binding.layoutSongMenu.isVisible = false
-            musicViewModel.currentSong.value?.let(::shareCurrentSong)
-        }
         binding.menuDownloadSong.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
             binding.layoutSongMenu.isVisible = false
             musicViewModel.currentSong.value?.let { song ->
                 SongDownloader.download(requireContext(), musicViewModel, song)
             }
         }
         binding.menuAddPlaylist.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
             binding.layoutSongMenu.isVisible = false
             musicViewModel.currentSong.value?.let(::showAddToPlaylistDialog)
         }
         binding.menuShowAlbum.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
             binding.layoutSongMenu.isVisible = false
             musicViewModel.currentSong.value?.let(::openCurrentAlbum)
+        }
+        binding.menuSleepTimer.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            showSleepTimerDialog()
+        }
+        binding.menuEqualizer.setOnClickListener {
+            binding.layoutSongMenu.isVisible = false
+            showEqualizerDialog()
+        }
+        binding.menuLyricOffset.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
+            binding.layoutSongMenu.isVisible = false
+            showLyricOffsetDialog()
         }
         binding.btnQueue.setOnClickListener {
             QueueBottomSheetFragment().show(parentFragmentManager, "queue")
         }
-        binding.btnFavorite.setOnClickListener { toggleFavoriteForCurrentSong() }
+        binding.btnFavorite.setOnClickListener {
+            if (guardRadioAction()) return@setOnClickListener
+            toggleFavoriteForCurrentSong()
+        }
         updateAudioQualityButton()
         updateFavoriteButton()
+        applyRadioChrome()
 
         val player = (activity as? MainActivity)?.player
         if (player != null) {
@@ -361,10 +385,18 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         binding.sliderProgress.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
             override fun onStartTrackingTouch(slider: Slider) {
+                if (PlaybackCoordinator.isLivePlayback()) {
+                    isUserSeeking = false
+                    return
+                }
                 isUserSeeking = true
             }
 
             override fun onStopTrackingTouch(slider: Slider) {
+                if (PlaybackCoordinator.isLivePlayback()) {
+                    isUserSeeking = false
+                    return
+                }
                 val p = (activity as? MainActivity)?.player
                 if (p != null) {
                     p.seekTo(slider.value.toLong().coerceAtLeast(0L))
@@ -374,7 +406,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         })
 
         binding.sliderProgress.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
+            if (fromUser && !PlaybackCoordinator.isLivePlayback()) {
                 binding.tvCurrentTime.text = formatTime(value.toLong())
             }
         }
@@ -402,10 +434,15 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
 
         binding.btnPlayMode.setOnClickListener {
-            val p = (activity as? MainActivity)?.player ?: return@setOnClickListener
-            val next = PlaybackModeController.next(PlaybackModeController.resolve(p))
-            PlaybackModeController.apply(p, next)
+            if (guardRadioAction()) return@setOnClickListener
+            val next = musicViewModel.cyclePlaybackMode()
             syncPlayModeIcon()
+            val label = when (next) {
+                PlaybackMode.SHUFFLE -> getString(R.string.playback_mode_shuffle)
+                PlaybackMode.REPEAT_ALL -> getString(R.string.playback_mode_repeat_all)
+                PlaybackMode.REPEAT_ONE -> getString(R.string.playback_mode_repeat_one)
+            }
+            Toast.makeText(requireContext(), label, Toast.LENGTH_SHORT).show()
         }
 
         musicViewModel.queue.observe(viewLifecycleOwner) {
@@ -415,20 +452,24 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         musicViewModel.canSkipPrevious.observe(viewLifecycleOwner) {
             syncSkipButtons()
         }
+        musicViewModel.playbackMode.observe(viewLifecycleOwner) {
+            syncPlayModeIcon()
+        }
+        musicViewModel.playbackLoading.observe(viewLifecycleOwner) { loading ->
+            val preparing = loading == true
+            binding.playbackLoading.isVisible = preparing
+            binding.btnPlayPause.alpha = if (preparing) 0.4f else 1f
+        }
         libraryViewModel.favoriteIds.observe(viewLifecycleOwner) { ids ->
             favoriteIds = ids.orEmpty()
             updateFavoriteButton()
         }
-        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
-            if (!message.isNullOrBlank() && isAdded) {
-                Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
-                libraryViewModel.consumeMessage()
-            }
-        }
+        // Library toasts are owned by MainActivity only (avoid double / swallowed toasts).
 
         musicViewModel.currentSong.observe(viewLifecycleOwner) { song ->
             updateAudioQualityButton()
             updateFavoriteButton()
+            applyRadioChrome()
             if (song == null) {
                 lyricParseJob?.cancel()
                 lyricLines = emptyList()
@@ -437,9 +478,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 applySongToViews(null)
                 return@observe
             }
-            // Cover is in local metadata; lyrics need a network (or memory) fetch — kick it off
-            // as soon as the full player opens, without waiting for stream prepare / play.
-            if (song.lyric.isNullOrBlank()) {
+            // Radio has no lyrics; skip network fetch.
+            if (!PlaybackCoordinator.isRadioSong(song) && song.lyric.isNullOrBlank()) {
                 PlaybackCoordinator.ensureLyricsForCurrentSong()
             }
             applySongToViews(song)
@@ -447,11 +487,76 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
         // Apply current song immediately if available
         musicViewModel.currentSong.value?.let { song ->
-            if (song.lyric.isNullOrBlank()) {
+            if (!PlaybackCoordinator.isRadioSong(song) && song.lyric.isNullOrBlank()) {
                 PlaybackCoordinator.ensureLyricsForCurrentSong()
             }
             applySongToViews(song)
+            applyRadioChrome()
         }
+    }
+
+    private fun isCurrentRadio(): Boolean {
+        val song = musicViewModel.currentSong.value ?: return false
+        return PlaybackCoordinator.isRadioSong(song)
+    }
+
+    /** Toast + true when action is blocked for live radio. */
+    private fun guardRadioAction(): Boolean {
+        if (!isCurrentRadio()) return false
+        toastRadioUnavailable()
+        return true
+    }
+
+    private fun toastRadioUnavailable() {
+        Toast.makeText(requireContext(), R.string.radio_action_unavailable, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Live radio is not a catalog track: disable seek-related and library actions.
+     * Keep play/pause, sleep timer, equalizer, queue (view only still ok), close.
+     */
+    private fun applyRadioChrome() {
+        if (_binding == null) return
+        val radio = isCurrentRadio()
+        val songActionsEnabled = !radio
+
+        setChromeEnabled(binding.btnFavorite, songActionsEnabled)
+        setChromeEnabled(binding.btnAudioQuality, songActionsEnabled)
+        setChromeEnabled(binding.btnPlayMode, songActionsEnabled)
+        // Prev/next only meaningful with a music queue; radio alone has neither.
+        if (radio) {
+            setControlEnabled(binding.btnPrev, false)
+            setControlEnabled(binding.btnNext, false)
+        } else {
+            syncSkipButtons()
+        }
+
+        setChromeEnabled(binding.menuShowLyrics, songActionsEnabled)
+        setChromeEnabled(binding.menuFavoriteSong, songActionsEnabled)
+        setChromeEnabled(binding.menuDownloadSong, songActionsEnabled)
+        setChromeEnabled(binding.menuAddPlaylist, songActionsEnabled)
+        setChromeEnabled(binding.menuShowAlbum, songActionsEnabled)
+        setChromeEnabled(binding.menuLyricOffset, songActionsEnabled)
+        // Sleep + EQ still useful while listening to radio.
+        setChromeEnabled(binding.menuSleepTimer, true)
+        setChromeEnabled(binding.menuEqualizer, true)
+
+        coverStage?.isClickable = songActionsEnabled
+        coverStage?.alpha = if (songActionsEnabled) 1f else 1f
+
+        if (radio) {
+            binding.sliderProgress.isEnabled = false
+            if (showingLyrics) {
+                showCoverStage(immediate = true)
+            }
+            binding.btnAudioQuality.text = getString(R.string.playback_live)
+        }
+    }
+
+    private fun setChromeEnabled(view: View, enabled: Boolean) {
+        view.isEnabled = enabled
+        view.isClickable = enabled
+        view.alpha = if (enabled) 1f else 0.38f
     }
 
     private fun installHandleDragToDismiss() {
@@ -466,6 +571,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun showAudioQualityDialog() {
+        if (isCurrentRadio()) {
+            toastRadioUnavailable()
+            return
+        }
         val sheet = AudioQualityBottomSheet()
         sheet.onQualitySelected = { selectedLevel ->
             updateAudioQualityButton()
@@ -483,12 +592,21 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private fun updateAudioQualityButton() {
         if (_binding == null) return
-        binding.btnAudioQuality.text = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
+        if (isCurrentRadio()) {
+            binding.btnAudioQuality.text = getString(R.string.playback_live)
+        } else {
+            binding.btnAudioQuality.text =
+                AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
+        }
         updatePlaybackMeta()
     }
 
     private fun toggleFavoriteForCurrentSong() {
         val song = musicViewModel.currentSong.value ?: return
+        if (PlaybackCoordinator.isRadioSong(song)) {
+            toastRadioUnavailable()
+            return
+        }
         val willFavorite = !favoriteIds.contains(song.id)
         libraryViewModel.setFavorite(song, willFavorite)
     }
@@ -534,7 +652,8 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private fun updateFavoriteButton() {
         if (_binding == null) return
         val song = musicViewModel.currentSong.value
-        val isFavorite = song != null && favoriteIds.contains(song.id)
+        val radio = song != null && PlaybackCoordinator.isRadioSong(song)
+        val isFavorite = song != null && !radio && favoriteIds.contains(song.id)
         // Top-right overflow is always-enabled chrome.
         binding.btnOverflow.isEnabled = true
         binding.btnOverflow.alpha = 1f
@@ -546,31 +665,16 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.btnFavorite.imageTintList = ColorStateList.valueOf(
             if (isFavorite) likedRed else unliked
         )
-        binding.btnFavorite.alpha = if (song == null) 0.38f else 1f
-        binding.btnFavorite.isEnabled = song != null
+        val favEnabled = song != null && !radio
+        binding.btnFavorite.alpha = if (favEnabled) 1f else 0.38f
+        binding.btnFavorite.isEnabled = favEnabled
+        binding.btnFavorite.isClickable = favEnabled
         binding.btnFavorite.contentDescription = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
         )
         binding.menuFavoriteSong.text = getString(
             if (isFavorite) R.string.action_unfavorite else R.string.action_favorite
         )
-    }
-
-    private fun shareCurrentSong(song: com.music.player.data.model.Song) {
-        val artist = song.artists.joinToString(", ") { it.name }.trim()
-        val album = song.album.name.trim()
-        val text = listOfNotNull(
-            listOf(song.name.trim(), artist).filter { it.isNotBlank() }.joinToString(" - "),
-            album.takeIf { it.isNotBlank() }
-        ).joinToString("\n")
-        runCatching {
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, text)
-            }, getString(R.string.player_share_song)))
-        }.onFailure {
-            Toast.makeText(requireContext(), R.string.player_share_unavailable, Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun openCurrentAlbum(song: com.music.player.data.model.Song) {
@@ -595,6 +699,11 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun syncSkipButtons() {
+        if (isCurrentRadio()) {
+            setControlEnabled(binding.btnPrev, false)
+            setControlEnabled(binding.btnNext, false)
+            return
+        }
         val prevEnabled = musicViewModel.canSkipPrevious.value == true
         val nextEnabled = musicViewModel.queue.value.orEmpty().isNotEmpty()
         setControlEnabled(binding.btnPrev, prevEnabled)
@@ -635,6 +744,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         binding.tvControlSongArtist.text = artistText
         binding.tvControlSongArtist.isVisible = artistText.isNotBlank()
         updatePlaybackMeta()
+        applyRadioChrome()
 
         // Clear the previous song immediately, then parse the new LRC off the main thread.
         lyricParseJob?.cancel()
@@ -644,30 +754,36 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         lyricsAdapter.submitLyrics(emptyList())
         tvLyricsPlain?.visibility = View.VISIBLE
         rvLyrics?.visibility = View.GONE
-        tvLyricsPlain?.text = if (song.lyric.isNullOrBlank()) {
-            getString(R.string.lyrics_loading)
+        val isRadio = PlaybackCoordinator.isRadioSong(song)
+        if (isRadio) {
+            tvLyricsPlain?.text = getString(R.string.radio_no_lyrics)
+            showCoverStage(immediate = true)
         } else {
-            getString(R.string.lyrics_placeholder)
-        }
-        lyricParseJob = viewLifecycleOwner.lifecycleScope.launch {
-            val parsed = withContext(Dispatchers.Default) {
-                LyricsParser.parse(song.lyric)
-            }
-            if (renderToken != lyricRenderToken || musicViewModel.currentSong.value?.id != song.id) {
-                return@launch
-            }
-            lyricLines = parsed
-            if (parsed.isNotEmpty()) {
-                tvLyricsPlain?.visibility = View.GONE
-                rvLyrics?.visibility = View.VISIBLE
-                lyricsAdapter.submitLyrics(parsed) {
-                    if (_binding != null && renderToken == lyricRenderToken) {
-                        syncActiveLyric(scroll = showingLyrics)
-                    }
-                }
+            tvLyricsPlain?.text = if (song.lyric.isNullOrBlank()) {
+                getString(R.string.lyrics_loading)
             } else {
-                tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.lyrics_not_available)
+                getString(R.string.lyrics_placeholder)
+            }
+            lyricParseJob = viewLifecycleOwner.lifecycleScope.launch {
+                val parsed = withContext(Dispatchers.Default) {
+                    LyricsParser.parse(song.lyric)
+                }
+                if (renderToken != lyricRenderToken || musicViewModel.currentSong.value?.id != song.id) {
+                    return@launch
+                }
+                lyricLines = parsed
+                if (parsed.isNotEmpty()) {
+                    tvLyricsPlain?.visibility = View.GONE
+                    rvLyrics?.visibility = View.VISIBLE
+                    lyricsAdapter.submitLyrics(parsed) {
+                        if (_binding != null && renderToken == lyricRenderToken) {
+                            syncActiveLyric(scroll = showingLyrics)
+                        }
+                    }
+                } else {
+                    tvLyricsPlain?.text = song.lyric?.takeIf { it.isNotBlank() }
+                        ?: getString(R.string.lyrics_not_available)
+                }
             }
         }
 
@@ -675,7 +791,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
         immersiveBackground?.setImageUrl(coverUrl)
         if (coverUrl == null) {
-            ivCoverBig?.setImageResource(R.drawable.ic_music_note_24)
+            // Radio stations often have no artwork — use radio icon.
+            ivCoverBig?.setImageResource(
+                if (isRadio) R.drawable.ic_cymusic_radio_24 else R.drawable.ic_music_note_24
+            )
             ivCoverBig?.imageTintList = ColorStateList.valueOf(themeColor(R.attr.brandPrimary))
         } else {
             ivCoverBig?.imageTintList = null
@@ -690,7 +809,7 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         }
 
         // Start lyric sync and rotation
-        startLyricUpdates()
+        if (!isRadio) startLyricUpdates()
         syncCoverRotation()
     }
 
@@ -739,6 +858,10 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun showLyricsStage() {
+        if (isCurrentRadio()) {
+            toastRadioUnavailable()
+            return
+        }
         if (showingLyrics) {
             syncActiveLyric(scroll = true)
             return
@@ -782,8 +905,12 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
 
     private fun updatePlaybackMeta() {
         if (_binding == null) return
-        val quality = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
         val currentSong = musicViewModel.currentSong.value
+        if (currentSong != null && PlaybackCoordinator.isRadioSong(currentSong)) {
+            binding.tvSheetMetaDetail.text = getString(R.string.radio_now_playing_meta)
+            return
+        }
+        val quality = AudioQualityPreferences.getPreferredLevel(requireContext()).displayName
         val nextSongTitle = musicViewModel.queue.value.orEmpty()
             .firstOrNull()
             ?.name
@@ -807,20 +934,55 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         )
     }
 
-    // ── Cover Rotation (disc style) ──────────────────────────────
+    // ── Cover motion ─────────────────────────────────────────────
+    // Vinyl: cover spins around its own center (no center pin drawn).
+    // Other styles: light scale pulse only.
 
     private fun syncCoverRotation() {
         val player = (activity as? MainActivity)?.player
         if (!showingLyrics && player?.isPlaying == true) {
             startCoverRotation()
         } else {
-            stopCoverRotation()
+            // Pause keeps vinyl angle so resume continues from where it stopped.
+            pauseCoverRotation()
         }
     }
 
     private fun startCoverRotation() {
-        val target = discContainer ?: return
         if (coverRotateAnimator?.isRunning == true) return
+        val isVinyl = ThemeManager.getPlayerStyle(requireContext()) == ThemeManager.PlayerStyle.VINYL
+        if (isVinyl) {
+            startVinylCoverSpin()
+        } else {
+            startCoverPulse()
+        }
+    }
+
+    /**
+     * Continuous 360° spin around the cover card's geometric center.
+     * Pivot is the view center by default — no decorative center dot.
+     */
+    private fun startVinylCoverSpin() {
+        val target = cardCoverBig ?: return
+        // Ensure pivot is geometric center even if size changes after layout.
+        target.doOnLayout {
+            target.pivotX = target.width / 2f
+            target.pivotY = target.height / 2f
+        }
+        target.pivotX = target.width / 2f
+        target.pivotY = target.height / 2f
+        // Resume from current angle (do not snap back on pause/play).
+        val from = target.rotation
+        coverRotateAnimator = ObjectAnimator.ofFloat(target, View.ROTATION, from, from + 360f).apply {
+            duration = VINYL_ROTATION_DURATION_MS
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.RESTART
+            interpolator = LinearInterpolator()
+        }.also { it.start() }
+    }
+
+    private fun startCoverPulse() {
+        val target = cardCoverBig ?: discContainer ?: return
         coverRotateAnimator = ObjectAnimator.ofPropertyValuesHolder(
             target,
             PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.018f),
@@ -834,15 +996,25 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     }
 
     private fun pauseCoverRotation() {
-        stopCoverRotation()
+        coverRotateAnimator?.cancel()
+        coverRotateAnimator = null
+        if (_binding == null) return
+        // Reset pulse scale; keep vinyl rotation angle for seamless resume.
+        cardCoverBig?.scaleX = 1f
+        cardCoverBig?.scaleY = 1f
+        discContainer?.scaleX = 1f
+        discContainer?.scaleY = 1f
     }
 
     private fun stopCoverRotation() {
         coverRotateAnimator?.cancel()
         coverRotateAnimator = null
         if (_binding != null) {
+            cardCoverBig?.rotation = 0f
             discContainer?.rotation = 0f
             ivCoverBig?.rotation = 0f
+            cardCoverBig?.scaleX = 1f
+            cardCoverBig?.scaleY = 1f
             discContainer?.scaleX = 1f
             discContainer?.scaleY = 1f
         }
@@ -876,8 +1048,9 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     // ── Play mode ─────────────────────────────────────────────────
 
     private fun syncPlayModeIcon() {
-        val player = (activity as? MainActivity)?.player ?: return
-        val (icon, desc) = when (PlaybackModeController.resolve(player)) {
+        if (_binding == null) return
+        val mode = musicViewModel.playbackMode.value ?: PlaybackMode.REPEAT_ALL
+        val (icon, desc) = when (mode) {
             PlaybackMode.SHUFFLE -> R.drawable.ic_shuffle_24 to R.string.content_desc_shuffle
             PlaybackMode.REPEAT_ALL -> R.drawable.ic_repeat_24 to R.string.content_desc_repeat
             PlaybackMode.REPEAT_ONE -> R.drawable.ic_repeat_one_24 to R.string.content_desc_repeat
@@ -907,7 +1080,11 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
     private fun syncActiveLyric(scroll: Boolean = false) {
         val player = (activity as? MainActivity)?.player ?: return
         if (lyricLines.isEmpty()) return
-        val index = LyricsParser.findActiveIndex(lyricLines, player.currentPosition)
+        val offsetMs = com.music.player.data.settings.AppSettings.lyricOffsetMs(requireContext())
+        val index = LyricsParser.findActiveIndex(
+            lyricLines,
+            player.currentPosition + offsetMs
+        )
         val activeLineChanged = index != currentActiveIndex
         if (activeLineChanged) {
             currentActiveIndex = index
@@ -941,6 +1118,19 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
         progressJob?.cancel()
         progressJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isActive) {
+                if (PlaybackCoordinator.isLivePlayback()) {
+                    // Live radio: no seekable timeline; avoid mapping sliding HLS window to the slider.
+                    isUserSeeking = false
+                    binding.sliderProgress.isEnabled = false
+                    binding.sliderProgress.valueFrom = 0f
+                    binding.sliderProgress.valueTo = 1f
+                    binding.sliderProgress.value = 0f
+                    binding.tvCurrentTime.text = getString(R.string.playback_live)
+                    binding.tvTotalTime.text = getString(R.string.playback_live_stream)
+                    delay(500)
+                    continue
+                }
+
                 val durationMs = PlaybackCoordinator.displayDurationMs()
                 val positionMs = PlaybackCoordinator.displayPositionMs()
                 val hasDuration = durationMs > 0L
@@ -962,6 +1152,94 @@ class NowPlayingBottomSheetFragment : DialogFragment() {
                 delay(250)
             }
         }
+    }
+
+    // ── Sleep / EQ / lyric offset ─────────────────────────────────
+
+    private fun showSleepTimerDialog() {
+        val options = arrayOf(
+            getString(R.string.sleep_timer_off),
+            getString(R.string.sleep_timer_15min),
+            getString(R.string.sleep_timer_30min),
+            getString(R.string.sleep_timer_45min),
+            getString(R.string.sleep_timer_60min)
+        )
+        val minutes = longArrayOf(0L, 15L, 30L, 45L, 60L)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.sleep_timer_dialog_title)
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    PlaybackCoordinator.cancelSleepTimer()
+                    Toast.makeText(requireContext(), R.string.sleep_timer_cancelled, Toast.LENGTH_SHORT).show()
+                } else {
+                    PlaybackCoordinator.setSleepTimer(minutes[which])
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.sleep_timer_set, options[which]),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEqualizerDialog() {
+        val presets = com.music.player.playback.AudioEqualizerController.Preset.entries
+        val labels = presets.map { presetLabel(it) }.toTypedArray()
+        val current = com.music.player.data.settings.AppSettings.equalizerPreset(requireContext())
+        val checked = presets.indexOf(current).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_equalizer)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                com.music.player.playback.AudioEqualizerController.setPreset(
+                    requireContext(),
+                    presets[which]
+                )
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun presetLabel(preset: com.music.player.playback.AudioEqualizerController.Preset): String {
+        return when (preset) {
+            com.music.player.playback.AudioEqualizerController.Preset.OFF ->
+                getString(R.string.eq_preset_off)
+            com.music.player.playback.AudioEqualizerController.Preset.FLAT ->
+                getString(R.string.eq_preset_flat)
+            com.music.player.playback.AudioEqualizerController.Preset.POP ->
+                getString(R.string.eq_preset_pop)
+            com.music.player.playback.AudioEqualizerController.Preset.ROCK ->
+                getString(R.string.eq_preset_rock)
+            com.music.player.playback.AudioEqualizerController.Preset.JAZZ ->
+                getString(R.string.eq_preset_jazz)
+            com.music.player.playback.AudioEqualizerController.Preset.CLASSICAL ->
+                getString(R.string.eq_preset_classical)
+            com.music.player.playback.AudioEqualizerController.Preset.BASS_BOOST ->
+                getString(R.string.eq_preset_bass)
+            com.music.player.playback.AudioEqualizerController.Preset.TREBLE_BOOST ->
+                getString(R.string.eq_preset_treble)
+        }
+    }
+
+    private fun showLyricOffsetDialog() {
+        val options = arrayOf("-1.0s", "-0.5s", "0s", "+0.5s", "+1.0s")
+        val values = intArrayOf(-1000, -500, 0, 500, 1000)
+        val current = com.music.player.data.settings.AppSettings.lyricOffsetMs(requireContext())
+        val checked = values.indexOfFirst { it == current }.let { if (it < 0) 2 else it }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_lyric_offset)
+            .setSingleChoiceItems(options, checked) { dialog, which ->
+                com.music.player.data.settings.AppSettings.setLyricOffsetMs(
+                    requireContext(),
+                    values[which]
+                )
+                syncActiveLyric(scroll = true)
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // ── Utilities ─────────────────────────────────────────────────

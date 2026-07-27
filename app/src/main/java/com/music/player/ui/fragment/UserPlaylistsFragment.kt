@@ -13,6 +13,7 @@ import com.music.player.MainActivity
 import com.music.player.R
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.FragmentUserPlaylistsBinding
+import com.music.player.ui.activity.AiDrawActivity
 import com.music.player.ui.adapter.UserPlaylistAdapter
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.viewmodel.LibraryViewModel
@@ -38,7 +39,7 @@ class UserPlaylistsFragment : Fragment() {
 
         adapter = UserPlaylistAdapter(
             onPlaylistClick = { playlist -> openPlaylist(playlist) },
-            onPlaylistLongClick = { playlist -> confirmDeletePlaylist(playlist) }
+            onPlaylistLongClick = { playlist -> showPlaylistActions(playlist) }
         )
 
         binding.recyclerView.apply {
@@ -56,12 +57,6 @@ class UserPlaylistsFragment : Fragment() {
         libraryViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
             updateLoadingState(loading)
         }
-        libraryViewModel.message.observe(viewLifecycleOwner) { message ->
-            message ?: return@observe
-            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
-            libraryViewModel.consumeMessage()
-        }
-
         // Prefer cached playlists; network only when memory TTL expired.
         libraryViewModel.refreshPlaylists(silent = true, forceRefresh = false)
     }
@@ -96,6 +91,34 @@ class UserPlaylistsFragment : Fragment() {
     private fun openPlaylist(playlist: UserPlaylist) {
         (activity as? MainActivity)?.pushDetail(
             SongCollectionFragment.newPlaylist(playlist.id, playlist.name)
+        )
+    }
+
+    private fun showPlaylistActions(playlist: UserPlaylist) {
+        val labels = arrayOf(
+            getString(R.string.ai_cover_action),
+            getString(R.string.user_playlist_delete_confirm)
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(R.string.user_playlist_actions_title))
+            .setItems(labels) { _, which ->
+                when (which) {
+                    0 -> openAiCover(playlist)
+                    1 -> confirmDeletePlaylist(playlist)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openAiCover(playlist: UserPlaylist) {
+        startActivity(
+            AiDrawActivity.intent(
+                context = requireContext(),
+                playlistId = playlist.id,
+                playlistName = playlist.name,
+                ref1 = playlist.coverUrl
+            )
         )
     }
 

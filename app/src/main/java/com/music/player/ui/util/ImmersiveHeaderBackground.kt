@@ -102,9 +102,11 @@ class ImmersiveHeaderBackground(
         }
         target = newTarget
 
+        // Small decode size — blur does not need full-res album art (main-thread jank fix).
         Glide.with(imageView)
             .asBitmap()
-            .load(normalized)
+            .load(ImageUrl.thumbnail(normalized, BLUR_DECODE_SIZE))
+            .override(BLUR_DECODE_SIZE, BLUR_DECODE_SIZE)
             .centerCrop()
             .into(newTarget)
     }
@@ -117,7 +119,7 @@ class ImmersiveHeaderBackground(
     }
 
     private fun blurForHeader(bitmap: Bitmap): Bitmap {
-        val maxSide = 520
+        val maxSide = BLUR_PROCESS_SIZE
         val w = bitmap.width.coerceAtLeast(1)
         val h = bitmap.height.coerceAtLeast(1)
         val scale = (maxSide / maxOf(w, h).toFloat()).coerceAtMost(1f)
@@ -128,7 +130,13 @@ class ImmersiveHeaderBackground(
                 (h * scale).roundToInt().coerceAtLeast(1),
                 true
             )
-        return StackBlur.blur(scaled, radius = 18)
+        return StackBlur.blur(scaled, radius = BLUR_RADIUS)
+    }
+
+    private companion object {
+        const val BLUR_DECODE_SIZE = 160
+        const val BLUR_PROCESS_SIZE = 120
+        const val BLUR_RADIUS = 12
     }
 
     private fun suggestSystemBars(bitmap: Bitmap): SystemBarStyleSuggestion? {

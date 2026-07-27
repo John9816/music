@@ -398,6 +398,78 @@
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Tools hub: radio, AI draw, utilities -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardTools"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/spacing_m"
+        android:layout_marginTop="@dimen/spacing_m"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardBackgroundColor="?attr/surfaceAltColor"
+        app:cardCornerRadius="@dimen/radius_m"
+        app:cardElevation="0dp"
+        app:rippleColor="?attr/brandPrimaryLight"
+        app:strokeColor="?attr/glassStrokeSoft"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/spacing_m"
+            android:paddingVertical="@dimen/spacing_m">
+
+            <FrameLayout
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_profile_grid_icon">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_cymusic_radio_24"
+                    app:tint="?attr/brandPrimary" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/spacing_m"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tools_title"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                    android:textColor="?attr/textPrimary"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/tools_profile_subtitle"
+                    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                    android:textColor="?attr/textSecondary" />
+            </LinearLayout>
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:rotation="-90"
+                android:src="@drawable/ic_chevron_down_24"
+                app:tint="?attr/textSecondary" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <!-- Library list: history / downloads / playlists -->
     <TextView
         android:layout_width="match_parent"

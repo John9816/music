@@ -8,28 +8,20 @@ enum class PlaybackMode {
     REPEAT_ONE
 }
 
+/**
+ * Multi-track advance is owned by [PlaybackCoordinator] (single MediaItem pipeline).
+ * ExoPlayer always stays REPEAT_OFF / shuffle off so STATE_ENDED is reliable.
+ */
 object PlaybackModeController {
-    fun resolve(shuffleEnabled: Boolean, repeatMode: Int): PlaybackMode = when {
-        shuffleEnabled -> PlaybackMode.SHUFFLE
-        repeatMode == Player.REPEAT_MODE_ONE -> PlaybackMode.REPEAT_ONE
-        else -> PlaybackMode.REPEAT_ALL
-    }
-
-    fun resolve(player: Player): PlaybackMode =
-        resolve(player.shuffleModeEnabled, player.repeatMode)
-
     fun next(mode: PlaybackMode): PlaybackMode = when (mode) {
         PlaybackMode.SHUFFLE -> PlaybackMode.REPEAT_ALL
         PlaybackMode.REPEAT_ALL -> PlaybackMode.REPEAT_ONE
         PlaybackMode.REPEAT_ONE -> PlaybackMode.SHUFFLE
     }
 
-    fun apply(player: Player, mode: PlaybackMode) {
-        player.shuffleModeEnabled = mode == PlaybackMode.SHUFFLE
-        player.repeatMode = when (mode) {
-            PlaybackMode.SHUFFLE -> Player.REPEAT_MODE_OFF
-            PlaybackMode.REPEAT_ALL -> Player.REPEAT_MODE_ALL
-            PlaybackMode.REPEAT_ONE -> Player.REPEAT_MODE_ONE
-        }
+    /** Keep the engine free of multi-item semantics; app layer decides what plays next. */
+    fun applyEngineDefaults(player: Player) {
+        player.shuffleModeEnabled = false
+        player.repeatMode = Player.REPEAT_MODE_OFF
     }
 }

@@ -9,9 +9,9 @@ object MusicSourcePreferences {
     private const val KEY_ACTIVE_SOURCE = "active_source"
 
     enum class Source(val storageValue: String, val displayName: String) {
-        NETEASE("netease", "网易云音乐"),
-        QQ("qq", "QQ 音乐"),
-        KUWO("kuwo", "酷我音乐");
+        NETEASE("netease", "红源"),
+        QQ("qq", "绿源"),
+        KUWO("kuwo", "橙源");
 
         companion object {
             fun fromStorage(value: String?): Source =

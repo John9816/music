@@ -24,6 +24,7 @@ import com.music.player.databinding.FragmentProfileBinding
 import com.music.player.databinding.ItemProfileBodyBinding
 import com.music.player.ui.activity.DownloadsActivity
 import com.music.player.ui.activity.SettingsActivity
+import com.music.player.ui.activity.ToolsActivity
 import com.music.player.ui.util.FileSizeFormatter
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
@@ -157,6 +158,7 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         body.ivAvatar.bindPressFeedback(PressFeedback.Style.ICON)
         body.layoutUserHeader.bindPressFeedback(PressFeedback.Style.ROW)
         body.cardLiked.bindPressFeedback(PressFeedback.Style.CARD)
+        body.cardTools.bindPressFeedback(PressFeedback.Style.CARD)
         listOf(
             body.rowLiked,
             body.rowHistory,
@@ -198,6 +200,10 @@ class ProfileFragment : Fragment(), RootTabInteraction {
         body.gridPlaylists.setOnClickListener(openPlaylists)
         body.rowPlaylists.setOnClickListener(openPlaylists)
         body.tvPlaylistsTitle.setOnClickListener(openPlaylists)
+
+        body.cardTools.setOnClickListener {
+            startActivity(ToolsActivity.intent(requireContext()))
+        }
     }
 
     private fun refresh() {

@@ -38,9 +38,9 @@ object PlayerUiStyler {
         binding.coverContainer.radius = context.dp(9f).toFloat()
         binding.coverContainer.strokeWidth = 0
         binding.btnMiniPlayPause.background = circleDrawable(Color.TRANSPARENT, 0)
-        binding.btnMiniQueue.background = circleDrawable(Color.TRANSPARENT, 0)
+        binding.btnMiniNext.background = circleDrawable(Color.TRANSPARENT, 0)
         binding.btnMiniPlayPause.imageTintList = ColorStateList.valueOf(textPrimary)
-        binding.btnMiniQueue.imageTintList = ColorStateList.valueOf(textSecondary)
+        binding.btnMiniNext.imageTintList = ColorStateList.valueOf(textSecondary)
         binding.miniProgress.setIndicatorColor(brand)
         binding.miniProgress.trackColor = ColorUtils.setAlphaComponent(textPrimary, 28)
         binding.miniProgress.trackThickness = context.dp(2f)

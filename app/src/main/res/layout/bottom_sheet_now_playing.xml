@@ -157,21 +157,6 @@
             android:textColor="?attr/textSecondary" />
 
         <TextView
-            android:id="@+id/menuShareSong"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:background="@drawable/ripple_rect_primary"
-            android:drawablePadding="16dp"
-            android:gravity="center_vertical"
-            android:paddingStart="20dp"
-            android:paddingEnd="16dp"
-            android:text="@string/player_share_song"
-            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="?attr/textPrimary"
-            app:drawableEndCompat="@drawable/ic_share_24"
-            app:drawableTint="?attr/textPrimary" />
-
-        <TextView
             android:id="@+id/menuDownloadSong"
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -244,6 +229,51 @@
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:textColor="?attr/textPrimary"
             app:drawableEndCompat="@drawable/ic_favorite_24"
+            app:drawableTint="?attr/textPrimary" />
+
+        <TextView
+            android:id="@+id/menuSleepTimer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@drawable/ripple_rect_primary"
+            android:drawablePadding="16dp"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
+            android:text="@string/settings_sleep_timer"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="?attr/textPrimary"
+            app:drawableEndCompat="@drawable/ic_history_24"
+            app:drawableTint="?attr/textPrimary" />
+
+        <TextView
+            android:id="@+id/menuEqualizer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@drawable/ripple_rect_primary"
+            android:drawablePadding="16dp"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
+            android:text="@string/settings_equalizer"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="?attr/textPrimary"
+            app:drawableEndCompat="@drawable/ic_volume_up_24"
+            app:drawableTint="?attr/textPrimary" />
+
+        <TextView
+            android:id="@+id/menuLyricOffset"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@drawable/ripple_rect_primary"
+            android:drawablePadding="16dp"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
+            android:text="@string/settings_lyric_offset"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="?attr/textPrimary"
+            app:drawableEndCompat="@drawable/ic_cymusic_text_search_24"
             app:drawableTint="?attr/textPrimary" />
     </LinearLayout>
 
@@ -499,6 +529,16 @@
                         android:scaleType="centerInside"
                         android:src="@drawable/ic_pause_24"
                         app:tint="#FF1A1A1A" />
+
+                    <ProgressBar
+                        android:id="@+id/playbackLoading"
+                        style="?android:attr/progressBarStyle"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:layout_gravity="center"
+                        android:indeterminate="true"
+                        android:visibility="gone"
+                        android:importantForAccessibility="no" />
                 </FrameLayout>
 
                 <FrameLayout

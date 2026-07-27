@@ -9,7 +9,11 @@ object AudioQualityPreferences {
 
     // Used by both repository and settings UI.
     const val KEY_PREFERRED_LEVEL = "preferred_audio_level"
-    const val DEFAULT_LEVEL_STORAGE_VALUE = "jymaster"
+    /** Prefer a widely available tier so first URL request succeeds more often than 母带. */
+    const val DEFAULT_LEVEL_STORAGE_VALUE = "exhigh"
+
+    /** Cap quality ladder length — each step is a full network round-trip. */
+    private const val MAX_URL_ATTEMPTS = 3
 
     enum class Level(
         val storageValue: String,
@@ -89,12 +93,20 @@ object AudioQualityPreferences {
         return if (currentRank <= limitRank) limit else this
     }
 
+    /**
+     * URL resolve order: preferred first, then **lower** fallbacks only (never climb to rarer
+     * higher tiers). Caps at [MAX_URL_ATTEMPTS] to keep cold start under a few HTTP calls.
+     */
     fun orderedLevels(preferredLevel: Level): List<Level> {
-        return if (defaultAttemptOrder.contains(preferredLevel)) {
-            listOf(preferredLevel) + defaultAttemptOrder.filterNot { it == preferredLevel }
-        } else {
-            defaultAttemptOrder
+        val start = defaultAttemptOrder.indexOf(preferredLevel)
+        if (start < 0) {
+            return listOf(Level.EXHIGH, Level.STANDARD).distinct()
         }
+        // defaultAttemptOrder is high→low quality; dropWhile keeps preferred and everything below.
+        return defaultAttemptOrder
+            .drop(start)
+            .take(MAX_URL_ATTEMPTS)
+            .ifEmpty { listOf(preferredLevel, Level.STANDARD).distinct() }
     }
 
     fun orderedAttemptStorageValues(preferredStorageValue: String?): List<String> {

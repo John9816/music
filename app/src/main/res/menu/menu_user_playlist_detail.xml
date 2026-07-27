@@ -2,6 +2,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_ai_cover"
+        android:title="@string/ai_cover_action"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_sync_playlist"
         android:title="@string/user_playlist_sync"
         android:visible="false"

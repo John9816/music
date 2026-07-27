@@ -129,7 +129,9 @@ data class PlaylistCreateRequest(
 )
 
 data class PlaylistRenameRequest(
-    @com.google.gson.annotations.SerializedName("name") val name: String
+    @com.google.gson.annotations.SerializedName("name") val name: String? = null,
+    @com.google.gson.annotations.SerializedName("description") val description: String? = null,
+    @com.google.gson.annotations.SerializedName("coverUrl") val coverUrl: String? = null
 )
 
 data class PlaylistItemRequest(

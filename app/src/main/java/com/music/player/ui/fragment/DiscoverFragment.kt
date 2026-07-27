@@ -22,8 +22,11 @@ import com.music.player.databinding.FragmentDiscoverBinding
 import com.music.player.ui.adapter.HotSongAdapter
 import com.music.player.ui.adapter.NewestAlbumBannerAdapter
 import com.music.player.ui.adapter.SongAdapter
+import com.music.player.data.api.NetworkRuntime
+import com.music.player.data.settings.AppSettings
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.SongDownloader
+import com.music.player.ui.util.SongOptionsHelper
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.optimizeVerticalScrolling
@@ -77,6 +80,10 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val ctx = requireContext()
+        if (!NetworkRuntime.isNetworkAvailable() || AppSettings.isOfflineOnly(ctx)) {
+            Toast.makeText(ctx, R.string.offline_network_banner, Toast.LENGTH_SHORT).show()
+        }
         musicViewModel = ViewModelProvider(requireActivity())[MusicViewModel::class.java]
         libraryViewModel = ViewModelProvider(requireActivity())[LibraryViewModel::class.java]
 
@@ -93,12 +100,24 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             albumCount = musicViewModel.newestAlbums.value.orEmpty().size
         )
 
-        val shouldWarmDiscover = musicViewModel.dailyRecommend.value.isNullOrEmpty()
-
-        if (shouldWarmDiscover) {
-            musicViewModel.loadDailyRecommend()
-        } else {
-            renderSongs(musicViewModel.dailyRecommend.value.orEmpty())
+        val daily = musicViewModel.dailyRecommend.value.orEmpty()
+        if (daily.isNotEmpty()) {
+            renderSongs(daily)
+        }
+        val weekly = musicViewModel.weeklyHotSongs.value.orEmpty()
+        if (weekly.isNotEmpty()) {
+            weeklyHotAdapter.submitList(weekly)
+            updateSummaryChips(weeklyCount = weekly.size)
+        }
+        val albums = musicViewModel.newestAlbums.value.orEmpty()
+        if (albums.isNotEmpty()) {
+            newestAlbumAdapter.submitList(albums)
+            updateSummaryChips(albumCount = albums.size)
+            maybeStartNewestAlbumCarousel()
+        }
+        // Full discover warm: daily + weekly + newest albums (not daily-only).
+        if (daily.isEmpty() || weekly.isEmpty() || albums.isEmpty()) {
+            musicViewModel.prefetchDiscover(forceRefresh = false)
         }
     }
 
@@ -107,10 +126,12 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
     }
 
     override fun onPause() {
+        stopNewestAlbumCarousel()
         super.onPause()
     }
 
     override fun onDestroyView() {
+        stopNewestAlbumCarousel()
         super.onDestroyView()
         _binding = null
     }
@@ -129,14 +150,25 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         val binding = _binding ?: return
         binding.appBar.setExpanded(true, false)
         songAdapter.submitList(emptyList())
+        weeklyHotAdapter.submitList(emptyList())
+        newestAlbumAdapter.submitList(emptyList())
+        stopNewestAlbumCarousel()
         syncEmptyState(forceEmpty = false)
         libraryViewModel.prefetch(forceRefresh = true)
-        musicViewModel.loadDailyRecommend(forceRefresh = true)
+        musicViewModel.prefetchDiscover(forceRefresh = true)
     }
 
     private fun setupRecyclerViews() {
         songAdapter = SongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            // Daily recommend is a list context: keep queue from the tapped song onward.
+            onSongClick = { song ->
+                val songs = songAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onSongLongClick = { song -> showSongActions(song) },
             onMoreClick = { _, song -> showDailyRecommendMenu(song) }
         )
@@ -147,7 +179,14 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         }
 
         weeklyHotAdapter = HotSongAdapter(
-            onSongClick = { song -> musicViewModel.playStandaloneSong(song) },
+            onSongClick = { song ->
+                val songs = weeklyHotAdapter.currentList
+                if (songs.isNotEmpty()) {
+                    musicViewModel.playFromList(songs, song)
+                } else {
+                    musicViewModel.playStandaloneSong(song)
+                }
+            },
             onSongLongClick = { song -> showSongActions(song) }
         )
         binding.rvWeeklyHot.layoutManager =
@@ -200,11 +239,19 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
         }
 
         musicViewModel.weeklyHotSongs.observe(viewLifecycleOwner) { songs ->
+            weeklyHotAdapter.submitList(songs)
             updateSummaryChips(weeklyCount = songs.size)
+            syncWeeklyHotCardVisibility()
         }
 
         musicViewModel.newestAlbums.observe(viewLifecycleOwner) { albums ->
+            newestAlbumAdapter.submitList(albums)
             updateSummaryChips(albumCount = albums.size)
+            if (albums.size > 1) {
+                maybeStartNewestAlbumCarousel()
+            } else {
+                stopNewestAlbumCarousel()
+            }
         }
 
         musicViewModel.weeklyHotLoading.observe(viewLifecycleOwner) { loading ->
@@ -213,6 +260,7 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             syncWeeklyHotCardVisibility()
         }
 
+        // Content loading only — never PlaybackCoordinator stream prepare.
         musicViewModel.isLoading.observe(viewLifecycleOwner) { loading ->
             isMusicLoading = loading
             syncLoadingState()
@@ -223,15 +271,27 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
             isLibraryLoading = loading
             syncLoadingState()
         }
+
+        musicViewModel.discoverError.observe(viewLifecycleOwner) { message ->
+            syncContentError(message)
+        }
+
+        binding.btnContentRetry.setOnClickListener {
+            musicViewModel.clearDiscoverError()
+            refreshContent(userInitiated = true)
+        }
     }
 
     private fun refreshContent(userInitiated: Boolean) {
         libraryViewModel.prefetch(forceRefresh = userInitiated)
-        musicViewModel.loadDailyRecommend(forceRefresh = userInitiated)
+        musicViewModel.prefetchDiscover(forceRefresh = userInitiated)
     }
 
     private fun maybeStartNewestAlbumCarousel() {
-        // Cymusic-style Songs page has no album carousel; keep method for old callers.
+        stopNewestAlbumCarousel()
+        val count = newestAlbumAdapter.itemCount
+        if (count <= 1) return
+        newestAlbumHandler.postDelayed(newestAlbumAutoScroll, newestAlbumIntervalMs)
     }
 
     private fun stopNewestAlbumCarousel() {
@@ -265,60 +325,66 @@ class DiscoverFragment : Fragment(), RootTabInteraction {
 
     private fun syncEmptyState(forceEmpty: Boolean = songAdapter.currentList.isEmpty()) {
         val anyLoading = isMusicLoading || isLibraryLoading
-        val showEmpty = !anyLoading && forceEmpty
+        val hasError = !musicViewModel.discoverError.value.isNullOrBlank()
+        val showEmpty = !anyLoading && !hasError && forceEmpty
         binding.layoutEmptyState.visibility = if (showEmpty) View.VISIBLE else View.GONE
         binding.tvEmptyState.visibility = if (showEmpty) View.VISIBLE else View.GONE
         binding.tvEmptyState.text = getString(R.string.song_list_empty_recommend)
     }
 
+    private fun syncContentError(message: String?) {
+        val binding = _binding ?: return
+        val anyLoading = isMusicLoading || isLibraryLoading
+        val hasList = songAdapter.currentList.isNotEmpty()
+        val showError = !message.isNullOrBlank() && !anyLoading && !hasList
+        binding.layoutContentError.visibility = if (showError) View.VISIBLE else View.GONE
+        if (showError) {
+            binding.tvContentError.text = message
+            binding.layoutEmptyState.visibility = View.GONE
+        } else if (!message.isNullOrBlank() && hasList) {
+            // Soft failure while list still usable — keep list, no full-page error.
+            binding.layoutContentError.visibility = View.GONE
+        }
+        syncEmptyState()
+    }
+
     private fun syncLoadingState() {
         val anyLoading = isMusicLoading || isLibraryLoading
         binding.progressBar.visibility = if (anyLoading) View.VISIBLE else View.GONE
+        if (anyLoading) {
+            binding.layoutContentError.visibility = View.GONE
+        }
     }
 
     private fun showSongActions(song: Song) {
-        val favoriteIds = libraryViewModel.favoriteIds.value.orEmpty()
-        val isFavorite = favoriteIds.contains(song.id)
-
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite)) {
-            libraryViewModel.setFavorite(song, !isFavorite)
-        }
-        options += SongOption(getString(R.string.action_play_next)) {
-            musicViewModel.enqueueNext(song)
-            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-        }
-        options += SongOption(getString(R.string.action_add_to_queue)) {
-            musicViewModel.enqueue(song)
-            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue), Toast.LENGTH_SHORT).show()
-        }
-        options += SongOption(getString(R.string.action_add_to_playlist)) {
-            showAddToPlaylistDialog(song)
-        }
-        options += SongOption(getString(R.string.action_download_song)) {
-            startSongDownload(song)
-        }
-
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
+        SongOptionsHelper.showStandard(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            isFavorite = isFavorite,
+            onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) },
+            includeDownload = true
+        )
     }
 
     private fun showDailyRecommendMenu(song: Song) {
         val isFavorite = libraryViewModel.favoriteIds.value.orEmpty().contains(song.id)
-        val options = mutableListOf<SongOption>()
-        options += SongOption(getString(if (isFavorite) R.string.action_unlike else R.string.action_like)) {
-            libraryViewModel.setFavorite(song, !isFavorite)
-        }
-        options += SongOption(getString(R.string.action_play_next)) {
-            musicViewModel.enqueueNext(song)
-            Toast.makeText(requireContext(), getString(R.string.msg_added_to_queue_next), Toast.LENGTH_SHORT).show()
-        }
-        options += SongOption(getString(R.string.action_add_to_playlist)) {
-            showAddToPlaylistDialog(song)
-        }
-        options += SongOption(getString(R.string.action_download_song)) {
-            startSongDownload(song)
-        }
-        SongOptionsBottomSheet.show(parentFragmentManager, song, options)
+        SongOptionsHelper.show(
+            context = requireContext(),
+            fragmentManager = parentFragmentManager,
+            song = song,
+            musicViewModel = musicViewModel,
+            onAddToPlaylist = ::showAddToPlaylistDialog,
+            config = SongOptionsHelper.Config(
+                includeAddToQueue = false,
+                isFavorite = isFavorite,
+                onToggleFavorite = { libraryViewModel.setFavorite(song, !isFavorite) },
+                favoriteLabels = R.string.action_unlike to R.string.action_like
+            )
+        )
     }
 
     private fun showAddToPlaylistDialog(song: Song) {

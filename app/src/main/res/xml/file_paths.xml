@@ -3,4 +3,22 @@
     <external-files-path
         name="update_apk"
         path="Download/" />
+    <external-files-path
+        name="app_music"
+        path="Music/" />
+    <external-path
+        name="public_music"
+        path="Music/" />
+    <files-path
+        name="ai_draw"
+        path="ai_draw/" />
+    <files-path
+        name="playlist_covers"
+        path="playlist_covers/" />
+    <external-files-path
+        name="video_parse"
+        path="Movies/" />
+    <files-path
+        name="video_parse_internal"
+        path="video_parse/" />
 </paths>

@@ -266,6 +266,33 @@
                             android:textSize="14sp" />
                     </LinearLayout>
 
+                    <LinearLayout
+                        android:id="@+id/layoutContentError"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/spacing_xl"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tvContentError"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:text="@string/content_error_generic"
+                            android:textColor="?attr/textSecondary"
+                            android:textSize="14sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnContentRetry"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_m"
+                            android:text="@string/content_error_retry" />
+                    </LinearLayout>
+
                     <ProgressBar
                         android:id="@+id/progressBar"
                         android:layout_width="wrap_content"

@@ -13,6 +13,7 @@ import com.music.player.data.model.Song
 import com.music.player.databinding.ItemSongBinding
 import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.PressFeedback
+import com.music.player.ui.util.SongDownloader
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColor
 import com.music.player.ui.util.resolveThemeColorStateList
@@ -103,7 +104,7 @@ class SongAdapter(
             } else {
                 binding.ivCover.imageTintList = null
                 Glide.with(binding.ivCover)
-                    .load(ImageUrl.bestQuality(coverUrl))
+                    .load(ImageUrl.thumbnail(coverUrl, COVER_DECODE_SIZE_PX))
                     .placeholder(R.drawable.ic_music_note_24)
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .override(COVER_DECODE_SIZE_PX, COVER_DECODE_SIZE_PX)
@@ -141,10 +142,20 @@ class SongAdapter(
         private fun buildMetaLine(song: Song): String {
             val artists = song.artists.joinToString(", ") { it.name }.trim()
             val album = song.album.name.trim()
-            return when {
+            val base = when {
                 artists.isBlank() -> album
                 album.isBlank() || album == song.name -> artists
                 else -> "$artists · $album"
+            }
+            val offline = song.source == "local" ||
+                song.id.startsWith("local:") ||
+                SongDownloader.isPlayableLocalUrl(song.url.orEmpty())
+            return if (offline) {
+                listOf(base, binding.root.context.getString(R.string.badge_offline))
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+            } else {
+                base
             }
         }
     }

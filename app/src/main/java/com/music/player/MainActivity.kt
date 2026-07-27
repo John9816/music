@@ -26,7 +26,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import androidx.core.content.ContextCompat
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
+
+import com.music.player.data.model.Song
 import com.music.player.data.repository.AlbumRepository
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.auth.AuthSessionState
@@ -77,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_INITIAL_TAB_ID = "extra_initial_tab_id"
         const val EXTRA_FOCUS_LIBRARY_SEARCH = "extra_focus_library_search"
 
-        private const val COVER_CROSSFADE_MS = 120
+
         private const val MINI_PLAYER_ANIM_MS = 160L
         private const val STATE_CURRENT_TAB = "state_current_tab"
     }
@@ -117,11 +118,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            Toast.makeText(
-                this@MainActivity,
-                error.localizedMessage ?: getString(R.string.playback_error_generic),
-                Toast.LENGTH_SHORT
-            ).show()
+            // Recovery / auto-skip is handled in PlaybackService → Coordinator;
+            // avoid a second raw ExoPlayer toast here.
             updateMiniPlayPauseIcon(false)
         }
     }
@@ -323,13 +321,35 @@ class MainActivity : AppCompatActivity() {
         if (!::musicViewModel.isInitialized || !::libraryViewModel.isInitialized) return
         val currentSource = MusicSourcePreferences.activeSource(this).storageValue
         if (!musicViewModel.updateActiveSource(currentSource)) return
+        // Source already persisted (e.g. Settings); just clear + notify tabs.
+        applyMusicSourceChange(
+            MusicSourcePreferences.activeSource(this),
+            persist = false
+        )
+    }
 
-        MusicRepository.clearCaches()
-        AlbumRepository.clearCaches()
-        PlaybackCoordinator.clearResolvedUrlCache()
-        musicViewModel.clearSourceDependentState()
-        libraryViewModel.prefetch(forceRefresh = true)
-
+    /** Shared by Settings result path, Search chips, and Main resume. */
+    fun applyMusicSourceChange(
+        source: MusicSourcePreferences.Source,
+        persist: Boolean = true
+    ) {
+        if (!::musicViewModel.isInitialized) return
+        if (persist) {
+            com.music.player.ui.util.MusicSourceSwitcher.apply(
+                context = this,
+                source = source,
+                musicViewModel = musicViewModel
+            )
+        } else {
+            musicViewModel.forceActiveSource(source.storageValue)
+            MusicRepository.clearCaches()
+            AlbumRepository.clearCaches()
+            PlaybackCoordinator.clearResolvedUrlCache()
+            musicViewModel.clearSourceDependentState()
+        }
+        if (::libraryViewModel.isInitialized) {
+            libraryViewModel.prefetch(forceRefresh = true)
+        }
         supportFragmentManager.fragments
             .filterIsInstance<RootTabInteraction>()
             .forEach { it.onMusicSourceChanged() }
@@ -393,6 +413,11 @@ class MainActivity : AppCompatActivity() {
                 AuthSessionState.expired.collect { expired ->
                     if (!expired || isNavigatingToLogin) return@collect
                     isNavigatingToLogin = true
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.session_expired_login_again,
+                        Toast.LENGTH_LONG
+                    ).show()
                     PlaybackCoordinator.resetPlayback()
                     navigateToLogin()
                 }
@@ -598,23 +623,34 @@ class MainActivity : AppCompatActivity() {
                 binding.miniProgress.isIndeterminate = false
                 // Apply restored / live progress immediately — do not force 0 on cold start.
                 updateMiniProgress()
+                val isRadio = PlaybackCoordinator.isRadioSong(song)
+                binding.btnMiniNext.isEnabled = !isRadio
+                binding.btnMiniNext.alpha = if (isRadio) 0.38f else 1f
 
                 val coverUrl = song.album.picUrl.takeIf { it.isNotBlank() }
                 if (coverUrl == null) {
-                    binding.ivMiniCover.setImageResource(R.drawable.ic_music_note_24)
+                    binding.ivMiniCover.setImageResource(
+                        if (isRadio) R.drawable.ic_cymusic_radio_24 else R.drawable.ic_music_note_24
+                    )
                     binding.ivMiniCover.imageTintList = resolveThemeColorStateList(R.attr.brandPrimary)
                 } else {
                     binding.ivMiniCover.imageTintList = null
                     Glide.with(this)
-                        .load(coverUrl)
+                        .load(com.music.player.ui.util.ImageUrl.thumbnail(coverUrl, 160))
                         .placeholder(R.drawable.ic_music_note_24)
                         .centerCrop()
-                        .transition(DrawableTransitionOptions.withCrossFade(COVER_CROSSFADE_MS))
+                        .dontAnimate()
                         .into(binding.ivMiniCover)
                 }
 
                 updateMiniPlayPauseIcon(shouldShowAsPlaying(player))
-                libraryViewModel.addToHistory(song)
+                // Preview / cold-start UI-only restore has no stream yet — don't spam cloud history.
+                val hasStream = !song.url.isNullOrBlank() ||
+                    (player?.mediaItemCount ?: 0) > 0 ||
+                    musicViewModel.playbackLoading.value == true
+                if (hasStream) {
+                    libraryViewModel.addToHistory(song)
+                }
                 setMiniPlayerVisible(true)
             }.onFailure {
                 // Never crash the activity over a partial restored song model.
@@ -628,10 +664,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Single consumer for library messages (fragments must not also consume).
         libraryViewModel.message.observe(this) { message ->
             message ?: return@observe
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             libraryViewModel.consumeMessage()
+        }
+
+        musicViewModel.playbackLoading.observe(this) { loading ->
+            val preparing = loading == true
+            binding.miniPlaybackLoading.visibility =
+                if (preparing) android.view.View.VISIBLE else android.view.View.GONE
+            binding.btnMiniPlayPause.alpha = if (preparing) 0.35f else 1f
         }
 
         libraryViewModel.latestHistorySong.observe(this) { song ->
@@ -640,6 +684,7 @@ class MainActivity : AppCompatActivity() {
             song ?: return@observe
             hasRestoredRecentSong = true
             musicViewModel.restorePreviewSong(song)
+            binding.tvMiniArtist.text = getString(R.string.mini_player_resume_hint)
         }
     }
 
@@ -648,7 +693,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.miniPlayer.bindPressFeedback(PressFeedback.Style.ROW)
         binding.btnMiniPlayPause.bindPressFeedback(PressFeedback.Style.ICON)
-        binding.btnMiniQueue.bindPressFeedback(PressFeedback.Style.ICON)
+        binding.btnMiniNext.bindPressFeedback(PressFeedback.Style.ICON)
 
         binding.btnMiniPlayPause.setOnClickListener {
             val p = player ?: return@setOnClickListener
@@ -666,7 +711,12 @@ class MainActivity : AppCompatActivity() {
             updateMiniPlayPauseIcon(shouldShowAsPlaying(p))
         }
 
-        binding.btnMiniQueue.setOnClickListener {
+        binding.btnMiniNext.setOnClickListener {
+            val song = musicViewModel.currentSong.value
+            if (song != null && PlaybackCoordinator.isRadioSong(song)) {
+                Toast.makeText(this, R.string.radio_action_unavailable, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             musicViewModel.skipNext()
         }
 
@@ -680,7 +730,7 @@ class MainActivity : AppCompatActivity() {
         }
         // Child controls must consume clicks so they never bubble into openNowPlayingPlayer.
         binding.btnMiniPlayPause.isClickable = true
-        binding.btnMiniQueue.isClickable = true
+        binding.btnMiniNext.isClickable = true
         binding.miniPlayPauseContainer.isClickable = true
         binding.miniPlayer.contentDescription = getString(R.string.mini_player_open_queue_hint)
     }
@@ -823,6 +873,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateMiniProgress() {
         if (binding.miniPlayer.visibility != View.VISIBLE) return
+        // Live radio: HLS window position/duration slide constantly — do not map to a bar.
+        if (PlaybackCoordinator.isLivePlayback()) {
+            val playing = player?.isPlaying == true
+            binding.miniProgress.isIndeterminate = playing
+            if (!playing) {
+                binding.miniProgress.isIndeterminate = false
+                binding.miniProgress.progress = 0
+            }
+            return
+        }
         binding.miniProgress.isIndeterminate = false
         val durationMs = PlaybackCoordinator.displayDurationMs()
         if (durationMs <= 0L) {

@@ -7,6 +7,7 @@ import com.music.player.data.auth.MusicFavoriteRequest
 import com.music.player.data.auth.PlaylistCreateRequest
 import com.music.player.data.auth.PlaylistImportRequest
 import com.music.player.data.auth.PlaylistItemRequest
+import com.music.player.data.auth.PlaylistRenameRequest
 import com.music.player.data.auth.SupabaseClient
 import com.music.player.data.common.RequestCoalescer
 import com.music.player.data.common.TimedMemoryCache
@@ -497,6 +498,61 @@ class SupabaseMusicRepository(context: Context) {
             playlistSongsCache.remove("playlist_songs|$playlistId")
             playlistItemIds.remove("playlist_items|$playlistId")
             Unit
+        }
+    }
+
+    /**
+     * Update playlist metadata. At least one of [name], [description], [coverUrl] should be set.
+     * Server may ignore unknown fields; we always update local cache on success.
+     */
+    suspend fun updatePlaylist(
+        playlistId: String,
+        name: String? = null,
+        description: String? = null,
+        coverUrl: String? = null
+    ): Result<UserPlaylist> = withContext(Dispatchers.IO) {
+        runCatching {
+            val (token, userId) = requireSession()
+            val id = playlistId.toLongOrNull() ?: throw IllegalArgumentException("Invalid playlist ID")
+            val current = knownPlaylists(userId)?.firstOrNull { it.id == playlistId }
+                ?: listUserPlaylists(forceRefresh = true).getOrNull()?.firstOrNull { it.id == playlistId }
+                ?: throw IllegalStateException("歌单不存在")
+
+            val request = PlaylistRenameRequest(
+                name = name?.trim()?.takeIf { it.isNotBlank() } ?: current.name,
+                description = description?.trim() ?: current.description,
+                coverUrl = coverUrl?.trim()?.takeIf { it.isNotBlank() } ?: current.coverUrl
+            )
+            val response = executeAuthorized(token) { api.renamePlaylist(it, id, request) }
+            val updated = if (response.isSuccessful) {
+                runCatching { parseDataObject(response, "update playlist").toUserPlaylist() }
+                    .getOrElse {
+                        current.copy(
+                            name = request.name ?: current.name,
+                            description = request.description,
+                            coverUrl = request.coverUrl
+                        )
+                    }
+            } else {
+                // Backend may not support cover yet — keep local optimistic cover for UI.
+                if (coverUrl.isNullOrBlank()) {
+                    throw IllegalStateException(errorMessage(response, "更新歌单失败"))
+                }
+                current.copy(
+                    name = request.name ?: current.name,
+                    description = request.description,
+                    coverUrl = coverUrl.trim()
+                )
+            }
+
+            val key = "playlists|$userId"
+            val list = knownPlaylists(userId).orEmpty()
+            playlistsCache.put(
+                key,
+                if (list.isEmpty()) listOf(updated)
+                else list.map { if (it.id == playlistId || it.id == updated.id) updated else it }
+            )
+            updated
         }
     }
 
