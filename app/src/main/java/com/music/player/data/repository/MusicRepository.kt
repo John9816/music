@@ -1,6 +1,8 @@
 package com.music.player.data.repository
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.music.player.data.auth.AuthSessionManager
@@ -161,6 +163,7 @@ class MusicRepository(context: Context? = null) {
                     val response = api.getTopLists(source = source)
                     if (response.isSuccessful) {
                         val playlists = parsePlaylistsFromEnvelope(response.body()?.string().orEmpty())
+                            .map { it.copy(isRanking = true) }
                         topListsCache.put(cacheKey, playlists)
                         Result.success(playlists)
                     } else {
@@ -209,17 +212,32 @@ class MusicRepository(context: Context? = null) {
                 }
 
                 try {
+                    val netStart = SystemClock.elapsedRealtime()
                     val response = api.getTopPlaylists(
                         source = source,
                         category = normalizedCategory.ifBlank { null },
                         page = (offset / limit.coerceAtLeast(1)) + 1,
                         pageSize = limit
                     )
+                    val netCost = SystemClock.elapsedRealtime() - netStart
                     if (response.isSuccessful) {
+                        val parseStart = SystemClock.elapsedRealtime()
                         val playlists = parsePlaylistsFromEnvelope(response.body()?.string().orEmpty())
+                        val parseCost = SystemClock.elapsedRealtime() - parseStart
+                        Log.d(
+                            "MusicRepository",
+                            "getTopPlaylists source=$source cat='${normalizedCategory}' " +
+                                "off=$offset lim=$limit net=${netCost}ms parse=${parseCost}ms " +
+                                "count=${playlists.size}"
+                        )
                         topPlaylistsCache.put(cacheKey, playlists)
                         Result.success(playlists)
                     } else {
+                        Log.d(
+                            "MusicRepository",
+                            "getTopPlaylists FAILED source=$source cat='${normalizedCategory}' " +
+                                "off=$offset lim=$limit net=${netCost}ms http=${response.code()}"
+                        )
                         Result.failure(Exception("获取歌单失败"))
                     }
                 } catch (e: Exception) {
@@ -337,10 +355,18 @@ class MusicRepository(context: Context? = null) {
         }
     }
     suspend fun getPlaylistDetail(id: String): Result<Pair<Playlist, List<Song>>> {
-        return getPlaylistDetail(id, forceRefresh = false)
+        return getPlaylistDetail(id, forceRefresh = false, isRanking = false)
     }
 
     suspend fun getPlaylistDetail(id: String, forceRefresh: Boolean): Result<Pair<Playlist, List<Song>>> {
+        return getPlaylistDetail(id, forceRefresh = forceRefresh, isRanking = false)
+    }
+
+    suspend fun getPlaylistDetail(
+        id: String,
+        forceRefresh: Boolean,
+        isRanking: Boolean
+    ): Result<Pair<Playlist, List<Song>>> {
         val normalizedId = id.trim()
         if (normalizedId.isBlank()) {
             return Result.failure(IllegalArgumentException("歌单 ID 为空"))
@@ -359,11 +385,15 @@ class MusicRepository(context: Context? = null) {
                 }
 
                 try {
-                    // QQ and Kuwo rankings use toplist/detail; regular collections
-                    // use playlist/detail. Try the ranking shape first for Kuwo,
-                    // whose chart IDs otherwise look like ordinary playlist IDs.
+                    // Kuwo charts always use toplist/detail. QQ charts also need toplist/detail —
+                    // the caller flags rankings via [isRanking] so we skip a wasted playlist/detail
+                    // round-trip that we know will 404. Only fall through to playlist/detail as a
+                    // safety net if the ranking response is empty (e.g. stale mapping).
+                    val tryRankingFirst = isRanking ||
+                        source == MusicSourcePreferences.Source.KUWO.storageValue
                     var detail: Pair<Playlist, List<Song>>? = null
-                    if (source == MusicSourcePreferences.Source.KUWO.storageValue) {
+
+                    if (tryRankingFirst) {
                         val rankingResponse = api.getTopListDetail(source = source, id = normalizedId)
                         if (rankingResponse.isSuccessful) {
                             detail = parsePlaylistDetailFromEnvelope(
@@ -374,7 +404,8 @@ class MusicRepository(context: Context? = null) {
                         }
                     }
 
-                    val playlistResponse = if (detail == null && source != MusicSourcePreferences.Source.KUWO.storageValue) {
+                    val skipRegularForKuwo = source == MusicSourcePreferences.Source.KUWO.storageValue
+                    val playlistResponse = if (detail == null && !skipRegularForKuwo) {
                         api.getPlaylistDetail(source = source, id = normalizedId)
                     } else null
                     if (detail == null && playlistResponse?.isSuccessful == true) {
@@ -385,7 +416,9 @@ class MusicRepository(context: Context? = null) {
                         )
                     }
 
-                    if (detail == null && source == MusicSourcePreferences.Source.QQ.storageValue) {
+                    if (detail == null && !tryRankingFirst &&
+                        source == MusicSourcePreferences.Source.QQ.storageValue
+                    ) {
                         val rankingResponse = api.getTopListDetail(source = source, id = normalizedId)
                         if (rankingResponse.isSuccessful) {
                             detail = parsePlaylistDetailFromEnvelope(

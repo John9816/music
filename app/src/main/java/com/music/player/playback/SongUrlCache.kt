@@ -76,7 +76,9 @@ class SongUrlCache(context: Context) {
     }
 
     private fun cacheKey(songId: String, source: String): String {
-        val level = AudioQualityPreferences.getPreferredLevel(appContext)
+        // Align with MusicRepository.songUrlCache which keys on getPlaybackLevel so that
+        // metered/unmetered networks don't cross-contaminate cached URLs of different tiers.
+        val level = AudioQualityPreferences.getPlaybackLevel(appContext)
         return "$source|$songId|${level.storageValue}"
     }
 

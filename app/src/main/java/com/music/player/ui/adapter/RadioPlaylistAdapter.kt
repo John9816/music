@@ -40,10 +40,14 @@ class RadioPlaylistAdapter(
         fun bind(playlist: Playlist) {
             bound = playlist
             binding.tvName.text = playlist.name
+            // 60dp cover — request a small tier so QQ/NetEase CDN serves a thumbnail
+            // instead of a full-res JPEG. Cuts bitmap decode + memory pressure a lot
+            // when paginating dozens of covers at once.
             Glide.with(binding.ivCover)
-                .load(ImageUrl.bestQuality(playlist.coverImgUrl))
+                .load(ImageUrl.thumbnail(playlist.coverImgUrl, size = 240))
                 .placeholder(R.drawable.ic_playlist_placeholder)
                 .error(R.drawable.ic_playlist_placeholder)
+                .override(240, 240)
                 .centerCrop()
                 .dontAnimate()
                 .into(binding.ivCover)

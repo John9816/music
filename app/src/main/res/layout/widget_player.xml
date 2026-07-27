@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widgetRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -57,7 +58,8 @@
         android:contentDescription="@string/content_desc_previous"
         android:padding="8dp"
         android:src="@drawable/ic_skip_previous_24"
-        android:tint="#FFFFFFFF" />
+        android:tint="#FFFFFFFF"
+        tools:ignore="UseAppTint" />
 
     <ImageButton
         android:id="@+id/btnWidgetPlay"
@@ -67,7 +69,8 @@
         android:contentDescription="@string/content_desc_play_pause"
         android:padding="8dp"
         android:src="@drawable/ic_play_24"
-        android:tint="#FFFFFFFF" />
+        android:tint="#FFFFFFFF"
+        tools:ignore="UseAppTint" />
 
     <ImageButton
         android:id="@+id/btnWidgetNext"
@@ -77,5 +80,6 @@
         android:contentDescription="@string/content_desc_next"
         android:padding="8dp"
         android:src="@drawable/ic_skip_next_24"
-        android:tint="#FFFFFFFF" />
+        android:tint="#FFFFFFFF"
+        tools:ignore="UseAppTint" />
 </LinearLayout>

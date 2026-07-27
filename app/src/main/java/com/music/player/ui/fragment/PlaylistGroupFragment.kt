@@ -77,8 +77,17 @@ class PlaylistGroupFragment : Fragment() {
         }
 
         playlistAdapter = PlaylistGridAdapter { playlist ->
+            val fragment = PlaylistSongsFragment.newInstance(
+                playlistId = playlist.id,
+                headerTitle = playlist.name,
+                isRanking = playlist.isRanking,
+                coverUrl = playlist.coverImgUrl,
+                description = playlist.description,
+                trackCount = playlist.trackCount,
+                playCount = playlist.playCount
+            )
             parentFragmentManager.beginTransaction()
-                .replace(R.id.fragmentContainer, PlaylistSongsFragment.newInstance(playlist.id))
+                .replace(R.id.fragmentContainer, fragment)
                 .addToBackStack(null)
                 .commit()
         }

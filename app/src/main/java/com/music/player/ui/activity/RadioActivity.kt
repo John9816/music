@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 /**
  * Live radio directory — search, region chips, recent, pull-to-refresh, now-playing dock.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class RadioActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityRadioBinding

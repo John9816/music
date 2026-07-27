@@ -25,9 +25,29 @@ class PlaylistSongsFragment : Fragment() {
     companion object {
         private const val ARG_PLAYLIST_ID = "playlist_id"
         private const val ARG_HEADER_TITLE = "header_title"
+        private const val ARG_IS_RANKING = "is_ranking"
+        private const val ARG_COVER_URL = "cover_url"
+        private const val ARG_DESCRIPTION = "description"
+        private const val ARG_TRACK_COUNT = "track_count"
+        private const val ARG_PLAY_COUNT = "play_count"
 
-        fun newInstance(playlistId: String, headerTitle: String? = null): PlaylistSongsFragment = PlaylistSongsFragment().apply {
-            arguments = Bundle().apply { putString(ARG_PLAYLIST_ID, playlistId) }
+        fun newInstance(
+            playlistId: String,
+            headerTitle: String? = null,
+            isRanking: Boolean = false,
+            coverUrl: String? = null,
+            description: String? = null,
+            trackCount: Int = 0,
+            playCount: Long = 0L
+        ): PlaylistSongsFragment = PlaylistSongsFragment().apply {
+            arguments = Bundle().apply {
+                putString(ARG_PLAYLIST_ID, playlistId)
+                putBoolean(ARG_IS_RANKING, isRanking)
+                coverUrl?.takeIf { it.isNotBlank() }?.let { putString(ARG_COVER_URL, it) }
+                description?.takeIf { it.isNotBlank() }?.let { putString(ARG_DESCRIPTION, it) }
+                if (trackCount > 0) putInt(ARG_TRACK_COUNT, trackCount)
+                if (playCount > 0L) putLong(ARG_PLAY_COUNT, playCount)
+            }
             headerTitle?.takeIf { it.isNotBlank() }?.let {
                 arguments?.putString(ARG_HEADER_TITLE, it)
             }
@@ -47,6 +67,21 @@ class PlaylistSongsFragment : Fragment() {
 
     private val headerTitleOverride: String?
         get() = arguments?.getString(ARG_HEADER_TITLE)?.takeIf { it.isNotBlank() }
+
+    private val isRankingHint: Boolean
+        get() = arguments?.getBoolean(ARG_IS_RANKING, false) == true
+
+    private val seedCoverUrl: String?
+        get() = arguments?.getString(ARG_COVER_URL)?.takeIf { it.isNotBlank() }
+
+    private val seedDescription: String?
+        get() = arguments?.getString(ARG_DESCRIPTION)?.takeIf { it.isNotBlank() }
+
+    private val seedTrackCount: Int
+        get() = arguments?.getInt(ARG_TRACK_COUNT, 0) ?: 0
+
+    private val seedPlayCount: Long
+        get() = arguments?.getLong(ARG_PLAY_COUNT, 0L) ?: 0L
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSongCollectionBinding.inflate(inflater, container, false)
@@ -68,6 +103,7 @@ class PlaylistSongsFragment : Fragment() {
             binding = binding,
             initialTitle = headerTitleOverride.orEmpty()
         )
+        applySeedHeader()
 
         songAdapter = SongAdapter(
             // Catalog playlist: play from this row, keep remaining tracks in queue.
@@ -158,18 +194,45 @@ class PlaylistSongsFragment : Fragment() {
         binding.btnContentRetry.setOnClickListener {
             musicViewModel.clearPlaylistDetailError()
             if (playlistId.isNotBlank()) {
-                musicViewModel.loadPlaylistDetailById(playlistId, forceRefresh = true)
+                musicViewModel.loadPlaylistDetailById(playlistId, forceRefresh = true, isRanking = isRankingHint)
             }
         }
 
         if (playlistId.isNotBlank()) {
-            musicViewModel.loadPlaylistDetailById(playlistId)
+            musicViewModel.loadPlaylistDetailById(playlistId, isRanking = isRankingHint)
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    /**
+     * Paint the header from the list card immediately — cover, count, play count, description
+     * come from the tile the user just tapped, so the detail screen looks "there" while
+     * playlist/detail is still in flight. Real data overwrites these in the observer above.
+     */
+    private fun applySeedHeader() {
+        SongCollectionHeaderHelper.loadCovers(binding, seedCoverUrl)
+
+        val trackCount = seedTrackCount
+        if (trackCount > 0) {
+            binding.tvCollectionCount.text =
+                getString(R.string.collection_count_value, trackCount)
+        }
+
+        val description = seedDescription?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+        binding.tvHeaderDescription.text = description
+        binding.tvHeaderDescription.visibility = if (description.isBlank()) View.GONE else View.VISIBLE
+
+        val playCount = seedPlayCount
+        if (playCount > 0L) {
+            binding.tvHeaderPlayCount.text = formatPlayCount(requireContext(), playCount)
+            binding.tvHeaderPlayCount.visibility = View.VISIBLE
+        } else {
+            binding.tvHeaderPlayCount.visibility = View.GONE
+        }
     }
 
     private fun playAll() {

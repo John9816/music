@@ -52,7 +52,7 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         const val STATE_TAB = "radio_selected_tab"
         const val STATE_CATEGORY = "radio_playlist_category"
         const val STATE_GROUP_ID = "radio_playlist_group_id"
-        const val PLAYLIST_PAGE_SIZE = 42
+        const val PLAYLIST_PAGE_SIZE = 20
     }
 
     override fun onCreateView(
@@ -140,9 +140,13 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
                         return@addSlopAwareHeaderCollapseListener
                     }
                     val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return@addSlopAwareHeaderCollapseListener
-                    if (layoutManager.findLastVisibleItemPosition() >= this@PlaylistsFragment.adapter.itemCount - 5) {
+                    // Fire well before the user hits the last item — request lead time hides
+                    // the QQ backend RTT inside the ongoing scroll. Keep a small live indicator
+                    // so the user still knows something is loading in-flight.
+                    if (layoutManager.findLastVisibleItemPosition() >= this@PlaylistsFragment.adapter.itemCount - 20) {
                         previousPlaylistCount = allItems.size
                         loadingMore = true
+                        binding.progressBar.visibility = View.VISIBLE
                         musicViewModel.loadTopPlaylists(
                             category = selectedCategory,
                             limit = PLAYLIST_PAGE_SIZE,
@@ -415,7 +419,18 @@ class PlaylistsFragment : Fragment(), RootTabInteraction {
         // Rankings carry their own display name (for example 飙升榜、新歌榜、热歌榜).
         // Keep a fallback only for malformed source data.
         val detailTitle = playlist.name.ifBlank { "飙升榜" }
-        val fragment = PlaylistSongsFragment.newInstance(playlist.id, detailTitle)
+        // Rankings-tab entries must hit toplist/detail directly; skip the wasted
+        // playlist/detail probe that QQ was paying for on every open.
+        val isRanking = playlist.isRanking || selectedTab == RadioTab.RANKINGS
+        val fragment = PlaylistSongsFragment.newInstance(
+            playlistId = playlist.id,
+            headerTitle = detailTitle,
+            isRanking = isRanking,
+            coverUrl = playlist.coverImgUrl,
+            description = playlist.description,
+            trackCount = playlist.trackCount,
+            playCount = playlist.playCount
+        )
         val main = activity as? com.music.player.MainActivity
         if (main != null) {
             main.pushDetail(fragment)

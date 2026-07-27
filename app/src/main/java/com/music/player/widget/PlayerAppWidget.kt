@@ -24,6 +24,7 @@ import com.music.player.playback.PlaybackService
 import com.music.player.ui.util.ImageUrl
 import java.util.concurrent.atomic.AtomicLong
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class PlayerAppWidget : AppWidgetProvider() {
 
     override fun onUpdate(

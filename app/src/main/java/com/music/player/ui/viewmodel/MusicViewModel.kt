@@ -466,7 +466,11 @@ class MusicViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             if (forceRefresh) _playlistDetailError.value = null
-            repository.getPlaylistDetail(playlist.id, forceRefresh = forceRefresh)
+            repository.getPlaylistDetail(
+                playlist.id,
+                forceRefresh = forceRefresh,
+                isRanking = playlist.isRanking
+            )
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs
@@ -477,11 +481,19 @@ class MusicViewModel : ViewModel() {
         }
     }
 
-    fun loadPlaylistDetailById(playlistId: String, forceRefresh: Boolean = false) {
+    fun loadPlaylistDetailById(
+        playlistId: String,
+        forceRefresh: Boolean = false,
+        isRanking: Boolean = false
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             if (forceRefresh) _playlistDetailError.value = null
-            repository.getPlaylistDetail(playlistId, forceRefresh = forceRefresh)
+            repository.getPlaylistDetail(
+                playlistId,
+                forceRefresh = forceRefresh,
+                isRanking = isRanking
+            )
                 .onSuccess { (loadedPlaylist, songs) ->
                     _currentPlaylist.value = loadedPlaylist
                     _playlistSongs.value = songs

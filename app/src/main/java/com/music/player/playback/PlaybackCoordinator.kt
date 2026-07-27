@@ -124,6 +124,7 @@ object PlaybackCoordinator {
         restoreSleepTimer()
     }
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     fun attachPlayer(context: Context, player: Player) {
         appContext = context.applicationContext
         MusicRepository.setApplicationContext(appContext!!)

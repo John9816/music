@@ -1,6 +1,9 @@
 package com.music.player.data.api
 
+import android.util.Log
 import com.music.player.BuildConfig
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.CacheControl
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -8,10 +11,13 @@ import okhttp3.Interceptor
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.Request
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.io.IOException
 
 object RetrofitClient {
@@ -136,6 +142,35 @@ object RetrofitClient {
     }
 
     val musicApi: MusicApiService = createRetrofit(MUSIC_BASE_URL).create(MusicApiService::class.java)
+
+    private val warmupStarted = AtomicBoolean(false)
+
+    /**
+     * Pre-open a pooled TLS connection to the music host so the first play does not pay for
+     * DNS + TLS handshake on the critical path. Fire-and-forget on a background executor —
+     * failures are harmless, the normal request path still runs.
+     */
+    fun warmUpMusicHost() {
+        if (!warmupStarted.compareAndSet(false, true)) return
+        if (!NetworkRuntime.isNetworkAvailable()) {
+            warmupStarted.set(false)
+            return
+        }
+        val request = Request.Builder()
+            .url(MUSIC_BASE_URL)
+            .head()
+            .cacheControl(CacheControl.Builder().noStore().build())
+            .build()
+        okHttpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.d("RetrofitClient", "host warmup failed: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.close()
+            }
+        })
+    }
 
     fun httpCacheSizeBytes(): Long = runCatching { httpCache.size() }.getOrDefault(0L)
 

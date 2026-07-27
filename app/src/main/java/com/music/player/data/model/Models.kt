@@ -37,7 +37,8 @@ data class Playlist(
     val description: String,
     val trackCount: Int,
     val playCount: Long,
-    val source: String = "netease"
+    val source: String = "netease",
+    val isRanking: Boolean = false
 )
 
 data class LyricLine(

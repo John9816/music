@@ -62,11 +62,12 @@ class PlaybackService : MediaSessionService() {
 
         val loadControl = DefaultLoadControl.Builder()
             // Fast first-byte for start/skip; keep a deep buffer once playing to cut rebuffers.
+            // bufferForPlaybackMs is on the critical path from tap to audible sound — keep it small.
             .setBufferDurationsMs(
                 /* minBufferMs = */ 30_000,
                 /* maxBufferMs = */ 120_000,
-                /* bufferForPlaybackMs = */ 1_200,
-                /* bufferForPlaybackAfterRebufferMs = */ 5_000
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 3_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
