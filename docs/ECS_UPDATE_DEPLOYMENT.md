@@ -1,5 +1,7 @@
 # ECS Update Hosting
 
+For the complete build, GitHub, ECS, verification, and rollback procedure, use [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md).
+
 The app checks `https://api.751152.xyz/updates/latest.json` first and falls back to GitHub when the ECS file is missing or unavailable.
 
 ## ECS files

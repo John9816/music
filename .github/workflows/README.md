@@ -1,5 +1,7 @@
 ## Android APK build (GitHub Actions)
 
+Canonical release procedure: [`docs/RELEASE_RUNBOOK.md`](../../docs/RELEASE_RUNBOOK.md).
+
 Workflow: `Android APK`
 
 ### How to run
@@ -7,14 +9,16 @@ Workflow: `Android APK`
 - Go to **Actions** → **Android APK** → **Run workflow**
 - Choose `variant`: `debug`, `release`, or `both` (default)
 - The workflow reads `app/build.gradle` automatically
-- Normal branch push or manual run only performs the build verification and does not upload artifacts
-- For `1.0.3`, make sure `app/build.gradle` contains `versionName "1.0.3"` and `versionCode 4`
+- Pushes to `master`/`main` and manual runs perform build verification without publishing a Release
+- Release branch pushes do not trigger this workflow
+- Before publishing, increase both `versionName` and `versionCode` in `app/build.gradle`
 
-### Build version `1.0.3`
+### Publish a version tag
 
-- Commit the version change in `app/build.gradle`
-- Push branch normally to verify the build
-- Create and push tag `v1.0.3` to publish the signed APK on the GitHub Release page
+- Commit the release changes, including the version change in `app/build.gradle`
+- Run the local release gate described in `docs/RELEASE_RUNBOOK.md`
+- Merge and push the reviewed release commit to `master`
+- Create and push tag `v<versionName>` to publish the signed APK on the GitHub Release page
 - The workflow will reject a tag that does not match `versionName`
 
 ### Required release signing secrets
@@ -28,6 +32,6 @@ Workflow: `Android APK`
 
 ### Release assets
 
-- Production asset: `DuckMusic-v1.0.3.apk`
+- Production asset: `DuckMusic-v<versionName>.apk`
 - Package name: `com.music.player`
 - The APK is uploaded only for a matching `v*` tag after tests, Android Lint, package metadata, and certificate verification pass
