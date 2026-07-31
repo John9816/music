@@ -29,9 +29,7 @@ Run these commands from the repository root. Change only the version values for 
 $VersionName = "1.1.22"
 $VersionCode = 33
 $ReleaseBranch = "codex/release-$VersionName"
-$ApkName = "DuckMusic-v$VersionName.apk"
 $ReleaseDir = Join-Path $PWD "app\build\outputs\apk\release"
-$ApkPath = Join-Path $ReleaseDir $ApkName
 $ManifestPath = Join-Path $ReleaseDir "latest.json"
 $EcsHost = "api.751152.xyz"
 $EcsUser = "root"
@@ -72,10 +70,17 @@ The local `keystore.properties` and referenced keystore file must exist. They ar
 .\gradlew.bat :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon --console=plain
 ```
 
-Stage the release filename and locate the newest Android build-tools:
+The release produces one APK per ABI. Stage the release filenames and locate the newest Android build-tools:
 
 ```powershell
-Copy-Item (Join-Path $ReleaseDir "app-release.apk") $ApkPath -Force
+$Abis = @("arm64-v8a", "armeabi-v7a", "x86_64")
+$ApkPaths = @{}
+$Abis | ForEach-Object {
+    $Source = Join-Path $ReleaseDir "app-$_-release.apk"
+    $Target = Join-Path $ReleaseDir "DuckMusic-v$VersionName-$_.apk"
+    Copy-Item $Source $Target -Force
+    $ApkPaths[$_] = $Target
+}
 
 $BuildTools = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" -Directory |
     Where-Object Name -Match '^\d+\.\d+\.\d+$' |
@@ -88,9 +93,11 @@ $Aapt = Join-Path $BuildTools.FullName "aapt.exe"
 Verify signature, package, version, and checksum:
 
 ```powershell
-& $ApkSigner verify --verbose --print-certs $ApkPath
-& $Aapt dump badging $ApkPath | Select-Object -First 1
-Get-FileHash $ApkPath -Algorithm SHA256
+$ApkPaths.GetEnumerator() | ForEach-Object {
+    & $ApkSigner verify --verbose --print-certs $_.Value
+    & $Aapt dump badging $_.Value | Select-Object -First 1
+    Get-FileHash $_.Value -Algorithm SHA256
+}
 Get-Content -Raw (Join-Path $ReleaseDir "output-metadata.json")
 ```
 
@@ -107,7 +114,11 @@ Do not publish unless all of these are true:
 $Manifest = [ordered]@{
     version = $VersionName
     buildNumber = $VersionCode
-    downloadUrl = "https://api.751152.xyz/updates/$ApkName"
+    downloads = [ordered]@{
+        "arm64-v8a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
+        "armeabi-v7a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-armeabi-v7a.apk"
+        "x86_64" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-x86_64.apk"
+    }
     description = "DuckMusic $VersionName"
     forceUpdate = $false
     minBuildNumber = 0
@@ -126,10 +137,13 @@ Upload to `/tmp`, compare hashes, then move the APK before `latest.json`. This p
 ```powershell
 $RemoteManifest = "latest-$VersionName.json"
 
-scp -i $SshKey -P $EcsPort $ApkPath "${EcsUser}@${EcsHost}:/tmp/$ApkName"
+$ApkPaths.GetEnumerator() | ForEach-Object {
+    scp -i $SshKey -P $EcsPort $_.Value "${EcsUser}@${EcsHost}:/tmp/$([IO.Path]::GetFileName($_.Value))"
+}
 scp -i $SshKey -P $EcsPort $ManifestPath "${EcsUser}@${EcsHost}:/tmp/$RemoteManifest"
 
-ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "sha256sum /tmp/$ApkName /tmp/$RemoteManifest"
+$RemoteApks = ($ApkPaths.Values | ForEach-Object { "/tmp/$([IO.Path]::GetFileName($_))" }) -join " "
+ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "sha256sum $RemoteApks /tmp/$RemoteManifest"
 ```
 
 The remote hashes must match the local hashes. Back up the current manifest and perform the switch:
@@ -138,8 +152,10 @@ The remote hashes must match the local hashes. Back up the current manifest and 
 $BackupName = "latest.json.bak_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 
 ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "cp -p $EcsDir/latest.json $EcsDir/$BackupName"
-ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "chmod 0644 /tmp/$ApkName"
-ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "mv -f /tmp/$ApkName $EcsDir/$ApkName"
+$ApkPaths.Values | ForEach-Object {
+    $Name = [IO.Path]::GetFileName($_)
+    ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "chmod 0644 /tmp/$Name && mv -f /tmp/$Name $EcsDir/$Name"
+}
 ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "chmod 0644 /tmp/$RemoteManifest"
 ssh -i $SshKey -p $EcsPort "${EcsUser}@${EcsHost}" "mv -f /tmp/$RemoteManifest $EcsDir/latest.json"
 ```
@@ -148,11 +164,13 @@ Verify the real public path, including a full APK download:
 
 ```powershell
 curl.exe -fsS "https://api.751152.xyz/updates/latest.json"
-curl.exe -fsSI "https://api.751152.xyz/updates/$ApkName"
-
-$PublicApk = Join-Path $env:TEMP "$ApkName-public.apk"
-curl.exe -fsSL --max-time 120 -o $PublicApk "https://api.751152.xyz/updates/$ApkName"
-Get-FileHash $PublicApk -Algorithm SHA256
+$ApkPaths.GetEnumerator() | ForEach-Object {
+    $Name = [IO.Path]::GetFileName($_.Value)
+    curl.exe -fsSI "https://api.751152.xyz/updates/$Name"
+    $PublicApk = Join-Path $env:TEMP "$Name-public.apk"
+    curl.exe -fsSL --max-time 120 -o $PublicApk "https://api.751152.xyz/updates/$Name"
+    Get-FileHash $PublicApk -Algorithm SHA256
+}
 ```
 
 The public APK hash must equal the local APK hash.

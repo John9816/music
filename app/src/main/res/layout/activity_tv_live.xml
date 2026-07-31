@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/pageBackground">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        android:elevation="0dp"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="?attr/actionBarSize"
+            app:navigationIcon="@drawable/ic_arrow_back_24"
+            app:navigationIconTint="?attr/textPrimary"
+            app:title="@string/tools_tv_live_title"
+            app:titleTextColor="?attr/textPrimary" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/playerCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/spacing_m"
+            android:layout_marginBottom="@dimen/spacing_s"
+            app:cardBackgroundColor="@android:color/black"
+            app:cardCornerRadius="@dimen/tv_live_player_radius"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/glassStrokeSoft"
+            app:strokeWidth="1dp">
+
+            <FrameLayout
+                android:id="@+id/playerFrame"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/tv_live_player_initial_height"
+                android:background="@android:color/black">
+
+                <SurfaceView
+                    android:id="@+id/videoSurface"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no" />
+
+                <LinearLayout
+                    android:id="@+id/playerNowPlaying"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="@dimen/spacing_sm"
+                    android:background="@drawable/bg_tv_player_scrim"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="@dimen/spacing_sm"
+                    android:paddingVertical="@dimen/spacing_s"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvPlayerChannel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:maxWidth="220dp"
+                        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+                        android:textColor="@android:color/white"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvPlayerSource"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+                        android:textColor="#CCFFFFFF" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvPlayerHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:padding="@dimen/spacing_m"
+                    android:text="@string/tv_live_player_hint"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:textColor="@android:color/white" />
+
+                <ImageButton
+                    android:id="@+id/btnPlayerFullscreen"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="@dimen/spacing_m"
+                    android:background="@drawable/ripple_circular_primary"
+                    android:contentDescription="@string/tv_live_toggle_fullscreen"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_fullscreen_24"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+                <LinearLayout
+                    android:id="@+id/playerStatusContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_tv_player_scrim"
+                    android:gravity="center"
+                    android:minWidth="168dp"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="@dimen/spacing_m"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:visibility="gone">
+
+                    <ProgressBar
+                        android:id="@+id/playerProgress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:indeterminateTint="@android:color/white"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvPlayerStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_s"
+                        android:accessibilityLiveRegion="polite"
+                        android:gravity="center"
+                        android:maxWidth="240dp"
+                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPlayerRetry"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="@dimen/spacing_xs"
+                        android:text="@string/tv_live_retry_playback"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/playerControls"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="@dimen/spacing_m"
+                    android:background="@drawable/bg_tv_player_scrim"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/spacing_s"
+                    android:paddingVertical="@dimen/spacing_xs"
+                    android:visibility="gone">
+
+                    <ImageButton
+                        android:id="@+id/btnPlayerPrevious"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:background="@drawable/ripple_circular_primary"
+                        android:contentDescription="@string/content_desc_previous"
+                        android:padding="14dp"
+                        android:src="@drawable/ic_skip_previous_24"
+                        app:tint="@android:color/white" />
+
+                    <ImageButton
+                        android:id="@+id/btnPlayerPause"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:layout_marginHorizontal="@dimen/spacing_m"
+                        android:background="@drawable/ripple_circular_primary"
+                        android:contentDescription="@string/tv_live_toggle_play"
+                        android:padding="16dp"
+                        android:src="@drawable/ic_pause_24"
+                        app:tint="@android:color/white" />
+
+                    <ImageButton
+                        android:id="@+id/btnPlayerNext"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:background="@drawable/ripple_circular_primary"
+                        android:contentDescription="@string/content_desc_next"
+                        android:padding="14dp"
+                        android:src="@drawable/ic_skip_next_24"
+                        app:tint="@android:color/white" />
+                </LinearLayout>
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/spacing_m"
+            android:paddingBottom="@dimen/spacing_xs"
+            android:text="@string/tools_tv_live_subtitle"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="?attr/textSecondary" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilSearch"
+            style="@style/Widget.MusicPlayer.TextField"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/spacing_m"
+            android:layout_marginBottom="@dimen/spacing_s"
+            android:hint="@string/tv_live_search_hint"
+            app:boxBackgroundColor="?attr/glassSurfaceStrong"
+            app:endIconMode="clear_text"
+            app:startIconDrawable="@drawable/ic_search_24">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/chipScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:clipToPadding="false"
+            android:paddingHorizontal="@dimen/spacing_m"
+            android:paddingBottom="@dimen/spacing_s"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <FrameLayout
+        android:id="@+id/contentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="@dimen/spacing_l" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <LinearLayout
+            android:id="@+id/emptyState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_l"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:alpha="0.55"
+                android:src="@drawable/ic_cymusic_radio_24"
+                app:tint="?attr/textSecondary" />
+
+            <TextView
+                android:id="@+id/tvEmpty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_m"
+                android:gravity="center"
+                android:text="@string/tv_live_empty"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="?attr/textSecondary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRetry"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_m"
+                android:text="@string/tv_live_retry"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

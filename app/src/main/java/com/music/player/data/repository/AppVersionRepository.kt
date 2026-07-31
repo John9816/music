@@ -1,6 +1,7 @@
 package com.music.player.data.repository
 
 import android.content.Context
+import android.os.Build
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.music.player.BuildConfig
@@ -80,10 +81,26 @@ class AppVersionRepository(context: Context) {
 
     private fun parseUpdateManifest(root: JsonObject): AppVersionInfo? {
         val version = root.stringOrNull("version") ?: return null
+        val downloads = root.getAsJsonObject("downloads")
+            ?.entrySet()
+            ?.mapNotNull { (abi, value) ->
+                value.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { abi to it }
+            }
+            ?.toMap()
+            .orEmpty()
         return AppVersionInfo(
             version = version.removePrefix("v").removePrefix("V"),
             buildNumber = root.intOrNull("buildNumber") ?: version.hashCode(),
-            downloadUrl = root.stringOrNull("downloadUrl") ?: root.stringOrNull("download_url"),
+            downloadUrl = UpdateDownloadSelector.selectUrl(
+                downloads = downloads,
+                supportedAbis = Build.SUPPORTED_ABIS.toList(),
+                legacyDownloadUrl = root.stringOrNull("downloadUrl")
+                    ?: root.stringOrNull("download_url")
+            ),
             description = root.stringOrNull("description"),
             forceUpdate = root.booleanOrFalse("forceUpdate"),
             minBuildNumber = root.intOrNull("minBuildNumber") ?: 0
@@ -94,7 +111,8 @@ class AppVersionRepository(context: Context) {
         val selectedName = ReleaseApkSelector.selectName(
             assetNames = assets.mapNotNull { it.stringOrNull("name") },
             version = version,
-            debug = BuildConfig.DEBUG
+            debug = BuildConfig.DEBUG,
+            supportedAbis = Build.SUPPORTED_ABIS.toList()
         ) ?: return null
         return assets.firstOrNull {
             it.stringOrNull("name").equals(selectedName, ignoreCase = true)
@@ -146,13 +164,40 @@ internal object VersionComparator {
 }
 
 internal object ReleaseApkSelector {
-    fun selectName(assetNames: List<String>, version: String, debug: Boolean): String? {
+    fun selectName(
+        assetNames: List<String>,
+        version: String,
+        debug: Boolean,
+        supportedAbis: List<String> = emptyList()
+    ): String? {
         val normalizedVersion = version.trim().removePrefix("v").removePrefix("V")
-        val expectedName = if (debug) {
+        val channelSuffix = if (debug) "-debug" else ""
+        supportedAbis.forEach { abi ->
+            val abiName = "DuckMusic-v$normalizedVersion$channelSuffix-$abi.apk"
+            assetNames.firstOrNull { it.equals(abiName, ignoreCase = true) }
+                ?.let { return it }
+        }
+        val universalName = if (debug) {
             "DuckMusic-v$normalizedVersion-debug.apk"
         } else {
             "DuckMusic-v$normalizedVersion.apk"
         }
-        return assetNames.firstOrNull { it.equals(expectedName, ignoreCase = true) }
+        return assetNames.firstOrNull { it.equals(universalName, ignoreCase = true) }
+    }
+}
+
+internal object UpdateDownloadSelector {
+    fun selectUrl(
+        downloads: Map<String, String>,
+        supportedAbis: List<String>,
+        legacyDownloadUrl: String?
+    ): String? {
+        if (downloads.isEmpty()) return legacyDownloadUrl
+        supportedAbis.forEach { abi ->
+            downloads.entries.firstOrNull { it.key.equals(abi, ignoreCase = true) }
+                ?.value
+                ?.let { return it }
+        }
+        return null
     }
 }

@@ -314,7 +314,9 @@ object PlaybackCoordinator {
 
     fun isRadioSong(song: Song): Boolean =
         song.source.equals("radio", ignoreCase = true) ||
-            song.id.startsWith("radio:", ignoreCase = true)
+            song.source.equals("tv_live", ignoreCase = true) ||
+            song.id.startsWith("radio:", ignoreCase = true) ||
+            song.id.startsWith("tv:", ignoreCase = true)
 
     /**
      * UI progress for mini-player / full player. Prefers live [Player] position when media is

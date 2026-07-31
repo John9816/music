@@ -1,4 +1,6 @@
 # Add project specific ProGuard rules here.
+-keep class com.music.player.BuildConfig { *; }
+
 # Keep data models and auth / music-library payloads that Gson reflects on.
 # Release minify renames fields unless kept — broken JSON breaks favorites, playlists, login.
 -keep class com.music.player.data.model.** { *; }

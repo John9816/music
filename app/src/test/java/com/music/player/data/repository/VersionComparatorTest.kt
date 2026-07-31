@@ -23,12 +23,18 @@ class VersionComparatorTest {
         val assets = listOf(
             "app-debug.apk",
             "DuckMusic-v1.0.3-debug.apk",
-            "DuckMusic-v1.0.3.apk"
+            "DuckMusic-v1.0.3.apk",
+            "DuckMusic-v1.0.3-arm64-v8a.apk",
+            "DuckMusic-v1.0.3-armeabi-v7a.apk"
         )
 
         assertTrue(
-            ReleaseApkSelector.selectName(assets, "1.0.3", debug = false) ==
-                "DuckMusic-v1.0.3.apk"
+            ReleaseApkSelector.selectName(
+                assets,
+                "1.0.3",
+                debug = false,
+                supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+            ) == "DuckMusic-v1.0.3-arm64-v8a.apk"
         )
         assertTrue(
             ReleaseApkSelector.selectName(assets, "v1.0.3", debug = true) ==
@@ -36,6 +42,44 @@ class VersionComparatorTest {
         )
         assertTrue(
             ReleaseApkSelector.selectName(listOf("app-debug.apk"), "1.0.3", debug = false) == null
+        )
+    }
+
+    @Test
+    fun selectsDownloadForFirstSupportedAbi() {
+        val downloads = mapOf(
+            "armeabi-v7a" to "https://example.com/app-v7a.apk",
+            "arm64-v8a" to "https://example.com/app-arm64.apk"
+        )
+
+        assertTrue(
+            UpdateDownloadSelector.selectUrl(
+                downloads,
+                supportedAbis = listOf("arm64-v8a", "armeabi-v7a"),
+                legacyDownloadUrl = "https://example.com/app-default.apk"
+            ) == "https://example.com/app-arm64.apk"
+        )
+    }
+
+    @Test
+    fun rejectsIncompatibleAbiDownload() {
+        assertTrue(
+            UpdateDownloadSelector.selectUrl(
+                downloads = mapOf("arm64-v8a" to "https://example.com/app-arm64.apk"),
+                supportedAbis = listOf("x86_64"),
+                legacyDownloadUrl = "https://example.com/app-default.apk"
+            ) == null
+        )
+    }
+
+    @Test
+    fun supportsLegacySingleDownloadManifest() {
+        assertTrue(
+            UpdateDownloadSelector.selectUrl(
+                downloads = emptyMap(),
+                supportedAbis = listOf("arm64-v8a"),
+                legacyDownloadUrl = "https://example.com/app.apk"
+            ) == "https://example.com/app.apk"
         )
     }
 }

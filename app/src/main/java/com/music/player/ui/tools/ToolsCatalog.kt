@@ -5,6 +5,7 @@ import android.content.Intent
 import com.music.player.R
 import com.music.player.ui.activity.AiDrawActivity
 import com.music.player.ui.activity.RadioActivity
+import com.music.player.ui.activity.TvLiveActivity
 import com.music.player.ui.activity.VideoParseActivity
 
 enum class ToolGroup {
@@ -33,6 +34,14 @@ object ToolsCatalog {
             subtitleRes = R.string.tools_radio_subtitle,
             iconRes = R.drawable.ic_cymusic_radio_24,
             intentFactory = { RadioActivity.intent(it) }
+        ),
+        ToolItem(
+            id = "tv_live",
+            group = ToolGroup.LISTEN,
+            titleRes = R.string.tools_tv_live_title,
+            subtitleRes = R.string.tools_tv_live_subtitle,
+            iconRes = R.drawable.ic_cymusic_radio_24,
+            intentFactory = { TvLiveActivity.intent(it) }
         ),
         ToolItem(
             id = "ai_draw",

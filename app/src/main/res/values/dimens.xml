@@ -69,4 +69,6 @@
     <dimen name="mini_player_height">58dp</dimen>
     <dimen name="mini_player_cover_size">42dp</dimen>
     <dimen name="search_field_height">44dp</dimen>
+    <dimen name="tv_live_player_initial_height">200dp</dimen>
+    <dimen name="tv_live_player_radius">8dp</dimen>
 </resources>

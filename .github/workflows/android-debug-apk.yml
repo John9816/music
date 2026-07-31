@@ -113,47 +113,40 @@ jobs:
 
       - name: Verify and stage release APK
         if: startsWith(github.ref, 'refs/tags/v')
-        id: release_apk
         shell: bash
         env:
           ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          apk="app/build/outputs/apk/release/app-release.apk"
-          if [[ ! -f "$apk" ]]; then
-            echo "Release APK was not produced." >&2
-            exit 1
-          fi
-
           build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
           apksigner="${build_tools}/apksigner"
           aapt="${build_tools}/aapt"
-
-          "$apksigner" verify "$apk"
-          badging="$("$aapt" dump badging "$apk" | head -n1)"
-          echo "$badging"
-          grep -q "name='com.music.player'" <<<"$badging"
-          grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
-          grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
-
-          cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1)"
-          actual_cert="$(printf '%s\n' "$cert_output" \
-            | grep -i -m1 'certificate SHA-256 digest' \
-            | sed -E 's/.*:[[:space:]]*//' \
-            | tr -d ':[:space:]' \
-            | tr '[:upper:]' '[:lower:]')"
           expected_cert="$(printf '%s' "${ANDROID_SIGNING_CERT_SHA256}" \
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')"
-          if [[ -z "$actual_cert" || "$actual_cert" != "$expected_cert" ]]; then
-            echo "Release certificate mismatch. expected=$expected_cert actual=$actual_cert" >&2
-            exit 1
-          fi
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            apk="app/build/outputs/apk/release/app-${abi}-release.apk"
+            [[ -f "$apk" ]] || { echo "Missing release APK: $apk" >&2; exit 1; }
+            "$apksigner" verify "$apk"
+            badging="$("$aapt" dump badging "$apk" | head -n1)"
+            echo "$badging"
+            grep -q "name='com.music.player'" <<<"$badging"
+            grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
+            grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
 
-          release_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
-          release_path="app/build/outputs/apk/release/${release_name}"
-          cp "$apk" "$release_path"
-          echo "path=$release_path" >> "$GITHUB_OUTPUT"
+            cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1)"
+            actual_cert="$(printf '%s\n' "$cert_output" \
+              | grep -i -m1 'certificate SHA-256 digest' \
+              | sed -E 's/.*:[[:space:]]*//' \
+              | tr -d ':[:space:]' \
+              | tr '[:upper:]' '[:lower:]')"
+            if [[ -z "$actual_cert" || "$actual_cert" != "$expected_cert" ]]; then
+              echo "Release certificate mismatch. expected=$expected_cert actual=$actual_cert" >&2
+              exit 1
+            fi
+
+            cp "$apk" "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}-${abi}.apk"
+          done
 
       - name: Publish GitHub Release (tag)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -162,7 +155,7 @@ jobs:
           name: DuckMusic v${{ steps.app_version.outputs.version_name }}
           generate_release_notes: true
           files: |
-            ${{ steps.release_apk.outputs.path }}
+            app/build/outputs/apk/release/DuckMusic-v*.apk
             app/build/outputs/apk/release/output-metadata.json
 
       - name: Upload update package to ECS
@@ -193,15 +186,19 @@ jobs:
             ssh-keyscan -p "${ECS_PORT:-22}" -H "${ECS_HOST}" > ~/.ssh/known_hosts 2>/dev/null
           fi
 
-          apk="${{ steps.release_apk.outputs.path }}"
           manifest="latest.json"
-          apk_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
-          download_url="${ECS_UPDATE_BASE_URL%/}/${apk_name}"
+          arm64_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}-arm64-v8a.apk"
+          v7a_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}-armeabi-v7a.apk"
+          x64_name="DuckMusic-v${{ steps.app_version.outputs.version_name }}-x86_64.apk"
           cat > "${manifest}" <<EOF
           {
             "version": "${{ steps.app_version.outputs.version_name }}",
             "buildNumber": ${{ steps.app_version.outputs.version_code }},
-            "downloadUrl": "${download_url}",
+            "downloads": {
+              "arm64-v8a": "${ECS_UPDATE_BASE_URL%/}/${arm64_name}",
+              "armeabi-v7a": "${ECS_UPDATE_BASE_URL%/}/${v7a_name}",
+              "x86_64": "${ECS_UPDATE_BASE_URL%/}/${x64_name}"
+            },
             "description": "DuckMusic ${{ steps.app_version.outputs.version_name }}",
             "forceUpdate": false,
             "minBuildNumber": 0
@@ -209,4 +206,8 @@ jobs:
           EOF
 
           ssh -i ~/.ssh/duckmusic_ecs -p "${ECS_PORT:-22}" "${ECS_USER}@${ECS_HOST}" "mkdir -p '${ECS_UPDATE_DIR}'"
-          scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" "${apk}" "${manifest}" "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"
+          scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
+            "app/build/outputs/apk/release/${arm64_name}" \
+            "app/build/outputs/apk/release/${v7a_name}" \
+            "app/build/outputs/apk/release/${x64_name}" \
+            "${manifest}" "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"
