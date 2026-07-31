@@ -81,6 +81,8 @@ $Abis | ForEach-Object {
     Copy-Item $Source $Target -Force
     $ApkPaths[$_] = $Target
 }
+$UniversalPath = Join-Path $ReleaseDir "DuckMusic-v$VersionName.apk"
+Copy-Item (Join-Path $ReleaseDir "app-universal-release.apk") $UniversalPath -Force
 
 $BuildTools = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" -Directory |
     Where-Object Name -Match '^\d+\.\d+\.\d+$' |
@@ -114,6 +116,8 @@ Do not publish unless all of these are true:
 $Manifest = [ordered]@{
     version = $VersionName
     buildNumber = $VersionCode
+    # Required until every installed legacy client understands the downloads map.
+    downloadUrl = "https://api.751152.xyz/updates/DuckMusic-v$VersionName.apk"
     downloads = [ordered]@{
         "arm64-v8a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
         "armeabi-v7a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-armeabi-v7a.apk"

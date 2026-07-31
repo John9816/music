@@ -22,6 +22,7 @@ The directory must contain `latest.json` and the matching signed APKs. The manif
 {
   "version": "1.0.5",
   "buildNumber": 6,
+  "downloadUrl": "https://api.751152.xyz/updates/DuckMusic-v1.0.5.apk",
   "downloads": {
     "arm64-v8a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk",
     "armeabi-v7a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-armeabi-v7a.apk",

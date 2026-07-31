@@ -147,6 +147,10 @@ jobs:
 
             cp "$apk" "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}-${abi}.apk"
           done
+          universal_apk="app/build/outputs/apk/release/app-universal-release.apk"
+          [[ -f "$universal_apk" ]] || { echo "Missing universal release APK" >&2; exit 1; }
+          "$apksigner" verify "$universal_apk"
+          cp "$universal_apk" "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk"
 
       - name: Publish GitHub Release (tag)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -194,6 +198,7 @@ jobs:
           {
             "version": "${{ steps.app_version.outputs.version_name }}",
             "buildNumber": ${{ steps.app_version.outputs.version_code }},
+            "downloadUrl": "${ECS_UPDATE_BASE_URL%/}/DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk",
             "downloads": {
               "arm64-v8a": "${ECS_UPDATE_BASE_URL%/}/${arm64_name}",
               "armeabi-v7a": "${ECS_UPDATE_BASE_URL%/}/${v7a_name}",
@@ -207,6 +212,7 @@ jobs:
 
           ssh -i ~/.ssh/duckmusic_ecs -p "${ECS_PORT:-22}" "${ECS_USER}@${ECS_HOST}" "mkdir -p '${ECS_UPDATE_DIR}'"
           scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
+            "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}.apk" \
             "app/build/outputs/apk/release/${arm64_name}" \
             "app/build/outputs/apk/release/${v7a_name}" \
             "app/build/outputs/apk/release/${x64_name}" \
