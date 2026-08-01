@@ -4,7 +4,7 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/pageBackground">
+>
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBar"
@@ -277,6 +277,7 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:alpha="0.55"
+                android:importantForAccessibility="no"
                 android:src="@drawable/ic_cymusic_radio_24"
                 app:tint="?attr/textSecondary" />
 

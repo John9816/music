@@ -101,6 +101,7 @@
             android:layout_height="38dp"
             android:layout_marginStart="8dp"
             android:background="@drawable/ripple_circular_primary"
+            android:contentDescription="@string/content_desc_play"
             android:padding="9dp"
             android:src="@drawable/ic_play_24"
             app:tint="?attr/textSecondary" />

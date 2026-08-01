@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.SearchArtist
 import com.music.player.databinding.ItemSearchArtistBinding
@@ -50,7 +51,9 @@ class SearchArtistAdapter(
             binding.tvArtistMeta.visibility = android.view.View.VISIBLE
             binding.ivAvatar.imageTintList = null
             Glide.with(binding.ivAvatar)
-                .load(ImageUrl.bestQuality(artist.avatarUrl))
+                .load(ImageUrl.thumbnail(artist.avatarUrl, 150))
+                .override(150, 150)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                 .placeholder(R.drawable.ic_person_24)
                 .error(R.drawable.ic_person_24)
                 .circleCrop()

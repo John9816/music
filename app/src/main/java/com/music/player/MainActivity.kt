@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.Player
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.ShortcutManagerCompat
 import com.bumptech.glide.Glide
 
 import com.music.player.data.model.Song
@@ -52,6 +53,7 @@ import com.music.player.update.AppUpdateDialogs
 import com.music.player.update.AppUpdateInstaller
 import com.music.player.update.AppUpdatePreferences
 import com.music.player.ui.util.AppPermissionBootstrap
+import com.music.player.ui.util.AppShortcuts
 import com.music.player.ui.util.ImmersiveHeaderBackground
 import com.music.player.ui.util.PlayerUiStyler
 import com.music.player.ui.util.PressFeedback
@@ -134,6 +136,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        reportShortcutUsageIfNeeded()
         PlayerUiStyler.applyMiniPlayer(binding, this)
 
         setupEdgeToEdge()
@@ -179,7 +182,9 @@ class MainActivity : AppCompatActivity() {
         setupBottomNavigation(savedInstanceState)
         refreshForMusicSourceChangeIfNeeded()
 
+        // Start Discover + Library in parallel so the home tab can paint from disk/cache ASAP.
         libraryViewModel.prefetch()
+        musicViewModel.prefetchDiscover(forceRefresh = false)
         requestStartupPermissions()
 
         onBackPressedDispatcher.addCallback(
@@ -213,7 +218,16 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        reportShortcutUsageIfNeeded()
         handleInitialTabIntent()
+    }
+
+    private fun reportShortcutUsageIfNeeded() {
+        val shortcutId = intent.getStringExtra(AppShortcuts.EXTRA_SHORTCUT_ID) ?: return
+        intent.removeExtra(AppShortcuts.EXTRA_SHORTCUT_ID)
+        runCatching {
+            ShortcutManagerCompat.reportShortcutUsed(this, shortcutId)
+        }
     }
 
     override fun onStart() {
@@ -805,9 +819,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setMiniPlayerVisible(visible: Boolean) {
-        // ValueAnimator.areAnimatorsEnabled() is API 26+; minSdk is 24.
-        val animatorsDisabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !ValueAnimator.areAnimatorsEnabled()
+        // ValueAnimator.areAnimatorsEnabled() is API 26+; minSdk is 26.
+        val animatorsDisabled = !ValueAnimator.areAnimatorsEnabled()
         if (animatorsDisabled) {
             binding.miniPlayer.animate().cancel()
             binding.miniPlayer.visibility = if (visible) View.VISIBLE else View.GONE

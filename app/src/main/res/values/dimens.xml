@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <dimen name="spacing_xs">4dp</dimen>
     <dimen name="spacing_s">8dp</dimen>
     <dimen name="spacing_sm">12dp</dimen>
@@ -43,7 +43,7 @@
     <dimen name="bottom_nav_item_padding_bottom">8dp</dimen>
     <dimen name="bottom_nav_icon_label_gap">2dp</dimen>
     <!-- Use dp so large system font scale does not blow icon–label spacing on small phones. -->
-    <dimen name="bottom_nav_label_text_size">11dp</dimen>
+    <dimen name="bottom_nav_label_text_size" tools:ignore="SpUsage">11dp</dimen>
     <dimen name="immersive_root_content_top_offset">0dp</dimen>
     <dimen name="immersive_header_height">220dp</dimen>
     <dimen name="immersive_top_scrim_height">200dp</dimen>

@@ -6,6 +6,7 @@ import com.music.player.data.settings.AudioQualityPreferences
 import com.music.player.ui.util.SongDownloader
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import org.json.JSONObject
 
 /**
@@ -22,19 +23,18 @@ class SongUrlCache(context: Context) {
     private val diskFile = File(appContext.filesDir, "song_url_cache.json")
     private val lock = Any()
     private val pendingDisk = ConcurrentHashMap<String, String>()
+    private val diskExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "song-url-cache-io").apply { isDaemon = true }
+    }
 
     init {
         // Disk restore off the calling thread so coordinator init does not jank the UI.
-        Thread {
+        diskExecutor.execute {
             try {
                 loadDisk()
             } catch (t: Throwable) {
                 Log.w(TAG, "async load disk cache failed", t)
             }
-        }.apply {
-            name = "song-url-cache-load"
-            isDaemon = true
-            start()
         }
     }
 
@@ -107,17 +107,13 @@ class SongUrlCache(context: Context) {
     }
 
     private fun schedulePersist() {
-        // Debounced by coalescing into pendingDisk; flush async on background thread.
-        Thread {
+        // Debounced by coalescing into pendingDisk; flush async on the single-thread executor.
+        diskExecutor.execute {
             try {
                 flushPending()
             } catch (t: Throwable) {
                 Log.w(TAG, "persist url cache failed", t)
             }
-        }.apply {
-            name = "song-url-cache"
-            isDaemon = true
-            start()
         }
     }
 

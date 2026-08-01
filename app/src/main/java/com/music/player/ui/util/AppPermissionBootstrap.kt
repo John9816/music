@@ -76,7 +76,6 @@ class AppPermissionBootstrap(
     }
 
     fun needsInstallPackagesPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         return !activity.packageManager.canRequestPackageInstalls()
     }
 

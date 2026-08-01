@@ -62,13 +62,13 @@ class VersionComparatorTest {
     }
 
     @Test
-    fun rejectsIncompatibleAbiDownload() {
+    fun fallsBackToLegacyWhenAbiMissingFromDownloads() {
         assertTrue(
             UpdateDownloadSelector.selectUrl(
                 downloads = mapOf("arm64-v8a" to "https://example.com/app-arm64.apk"),
                 supportedAbis = listOf("x86_64"),
                 legacyDownloadUrl = "https://example.com/app-default.apk"
-            ) == null
+            ) == "https://example.com/app-default.apk"
         )
     }
 

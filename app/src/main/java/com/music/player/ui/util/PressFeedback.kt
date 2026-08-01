@@ -1,5 +1,6 @@
 package com.music.player.ui.util
 
+import android.annotation.SuppressLint
 import android.animation.TimeInterpolator
 import android.graphics.drawable.RippleDrawable
 import android.view.MotionEvent
@@ -51,6 +52,9 @@ object PressFeedback {
 
     @JvmStatic
     @JvmOverloads
+    @SuppressLint("ClickableViewAccessibility")
+    // Touch listener is a press-visual decorator that always returns false, so the view's
+    // own onTouchEvent still runs and performClick is dispatched by the framework normally.
     fun bind(view: View, style: Style = Style.ROW, ensureRipple: Boolean = true) {
         if (ensureRipple) {
             ensureInteractiveBackground(view, style)
@@ -179,12 +183,8 @@ object PressFeedback {
                 Style.ICON, Style.PLAY -> R.drawable.ripple_circular_primary
                 else -> R.drawable.ripple_rect_primary
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                if (view.foreground == null) {
-                    view.foreground = ContextCompat.getDrawable(view.context, res)
-                }
-            } else if (bg == null) {
-                view.background = ContextCompat.getDrawable(view.context, res)
+            if (view.foreground == null) {
+                view.foreground = ContextCompat.getDrawable(view.context, res)
             }
         }
         if (!view.isClickable) {

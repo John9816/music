@@ -2,8 +2,8 @@ package com.music.player.playback
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
+import com.music.player.data.common.GsonProvider
 import com.music.player.data.model.Album
 import com.music.player.data.model.Artist
 import com.music.player.data.model.Song
@@ -18,7 +18,7 @@ internal class PlaybackStateStore(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val gson = Gson()
+    private val gson = GsonProvider.gson
 
     fun save(snapshot: Snapshot) {
         runCatching {
@@ -26,6 +26,15 @@ internal class PlaybackStateStore(context: Context) {
                 .putString(KEY_JSON, gson.toJson(snapshot))
                 .commit()
         }.onFailure { Log.w(TAG, "save playback state failed", it) }
+    }
+
+    /** Async save — safe for periodic calls from the main thread without blocking. */
+    fun saveAsync(snapshot: Snapshot) {
+        runCatching {
+            prefs.edit()
+                .putString(KEY_JSON, gson.toJson(snapshot))
+                .apply()
+        }.onFailure { Log.w(TAG, "saveAsync playback state failed", it) }
     }
 
     fun load(): Snapshot? {

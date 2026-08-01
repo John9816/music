@@ -6,9 +6,11 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.UserPlaylist
 import com.music.player.databinding.ItemUserPlaylistBinding
+import com.music.player.ui.util.ImageUrl
 import com.music.player.ui.util.PressFeedback
 import com.music.player.ui.util.bindPressFeedback
 
@@ -24,6 +26,11 @@ class UserPlaylistAdapter(
 
     override fun onBindViewHolder(holder: UserPlaylistViewHolder, position: Int) {
         holder.bind(getItem(position))
+    }
+
+    override fun onViewRecycled(holder: UserPlaylistViewHolder) {
+        holder.recycle()
+        super.onViewRecycled(holder)
     }
 
     inner class UserPlaylistViewHolder(
@@ -52,10 +59,18 @@ class UserPlaylistAdapter(
             binding.tvPlaylistDesc.visibility = if (desc.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
 
             Glide.with(binding.ivCover)
-                .load(playlist.coverUrl)
+                .load(ImageUrl.thumbnail(playlist.coverUrl, 300))
+                .override(300, 300)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                 .placeholder(R.drawable.ic_playlist_placeholder)
+                .error(R.drawable.ic_playlist_placeholder)
                 .centerCrop()
+                .dontAnimate()
                 .into(binding.ivCover)
+        }
+
+        fun recycle() {
+            Glide.with(binding.ivCover).clear(binding.ivCover)
         }
 
         private fun buildMeta(context: android.content.Context, playlist: UserPlaylist): String {

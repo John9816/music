@@ -20,6 +20,7 @@ gen/
 out/
 .gradle/
 build/
+.kotlin/
 .navigation/
 captures/
 output.json

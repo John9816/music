@@ -4,13 +4,16 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.music.player.data.api.NetworkRuntime
 import com.music.player.data.model.NewestAlbum
 import com.music.player.data.model.Playlist
 import com.music.player.data.model.PlaylistCategory
 import com.music.player.data.model.SearchArtist
 import com.music.player.data.model.Song
 import com.music.player.data.repository.AlbumRepository
+import com.music.player.data.repository.DiscoverDiskCache
 import com.music.player.data.repository.MusicRepository
+import com.music.player.data.settings.MusicSourcePreferences
 import com.music.player.playback.PlaybackCoordinator
 import com.music.player.playback.PlaybackCoordinator.PlaylistViewMode
 import com.music.player.playback.PlaybackMode
@@ -115,6 +118,9 @@ class MusicViewModel : ViewModel() {
     private var searchRequestVersion = 0L
     private var searchJob: Job? = null
     private var loadMoreJob: Job? = null
+    private var discoverPrefetchJob: Job? = null
+    private var lastDiscoverPrefetchAtMs: Long = 0L
+    private var discoverDiskSavedAtMs: Long = 0L
     private var activeSourceValue: String? = null
 
     private val _currentPlaylist = MutableLiveData<Playlist?>()
@@ -194,11 +200,45 @@ class MusicViewModel : ViewModel() {
         _loadMoreError.value = null
     }
 
+    /**
+     * Cache-first Discover warm-up:
+     * 1. Paint disk/memory snapshot immediately when UI is empty.
+     * 2. Soft network refresh (stale-while-revalidate); skip when disk is still fresh.
+     * 3. Show global loading only when there is nothing to paint.
+     */
     fun prefetchDiscover(limit: Int = 10, forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _weeklyHotLoading.value = true
+        val now = System.currentTimeMillis()
+        val hasPaint = hasDiscoverPaint()
+        if (!forceRefresh) {
+            if (discoverPrefetchJob?.isActive == true) return
+            if (hasPaint && now - lastDiscoverPrefetchAtMs < DISCOVER_PREFETCH_COOLDOWN_MS) return
+        } else {
+            discoverPrefetchJob?.cancel()
+        }
+
+        discoverPrefetchJob = viewModelScope.launch {
             if (forceRefresh) _discoverError.value = null
+
+            if (!forceRefresh && !hasDiscoverPaint()) {
+                hydrateDiscoverFromDisk()
+            }
+
+            val painted = hasDiscoverPaint()
+            val diskFresh = !forceRefresh &&
+                painted &&
+                discoverDiskSavedAtMs > 0L &&
+                now - discoverDiskSavedAtMs in 0 until DiscoverDiskCache.DEFAULT_FRESH_MS
+            if (diskFresh) {
+                lastDiscoverPrefetchAtMs = System.currentTimeMillis()
+                return@launch
+            }
+
+            val showLoading = !painted
+            if (showLoading) {
+                _isLoading.value = true
+                _weeklyHotLoading.value = true
+            }
+            lastDiscoverPrefetchAtMs = System.currentTimeMillis()
             var firstFailure: String? = null
             try {
                 supervisorScope {
@@ -227,14 +267,63 @@ class MusicViewModel : ViewModel() {
                         .onSuccess { _newestAlbums.value = it }
                         .onFailure { firstFailure = firstFailure ?: (it.message ?: "获取最新专辑失败") }
                 }
+                persistDiscoverSnapshotAsync()
             } finally {
-                _isLoading.value = false
-                _weeklyHotLoading.value = false
+                if (showLoading) {
+                    _isLoading.value = false
+                    _weeklyHotLoading.value = false
+                }
                 // Only surface content error when daily list is empty (page is unusable).
                 if (_dailyRecommend.value.isNullOrEmpty() && firstFailure != null) {
                     _discoverError.value = firstFailure
                 }
             }
+        }
+    }
+
+    private fun hasDiscoverPaint(): Boolean =
+        !_dailyRecommend.value.isNullOrEmpty() ||
+            !_weeklyHotSongs.value.isNullOrEmpty() ||
+            !_newestAlbums.value.isNullOrEmpty()
+
+    private suspend fun hydrateDiscoverFromDisk() {
+        val ctx = NetworkRuntime.applicationContextOrNull()
+            ?: MusicRepository.applicationContextOrNull()
+            ?: return
+        val source = activeSourceValue
+            ?: MusicSourcePreferences.activeSource(ctx).storageValue
+        val snapshot = withContext(Dispatchers.IO) {
+            DiscoverDiskCache(ctx).load(source)
+        } ?: return
+        if (_dailyRecommend.value.isNullOrEmpty() && snapshot.dailySongs().isNotEmpty()) {
+            _dailyRecommend.value = snapshot.dailySongs()
+        }
+        if (_weeklyHotSongs.value.isNullOrEmpty() && snapshot.weeklySongs().isNotEmpty()) {
+            _weeklyHotSongs.value = snapshot.weeklySongs()
+        }
+        if (_newestAlbums.value.isNullOrEmpty() && snapshot.newestAlbums().isNotEmpty()) {
+            _newestAlbums.value = snapshot.newestAlbums()
+        }
+        discoverDiskSavedAtMs = snapshot.savedAtMs
+        if (!_dailyRecommend.value.isNullOrEmpty()) {
+            _discoverError.value = null
+        }
+    }
+
+    private fun persistDiscoverSnapshotAsync() {
+        val daily = _dailyRecommend.value.orEmpty()
+        val weekly = _weeklyHotSongs.value.orEmpty()
+        val albums = _newestAlbums.value.orEmpty()
+        if (daily.isEmpty() && weekly.isEmpty() && albums.isEmpty()) return
+        val ctx = NetworkRuntime.applicationContextOrNull()
+            ?: MusicRepository.applicationContextOrNull()
+            ?: return
+        val source = activeSourceValue
+            ?: MusicSourcePreferences.activeSource(ctx).storageValue
+        val snapshot = DiscoverDiskCache.Snapshot.from(source, daily, weekly, albums)
+        discoverDiskSavedAtMs = snapshot.savedAtMs
+        viewModelScope.launch(Dispatchers.IO) {
+            DiscoverDiskCache(ctx).save(source, snapshot)
         }
     }
 
@@ -377,11 +466,14 @@ class MusicViewModel : ViewModel() {
     fun clearSourceDependentState() {
         searchJob?.cancel()
         loadMoreJob?.cancel()
+        discoverPrefetchJob?.cancel()
         topPlaylistsRequestVersion++
         searchRequestVersion++
         currentSearchKeywords = ""
         searchOffset = 0
         hasMoreSearchResults = true
+        lastDiscoverPrefetchAtMs = 0L
+        discoverDiskSavedAtMs = 0L
         _dailyRecommend.value = emptyList()
         _topLists.value = emptyList()
         _topPlaylists.value = emptyList()
@@ -776,5 +868,9 @@ class MusicViewModel : ViewModel() {
             }
         }
         return exactAlbumMatches.distinctBy { it.id }
+    }
+
+    companion object {
+        private const val DISCOVER_PREFETCH_COOLDOWN_MS = 15_000L
     }
 }

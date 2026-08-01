@@ -9,9 +9,13 @@ import com.music.player.data.auth.AuthSessionManager
 import com.music.player.data.auth.SupabaseClient
 import com.music.player.data.auth.TokenRefreshResult
 import com.music.player.data.api.RetrofitClient
-import com.music.player.data.api.SongData
 import com.music.player.data.common.RequestCoalescer
 import com.music.player.data.common.TimedMemoryCache
+import com.music.player.data.common.asJsonObjectOrNull
+import com.music.player.data.common.obj
+import com.music.player.data.common.int
+import com.music.player.data.common.long
+import com.music.player.data.common.repairPotentialMojibake
 import com.music.player.data.model.Album
 import com.music.player.data.model.Artist
 import com.music.player.data.model.Playlist
@@ -26,7 +30,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import java.nio.charset.StandardCharsets
 
 class MusicRepository(context: Context? = null) {
 
@@ -125,20 +128,33 @@ class MusicRepository(context: Context? = null) {
                         val firstPlaylistId = playlists
                             .firstOrNull { it.trackCount > 0 }
                             ?.id
-                            ?: return@fold Result.failure(Exception("推荐歌单为空"))
+                            ?: return@fold staleOrFailure(dailyRecommendCache, cacheKey, Exception("推荐歌单为空"))
 
-                        getPlaylistDetail(firstPlaylistId, forceRefresh = forceRefresh).map { (_, songs) ->
-                            songs.also {
-                                if (it.isNotEmpty()) {
-                                    dailyRecommendCache.put(cacheKey, it)
+                        getPlaylistDetail(firstPlaylistId, forceRefresh = forceRefresh).fold(
+                            onSuccess = { (_, songs) ->
+                                if (songs.isNotEmpty()) {
+                                    dailyRecommendCache.put(cacheKey, songs)
+                                    Result.success(songs)
+                                } else {
+                                    staleOrFailure(dailyRecommendCache, cacheKey, Exception("推荐歌单为空"))
                                 }
-                            }
-                        }
+                            },
+                            onFailure = { err -> staleOrFailure(dailyRecommendCache, cacheKey, err) }
+                        )
                     },
-                    onFailure = { Result.failure(it) }
+                    onFailure = { err -> staleOrFailure(dailyRecommendCache, cacheKey, err) }
                 )
             }
         }
+    }
+
+    private fun <T> staleOrFailure(
+        cache: TimedMemoryCache<String, T>,
+        cacheKey: String,
+        error: Throwable
+    ): Result<T> {
+        val stale = cache.getStale(cacheKey)
+        return if (stale != null) Result.success(stale) else Result.failure(error)
     }
 
 
@@ -343,13 +359,17 @@ class MusicRepository(context: Context? = null) {
                 try {
                     val response = api.getWeeklyHotNewSongs(source = source, pageSize = limit)
                     if (!response.isSuccessful) {
-                        return@run Result.failure(Exception("获取新歌失败"))
+                        return@run staleOrFailure(weeklyHotCache, cacheKey, Exception("获取新歌失败"))
                     }
                     val songs = parseSongsFromEnvelope(response.body()?.string().orEmpty())
-                    weeklyHotCache.put(cacheKey, songs)
-                    Result.success(songs)
+                    if (songs.isNotEmpty()) {
+                        weeklyHotCache.put(cacheKey, songs)
+                        Result.success(songs)
+                    } else {
+                        staleOrFailure(weeklyHotCache, cacheKey, Exception("获取新歌失败"))
+                    }
                 } catch (e: Exception) {
-                    Result.failure(e)
+                    staleOrFailure(weeklyHotCache, cacheKey, e)
                 }
             }
         }
@@ -693,27 +713,6 @@ class MusicRepository(context: Context? = null) {
 
 private val WHITESPACE_REGEX = Regex("\\s+")
 
-private fun SongData.toSong() = Song(
-    id = id.toString(),
-    name = name,
-    artists = (artists ?: ar).orEmpty().map { Artist(it.id.toString(), it.name) },
-    album = Album(
-        id = al?.id?.toString().orEmpty(),
-        name = al?.name.orEmpty(),
-        picUrl = al?.picUrl.orEmpty()
-    ),
-    duration = dt
-)
-
-private fun com.music.player.data.api.PlaylistData.toPlaylist() = Playlist(
-    id = id.toString(),
-    name = name,
-    coverImgUrl = coverImgUrl.orEmpty(),
-    description = description.orEmpty(),
-    trackCount = trackCount,
-    playCount = playCount
-)
-
 private fun parseSongsFromEnvelope(raw: String): List<Song> {
     val data = parseEnvelopeData(raw) ?: return emptyList()
     val list = data.obj("list")?.takeIf { it.isJsonArray }
@@ -960,53 +959,7 @@ private fun sanitizeLyricText(value: String): String {
         .trim()
 }
 
-private fun repairPotentialMojibake(value: String): String {
-    if (value.isBlank()) return value
-    val normalized = value.trim()
-    if (!looksLikeMojibake(normalized)) return normalized
-
-    val latin1Fixed = runCatching {
-        String(normalized.toByteArray(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8)
-    }.getOrNull()
-    val win1252Fixed = runCatching {
-        String(normalized.toByteArray(Charsets.UTF_8), Charsets.UTF_8)
-    }.getOrNull()
-
-    return sequenceOf(normalized, latin1Fixed, win1252Fixed)
-        .filterNotNull()
-        .maxByOrNull(::readabilityScore)
-        .orEmpty()
-}
-
-private fun looksLikeMojibake(value: String): Boolean {
-    return value.contains("Ã") ||
-        value.contains("â") ||
-        value.contains("æ") ||
-        value.contains("å") ||
-        value.contains("ä") ||
-        value.contains("ï")
-}
-
-private fun readabilityScore(value: String): Int {
-    var score = 0
-    value.forEach { ch ->
-        when {
-            ch in '\u4E00'..'\u9FFF' -> score += 3
-            ch.isLetterOrDigit() -> score += 1
-        }
-        if (ch == 'Ã' || ch == 'â' || ch == '�') {
-            score -= 3
-        }
-    }
-    return score
-}
-
-private fun JsonElement.asJsonObjectOrNull(): com.google.gson.JsonObject? =
-    takeIf { it.isJsonObject }?.asJsonObject
-
-private fun com.google.gson.JsonObject.obj(name: String): JsonElement? =
-    get(name)?.takeUnless { it.isJsonNull }
-
+/** MusicRepository-specific string extraction that also decodes HTML entities in API text. */
 private fun com.google.gson.JsonObject.str(name: String): String =
     obj(name)?.let { runCatching { it.asString }.getOrNull() }.orEmpty().decodeHtmlEntities().trim()
 
@@ -1076,8 +1029,3 @@ internal fun parseArtistsFromEnvelope(raw: String, fallbackSource: String): List
     }
 }
 
-private fun com.google.gson.JsonObject.int(name: String, default: Int = 0): Int =
-    obj(name)?.let { runCatching { it.asInt }.getOrNull() } ?: default
-
-private fun com.google.gson.JsonObject.long(name: String, default: Long = 0L): Long =
-    obj(name)?.let { runCatching { it.asLong }.getOrNull() } ?: default

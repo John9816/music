@@ -1,5 +1,6 @@
 package com.music.player.ui.util
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -88,6 +89,7 @@ fun absoluteApiUrl(pathOrUrl: String?): String? {
     return if (raw.startsWith("/")) "$base$raw" else "$base/$raw"
 }
 
+@SuppressLint("SdCardPath") // Parsing legacy stored paths; never building a storage path.
 private fun looksLikeLocalFilesystemPath(path: String): Boolean {
     val lower = path.lowercase(Locale.US)
     return lower.startsWith("/data/") ||

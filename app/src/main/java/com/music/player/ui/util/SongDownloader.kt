@@ -6,9 +6,9 @@ import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import android.widget.Toast
-import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.music.player.R
+import com.music.player.data.common.GsonProvider
 import com.music.player.data.model.Song
 import com.music.player.data.repository.MusicRepository
 import com.music.player.data.settings.AppSettings
@@ -39,7 +39,7 @@ object SongDownloader {
     val progress: StateFlow<List<DownloadProgress>> = _progress.asStateFlow()
     private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 16)
     val events: SharedFlow<DownloadEvent> = _events.asSharedFlow()
-    private val gson = Gson()
+    private val gson = GsonProvider.gson
     private val httpClient = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)

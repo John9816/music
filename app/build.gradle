@@ -88,17 +88,31 @@ android {
         buildConfig true
         viewBinding true
     }
+    lint {
+        // androidx.lifecycle 2.9.x ships NullSafeMutableLiveDataDetector compiled against a
+        // newer Kotlin analysis API than AGP 8.7.3 bundles; lint crashes with
+        // IncompatibleClassChangeError. The check is only a nullability hint, so disable it
+        // until AGP is upgraded (then remove this line and re-enable the check).
+        disable "NullSafeMutableLiveData"
+    }
+    // Single ABI for phones (arm64). Drops v7a/x86/universal and all multi-ABI native bloat.
+    // Legacy downloadUrl and downloads map both point at arm64-v8a.
     splits {
         abi {
             enable true
             reset()
-            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-            // Legacy clients only understand a single downloadUrl. Keep one transition APK;
-            // current clients select the smaller ABI-specific asset from downloads.
-            universalApk true
+            include 'arm64-v8a'
+            universalApk false
         }
     }
     packaging {
+        jniLibs {
+            excludes += [
+                '**/armeabi-v7a/**',
+                '**/x86/**',
+                '**/x86_64/**'
+            ]
+        }
         resources {
             excludes += [
                 'META-INF/DEPENDENCIES',
@@ -116,8 +130,8 @@ android {
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.13.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
 
     // Retrofit for API calls
@@ -127,24 +141,24 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     // Coroutines
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
 
     // ViewModel and LiveData
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
-    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.9.4'
 
     // ExoPlayer for audio playback (+ HLS for live radio m3u8)
-    implementation 'androidx.media3:media3-exoplayer:1.5.1'
-    implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
-    implementation 'androidx.media3:media3-ui:1.5.1'
+    implementation 'androidx.media3:media3-exoplayer:1.6.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.6.1'
+    implementation 'androidx.media3:media3-ui:1.6.1'
     // MediaSession: lock screen / bluetooth / headset media controls, system media panel
-    implementation 'androidx.media3:media3-session:1.5.1'
-    // libmpv + FFmpeg for IPTV/video live streams with broader codec support.
-    implementation 'dev.jdtech.mpv:libmpv:0.5.1'
+    implementation 'androidx.media3:media3-session:1.6.1'
+    // TV live uses Media3 ExoPlayer (same stack as radio/HLS) — no libmpv/FFmpeg native bulk.
 
     // Glide for image loading
     implementation 'com.github.bumptech.glide:glide:4.16.0'
+    implementation 'com.github.bumptech.glide:okhttp3-integration:4.16.0'
 
     // RecyclerView
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
@@ -154,15 +168,10 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.11.0'
 
     // DataStore for preferences
-    implementation 'androidx.datastore:datastore-preferences:1.1.2'
+    implementation 'androidx.datastore:datastore-preferences:1.2.1'
 
     // Encrypted storage for auth tokens
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
-
-    // Room for persistent caching (danbo-style SQLite)
-    implementation "androidx.room:room-runtime:2.6.1"
-    implementation "androidx.room:room-ktx:2.6.1"
-    annotationProcessor "androidx.room:room-compiler:2.6.1"
 
     testImplementation 'junit:junit:4.13.2'
     // Real org.json for JVM unit tests (Android stubs throw "not mocked")

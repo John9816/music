@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.NewestAlbum
 import com.music.player.databinding.ItemNewestAlbumBannerBinding
@@ -51,7 +52,9 @@ class NewestAlbumBannerAdapter(
             } else {
                 binding.ivCover.imageTintList = null
                 Glide.with(binding.ivCover)
-                    .load(ImageUrl.bestQuality(coverUrl))
+                    .load(ImageUrl.banner(coverUrl, 720, 720))
+                    .override(720, 720)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .placeholder(R.drawable.ic_music_note_24)
                     .centerCrop()
                     .dontAnimate()

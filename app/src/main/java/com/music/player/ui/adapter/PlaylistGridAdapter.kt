@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.Playlist
 import com.music.player.databinding.ItemPlaylistGridBinding
@@ -57,7 +58,9 @@ class PlaylistGridAdapter(
             binding.tvPlaylistMeta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
 
             Glide.with(binding.ivCover)
-                .load(ImageUrl.bestQuality(playlist.coverImgUrl))
+                .load(ImageUrl.thumbnail(playlist.coverImgUrl, 300))
+                .override(300, 300)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                 .placeholder(R.drawable.ic_playlist_placeholder)
                 .error(R.drawable.ic_playlist_placeholder)
                 .centerCrop()

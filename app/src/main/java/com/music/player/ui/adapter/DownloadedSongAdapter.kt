@@ -123,7 +123,7 @@ class DownloadedSongAdapter(
         ) {
             bound = download
             val context = binding.root.context
-            binding.tvIndex.text = (position + 1).toString()
+            binding.tvIndex.text = String.format(Locale.getDefault(), "%d", position + 1)
             binding.tvTitle.text = download.title
             binding.tvMeta.text = buildMetaLine(download)
 

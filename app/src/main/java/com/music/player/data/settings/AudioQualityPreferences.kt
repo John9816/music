@@ -29,7 +29,7 @@ object AudioQualityPreferences {
 
         companion object {
             fun fromStorage(value: String?): Level {
-                return entries.firstOrNull { it.storageValue.equals(value, ignoreCase = true) } ?: JYMASTER
+                return entries.firstOrNull { it.storageValue.equals(value, ignoreCase = true) } ?: EXHIGH
             }
         }
     }

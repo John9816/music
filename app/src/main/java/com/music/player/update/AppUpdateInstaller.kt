@@ -78,9 +78,7 @@ class AppUpdateInstaller(
     private val installPermissionLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             val file = pendingInstallFile ?: return@registerForActivityResult
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                activity.packageManager.canRequestPackageInstalls()
-            ) {
+            if (activity.packageManager.canRequestPackageInstalls()) {
                 launchInstaller(file)
             } else {
                 toast(R.string.update_install_permission_denied)
@@ -110,9 +108,7 @@ class AppUpdateInstaller(
             clearPendingInstall()
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !activity.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!activity.packageManager.canRequestPackageInstalls()) {
             // Still waiting for the user to grant install permission; do not toast again.
             return
         }
@@ -290,9 +286,7 @@ class AppUpdateInstaller(
                     .putString(KEY_PENDING_INSTALL_FILE, file.absolutePath)
                     .putString(KEY_DOWNLOAD_FILE, file.absolutePath)
                     .apply()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                    !activity.packageManager.canRequestPackageInstalls()
-                ) {
+                if (!activity.packageManager.canRequestPackageInstalls()) {
                     if (notifyUser) toast(R.string.update_install_permission_required)
                     openInstallPermissionSettings()
                     return

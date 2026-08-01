@@ -233,6 +233,7 @@
     <string name="content_desc_avatar">用户头像</string>
     <string name="content_desc_back">返回</string>
     <string name="content_desc_settings">设置</string>
+    <string name="stat_count_placeholder">0</string>
     <string name="time_zero">00:00</string>
     <string name="storage_size_zero">0 B</string>
 

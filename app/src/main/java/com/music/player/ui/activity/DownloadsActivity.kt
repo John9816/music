@@ -1,6 +1,8 @@
 package com.music.player.ui.activity
 
 import android.content.Intent
+import androidx.core.content.pm.ShortcutManagerCompat
+import com.music.player.ui.util.AppShortcuts
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -79,6 +81,7 @@ class DownloadsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDownloadsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        reportShortcutUsageIfNeeded(intent)
 
         lightSystemBarsDefault = (resources.configuration.uiMode and
             android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
@@ -100,6 +103,20 @@ class DownloadsActivity : AppCompatActivity() {
         setupBackHandler()
         observePlaybackAndDownloads()
         loadDownloads(force = true, showLoading = true)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        reportShortcutUsageIfNeeded(intent)
+    }
+
+    private fun reportShortcutUsageIfNeeded(intent: Intent) {
+        val shortcutId = intent.getStringExtra(AppShortcuts.EXTRA_SHORTCUT_ID) ?: return
+        intent.removeExtra(AppShortcuts.EXTRA_SHORTCUT_ID)
+        runCatching {
+            ShortcutManagerCompat.reportShortcutUsed(this, shortcutId)
+        }
     }
 
     override fun onResume() {

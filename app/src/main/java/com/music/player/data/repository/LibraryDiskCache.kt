@@ -2,8 +2,8 @@ package com.music.player.data.repository
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
+import com.music.player.data.common.GsonProvider
 import com.music.player.data.model.Album
 import com.music.player.data.model.Artist
 import com.music.player.data.model.Song
@@ -21,7 +21,7 @@ class LibraryDiskCache(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val gson = Gson()
+    private val gson = GsonProvider.gson
 
     fun load(userId: String?): Snapshot? {
         val key = keyFor(userId) ?: return null

@@ -13,8 +13,6 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.KeyEvent
-import android.view.Surface
-import android.view.SurfaceHolder
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -27,6 +25,16 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
@@ -54,13 +62,11 @@ import com.music.player.ui.util.applyNavigationBarInsetPadding
 import com.music.player.ui.util.applyStatusBarInsetPadding
 import com.music.player.ui.util.bindPressFeedback
 import com.music.player.ui.util.resolveThemeColor
-import dev.jdtech.mpv.MPVLib
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.Executors
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class TvLiveActivity : AppCompatActivity() {
@@ -84,17 +90,12 @@ class TvLiveActivity : AppCompatActivity() {
     private var sourceAttemptPosition: Int = 0
     private val failedSources = LinkedHashMap<String, Long>()
     private var playbackState: PlaybackState = PlaybackState.IDLE
-    private var hasStartedFile: Boolean = false
-    private var ignoreNextEndFile: Boolean = false
     private var controlsHideRunnable: Runnable? = null
     private var isPlayerChromeVisible: Boolean = true
     private val mainHandler = Handler(Looper.getMainLooper())
-    @Volatile
-    private var mpvReady: Boolean = false
+    private var player: ExoPlayer? = null
     @Volatile
     private var destroyRequested: Boolean = false
-    @Volatile
-    private var surfaceAttached: Boolean = false
     @Volatile
     private var playbackRequestId: Long = 0L
     private var isFullscreen: Boolean = false
@@ -121,53 +122,57 @@ class TvLiveActivity : AppCompatActivity() {
         ERROR
     }
 
-    private val mpvLogObserver = MPVLib.LogObserver { prefix, level, text ->
-        Log.d(TAG_MPV, "[$level][$prefix] $text")
-    }
-
-    private val mpvEventObserver = object : MPVLib.EventObserver {
-        override fun eventProperty(property: String) = Unit
-        override fun eventProperty(property: String, value: Long) = Unit
-        override fun eventProperty(property: String, value: Double) = Unit
-        override fun eventProperty(property: String, value: String) = Unit
-
-        override fun eventProperty(property: String, value: Boolean) {
-            when (property) {
-                "paused-for-cache" -> runOnUiThread {
-                    if (value && playbackState == PlaybackState.PLAYING) {
-                        updatePlaybackState(PlaybackState.PREPARING)
-                        playingChannel?.let(::scheduleSourceTimeout)
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(state: Int) {
+            if (destroyRequested) return
+            when (state) {
+                Player.STATE_BUFFERING -> {
+                    if (playingItem != null && playbackState != PlaybackState.ERROR) {
+                        // Keep the original start/failover deadline — do not reset on every buffer tick.
+                        val alreadyTimingOut = sourceTimeoutJob?.isActive == true
+                        updatePlaybackState(
+                            PlaybackState.PREPARING,
+                            getString(R.string.tv_live_connecting)
+                        )
+                        if (!alreadyTimingOut) {
+                            playingChannel?.let(::scheduleSourceTimeout)
+                        }
                     }
                 }
-                "pause" -> runOnUiThread {
-                    if (playingItem != null && playbackState != PlaybackState.PREPARING &&
-                        playbackState != PlaybackState.ERROR
-                    ) {
-                        updatePlaybackState(if (value) PlaybackState.PAUSED else PlaybackState.PLAYING)
-                    }
-                }
-            }
-        }
-
-        override fun event(eventId: Int) {
-            when (eventId) {
-                MPVLib.MPV_EVENT_START_FILE -> hasStartedFile = true
-                MPVLib.MPV_EVENT_PLAYBACK_RESTART -> runOnUiThread {
+                Player.STATE_READY -> {
                     sourceTimeoutJob?.cancel()
                     rememberSuccessfulSource()
-                    updatePlaybackState(PlaybackState.PLAYING)
+                    val exo = player
+                    if (exo != null && exo.playWhenReady) {
+                        updatePlaybackState(PlaybackState.PLAYING)
+                    } else if (playingItem != null) {
+                        updatePlaybackState(PlaybackState.PAUSED)
+                    }
                 }
-                MPVLib.MPV_EVENT_END_FILE -> runOnUiThread {
-                    hasStartedFile = false
-                    if (destroyRequested) return@runOnUiThread
-                    if (ignoreNextEndFile) {
-                        ignoreNextEndFile = false
-                    } else if (playbackState == PlaybackState.PREPARING) {
+                Player.STATE_ENDED -> {
+                    // Live streams rarely end cleanly; treat unexpected end while starting as fail.
+                    if (playbackState == PlaybackState.PREPARING) {
                         markCurrentSourceFailed()
                         tryNextSource()
                     }
                 }
+                Player.STATE_IDLE -> {
+                    // Transient between media items and after release; nothing to surface.
+                }
             }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (destroyRequested) return
+            Log.w(TAG_PLAYER, "ExoPlayer error: ${error.errorCodeName}", error)
+            markCurrentSourceFailed()
+            tryNextSource()
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (destroyRequested || playingItem == null) return
+            if (playbackState == PlaybackState.PREPARING || playbackState == PlaybackState.ERROR) return
+            updatePlaybackState(if (isPlaying) PlaybackState.PLAYING else PlaybackState.PAUSED)
         }
     }
 
@@ -326,134 +331,60 @@ class TvLiveActivity : AppCompatActivity() {
                 .show(WindowInsetsCompat.Type.systemBars())
             requestedOrientation = requestedOrientationBeforeFullscreen
         }
-        binding.videoSurface.holder.removeCallback(surfaceCallback)
         destroyRequested = true
-        mpvReady = false
-        MPV_EXECUTOR.execute {
-            runCatching { MPVLib.removeObserver(mpvEventObserver) }
-            runCatching { MPVLib.removeLogObserver(mpvLogObserver) }
-            runCatching { MPVLib.setPropertyBoolean("pause", true) }
-            runCatching { MPVLib.setPropertyString("vo", "null") }
-            runCatching { MPVLib.setPropertyString("force-window", "no") }
-            if (surfaceAttached) runCatching { MPVLib.detachSurface() }
-            surfaceAttached = false
-            runCatching { MPVLib.destroy() }
-        }
+        releasePlayer()
         super.onDestroy()
     }
 
     private fun initPlayer() {
-        binding.videoSurface.holder.addCallback(surfaceCallback)
+        if (player != null) return
         updatePlaybackState(PlaybackState.IDLE)
-        MPV_EXECUTOR.execute {
-            if (destroyRequested) return@execute
-            runCatching {
-                MPVLib.create(applicationContext)
-                MPVLib.addLogObserver(mpvLogObserver)
-                MPVLib.addObserver(mpvEventObserver)
-                MPVLib.setOptionString("profile", "fast")
-                MPVLib.setOptionString("msg-level", "all=warn")
-                MPVLib.setOptionString("vo", "gpu")
-                MPVLib.setOptionString("gpu-context", "android")
-                MPVLib.setOptionString("opengl-es", "yes")
-                MPVLib.setOptionString("hwdec", "mediacodec-copy")
-                MPVLib.setOptionString("hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
-                MPVLib.setOptionString("ao", "audiotrack,opensles")
-                MPVLib.setOptionString("cache", "yes")
-                MPVLib.setOptionString("cache-pause-initial", "no")
-                MPVLib.setOptionString("cache-pause-wait", "0.25")
-                MPVLib.setOptionString("network-timeout", "5")
-                MPVLib.setOptionString("demuxer-readahead-secs", "2")
-                MPVLib.setOptionString("demuxer-max-bytes", (16 * 1024 * 1024).toString())
-                MPVLib.setOptionString("demuxer-max-back-bytes", (4 * 1024 * 1024).toString())
-                MPVLib.init()
-                MPVLib.observeProperty("pause", MPVLib.MPV_FORMAT_FLAG)
-                MPVLib.observeProperty("paused-for-cache", MPVLib.MPV_FORMAT_FLAG)
-                MPVLib.setOptionString("force-window", "no")
-                MPVLib.setOptionString("idle", "once")
-            }.onSuccess {
-                if (!destroyRequested) {
-                    mpvReady = true
-                    runOnUiThread {
-                        val holder = binding.videoSurface.holder
-                        if (!isDestroyed && holder.surface.isValid) {
-                            attachVideoSurface(
-                                holder.surface,
-                                binding.videoSurface.width,
-                                binding.videoSurface.height
-                            )
-                        }
-                        pendingChannel?.also {
-                            pendingChannel = null
-                            playChannel(it)
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                Log.e(TAG_MPV, "Failed to initialize libmpv", error)
-                runOnUiThread {
-                    updatePlaybackState(PlaybackState.ERROR, getString(R.string.tv_live_player_init_failed))
-                }
+        runCatching {
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(8_000)
+                .setReadTimeoutMs(12_000)
+                .setAllowCrossProtocolRedirects(true)
+                .setUserAgent(PLAYER_USER_AGENT)
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 5_000,
+                    /* maxBufferMs = */ 30_000,
+                    /* bufferForPlaybackMs = */ 1_000,
+                    /* bufferForPlaybackAfterRebufferMs = */ 3_000
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build()
+            val exo = ExoPlayer.Builder(this)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory))
+                )
+                .setLoadControl(loadControl)
+                .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+                .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
+                .build()
+            exo.setVideoSurfaceView(binding.videoSurface)
+            exo.addListener(playerListener)
+            player = exo
+            pendingChannel?.also {
+                pendingChannel = null
+                playChannel(it)
             }
+        }.onFailure { error ->
+            Log.e(TAG_PLAYER, "Failed to initialize ExoPlayer", error)
+            updatePlaybackState(PlaybackState.ERROR, getString(R.string.tv_live_player_init_failed))
         }
     }
 
-    private val surfaceCallback = object : SurfaceHolder.Callback {
-        override fun surfaceCreated(holder: SurfaceHolder) {
-            attachVideoSurface(
-                holder.surface,
-                binding.videoSurface.width,
-                binding.videoSurface.height
-            )
-        }
-
-        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-            executeMpv {
-                if (surfaceAttached) {
-                    MPVLib.setPropertyString("android-surface-size", "${width}x$height")
-                }
-            }
-        }
-
-        override fun surfaceDestroyed(holder: SurfaceHolder) {
-            detachCurrentSurface()
-        }
-    }
-
-    private fun attachVideoSurface(videoSurface: Surface, width: Int, height: Int) {
-        if (!mpvReady || !videoSurface.isValid) return
-        executeMpv {
-            if (surfaceAttached) {
-                MPVLib.setPropertyString("vo", "null")
-                runCatching { MPVLib.detachSurface() }
-            }
-            MPVLib.attachSurface(videoSurface)
-            MPVLib.setPropertyString("android-surface-size", "${width}x$height")
-            MPVLib.setOptionString("force-window", "yes")
-            MPVLib.setPropertyString("vo", "gpu")
-            surfaceAttached = true
-            Log.i(TAG_MPV, "Video surface attached: ${width}x$height")
-        }
-    }
-
-    private fun detachCurrentSurface() {
-        MPV_EXECUTOR.execute {
-            if (surfaceAttached && mpvReady && !destroyRequested) {
-                runCatching {
-                    MPVLib.setPropertyString("vo", "null")
-                    MPVLib.setPropertyString("force-window", "no")
-                    MPVLib.detachSurface()
-                }.onFailure { Log.e(TAG_MPV, "Failed to detach video surface", it) }
-            }
-            surfaceAttached = false
-        }
-    }
-
-    private fun executeMpv(action: () -> Unit) {
-        MPV_EXECUTOR.execute {
-            if (!mpvReady || destroyRequested) return@execute
-            runCatching(action).onFailure { Log.e(TAG_MPV, "libmpv operation failed", it) }
-        }
+    private fun releasePlayer() {
+        player?.removeListener(playerListener)
+        player?.clearVideoSurface()
+        player?.release()
+        player = null
     }
 
     private fun loadChannels(forceRefresh: Boolean) {
@@ -625,12 +556,13 @@ class TvLiveActivity : AppCompatActivity() {
         playingItem = channel
         currentSourceIndex = sourceAttemptOrder.firstOrNull() ?: safeIndex
         adapter.setPlayingId(playingId)
-        if (!mpvReady) {
+        if (player == null) {
             pendingChannel = channel
             updatePlaybackState(
                 PlaybackState.PREPARING,
                 getString(R.string.tv_live_player_starting)
             )
+            initPlayer()
             return
         }
         playCurrentSource()
@@ -639,10 +571,14 @@ class TvLiveActivity : AppCompatActivity() {
     private fun playCurrentSource() {
         val item = playingItem ?: return
         val source = item.sources.getOrNull(currentSourceIndex) ?: return
+        val exo = player ?: run {
+            pendingChannel = item
+            initPlayer()
+            return
+        }
         sourceTimeoutJob?.cancel()
         pendingChannel = null
         playingChannel = source
-        ignoreNextEndFile = hasStartedFile
         updatePlaybackState(
             PlaybackState.PREPARING,
             getString(
@@ -652,18 +588,31 @@ class TvLiveActivity : AppCompatActivity() {
             )
         )
         val requestId = ++playbackRequestId
-        executeMpv {
-            if (requestId != playbackRequestId) return@executeMpv
-            MPVLib.command(arrayOf("loadfile", source.playUrl, "replace"))
-            MPVLib.setPropertyBoolean("pause", false)
+        runCatching {
+            exo.setMediaItem(MediaItem.fromUri(source.playUrl))
+            exo.prepare()
+            exo.playWhenReady = true
+        }.onFailure { error ->
+            Log.w(TAG_PLAYER, "Failed to load source: ${source.playUrl}", error)
+            if (requestId == playbackRequestId) {
+                markCurrentSourceFailed()
+                tryNextSource()
+            }
+            return
         }
         scheduleSourceTimeout(source, requestId)
     }
 
     private fun scheduleSourceTimeout(source: TvChannel, requestId: Long = playbackRequestId) {
         sourceTimeoutJob?.cancel()
+        // First attempt gets a bit more budget; later failovers cut sooner so users land on a live URL faster.
+        val timeoutMs = if (sourceAttemptPosition == 0) {
+            SOURCE_START_TIMEOUT_MS
+        } else {
+            SOURCE_FAILOVER_TIMEOUT_MS
+        }
         sourceTimeoutJob = lifecycleScope.launch {
-            delay(SOURCE_START_TIMEOUT_MS)
+            delay(timeoutMs)
             if (playbackState == PlaybackState.PREPARING && playingChannel == source &&
                 requestId == playbackRequestId
             ) {
@@ -679,6 +628,11 @@ class TvLiveActivity : AppCompatActivity() {
         sourceAttemptPosition += 1
         val nextIndex = sourceAttemptOrder.getOrNull(sourceAttemptPosition)
         if (nextIndex != null) {
+            // Drop the dead media item so ExoPlayer releases sockets before the next try.
+            runCatching {
+                player?.stop()
+                player?.clearMediaItems()
+            }
             currentSourceIndex = nextIndex
             playCurrentSource()
         } else {
@@ -738,7 +692,8 @@ class TvLiveActivity : AppCompatActivity() {
 
     private fun setPaused(paused: Boolean) {
         if (playingId == null || playbackState == PlaybackState.ERROR) return
-        executeMpv { MPVLib.setPropertyBoolean("pause", paused) }
+        val exo = player ?: return
+        exo.playWhenReady = !paused
         updatePlaybackState(if (paused) PlaybackState.PAUSED else PlaybackState.PLAYING)
     }
 
@@ -1210,11 +1165,15 @@ class TvLiveActivity : AppCompatActivity() {
         const val TV_ID_PREFIX = "tv:"
         private const val GROUP_ALL = "全部"
         private const val MAX_GROUP_CHIPS = 16
-        private const val TAG_MPV = "TvLiveMpv"
+        private const val TAG_PLAYER = "TvLivePlayer"
+        private const val PLAYER_USER_AGENT = "MusicPlayer/1.0 (Android; TV Live)"
         private const val SOURCE_PREFS = "tv_live_successful_sources"
         private const val FULLSCREEN_EXIT_FALLBACK_MS = 800L
         private const val FILTER_DEBOUNCE_MS = 140L
-        private const val SOURCE_START_TIMEOUT_MS = 5_500L
+        /** First source connect budget (Exo live open + first keyframe). */
+        private const val SOURCE_START_TIMEOUT_MS = 4_000L
+        /** Subsequent sources: fail fast so multi-source channels recover quicker. */
+        private const val SOURCE_FAILOVER_TIMEOUT_MS = 2_500L
         private const val FAILED_SOURCE_COOLDOWN_MS = 10L * 60L * 1000L
         private const val CHANNEL_PREFETCH_COUNT = 4
         private const val CHANNEL_VIEW_CACHE_SIZE = 12
@@ -1223,9 +1182,6 @@ class TvLiveActivity : AppCompatActivity() {
         private const val PLAYER_MAX_HEIGHT_PORTRAIT_DP = 260
         private const val PLAYER_MAX_HEIGHT_LANDSCAPE_DP = 190
         private const val DISABLED_ALPHA = 0.42f
-        private val MPV_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "tv-live-mpv").apply { isDaemon = true }
-        }
 
         fun intent(context: Context): Intent = Intent(context, TvLiveActivity::class.java)
 

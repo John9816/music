@@ -5,6 +5,10 @@ import com.google.gson.JsonParser
 import com.music.player.data.api.RetrofitClient
 import com.music.player.data.common.RequestCoalescer
 import com.music.player.data.common.TimedMemoryCache
+import com.music.player.data.common.asJsonObjectOrNull
+import com.music.player.data.common.obj
+import com.music.player.data.common.str
+import com.music.player.data.common.int
 import com.music.player.data.model.Album
 import com.music.player.data.model.NewestAlbum
 import com.music.player.data.settings.MusicSourcePreferences
@@ -41,14 +45,26 @@ class AlbumRepository {
             try {
                 val response = api.getNewestAlbums(source = source, pageSize = 12)
                 if (!response.isSuccessful) {
-                    return@run Result.failure(Exception("获取最新专辑失败"))
+                    val stale = newestAlbumsCache.getStale(cacheKey)
+                    return@run if (stale != null) {
+                        Result.success(stale)
+                    } else {
+                        Result.failure(Exception("获取最新专辑失败"))
+                    }
                 }
 
                 val albums = parseAlbumsFromNewSongs(response.body()?.string().orEmpty())
-                newestAlbumsCache.put(cacheKey, albums)
-                Result.success(albums)
+                if (albums.isNotEmpty()) {
+                    newestAlbumsCache.put(cacheKey, albums)
+                    Result.success(albums)
+                } else {
+                    val stale = newestAlbumsCache.getStale(cacheKey)
+                    if (stale != null) Result.success(stale)
+                    else Result.failure(Exception("获取最新专辑失败"))
+                }
             } catch (e: Exception) {
-                Result.failure(e)
+                val stale = newestAlbumsCache.getStale(cacheKey)
+                if (stale != null) Result.success(stale) else Result.failure(e)
             }
         }
     }
@@ -74,15 +90,3 @@ private fun parseAlbumsFromNewSongs(raw: String): List<NewestAlbum> {
         )
     }.distinctBy { it.album.id }
 }
-
-private fun com.google.gson.JsonElement.asJsonObjectOrNull(): JsonObject? =
-    takeIf { it.isJsonObject }?.asJsonObject
-
-private fun JsonObject.obj(name: String): com.google.gson.JsonElement? =
-    get(name)?.takeUnless { it.isJsonNull }
-
-private fun JsonObject.str(name: String): String =
-    obj(name)?.let { runCatching { it.asString }.getOrNull() }.orEmpty().trim()
-
-private fun JsonObject.int(name: String, default: Int = 0): Int =
-    obj(name)?.let { runCatching { it.asInt }.getOrNull() } ?: default

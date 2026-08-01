@@ -6,6 +6,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.music.player.BuildConfig
 import com.music.player.data.api.NetworkRuntime
+import com.music.player.data.common.booleanOrFalse
+import com.music.player.data.common.intOrNull
+import com.music.player.data.common.stringOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -119,19 +122,6 @@ class AppVersionRepository(context: Context) {
         }
     }
 
-    private fun JsonObject.stringOrNull(name: String): String? {
-        val value = get(name) ?: return null
-        if (value.isJsonNull || !value.isJsonPrimitive) return null
-        return value.asString.trim().takeIf { it.isNotBlank() }
-    }
-
-    private fun JsonObject.booleanOrFalse(name: String): Boolean {
-        return runCatching { get(name)?.asBoolean ?: false }.getOrDefault(false)
-    }
-
-    private fun JsonObject.intOrNull(name: String): Int? {
-        return runCatching { get(name)?.takeUnless { it.isJsonNull }?.asInt }.getOrNull()
-    }
 
     private companion object {
         private const val ECS_UPDATE_MANIFEST_URL =
@@ -198,6 +188,7 @@ internal object UpdateDownloadSelector {
                 ?.value
                 ?.let { return it }
         }
-        return null
+        // No matching ABI (e.g. emulator-only x86_64): fall back to arm64 legacy URL.
+        return legacyDownloadUrl
     }
 }

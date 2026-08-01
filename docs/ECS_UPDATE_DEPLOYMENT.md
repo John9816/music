@@ -22,17 +22,17 @@ The directory must contain `latest.json` and the matching signed APKs. The manif
 {
   "version": "1.0.5",
   "buildNumber": 6,
-  "downloadUrl": "https://api.751152.xyz/updates/DuckMusic-v1.0.5.apk",
+  "downloadUrl": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk",
   "downloads": {
-    "arm64-v8a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk",
-    "armeabi-v7a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-armeabi-v7a.apk",
-    "x86_64": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-x86_64.apk"
+    "arm64-v8a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk"
   },
   "description": "DuckMusic 1.0.5",
   "forceUpdate": false,
   "minBuildNumber": 0
 }
 ```
+
+Ship **arm64-v8a only**. Do not publish `armeabi-v7a`, universal, or `x86_64`. TV live uses Media3 (no libmpv), so the single APK stays small. Legacy clients use `downloadUrl` (arm64).
 
 ## GitHub Actions secrets
 

@@ -46,20 +46,22 @@ class TvLiveApiClientTest {
     }
 
     @Test
-    fun acceptsRtmpStreamsForMpvPlayback() {
+    fun dropsRtmpAndP2pForExoPlayer() {
         val m3u = """
             #EXTM3U
             #EXTINF:-1 group-title="RTMP",RTMP Channel
             rtmp://example.com/live/channel
             #EXTINF:-1 group-title="P2P",P2P Channel
             p3p://example.com/live/channel
+            #EXTINF:-1 group-title="HLS",HLS Channel
+            https://example.com/live/channel.m3u8
         """.trimIndent()
 
         val channels = TvLiveApiClient.parseM3u(m3u)
 
         assertEquals(1, channels.size)
-        assertEquals("RTMP Channel", channels[0].name)
-        assertEquals("rtmp://example.com/live/channel", channels[0].playUrl)
+        assertEquals("HLS Channel", channels[0].name)
+        assertTrue(channels[0].playUrl.endsWith(".m3u8"))
     }
 
     @Test

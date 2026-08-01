@@ -54,8 +54,9 @@ object PlaybackCoordinator {
     private const val POSITION_PERSIST_INTERVAL_MS = 5_000L
 
     private val repository = MusicRepository()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var scope = newScope()
 
+    private fun newScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val navigationHistory = ArrayDeque<Song>()
     private var prepareJob: Job? = null
     private var lyricsJob: Job? = null
@@ -182,6 +183,7 @@ object PlaybackCoordinator {
         // Only clear if the released player is still the one we hold; a newer service may have
         // already re-attached a fresh player.
         if (this.player === player) {
+            cancelAllJobs()
             persistSessionNow()
             stopPositionPersistenceLoop()
             this.player = null
@@ -1251,4 +1253,18 @@ object PlaybackCoordinator {
         _recentlyPlayed.value = navigationHistory.asReversed()
             .filter { seen.add(it.id) }
     }
+
+    /**
+     * Cancel every scheduled coroutine and recreate the scope so the next attachPlayer
+     * gets a clean slate. Called from detachPlayer (service destroy) and resetPlayback.
+     */
+    private fun cancelAllJobs() {
+        prepareJob?.cancel(); prepareJob = null
+        lyricsJob?.cancel(); lyricsJob = null; lyricsTargetId = null
+        sleepTimerJob?.cancel(); sleepTimerJob = null
+        persistJob?.cancel(); persistJob = null
+        positionPersistJob?.cancel(); positionPersistJob = null
+        scope.coroutineContext[Job]?.cancel(); scope = newScope()
+    }
+
 }

@@ -1,5 +1,6 @@
 package com.music.player.data.auth
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -13,85 +14,157 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okio.ByteString.Companion.decodeBase64
 
-class AuthSessionManager(context: Context) {
-    private val appContext = context.applicationContext
-    /**
-     * Plain mirror so a Keystore/EncryptedSharedPreferences glitch cannot wipe login state.
-     * Must be initialized BEFORE primaryPrefs — createPrimaryPrefs reads the mirror.
-     */
-    private val mirrorPrefs: SharedPreferences =
-        appContext.getSharedPreferences(MIRROR_PREFS_NAME, Context.MODE_PRIVATE)
-    private val primaryPrefs: SharedPreferences = createPrimaryPrefs(appContext)
-    private val refreshMutex = Mutex()
+private const val TAG = "AuthSessionManager"
+private const val PREFS_NAME = "auth_prefs"
+private const val ENCRYPTED_PREFS_NAME = "auth_prefs_secure"
+private const val MIRROR_PREFS_NAME = "auth_prefs_mirror"
 
-    private fun createPrimaryPrefs(context: Context): SharedPreferences {
-        // Tokens are sensitive; store them encrypted at rest. If the Android Keystore is
-        // unavailable (rare device/OEM issues), fall back to plain prefs so auth still works.
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val encrypted = EncryptedSharedPreferences.create(
-                context,
-                ENCRYPTED_PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+/** Session store keys shared by the encrypted primary store, the plaintext fallback and the mirror. */
+internal object AuthSessionKeys {
+    const val ACCESS_TOKEN = "access_token"
+    const val REFRESH_TOKEN = "refresh_token"
+    const val EXPIRES_AT_MS = "expires_at_ms"
+    const val USER_ID = "user_id"
+}
+
+/** Thin key/value facade over a session store so the auth logic is unit-testable on the JVM. */
+internal interface SessionStore {
+    fun readString(key: String): String?
+    fun readLong(key: String): Long
+
+    /** True when either token is present, regardless of expiry. */
+    fun hasAnySessionToken(): Boolean
+    fun isEmpty(): Boolean
+    fun editor(): SessionStoreEditor
+}
+
+internal interface SessionStoreEditor {
+    fun putString(key: String, value: String?): SessionStoreEditor
+    fun putLong(key: String, value: Long): SessionStoreEditor
+    fun remove(key: String): SessionStoreEditor
+    fun commit()
+}
+
+/** [SessionStore] backed by Android [SharedPreferences]. */
+internal class SharedPrefsSessionStore(
+    internal val prefs: SharedPreferences
+) : SessionStore {
+    override fun readString(key: String): String? = prefs.getString(key, null)
+    override fun readLong(key: String): Long = prefs.getLong(key, 0L)
+    override fun hasAnySessionToken(): Boolean =
+        !readString(AuthSessionKeys.ACCESS_TOKEN).isNullOrBlank() ||
+            !readString(AuthSessionKeys.REFRESH_TOKEN).isNullOrBlank()
+    override fun isEmpty(): Boolean = prefs.all.isEmpty()
+    // The returned editor is committed by every caller (writeBoth/clearSessionKeys).
+    @SuppressLint("CommitPrefEdits")
+    override fun editor(): SessionStoreEditor = object : SessionStoreEditor {
+        private val editor = prefs.edit()
+        override fun putString(key: String, value: String?): SessionStoreEditor {
+            if (value == null) editor.remove(key) else editor.putString(key, value)
+            return this
+        }
+        override fun putLong(key: String, value: Long): SessionStoreEditor {
+            editor.putLong(key, value)
+            return this
+        }
+        override fun remove(key: String): SessionStoreEditor {
+            editor.remove(key)
+            return this
+        }
+        override fun commit() {
+            editor.commit()
+        }
+    }
+}
+
+/**
+ * Holds the resolved primary/mirror stores and whether the primary is encrypted at rest.
+ */
+private data class AuthStores(
+    val primary: SessionStore,
+    val mirror: SessionStore,
+    val encryptedActive: Boolean
+) {
+    companion object {
+        fun forContext(context: Context): AuthStores {
+            // Plain mirror so a Keystore/EncryptedSharedPreferences glitch cannot wipe login
+            // state on devices where encryption is unavailable. Must be built BEFORE the
+            // primary store: createPrimaryPrefs reads the mirror.
+            val mirror = SharedPrefsSessionStore(
+                context.getSharedPreferences(MIRROR_PREFS_NAME, Context.MODE_PRIVATE)
             )
-            migrateLegacyPrefs(context, encrypted)
-            restoreFromMirrorIfPrimaryEmpty(encrypted)
-            encrypted
-        } catch (t: Throwable) {
-            Log.w(TAG, "EncryptedSharedPreferences unavailable, falling back to plain prefs", t)
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).also { plain ->
-                migrateLegacyPrefs(context, plain)
-                restoreFromMirrorIfPrimaryEmpty(plain)
+            return try {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                val encrypted = EncryptedSharedPreferences.create(
+                    context,
+                    ENCRYPTED_PREFS_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                val primary = SharedPrefsSessionStore(encrypted)
+                migrateLegacyPrefs(legacyStore(context), primary)
+                restoreFromMirrorIfPrimaryEmpty(primary, mirror)
+                // Tokens now live in the encrypted store. The mirror copy is stale anyway
+                // (it is never written while encryption works) and keeping it would both leak
+                // plaintext tokens at rest and resurrect logged-out sessions on cold start.
+                wipeMirrorIfPrimaryHasSession(primary, mirror)
+                AuthStores(primary, mirror, encryptedActive = true)
+            } catch (t: Throwable) {
+                AuthLog.w(TAG, "EncryptedSharedPreferences unavailable, falling back to plain prefs", t)
+                val primary = SharedPrefsSessionStore(
+                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                )
+                migrateLegacyPrefs(legacyStore(context), primary)
+                restoreFromMirrorIfPrimaryEmpty(primary, mirror)
+                AuthStores(primary, mirror, encryptedActive = false)
             }
         }
-    }
 
-    /** Moves any tokens saved by older versions in plain prefs into the primary store, then wipes them. */
-    private fun migrateLegacyPrefs(context: Context, primary: SharedPreferences) {
-        val legacy = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (legacy === primary || legacy.all.isEmpty()) return
-        if (primary.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() &&
-            primary.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
-        ) {
-            copySession(from = legacy, to = primary)
-        }
-        legacy.edit().clear().commit()
+        private fun legacyStore(context: Context): SessionStore =
+            SharedPrefsSessionStore(
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            )
     }
+}
 
-    private fun restoreFromMirrorIfPrimaryEmpty(primary: SharedPreferences) {
-        val primaryEmpty = primary.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() &&
-            primary.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
-        val mirrorHasSession = !mirrorPrefs.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() ||
-            !mirrorPrefs.getString(KEY_REFRESH_TOKEN, null).isNullOrBlank()
-        if (primaryEmpty && mirrorHasSession) {
-            Log.i(TAG, "Restoring auth session from mirror preferences")
-            copySession(from = mirrorPrefs, to = primary)
-        }
-    }
+class AuthSessionManager private constructor(
+    private val stores: AuthStores,
+    private val appContext: Context?
+) {
+    private val refreshMutex = Mutex()
 
-    private fun copySession(from: SharedPreferences, to: SharedPreferences) {
-        to.edit()
-            .putString(KEY_ACCESS_TOKEN, from.getString(KEY_ACCESS_TOKEN, null))
-            .putString(KEY_REFRESH_TOKEN, from.getString(KEY_REFRESH_TOKEN, null))
-            .putLong(KEY_EXPIRES_AT_MS, from.getLong(KEY_EXPIRES_AT_MS, 0L))
-            .putString(KEY_USER_ID, from.getString(KEY_USER_ID, null))
-            .commit()
-    }
+    constructor(context: Context) : this(
+        stores = AuthStores.forContext(context.applicationContext),
+        appContext = context.applicationContext
+    )
+
+    /** Test seam: injects in-memory stores and skips Android-only cache cleanup. */
+    internal constructor(
+        primaryPrefs: SessionStore,
+        mirrorPrefs: SessionStore,
+        encryptedActive: Boolean
+    ) : this(
+        stores = AuthStores(primaryPrefs, mirrorPrefs, encryptedActive),
+        appContext = null
+    )
+
+    private val primaryPrefs: SessionStore get() = stores.primary
+    private val mirrorPrefs: SessionStore get() = stores.mirror
+    private val encryptedActive: Boolean get() = stores.encryptedActive
 
     fun isLoggedIn(): Boolean {
         return !getRefreshToken().isNullOrBlank() || !getAccessToken().isNullOrBlank()
     }
 
     fun getCachedUserId(): String? =
-        primaryPrefs.getString(KEY_USER_ID, null)
-            ?: mirrorPrefs.getString(KEY_USER_ID, null)
+        primaryPrefs.readString(AuthSessionKeys.USER_ID)
+            ?: mirrorPrefs.readString(AuthSessionKeys.USER_ID)
 
     fun cacheUserId(userId: String) {
-        writeBoth { editor -> editor.putString(KEY_USER_ID, userId) }
+        writeBoth { editor -> editor.putString(AuthSessionKeys.USER_ID, userId) }
     }
 
     fun syncUserIdFromAccessToken(accessToken: String): String? {
@@ -107,16 +180,24 @@ class AuthSessionManager(context: Context) {
     fun clear() {
         // Capture before wipe so library disk/RAM can be dropped for this account.
         val userId = getCachedUserId()
-        writeBoth { editor ->
-            editor.remove(KEY_ACCESS_TOKEN)
-                .remove(KEY_REFRESH_TOKEN)
-                .remove(KEY_EXPIRES_AT_MS)
-                .remove(KEY_USER_ID)
-        }
+        writeBoth(::clearSessionKeys)
+        // Logout must also wipe the plaintext mirror unconditionally: the getters fall
+        // back to it, and a stale copy would resurrect the session on the next cold start.
+        clearSessionKeys(mirrorPrefs.editor()).commit()
+
         // Business library cache is not stored in session prefs — clear explicitly.
+        appContext?.let { ctx ->
+            runCatching {
+                SupabaseMusicRepository(ctx).clearLocalLibraryForUser(userId)
+            }.onFailure { AuthLog.w(TAG, "clear local library on session end failed", it) }
+        }
+        // Clear music/album memory caches so a different user never sees stale data.
         runCatching {
-            SupabaseMusicRepository(appContext).clearLocalLibraryForUser(userId)
-        }.onFailure { Log.w(TAG, "clear local library on session end failed", it) }
+            com.music.player.data.repository.MusicRepository.clearCaches()
+        }.onFailure { AuthLog.w(TAG, "clear music caches on session end failed", it) }
+        runCatching {
+            com.music.player.data.repository.AlbumRepository.clearCaches()
+        }.onFailure { AuthLog.w(TAG, "clear album caches on session end failed", it) }
     }
 
     fun invalidateSession() {
@@ -124,24 +205,29 @@ class AuthSessionManager(context: Context) {
         AuthSessionState.notifyExpired()
     }
 
-    fun saveSession(accessToken: String, refreshToken: String?, expiresInSeconds: Int?, userId: String?) {
+    fun saveSession(
+        accessToken: String,
+        refreshToken: String?,
+        expiresInSeconds: Int?,
+        userId: String?
+    ) {
         val expiresAtMs = resolveExpiresAtMs(accessToken, expiresInSeconds)
 
         if (refreshToken.isNullOrBlank()) {
-            Log.w(TAG, "Auth response has no refresh token; session lasts until access token is rejected")
+            AuthLog.w(TAG, "Auth response has no refresh token; session lasts until access token is rejected")
         } else if (expiresAtMs == null) {
-            Log.w(TAG, "Auth response has no expiry and JWT exp claim is missing; will refresh only after 401")
+            AuthLog.w(TAG, "Auth response has no expiry and JWT exp claim is missing; will refresh only after 401")
         }
 
         writeBoth { editor ->
-            editor.putString(KEY_ACCESS_TOKEN, accessToken)
-                .putString(KEY_REFRESH_TOKEN, refreshToken)
+            editor.putString(AuthSessionKeys.ACCESS_TOKEN, accessToken)
+                .putString(AuthSessionKeys.REFRESH_TOKEN, refreshToken)
                 // 0 means "unknown" — do NOT treat as expired (see isNearExpiry).
-                .putLong(KEY_EXPIRES_AT_MS, expiresAtMs ?: 0L)
-                .putString(KEY_USER_ID, userId)
+                .putLong(AuthSessionKeys.EXPIRES_AT_MS, expiresAtMs ?: 0L)
+                .putString(AuthSessionKeys.USER_ID, userId)
         }
         AuthSessionState.markActive()
-        Log.d(
+        AuthLog.d(
             TAG,
             "Session saved (refresh=${!refreshToken.isNullOrBlank()}, expiresAt=${expiresAtMs ?: 0L})"
         )
@@ -161,7 +247,7 @@ class AuthSessionManager(context: Context) {
 
         // 无刷新令牌时无法续期：仍返回现有令牌，交由服务端以 401 判定是否失效。
         if (refreshToken.isNullOrBlank()) return token
-        // 未知过期时间：不要主动刷，避免错误刷新接口把会话清掉。
+        // 未知过期时间：不要主动刷新，避免错误刷新接口把会话清掉。
         if (!isNearExpiry(expiresAtMs)) return token
 
         return refreshMutex.withLock {
@@ -199,7 +285,7 @@ class AuthSessionManager(context: Context) {
             val response = authApi.refreshToken(RefreshTokenRequest(refreshToken))
             if (!response.isSuccessful) {
                 val code = response.code()
-                Log.w(TAG, "Refresh HTTP $code")
+                AuthLog.w(TAG, "Refresh HTTP $code")
                 return when (classifyRefreshFailure(code)) {
                     RefreshFailure.INVALID_SESSION -> {
                         // Only clear when the server explicitly rejects the session.
@@ -227,23 +313,23 @@ class AuthSessionManager(context: Context) {
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {
-            Log.w(TAG, "Access token refresh failed: ${e.javaClass.simpleName}: ${e.message}")
+            AuthLog.w(TAG, "Access token refresh failed: ${e.javaClass.simpleName}: ${e.message}")
             TokenRefreshResult.TransientFailure
         }
     }
 
     private fun getAccessToken(): String? =
-        primaryPrefs.getString(KEY_ACCESS_TOKEN, null)
-            ?: mirrorPrefs.getString(KEY_ACCESS_TOKEN, null)
+        primaryPrefs.readString(AuthSessionKeys.ACCESS_TOKEN)
+            ?: mirrorPrefs.readString(AuthSessionKeys.ACCESS_TOKEN)
 
     private fun getRefreshToken(): String? =
-        primaryPrefs.getString(KEY_REFRESH_TOKEN, null)
-            ?: mirrorPrefs.getString(KEY_REFRESH_TOKEN, null)
+        primaryPrefs.readString(AuthSessionKeys.REFRESH_TOKEN)
+            ?: mirrorPrefs.readString(AuthSessionKeys.REFRESH_TOKEN)
 
     private fun getExpiresAtMs(): Long {
-        val primary = primaryPrefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+        val primary = primaryPrefs.readLong(AuthSessionKeys.EXPIRES_AT_MS)
         if (primary > 0L) return primary
-        return mirrorPrefs.getLong(KEY_EXPIRES_AT_MS, 0L)
+        return mirrorPrefs.readLong(AuthSessionKeys.EXPIRES_AT_MS)
     }
 
     /**
@@ -264,24 +350,78 @@ class AuthSessionManager(context: Context) {
         return null
     }
 
-    private fun writeBoth(block: (SharedPreferences.Editor) -> SharedPreferences.Editor) {
+    private fun writeBoth(block: (SessionStoreEditor) -> SessionStoreEditor) {
         // commit() so tokens survive process death right after login.
-        primaryPrefs.edit().let { block(it).commit() }
-        mirrorPrefs.edit().let { block(it).commit() }
+        block(primaryPrefs.editor()).commit()
+        // Only write the plaintext mirror when encrypted storage is unavailable;
+        // otherwise tokens stay encrypted at rest and the mirror stays clean.
+        if (!encryptedActive) {
+            block(mirrorPrefs.editor()).commit()
+        }
     }
 
     private companion object {
-        private const val TAG = "AuthSessionManager"
-        private const val PREFS_NAME = "auth_prefs"
-        private const val ENCRYPTED_PREFS_NAME = "auth_prefs_secure"
-        private const val MIRROR_PREFS_NAME = "auth_prefs_mirror"
-        private const val KEY_ACCESS_TOKEN = "access_token"
-        private const val KEY_REFRESH_TOKEN = "refresh_token"
-        private const val KEY_EXPIRES_AT_MS = "expires_at_ms"
-        private const val KEY_USER_ID = "user_id"
-
-        private const val EXPIRY_SAFETY_WINDOW_MS = 60_000L
+        const val EXPIRY_SAFETY_WINDOW_MS = 60_000L
     }
+}
+
+/** Moves any tokens saved by older versions in plain prefs into the primary store, then wipes them. */
+internal fun migrateLegacyPrefs(legacy: SessionStore, primary: SessionStore) {
+    if (legacy === primary) return
+    if (legacy is SharedPrefsSessionStore && primary is SharedPrefsSessionStore &&
+        legacy.prefs === primary.prefs
+    ) {
+        // Fallback path: primary IS the legacy file — do not wipe it.
+        return
+    }
+    if (legacy.isEmpty()) return
+    if (primary.readString(AuthSessionKeys.ACCESS_TOKEN).isNullOrBlank() &&
+        primary.readString(AuthSessionKeys.REFRESH_TOKEN).isNullOrBlank()
+    ) {
+        copySession(from = legacy, to = primary)
+    }
+    clearSessionKeys(legacy.editor()).commit()
+}
+
+/** Restores a session from the mirror only when the primary store is completely empty. */
+internal fun restoreFromMirrorIfPrimaryEmpty(primary: SessionStore, mirror: SessionStore) {
+    val primaryEmpty = primary.readString(AuthSessionKeys.ACCESS_TOKEN).isNullOrBlank() &&
+        primary.readString(AuthSessionKeys.REFRESH_TOKEN).isNullOrBlank()
+    if (primaryEmpty && mirror.hasAnySessionToken()) {
+        AuthLog.i(TAG, "Restoring auth session from mirror preferences")
+        copySession(from = mirror, to = primary)
+    }
+}
+
+/** One-time cleanup: once tokens are in the (encrypted) primary store, drop the plaintext mirror copy. */
+internal fun wipeMirrorIfPrimaryHasSession(primary: SessionStore, mirror: SessionStore) {
+    val primaryHasSession = !primary.readString(AuthSessionKeys.ACCESS_TOKEN).isNullOrBlank() ||
+        !primary.readString(AuthSessionKeys.REFRESH_TOKEN).isNullOrBlank()
+    if (!primaryHasSession) return
+    clearSessionKeys(mirror.editor()).commit()
+}
+
+internal fun clearSessionKeys(editor: SessionStoreEditor): SessionStoreEditor =
+    editor.remove(AuthSessionKeys.ACCESS_TOKEN)
+        .remove(AuthSessionKeys.REFRESH_TOKEN)
+        .remove(AuthSessionKeys.EXPIRES_AT_MS)
+        .remove(AuthSessionKeys.USER_ID)
+
+internal fun copySession(from: SessionStore, to: SessionStore) {
+    to.editor()
+        .putString(AuthSessionKeys.ACCESS_TOKEN, from.readString(AuthSessionKeys.ACCESS_TOKEN))
+        .putString(AuthSessionKeys.REFRESH_TOKEN, from.readString(AuthSessionKeys.REFRESH_TOKEN))
+        .putLong(AuthSessionKeys.EXPIRES_AT_MS, from.readLong(AuthSessionKeys.EXPIRES_AT_MS))
+        .putString(AuthSessionKeys.USER_ID, from.readString(AuthSessionKeys.USER_ID))
+        .commit()
+}
+
+/** Log wrapper that never crashes the caller — also keeps the class JVM-unit-test friendly. */
+internal object AuthLog {
+    fun d(tag: String, msg: String) = runCatching { Log.d(tag, msg) }
+    fun i(tag: String, msg: String) = runCatching { Log.i(tag, msg) }
+    fun w(tag: String, msg: String) = runCatching { Log.w(tag, msg) }
+    fun w(tag: String, msg: String, t: Throwable) = runCatching { Log.w(tag, msg, t) }
 }
 
 internal object JwtTokenParser {

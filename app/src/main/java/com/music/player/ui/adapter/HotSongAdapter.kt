@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.music.player.R
 import com.music.player.data.model.Song
 import com.music.player.databinding.ItemHotSongBinding
@@ -62,7 +63,9 @@ class HotSongAdapter(
             } else {
                 binding.ivCover.imageTintList = null
                 Glide.with(binding.ivCover)
-                    .load(ImageUrl.bestQuality(coverUrl))
+                    .load(ImageUrl.thumbnail(coverUrl, 300))
+                    .override(300, 300)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .placeholder(R.drawable.ic_music_note_24)
                     .centerCrop()
                     .dontAnimate()

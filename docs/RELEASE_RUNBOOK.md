@@ -73,7 +73,8 @@ The local `keystore.properties` and referenced keystore file must exist. They ar
 The release produces one APK per ABI. Stage the release filenames and locate the newest Android build-tools:
 
 ```powershell
-$Abis = @("arm64-v8a", "armeabi-v7a", "x86_64")
+# arm64-v8a only (modern phones). No v7a / x86 / universal.
+$Abis = @("arm64-v8a")
 $ApkPaths = @{}
 $Abis | ForEach-Object {
     $Source = Join-Path $ReleaseDir "app-$_-release.apk"
@@ -81,8 +82,6 @@ $Abis | ForEach-Object {
     Copy-Item $Source $Target -Force
     $ApkPaths[$_] = $Target
 }
-$UniversalPath = Join-Path $ReleaseDir "DuckMusic-v$VersionName.apk"
-Copy-Item (Join-Path $ReleaseDir "app-universal-release.apk") $UniversalPath -Force
 
 $BuildTools = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" -Directory |
     Where-Object Name -Match '^\d+\.\d+\.\d+$' |
@@ -116,12 +115,10 @@ Do not publish unless all of these are true:
 $Manifest = [ordered]@{
     version = $VersionName
     buildNumber = $VersionCode
-    # Required until every installed legacy client understands the downloads map.
-    downloadUrl = "https://api.751152.xyz/updates/DuckMusic-v$VersionName.apk"
+    # Single arm64 package for phones and legacy downloadUrl.
+    downloadUrl = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
     downloads = [ordered]@{
         "arm64-v8a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
-        "armeabi-v7a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-armeabi-v7a.apk"
-        "x86_64" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-x86_64.apk"
     }
     description = "DuckMusic $VersionName"
     forceUpdate = $false
@@ -206,7 +203,7 @@ git tag -a "v$VersionName" -m "DuckMusic v$VersionName"
 git push origin "v$VersionName"
 ```
 
-Pushing `v$VersionName` triggers `.github/workflows/android-debug-apk.yml`. The tag workflow validates the version and signing certificate, then creates the GitHub Release with `DuckMusic-v$VersionName.apk`.
+Pushing `v$VersionName` triggers `.github/workflows/android-debug-apk.yml`. The tag workflow validates the version and signing certificate, then creates the GitHub Release with `DuckMusic-v$VersionName-arm64-v8a.apk`.
 
 ## 7. Rollback ECS manifest
 

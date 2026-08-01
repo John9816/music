@@ -1,15 +1,6 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="@color/launcher_background"
-        android:pathData="M54,8A46,46 0,1 0,54 100A46,46 0,1 0,54 8" />
-    <path
-        android:fillColor="@color/launcher_accent"
-        android:pathData="M57,20v40.2c-2.8,-1.7 -6.3,-2.7 -10,-2.7 -9.8,0 -17.7,6.6 -17.7,14.8s7.9,14.8 17.7,14.8S65,80.5 65,72.3V39h16V20H57z" />
-    <path
-        android:fillColor="@color/launcher_highlight"
-        android:pathData="M79,56c5.2,0 9.4,3.5 9.4,7.8s-4.2,7.8 -9.4,7.8 -9.4,-3.5 -9.4,-7.8 4.2,-7.8 9.4,-7.8zM88,77v7h-3v-7z" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+    <monochrome android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>
