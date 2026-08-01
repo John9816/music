@@ -73,8 +73,8 @@ The local `keystore.properties` and referenced keystore file must exist. They ar
 The release produces one APK per ABI. Stage the release filenames and locate the newest Android build-tools:
 
 ```powershell
-# arm64-v8a only (modern phones). No v7a / x86 / universal.
-$Abis = @("arm64-v8a")
+# Phone (arm64) + legacy 32-bit (v7a) + emulator (x86_64).
+$Abis = @("arm64-v8a", "armeabi-v7a", "x86_64")
 $ApkPaths = @{}
 $Abis | ForEach-Object {
     $Source = Join-Path $ReleaseDir "app-$_-release.apk"
@@ -115,10 +115,12 @@ Do not publish unless all of these are true:
 $Manifest = [ordered]@{
     version = $VersionName
     buildNumber = $VersionCode
-    # Single arm64 package for phones and legacy downloadUrl.
+    # Legacy downloadUrl stays arm64; modern clients pick their ABI from downloads.
     downloadUrl = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
     downloads = [ordered]@{
         "arm64-v8a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-arm64-v8a.apk"
+        "armeabi-v7a" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-armeabi-v7a.apk"
+        "x86_64" = "https://api.751152.xyz/updates/DuckMusic-v$VersionName-x86_64.apk"
     }
     description = "DuckMusic $VersionName"
     forceUpdate = $false

@@ -24,7 +24,9 @@ The directory must contain `latest.json` and the matching signed APKs. The manif
   "buildNumber": 6,
   "downloadUrl": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk",
   "downloads": {
-    "arm64-v8a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk"
+    "arm64-v8a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-arm64-v8a.apk",
+    "armeabi-v7a": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-armeabi-v7a.apk",
+    "x86_64": "https://api.751152.xyz/updates/DuckMusic-v1.0.5-x86_64.apk"
   },
   "description": "DuckMusic 1.0.5",
   "forceUpdate": false,
@@ -32,7 +34,7 @@ The directory must contain `latest.json` and the matching signed APKs. The manif
 }
 ```
 
-Ship **arm64-v8a only**. Do not publish `armeabi-v7a`, universal, or `x86_64`. TV live uses Media3 (no libmpv), so the single APK stays small. Legacy clients use `downloadUrl` (arm64).
+Ship **arm64-v8a, armeabi-v7a, and x86_64**. Phones use `arm64-v8a`, old 32-bit devices use `armeabi-v7a`, and Android emulators (typically x86_64) need the x86_64 package — without it they report "新版本没有适用于当前构建的安装包". TV live uses Media3 (no libmpv), so each APK stays small. `downloadUrl` remains the arm64 package for legacy clients that only understand a single URL.
 
 ## GitHub Actions secrets
 

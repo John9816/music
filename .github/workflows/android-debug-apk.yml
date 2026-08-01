@@ -124,29 +124,31 @@ jobs:
           expected_cert="$(printf '%s' "${ANDROID_SIGNING_CERT_SHA256}" \
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')"
-          # arm64-v8a only (phone target; no multi-ABI native bulk).
-          abi="arm64-v8a"
-          apk="app/build/outputs/apk/release/app-${abi}-release.apk"
-          [[ -f "$apk" ]] || { echo "Missing release APK: $apk" >&2; exit 1; }
-          "$apksigner" verify "$apk"
-          badging="$("$aapt" dump badging "$apk" | head -n1)"
-          echo "$badging"
-          grep -q "name='com.music.player'" <<<"$badging"
-          grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
-          grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
+          # Phone (arm64) + emulator (x86_64) + legacy 32-bit (v7a). No bundled native bulk:
+          # Media3 uses platform codecs, so each ABI APK stays small.
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            apk="app/build/outputs/apk/release/app-${abi}-release.apk"
+            [[ -f "$apk" ]] || { echo "Missing release APK: $apk" >&2; exit 1; }
+            "$apksigner" verify "$apk"
+            badging="$("$aapt" dump badging "$apk" | head -n1)"
+            echo "$badging"
+            grep -q "name='com.music.player'" <<<"$badging"
+            grep -q "versionCode='${{ steps.app_version.outputs.version_code }}'" <<<"$badging"
+            grep -q "versionName='${{ steps.app_version.outputs.version_name }}'" <<<"$badging"
 
-          cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1)"
-          actual_cert="$(printf '%s\n' "$cert_output" \
-            | grep -i -m1 'certificate SHA-256 digest' \
-            | sed -E 's/.*:[[:space:]]*//' \
-            | tr -d ':[:space:]' \
-            | tr '[:upper:]' '[:lower:]')"
-          if [[ -z "$actual_cert" || "$actual_cert" != "$expected_cert" ]]; then
-            echo "Release certificate mismatch. expected=$expected_cert actual=$actual_cert" >&2
-            exit 1
-          fi
+            cert_output="$("$apksigner" verify --print-certs "$apk" 2>&1)"
+            actual_cert="$(printf '%s\n' "$cert_output" \
+              | grep -i -m1 'certificate SHA-256 digest' \
+              | sed -E 's/.*:[[:space:]]*//' \
+              | tr -d ':[:space:]' \
+              | tr '[:upper:]' '[:lower:]')"
+            if [[ -z "$actual_cert" || "$actual_cert" != "$expected_cert" ]]; then
+              echo "Release certificate mismatch for $abi. expected=$expected_cert actual=$actual_cert" >&2
+              exit 1
+            fi
 
-          cp "$apk" "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}-${abi}.apk"
+            cp "$apk" "app/build/outputs/apk/release/DuckMusic-v${{ steps.app_version.outputs.version_name }}-${abi}.apk"
+          done
 
       - name: Publish GitHub Release (tag)
         if: startsWith(github.ref, 'refs/tags/v')

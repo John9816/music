@@ -95,24 +95,18 @@ android {
         // until AGP is upgraded (then remove this line and re-enable the check).
         disable "NullSafeMutableLiveData"
     }
-    // Single ABI for phones (arm64). Drops v7a/x86/universal and all multi-ABI native bloat.
-    // Legacy downloadUrl and downloads map both point at arm64-v8a.
+    // Phone (arm64) + emulator (x86_64) + legacy 32-bit devices (v7a).
+    // Media3 uses platform codecs (no libmpv), so the only bundled native lib is the tiny
+    // datastore counter; per-ABI APKs stay small and every supported device gets a match.
     splits {
         abi {
             enable true
             reset()
-            include 'arm64-v8a'
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
             universalApk false
         }
     }
     packaging {
-        jniLibs {
-            excludes += [
-                '**/armeabi-v7a/**',
-                '**/x86/**',
-                '**/x86_64/**'
-            ]
-        }
         resources {
             excludes += [
                 'META-INF/DEPENDENCIES',

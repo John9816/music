@@ -62,13 +62,15 @@ class VersionComparatorTest {
     }
 
     @Test
-    fun fallsBackToLegacyWhenAbiMissingFromDownloads() {
+    fun noIncompatibleUrlWhenAbiMissingFromDownloads() {
+        // An ABI-mismatched device must NOT receive a URL it cannot install: the download
+        // would succeed and only the install would fail with a confusing error.
         assertTrue(
             UpdateDownloadSelector.selectUrl(
                 downloads = mapOf("arm64-v8a" to "https://example.com/app-arm64.apk"),
                 supportedAbis = listOf("x86_64"),
                 legacyDownloadUrl = "https://example.com/app-default.apk"
-            ) == "https://example.com/app-default.apk"
+            ) == null
         )
     }
 

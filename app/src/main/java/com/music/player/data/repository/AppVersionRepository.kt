@@ -188,7 +188,9 @@ internal object UpdateDownloadSelector {
                 ?.value
                 ?.let { return it }
         }
-        // No matching ABI (e.g. emulator-only x86_64): fall back to arm64 legacy URL.
-        return legacyDownloadUrl
+        // The manifest explicitly lists ABIs but none matches this device. Do NOT hand out
+        // an incompatible URL: the download would succeed and the install would then fail
+        // with a confusing "package mismatch" error instead of a clear "no package" notice.
+        return null
     }
 }
