@@ -1,6 +1,7 @@
 package com.music.player.data.live
 
 import android.content.Context
+import android.util.Log
 import com.music.player.data.api.NetworkRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -17,7 +18,15 @@ import java.util.concurrent.TimeUnit
 
 object TvLiveApiClient {
 
-    private const val ENDPOINT = "https://danboxingqiu.cn/iptv.m3u"
+    private const val TAG = "TvLiveApiClient"
+    /**
+     * Primary feed first; fallbacks are tried in order when an upstream is down or returns
+     * an empty/undecodable playlist, so a single dead mirror cannot take down TV live.
+     */
+    private val SOURCE_URLS = listOf(
+        "https://danboxingqiu.cn/iptv.m3u",
+        "https://live.fanmingming.cn/tv/m3u/ipv6.m3u"
+    )
     private const val DEFAULT_GROUP = "Other"
 
     private val client: OkHttpClient by lazy {
@@ -145,8 +154,22 @@ object TvLiveApiClient {
     }
 
     private fun fetchRemote(): Result<List<TvChannel>> = runCatching {
+        var lastError: Throwable? = null
+        for (sourceUrl in SOURCE_URLS) {
+            val parsed = runCatching { fetchSource(sourceUrl) }
+                .getOrElse { error ->
+                    Log.w(TAG, "TV live source failed: $sourceUrl", error)
+                    lastError = error
+                    emptyList()
+                }
+            if (parsed.isNotEmpty()) return@runCatching parsed
+        }
+        throw lastError ?: IllegalStateException("TV live sources unavailable")
+    }
+
+    private fun fetchSource(sourceUrl: String): List<TvChannel> {
         val request = Request.Builder()
-            .url(ENDPOINT)
+            .url(sourceUrl)
             .get()
             .header("Accept", "audio/x-mpegurl, application/vnd.apple.mpegurl, text/plain, */*")
             .header("User-Agent", "MusicPlayer/1.0 (Android)")
@@ -154,11 +177,9 @@ object TvLiveApiClient {
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                error("TV live source failed: HTTP ${response.code}")
+                error("TV live source failed: HTTP ${response.code} from $sourceUrl")
             }
-            parseM3u(body).also {
-                if (it.isEmpty()) error("TV live source is empty")
-            }
+            return parseM3u(body)
         }
     }
 

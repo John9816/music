@@ -15,6 +15,7 @@ import android.view.LayoutInflater
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
@@ -251,7 +252,7 @@ class TvLiveActivity : AppCompatActivity() {
         }
         binding.btnPlayerRetry.bindPressFeedback(PressFeedback.Style.BUTTON)
         binding.playerFrame.setOnClickListener {
-            if (isFullscreen && playingItem != null) {
+            if (playingItem != null) {
                 setPlayerChromeVisible(!binding.playerControls.isVisible)
             }
         }
@@ -269,6 +270,7 @@ class TvLiveActivity : AppCompatActivity() {
         initPlayer()
         binding.playerCard.post { applyResponsivePlayerHeight() }
 
+        selectedGroup = lastSelectedGroup().orEmpty()
         rebuildChips()
         loadChannels(forceRefresh = false)
     }
@@ -332,6 +334,7 @@ class TvLiveActivity : AppCompatActivity() {
             requestedOrientation = requestedOrientationBeforeFullscreen
         }
         destroyRequested = true
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         releasePlayer()
         super.onDestroy()
     }
@@ -443,6 +446,7 @@ class TvLiveActivity : AppCompatActivity() {
         binding.progress.isVisible = false
         rebuildChips()
         applyFilter()
+        resumeLastChannelIfNeeded()
     }
 
     private fun setChannelLoading(loading: Boolean, refresh: Boolean) {
@@ -470,6 +474,7 @@ class TvLiveActivity : AppCompatActivity() {
                 minHeight = resources.getDimensionPixelSize(R.dimen.control_height_m)
                 setOnClickListener {
                     selectedGroup = label
+                    rememberLastGroup(label)
                     applyFilter()
                     binding.recyclerView.scrollToPosition(0)
                 }
@@ -556,6 +561,7 @@ class TvLiveActivity : AppCompatActivity() {
         playingItem = channel
         currentSourceIndex = sourceAttemptOrder.firstOrNull() ?: safeIndex
         adapter.setPlayingId(playingId)
+        setPlayerChromeVisible(true)
         if (player == null) {
             pendingChannel = channel
             updatePlaybackState(
@@ -650,10 +656,47 @@ class TvLiveActivity : AppCompatActivity() {
         val item = playingItem ?: return
         val source = playingChannel ?: return
         failedSources.remove(source.playUrl)
+        rememberLastChannel(item.key)
         getSharedPreferences(SOURCE_PREFS, MODE_PRIVATE)
             .edit()
             .putString(item.key, source.playUrl)
             .apply()
+    }
+
+    private fun lastSelectedGroup(): String? =
+        getSharedPreferences(SOURCE_PREFS, MODE_PRIVATE).getString(LAST_GROUP_KEY, null)
+
+    private fun rememberLastGroup(group: String) {
+        getSharedPreferences(SOURCE_PREFS, MODE_PRIVATE)
+            .edit()
+            .putString(LAST_GROUP_KEY, group)
+            .apply()
+    }
+
+    private fun lastChannelKey(): String? =
+        getSharedPreferences(SOURCE_PREFS, MODE_PRIVATE).getString(LAST_CHANNEL_KEY, null)
+
+    private fun rememberLastChannel(channelKey: String) {
+        getSharedPreferences(SOURCE_PREFS, MODE_PRIVATE)
+            .edit()
+            .putString(LAST_CHANNEL_KEY, channelKey)
+            .apply()
+    }
+
+    /** Re-opens the last successfully played channel so the page feels like a real TV. */
+    private fun resumeLastChannelIfNeeded() {
+        if (playingItem != null) return
+        val lastKey = lastChannelKey() ?: return
+        val channel = allChannels.firstOrNull { it.key == lastKey } ?: return
+        playChannel(channel)
+        scrollToChannel(channel)
+    }
+
+    private fun scrollToChannel(channel: TvChannelCatalogItem) {
+        val index = visibleChannels.indexOfFirst { it.key == channel.key }
+        if (index >= 0) {
+            binding.recyclerView.scrollToPosition(index)
+        }
     }
 
     private fun markCurrentSourceFailed() {
@@ -704,6 +747,15 @@ class TvLiveActivity : AppCompatActivity() {
     private fun updatePlaybackState(state: PlaybackState, message: String? = null) {
         playbackState = state
         val item = playingItem
+        // Keep the screen awake while a live channel is playing or connecting; otherwise
+        // the device sleeps mid-stream and the picture goes black.
+        val keepAwake = item != null &&
+            (state == PlaybackState.PLAYING || state == PlaybackState.PREPARING)
+        if (keepAwake) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         val hasChannel = item != null
         val isPreparing = state == PlaybackState.PREPARING
         val hasError = state == PlaybackState.ERROR
@@ -716,14 +768,15 @@ class TvLiveActivity : AppCompatActivity() {
         )
         binding.btnPlayerPause.isEnabled = state == PlaybackState.PLAYING || state == PlaybackState.PAUSED
         binding.btnPlayerPause.alpha = if (binding.btnPlayerPause.isEnabled) 1f else DISABLED_ALPHA
-        val showChrome = hasChannel && (!isFullscreen || isPlayerChromeVisible)
+        val showChrome = hasChannel && isPlayerChromeVisible
         binding.playerControls.isVisible = showChrome
         binding.btnPlayerFullscreen.isVisible = showChrome
         binding.tvPlayerHint.isVisible = state == PlaybackState.IDLE
+        binding.playerLoadingBar.isVisible = isPreparing
         binding.playerStatusContainer.isVisible =
-            isPreparing || hasError || state == PlaybackState.PAUSED
+            hasError || state == PlaybackState.PAUSED
         binding.playerProgress.isVisible = isPreparing
-        binding.tvPlayerStatus.isVisible = isPreparing || hasError || state == PlaybackState.PAUSED
+        binding.tvPlayerStatus.isVisible = hasError || state == PlaybackState.PAUSED
         binding.tvPlayerStatus.text = message ?: when (state) {
             PlaybackState.PREPARING -> getString(R.string.tv_live_connecting)
             PlaybackState.PAUSED -> getString(R.string.tv_live_paused)
@@ -748,12 +801,11 @@ class TvLiveActivity : AppCompatActivity() {
         binding.btnPlayerNext.isEnabled = canNavigate
         binding.btnPlayerNext.alpha = if (canNavigate) 1f else DISABLED_ALPHA
         adapter.setPlaybackState(state)
-        if (isFullscreen) {
-            if (state == PlaybackState.ERROR || state == PlaybackState.PAUSED) {
+        when {
+            state == PlaybackState.ERROR || state == PlaybackState.PAUSED ->
                 setPlayerChromeVisible(true)
-            } else if (state == PlaybackState.PLAYING) {
+            state == PlaybackState.PLAYING && isPlayerChromeVisible ->
                 scheduleControlsHide()
-            }
         }
     }
 
@@ -920,14 +972,14 @@ class TvLiveActivity : AppCompatActivity() {
                     .start()
             }
         }
-        if (visible && isFullscreen && playbackState == PlaybackState.PLAYING) {
+        if (visible && playbackState == PlaybackState.PLAYING) {
             scheduleControlsHide()
         }
     }
 
     private fun scheduleControlsHide() {
         controlsHideRunnable?.let(mainHandler::removeCallbacks)
-        if (!isFullscreen || playbackState != PlaybackState.PLAYING) return
+        if (playbackState != PlaybackState.PLAYING) return
         controlsHideRunnable = Runnable {
             if (binding.playerControls.hasFocus() || binding.btnPlayerFullscreen.hasFocus()) {
                 scheduleControlsHide()
@@ -1168,6 +1220,8 @@ class TvLiveActivity : AppCompatActivity() {
         private const val TAG_PLAYER = "TvLivePlayer"
         private const val PLAYER_USER_AGENT = "MusicPlayer/1.0 (Android; TV Live)"
         private const val SOURCE_PREFS = "tv_live_successful_sources"
+        private const val LAST_CHANNEL_KEY = "last_channel_key"
+        private const val LAST_GROUP_KEY = "last_group"
         private const val FULLSCREEN_EXIT_FALLBACK_MS = 800L
         private const val FILTER_DEBOUNCE_MS = 140L
         /** First source connect budget (Exo live open + first keyframe). */

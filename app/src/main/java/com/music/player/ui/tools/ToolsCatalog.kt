@@ -1,4 +1,4 @@
-package com.music.player.ui.tools
+﻿package com.music.player.ui.tools
 
 import android.content.Context
 import android.content.Intent
@@ -6,6 +6,7 @@ import com.music.player.R
 import com.music.player.ui.activity.AiDrawActivity
 import com.music.player.ui.activity.RadioActivity
 import com.music.player.ui.activity.TvLiveActivity
+import com.music.player.ui.activity.TvVodActivity
 import com.music.player.ui.activity.VideoParseActivity
 
 enum class ToolGroup {
@@ -44,6 +45,14 @@ object ToolsCatalog {
             intentFactory = { TvLiveActivity.intent(it) }
         ),
         ToolItem(
+            id = "tv_vod",
+            group = ToolGroup.LISTEN,
+            titleRes = R.string.tools_tv_vod_title,
+            subtitleRes = R.string.tools_tv_vod_subtitle,
+            iconRes = R.drawable.ic_tv_24,
+            intentFactory = { TvVodActivity.intent(it) }
+        ),
+        ToolItem(
             id = "ai_draw",
             group = ToolGroup.CREATE,
             titleRes = R.string.ai_draw_title,
@@ -68,3 +77,4 @@ object ToolsCatalog {
         ToolGroup.UTILITY -> R.string.tools_group_utility
     }
 }
+

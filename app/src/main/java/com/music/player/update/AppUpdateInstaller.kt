@@ -12,13 +12,17 @@ import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import android.webkit.URLUtil
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.music.player.BuildConfig
 import com.music.player.R
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
@@ -54,7 +58,7 @@ class AppUpdateInstaller(
         private const val KEY_PENDING_INSTALL_FILE = "pending_install_file"
         private const val KEY_DOWNLOAD_VERSION = "download_version"
         private const val KEY_DOWNLOAD_URL = "download_url"
-        private const val PROGRESS_TOAST_STEP_PERCENT = 25
+        private const val PROGRESS_UPDATE_STEP_PERCENT = 5
         /** Reject obviously truncated / HTML error bodies before PackageManager. */
         private const val MIN_APK_BYTES = 64 * 1024L
     }
@@ -74,6 +78,9 @@ class AppUpdateInstaller(
     private var activeCall: okhttp3.Call? = null
     private var pendingInstallFile: File? = null
     private val downloadInFlight = AtomicBoolean(false)
+    private var progressDialog: AlertDialog? = null
+    private var progressBar: ProgressBar? = null
+    private var progressText: TextView? = null
 
     private val installPermissionLauncher =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -155,7 +162,7 @@ class AppUpdateInstaller(
             .apply()
         pendingInstallFile = null
 
-        toast(R.string.update_start_download)
+        showProgressDialog()
 
         downloadJob = activity.lifecycleScope.launch {
             try {
@@ -163,13 +170,16 @@ class AppUpdateInstaller(
                     downloadToFile(url, partFile, targetFile)
                 }
                 if (!ok) {
+                    dismissProgressDialog()
                     toast(R.string.update_download_failed)
                     return@launch
                 }
                 if (!targetFile.exists() || targetFile.length() <= 0L) {
+                    dismissProgressDialog()
                     toast(R.string.update_download_failed)
                     return@launch
                 }
+                dismissProgressDialog()
                 toast(R.string.update_download_complete)
                 installDownloadedApk(targetFile, notifyUser = true)
             } catch (e: CancellationException) {
@@ -180,6 +190,7 @@ class AppUpdateInstaller(
             } finally {
                 activeCall = null
                 downloadInFlight.set(false)
+                dismissProgressDialog()
             }
         }
     }
@@ -205,7 +216,7 @@ class AppUpdateInstaller(
                 val body = response.body ?: return false
                 val total = body.contentLength()
                 var downloaded = 0L
-                var lastToastPercent = -PROGRESS_TOAST_STEP_PERCENT
+                var lastShownPercent = -PROGRESS_UPDATE_STEP_PERCENT
                 var chunks = 0
 
                 partFile.outputStream().use { output ->
@@ -223,18 +234,11 @@ class AppUpdateInstaller(
                             if (chunks % 32 == 0) yield()
                             if (total > 0L) {
                                 val percent = ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
-                                if (percent >= lastToastPercent + PROGRESS_TOAST_STEP_PERCENT) {
-                                    lastToastPercent =
-                                        (percent / PROGRESS_TOAST_STEP_PERCENT) * PROGRESS_TOAST_STEP_PERCENT
+                                if (percent >= lastShownPercent + PROGRESS_UPDATE_STEP_PERCENT) {
+                                    lastShownPercent =
+                                        (percent / PROGRESS_UPDATE_STEP_PERCENT) * PROGRESS_UPDATE_STEP_PERCENT
                                     withContext(Dispatchers.Main.immediate) {
-                                        Toast.makeText(
-                                            activity,
-                                            activity.getString(
-                                                R.string.update_download_progress,
-                                                lastToastPercent.coerceAtMost(100)
-                                            ),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        updateDownloadProgress(lastShownPercent.coerceAtMost(100))
                                     }
                                 }
                             }
@@ -548,11 +552,49 @@ class AppUpdateInstaller(
         if (!keepInFlightFlag) {
             downloadInFlight.set(false)
         }
+        dismissProgressDialog()
     }
 
     private fun clearPendingInstall() {
         pendingInstallFile = null
         prefs.edit().remove(KEY_PENDING_INSTALL_FILE).apply()
+    }
+
+    private fun showProgressDialog() {
+        if (activity.isFinishing || activity.isDestroyed) return
+        dismissProgressDialog()
+        val view = activity.layoutInflater.inflate(R.layout.dialog_update_progress, null)
+        progressBar = view.findViewById(R.id.progressBar)
+        progressText = view.findViewById(R.id.tvProgress)
+        progressText?.text = activity.getString(R.string.update_start_download)
+        progressDialog = MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.update_downloading)
+            .setView(view)
+            .setNegativeButton(R.string.update_cancel) { _, _ -> cancelActiveDownload() }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun updateDownloadProgress(percent: Int) {
+        val dialog = progressDialog
+        if (dialog != null && dialog.isShowing) {
+            progressBar?.apply {
+                isIndeterminate = false
+                progress = percent.coerceIn(0, 100)
+            }
+            progressText?.text = activity.getString(R.string.update_download_progress, percent)
+        }
+    }
+
+    private fun dismissProgressDialog() {
+        progressDialog?.let { dialog ->
+            if (dialog.isShowing) {
+                runCatching { dialog.dismiss() }
+            }
+        }
+        progressDialog = null
+        progressBar = null
+        progressText = null
     }
 
     private fun toast(messageRes: Int) {

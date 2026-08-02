@@ -14,7 +14,28 @@
       "Bash(codex --version)",
       "Bash(python3:*)",
       "Bash(node:*)",
-      "Bash(./gradlew compileDebugKotlin)"
+      "Bash(./gradlew compileDebugKotlin)",
+      "Bash(./gradlew :app:assembleDebug)",
+      "Bash(./gradlew :app:clean :app:assembleDebug)",
+      "Bash(adb uninstall:*)",
+      "Bash(where adb:*)",
+      "Bash(/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe uninstall:*)",
+      "Bash(git rm *)",
+      "WebFetch(domain:github.com)",
+      "mcp__fetch__fetch",
+      "Read(//c/Users/Administrator/.claude/**)",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/Jia-Ethan/claude-keysmith/main/claude-instruct.py -o claude-instruct.py)",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/Jia-Ethan/claude-keysmith/main/examples/claude-project-rules.md -o examples/claude-project-rules.md)",
+      "Bash(python -m py_compile claude-instruct.py)",
+      "Bash(python claude-instruct.py install --scope user --name personal-rules)",
+      "Bash(git check-ignore *)",
+      "Bash(./gradlew :app:assembleDebug -q)",
+      "Bash(./gradlew compileDebugKotlin -q)",
+      "WebSearch",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(adb devices *)",
+      "WebFetch(domain:y.qq.com)"
     ]
   }
 }

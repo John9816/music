@@ -29,7 +29,7 @@ def resolveSecret = { String key, String defaultValue ->
 }
 def supabaseUrl = resolveSecret('SUPABASE_URL', 'https://api.751152.xyz')
 def supabaseAnonKey = resolveSecret('SUPABASE_ANON_KEY', '')
-// 聚合解析 apikey：local.properties �?VIDEO_PARSE_API_KEY，或环境变量同名
+// 鑱氬悎瑙ｆ�?apikey锛歭ocal.properties �?VIDEO_PARSE_API_KEY锛屾垨鐜鍙橀噺鍚屽悕
 def videoParseApiKey = resolveSecret('VIDEO_PARSE_API_KEY', '')
 
 android {
@@ -40,8 +40,8 @@ android {
         applicationId "com.music.player"
         minSdk 26
         targetSdk 35
-        versionCode 36
-        versionName "1.1.25"
+        versionCode 37
+        versionName "1.1.26"
         resConfigs "zh", "en"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -103,7 +103,7 @@ android {
             enable true
             reset()
             include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-            universalApk false
+            universalApk true
         }
     }
     packaging {
@@ -148,7 +148,7 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.6.1'
     // MediaSession: lock screen / bluetooth / headset media controls, system media panel
     implementation 'androidx.media3:media3-session:1.6.1'
-    // TV live uses Media3 ExoPlayer (same stack as radio/HLS) — no libmpv/FFmpeg native bulk.
+    // TV live uses Media3 ExoPlayer (same stack as radio/HLS) �?no libmpv/FFmpeg native bulk.
 
     // Glide for image loading
     implementation 'com.github.bumptech.glide:glide:4.16.0'

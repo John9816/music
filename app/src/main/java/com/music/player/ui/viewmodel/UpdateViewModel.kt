@@ -9,6 +9,7 @@ import com.music.player.data.repository.AppVersionInfo
 import com.music.player.data.repository.AppVersionRepository
 import com.music.player.data.repository.VersionComparator
 import com.music.player.R
+import com.music.player.update.AppUpdatePreferences
 import com.music.player.update.AutomaticUpdateGate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     val state: LiveData<UpdateState> = _state
     private var checkJob: Job? = null
     private val automaticUpdateGate = AutomaticUpdateGate()
+    private val appUpdatePreferences = AppUpdatePreferences(application.applicationContext)
 
     fun reset() {
         _state.value = UpdateState.Idle
@@ -42,6 +44,14 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         val now = System.currentTimeMillis()
         if (!userInitiated) {
             if (!automaticUpdateGate.tryAcquire(now, checkJob?.isActive == true)) return
+            // Persisted throttle: don't re-hit the version endpoints on every app start.
+            val lastAutoCheck = appUpdatePreferences.lastAutoCheckAtMs()
+            if (lastAutoCheck > 0L &&
+                now - lastAutoCheck < AppUpdatePreferences.AUTO_CHECK_MIN_INTERVAL_MS
+            ) {
+                return
+            }
+            appUpdatePreferences.markAutoCheckAt(now)
         } else {
             checkJob?.cancel()
         }

@@ -607,4 +607,18 @@
     <string name="discover_hero_eyebrow">发现</string>
     <string name="discover_hero_title">发现好音乐</string>
     <string name="discover_hero_subtitle">为你精选的每日推荐与本周热歌</string>
+    <!-- TV VOD (???? / TVBox) -->
+    <string name="tools_tv_vod_title">电视点播</string>
+    <string name="tools_tv_vod_subtitle">全网视频搜索与点播</string>
+    <string name="tv_vod_search_hint">搜索影片名称</string>
+    <string name="tv_vod_all">全部</string>
+    <string name="tv_vod_loading">正在加载…</string>
+    <string name="tv_vod_loading_detail">正在获取详情…</string>
+    <string name="tv_vod_empty">暂无数据</string>
+    <string name="tv_vod_load_failed">加载失败，请检查网络或更换订阅源</string>
+    <string name="tv_vod_search_failed">搜索失败</string>
+    <string name="tv_vod_searching">正在搜索…</string>
+    <string name="tv_vod_change_source">更换订阅源</string>
+    <string name="tv_vod_source_hint">输入 TVBox 订阅源地址</string>
+    <string name="tv_vod_confirm">确定</string>
 </resources>

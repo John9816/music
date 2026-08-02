@@ -48,6 +48,16 @@
                     android:layout_height="match_parent"
                     android:importantForAccessibility="no" />
 
+                <ProgressBar
+                    android:id="@+id/playerLoadingBar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="3dp"
+                    android:layout_gravity="top|fill_horizontal"
+                    android:indeterminate="true"
+                    android:indeterminateTint="?attr/brandPrimary"
+                    android:visibility="gone" />
+
                 <LinearLayout
                     android:id="@+id/playerNowPlaying"
                     android:layout_width="wrap_content"
@@ -108,13 +118,14 @@
                     android:id="@+id/playerStatusContainer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="center"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="76dp"
                     android:background="@drawable/bg_tv_player_scrim"
                     android:gravity="center"
-                    android:minWidth="168dp"
+                    android:minWidth="140dp"
                     android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/spacing_m"
-                    android:paddingVertical="@dimen/spacing_sm"
+                    android:paddingHorizontal="@dimen/spacing_sm"
+                    android:paddingVertical="@dimen/spacing_s"
                     android:visibility="gone">
 
                     <ProgressBar
@@ -199,7 +210,7 @@
             android:id="@+id/tvSubtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="@dimen/spacing_m"
+            android:paddingHorizontal="@dimen/spacing_sm"
             android:paddingBottom="@dimen/spacing_xs"
             android:text="@string/tools_tv_live_subtitle"
             android:textAppearance="@style/TextAppearance.Material3.BodySmall"
@@ -231,7 +242,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"
-            android:paddingHorizontal="@dimen/spacing_m"
+            android:paddingHorizontal="@dimen/spacing_sm"
             android:paddingBottom="@dimen/spacing_s"
             android:scrollbars="none">
 
