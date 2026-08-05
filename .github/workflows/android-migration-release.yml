@@ -108,6 +108,15 @@ jobs:
           curl -fsSL -o "${RUNNER_TEMP}/DuckMusic-v1.1.26-x86_64.apk" \
             "https://api.751152.xyz/updates/DuckMusic-v1.1.26-x86_64.apk"
 
+      - name: Enable KVM for Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Prove in-place upgrade from production 1.1.26
         uses: reactivecircus/android-emulator-runner@v2
         with:
