@@ -16,6 +16,7 @@ env:
   FLUTTER_VERSION: "3.44.8"
   MIGRATION_VERSION: "1.1.27"
   MIGRATION_BUILD_NUMBER: "38"
+  MIGRATION_APK_SHA256: "f8ae5860438250da84e70bcf55e0b0a2f5d812891d3e22740a759c2fd53465e2"
   LEGACY_ANDROID_CERT_SHA256: "c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72"
 
 jobs:
@@ -201,3 +202,90 @@ jobs:
           scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
             "dist/${apk_name}" "${manifest}" \
             "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"
+
+  retry-ecs-publish:
+    if: contains(github.event.head_commit.message, '[publish-ecs]')
+    runs-on: ubuntu-latest
+    env:
+      ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+      ECS_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+    steps:
+      - name: Download and verify released migration APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_name="DuckMusic-Flutter-v${MIGRATION_VERSION}-Android-universal.apk"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "${RUNNER_TEMP}/${apk_name}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/flutter-v${MIGRATION_VERSION}/${apk_name}"
+          echo "${MIGRATION_APK_SHA256}  ${RUNNER_TEMP}/${apk_name}" | sha256sum --check --strict
+
+      - name: Publish verified migration to legacy ECS channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${ECS_SSH_PRIVATE_KEY}" ]]; then
+            echo "ECS_SSH_PRIVATE_KEY is missing." >&2
+            exit 1
+          fi
+
+          host="api.751152.xyz"
+          port="22"
+          user="root"
+          update_dir="/opt/website/updates"
+          base_url="https://api.751152.xyz/updates"
+          apk_name="DuckMusic-Flutter-v${MIGRATION_VERSION}-Android-universal.apk"
+          apk="${RUNNER_TEMP}/${apk_name}"
+          manifest="${RUNNER_TEMP}/latest.json"
+          remote_apk="/tmp/${apk_name}.upload-${GITHUB_RUN_ID}"
+          remote_manifest="/tmp/latest-${MIGRATION_VERSION}-${GITHUB_RUN_ID}.json"
+
+          cat > "${manifest}" <<EOF
+          {
+            "version": "${MIGRATION_VERSION}",
+            "buildNumber": ${MIGRATION_BUILD_NUMBER},
+            "downloadUrl": "${base_url}/${apk_name}",
+            "downloads": {
+              "arm64-v8a": "${base_url}/${apk_name}",
+              "armeabi-v7a": "${base_url}/${apk_name}",
+              "x86_64": "${base_url}/${apk_name}"
+            },
+            "description": "DuckMusic Flutter ${MIGRATION_VERSION}",
+            "forceUpdate": false,
+            "minBuildNumber": 0
+          }
+          EOF
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+          chmod 600 ~/.ssh/duckmusic_ecs
+          if [[ -n "${ECS_KNOWN_HOSTS}" ]]; then
+            printf '%s\n' "${ECS_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${port}" -H "${host}" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          scp -i ~/.ssh/duckmusic_ecs -P "${port}" \
+            "${apk}" "${user}@${host}:${remote_apk}"
+          scp -i ~/.ssh/duckmusic_ecs -P "${port}" \
+            "${manifest}" "${user}@${host}:${remote_manifest}"
+
+          apk_sha="$(sha256sum "${apk}" | cut -d' ' -f1)"
+          manifest_sha="$(sha256sum "${manifest}" | cut -d' ' -f1)"
+          remote_hashes="$(ssh -i ~/.ssh/duckmusic_ecs -p "${port}" "${user}@${host}" \
+            "sha256sum '${remote_apk}' '${remote_manifest}'")"
+          grep -q "^${apk_sha}  ${remote_apk}$" <<<"${remote_hashes}"
+          grep -q "^${manifest_sha}  ${remote_manifest}$" <<<"${remote_hashes}"
+
+          backup="${update_dir}/latest.json.bak_$(date -u +%Y%m%d_%H%M%S)"
+          ssh -i ~/.ssh/duckmusic_ecs -p "${port}" "${user}@${host}" \
+            "set -eu; test -d '${update_dir}'; if test -f '${update_dir}/latest.json'; then cp -p '${update_dir}/latest.json' '${backup}'; fi; chmod 0644 '${remote_apk}' '${remote_manifest}'; mv -f '${remote_apk}' '${update_dir}/${apk_name}'; mv -f '${remote_manifest}' '${update_dir}/latest.json'"
+
+          curl -fsSL "${base_url}/latest.json" | jq -e \
+            --arg version "${MIGRATION_VERSION}" \
+            --arg url "${base_url}/${apk_name}" \
+            '.version == $version and .downloadUrl == $url' >/dev/null
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "${RUNNER_TEMP}/public-${apk_name}" "${base_url}/${apk_name}"
+          echo "${MIGRATION_APK_SHA256}  ${RUNNER_TEMP}/public-${apk_name}" | sha256sum --check --strict
