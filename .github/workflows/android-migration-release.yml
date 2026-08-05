@@ -1,0 +1,194 @@
+name: Android legacy migration release
+
+on:
+  push:
+    branches:
+      - flutter-migration
+
+concurrency:
+  group: android-legacy-migration
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+  MIGRATION_VERSION: "1.1.27"
+  MIGRATION_BUILD_NUMBER: "38"
+  LEGACY_ANDROID_CERT_SHA256: "c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72"
+
+jobs:
+  build-test-publish:
+    if: contains(github.event.head_commit.message, '[publish-migration]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Validate migration version
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "^version: ${MIGRATION_VERSION}+${MIGRATION_BUILD_NUMBER}$" pubspec.yaml
+
+      - name: Analyze and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Configure legacy Android signing key
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${KEYSTORE_PASSWORD}" || -z "${KEY_ALIAS}" || -z "${KEY_PASSWORD}" ]]; then
+            echo "Legacy Android signing secrets are missing." >&2
+            exit 1
+          fi
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > android/upload-keystore.jks
+          printf '%s\n' \
+            'storeFile=../upload-keystore.jks' \
+            "storePassword=${KEYSTORE_PASSWORD}" \
+            "keyAlias=${KEY_ALIAS}" \
+            "keyPassword=${KEY_PASSWORD}" \
+            > android/key.properties
+
+      - name: Build signed migration APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --release \
+            --build-name="${MIGRATION_VERSION}" \
+            --build-number="${MIGRATION_BUILD_NUMBER}" \
+            --dart-define="APP_VERSION=${MIGRATION_VERSION}" \
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
+
+      - name: Verify identity, version, and legacy certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          "${build_tools}/apksigner" verify "${apk}"
+          badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
+          echo "${badging}"
+          grep -q "name='com.music.player'" <<<"${badging}"
+          grep -q "versionCode='${MIGRATION_BUILD_NUMBER}'" <<<"${badging}"
+          grep -q "versionName='${MIGRATION_VERSION}'" <<<"${badging}"
+
+          actual_cert="$("${build_tools}/apksigner" verify --print-certs "${apk}" 2>&1 \
+            | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*//Ip' \
+            | head -n1 \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')"
+          [[ "${actual_cert}" == "${LEGACY_ANDROID_CERT_SHA256}" ]] || { echo "Migration APK is not signed by the legacy production certificate." >&2; exit 1; }
+
+          mkdir -p dist
+          cp "${apk}" "dist/DuckMusic-Flutter-v${MIGRATION_VERSION}-Android-universal.apk"
+          curl -fsSL -o "${RUNNER_TEMP}/DuckMusic-v1.1.26-x86_64.apk" \
+            "https://api.751152.xyz/updates/DuckMusic-v1.1.26-x86_64.apk"
+
+      - name: Prove in-place upgrade from production 1.1.26
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb install "${RUNNER_TEMP}/DuckMusic-v1.1.26-x86_64.apk"
+            adb shell dumpsys package com.music.player | grep -q "versionName=1.1.26"
+            adb install -r "dist/DuckMusic-Flutter-v${MIGRATION_VERSION}-Android-universal.apk"
+            adb shell dumpsys package com.music.player | grep -q "versionName=${MIGRATION_VERSION}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-legacy-migration-${{ env.MIGRATION_VERSION }}
+          path: dist/*.apk
+
+      - name: Create Flutter migration release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: flutter-v${{ env.MIGRATION_VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: DuckMusic Flutter v${{ env.MIGRATION_VERSION }}
+          body: |
+            Android legacy migration release.
+
+            Existing DuckMusic 1.1.26 users can update in place through the app.
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: dist/*.apk
+
+      - name: Update legacy Android ECS channel
+        shell: bash
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+          ECS_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+          ECS_UPDATE_DIR: ${{ secrets.ECS_UPDATE_DIR }}
+          ECS_UPDATE_BASE_URL: ${{ secrets.ECS_UPDATE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ECS_HOST}" || -z "${ECS_USER}" || -z "${ECS_SSH_PRIVATE_KEY}" || -z "${ECS_UPDATE_DIR}" || -z "${ECS_UPDATE_BASE_URL}" ]]; then
+            echo "ECS update secrets are missing." >&2
+            exit 1
+          fi
+
+          apk_name="DuckMusic-Flutter-v${MIGRATION_VERSION}-Android-universal.apk"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+          chmod 600 ~/.ssh/duckmusic_ecs
+          if [[ -n "${ECS_KNOWN_HOSTS}" ]]; then
+            printf '%s\n' "${ECS_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${ECS_PORT:-22}" -H "${ECS_HOST}" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          base_url="${ECS_UPDATE_BASE_URL%/}"
+          manifest="${RUNNER_TEMP}/latest.json"
+          cat > "${manifest}" <<EOF
+          {
+            "version": "${MIGRATION_VERSION}",
+            "buildNumber": ${MIGRATION_BUILD_NUMBER},
+            "downloadUrl": "${base_url}/${apk_name}",
+            "downloads": {
+              "arm64-v8a": "${base_url}/${apk_name}",
+              "armeabi-v7a": "${base_url}/${apk_name}",
+              "x86_64": "${base_url}/${apk_name}"
+            },
+            "description": "DuckMusic Flutter ${MIGRATION_VERSION}",
+            "forceUpdate": false,
+            "minBuildNumber": 0
+          }
+          EOF
+
+          ssh -i ~/.ssh/duckmusic_ecs -p "${ECS_PORT:-22}" \
+            "${ECS_USER}@${ECS_HOST}" "mkdir -p '${ECS_UPDATE_DIR}'"
+          scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
+            "dist/${apk_name}" "${manifest}" \
+            "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"

@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.build/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+android/key.properties
+android/*.jks
+android/*.keystore
+
+# Flutter macOS 构建产生的临时目录
+flutter_app/

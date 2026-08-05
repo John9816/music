@@ -1,0 +1,379 @@
+name: Flutter multi-platform release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "flutter-v*"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+  LEGACY_ANDROID_CERT_SHA256: "c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      is_release: ${{ steps.version.outputs.is_release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*/\1/p' pubspec.yaml | head -n1)"
+          version="${package_version%%+*}"
+          build_number="${package_version#*+}"
+          if [[ -z "${version}" || "${build_number}" == "${package_version}" ]]; then
+            echo "pubspec.yaml must contain version: x.y.z+build" >&2
+            exit 1
+          fi
+          is_release=false
+          if [[ "${GITHUB_REF}" == refs/tags/flutter-v* ]]; then
+            is_release=true
+            expected="flutter-v${version}"
+            if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
+              echo "Tag ${GITHUB_REF_NAME} must match ${expected}" >&2
+              exit 1
+            fi
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "build_number=${build_number}" >> "${GITHUB_OUTPUT}"
+          echo "is_release=${is_release}" >> "${GITHUB_OUTPUT}"
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  android:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Configure Android release signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CONFIGURED_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+          EXPECTED_CERT_SHA256: ${{ env.LEGACY_ANDROID_CERT_SHA256 }}
+          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${KEYSTORE_PASSWORD}" || -z "${KEY_ALIAS}" || -z "${KEY_PASSWORD}" ]]; then
+            if [[ "${IS_RELEASE}" == "true" ]]; then
+              echo "Android release signing secrets are required for release tags." >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > android/upload-keystore.jks
+          printf '%s\n' \
+            'storeFile=../upload-keystore.jks' \
+            "storePassword=${KEYSTORE_PASSWORD}" \
+            "keyAlias=${KEY_ALIAS}" \
+            "keyPassword=${KEY_PASSWORD}" \
+            > android/key.properties
+          if [[ -n "${CONFIGURED_CERT_SHA256}" ]]; then
+            configured="$(printf '%s' "${CONFIGURED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+            [[ "${configured}" == "${EXPECTED_CERT_SHA256}" ]] || { echo "Configured Android certificate fingerprint is not the legacy production certificate." >&2; exit 1; }
+          fi
+
+      - name: Build Android APK
+        shell: bash
+        run: |
+          flutter pub get
+          flutter build apk --release \
+            --build-name="${{ needs.validate.outputs.version }}" \
+            --build-number="${{ needs.validate.outputs.build_number }}" \
+            --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
+
+      - name: Verify and stage APK
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: ${{ env.LEGACY_ANDROID_CERT_SHA256 }}
+          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          "${build_tools}/apksigner" verify "${apk}"
+          badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
+          echo "${badging}"
+          grep -q "name='com.music.player'" <<<"${badging}"
+          grep -q "versionCode='${{ needs.validate.outputs.build_number }}'" <<<"${badging}"
+          grep -q "versionName='${{ needs.validate.outputs.version }}'" <<<"${badging}"
+          if [[ "${IS_RELEASE}" == "true" ]]; then
+            expected="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+            actual="$("${build_tools}/apksigner" verify --print-certs "${apk}" 2>&1 | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*//Ip' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+            [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Android signing certificate mismatch." >&2; exit 1; }
+          fi
+          mkdir -p dist
+          cp "${apk}" "dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: dist/*
+
+  macos:
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Import macOS signing certificate
+        shell: bash
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CERTIFICATE_BASE64}" || -z "${CERTIFICATE_PASSWORD}" || -z "${SIGNING_IDENTITY}" ]]; then
+            if [[ "${IS_RELEASE}" == "true" ]]; then
+              echo "macOS Developer ID signing secrets are required for release tags." >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          certificate="${RUNNER_TEMP}/developer-id.p12"
+          keychain="${RUNNER_TEMP}/duckmusic.keychain-db"
+          printf '%s' "${CERTIFICATE_BASE64}" | base64 --decode > "${certificate}"
+          security create-keychain -p actions "${keychain}"
+          security set-keychain-settings -lut 21600 "${keychain}"
+          security unlock-keychain -p actions "${keychain}"
+          security import "${certificate}" -P "${CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain}"
+          security list-keychains -d user -s "${keychain}" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions "${keychain}"
+
+      - name: Build and sign macOS app
+        shell: bash
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build macos --release \
+            --build-name="${{ needs.validate.outputs.version }}" \
+            --build-number="${{ needs.validate.outputs.build_number }}" \
+            --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
+          app="build/macos/Build/Products/Release/duck_music.app"
+          if [[ -n "${SIGNING_IDENTITY}" ]]; then
+            codesign --force --deep --options runtime --timestamp \
+              --entitlements macos/Runner/Release.entitlements \
+              --sign "${SIGNING_IDENTITY}" "${app}"
+            codesign --verify --deep --strict --verbose=2 "${app}"
+          fi
+
+      - name: Create, notarize, and staple DMG
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist dmg-root
+          cp -R build/macos/Build/Products/Release/duck_music.app dmg-root/
+          ln -s /Applications dmg-root/Applications
+          dmg="dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-macOS-${{ matrix.arch }}.dmg"
+          hdiutil create -volname "DuckMusic" -srcfolder dmg-root -ov -format UDZO "${dmg}"
+          if [[ -z "${APPLE_ID}" || -z "${APP_PASSWORD}" || -z "${TEAM_ID}" ]]; then
+            if [[ "${IS_RELEASE}" == "true" ]]; then
+              echo "macOS notarization secrets are required for release tags." >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          xcrun notarytool submit "${dmg}" \
+            --apple-id "${APPLE_ID}" \
+            --password "${APP_PASSWORD}" \
+            --team-id "${TEAM_ID}" \
+            --wait
+          xcrun stapler staple "${dmg}"
+          xcrun stapler validate "${dmg}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-release
+          path: dist/*
+
+  windows:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Windows app
+        shell: pwsh
+        run: |
+          flutter pub get
+          flutter build windows --release `
+            --build-name="${{ needs.validate.outputs.version }}" `
+            --build-number="${{ needs.validate.outputs.build_number }}" `
+            --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" `
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" `
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
+
+      - name: Sign Windows executable when configured
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD) { exit 0 }
+          $certificate = Join-Path $env:RUNNER_TEMP "duckmusic.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          & signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:CERTIFICATE_PASSWORD build\windows\x64\runner\Release\duck_music.exe
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=${{ needs.validate.outputs.version }}" "windows\installer.iss"
+
+      - name: Sign Windows installer when configured
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD) { exit 0 }
+          $certificate = Join-Path $env:RUNNER_TEMP "duckmusic.pfx"
+          $installer = Get-ChildItem windows\dist\*.exe | Select-Object -First 1
+          & signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certificate /p $env:CERTIFICATE_PASSWORD $installer.FullName
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: windows/dist/*
+
+  publish:
+    if: needs.validate.outputs.is_release == 'true'
+    needs: [validate, android, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-release"
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: DuckMusic Flutter v${{ needs.validate.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
+
+      - name: Publish Android migration update to ECS
+        shell: bash
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+          ECS_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
+          ECS_UPDATE_DIR: ${{ secrets.ECS_UPDATE_DIR }}
+          ECS_UPDATE_BASE_URL: ${{ secrets.ECS_UPDATE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ECS_HOST}" || -z "${ECS_USER}" || -z "${ECS_SSH_PRIVATE_KEY}" || -z "${ECS_UPDATE_DIR}" || -z "${ECS_UPDATE_BASE_URL}" ]]; then
+            echo "ECS update secrets are required so existing Android users can migrate." >&2
+            exit 1
+          fi
+
+          apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
+          apk_path="dist/${apk_name}"
+          [[ -f "${apk_path}" ]] || { echo "Missing Android update asset: ${apk_path}" >&2; exit 1; }
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+          chmod 600 ~/.ssh/duckmusic_ecs
+          if [[ -n "${ECS_KNOWN_HOSTS}" ]]; then
+            printf '%s\n' "${ECS_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${ECS_PORT:-22}" -H "${ECS_HOST}" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          base_url="${ECS_UPDATE_BASE_URL%/}"
+          manifest="${RUNNER_TEMP}/latest.json"
+          cat > "${manifest}" <<EOF
+          {
+            "version": "${{ needs.validate.outputs.version }}",
+            "buildNumber": ${{ needs.validate.outputs.build_number }},
+            "downloadUrl": "${base_url}/${apk_name}",
+            "downloads": {
+              "arm64-v8a": "${base_url}/${apk_name}",
+              "armeabi-v7a": "${base_url}/${apk_name}",
+              "x86_64": "${base_url}/${apk_name}"
+            },
+            "description": "DuckMusic Flutter ${{ needs.validate.outputs.version }}",
+            "forceUpdate": false,
+            "minBuildNumber": 0
+          }
+          EOF
+
+          ssh -i ~/.ssh/duckmusic_ecs -p "${ECS_PORT:-22}" \
+            "${ECS_USER}@${ECS_HOST}" "mkdir -p '${ECS_UPDATE_DIR}'"
+          scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
+            "${apk_path}" "${manifest}" \
+            "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"
