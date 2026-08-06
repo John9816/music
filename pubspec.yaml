@@ -1,7 +1,7 @@
 name: duck_music
 description: 柒伍壹壹音乐 - 一套 Flutter 代码覆盖 iOS / Android / macOS / Windows 的跨平台音乐播放器。
 publish_to: 'none'
-version: 1.1.28+39
+version: 1.1.29+40
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

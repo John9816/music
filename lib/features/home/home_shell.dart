@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -169,6 +167,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final windowWidth = MediaQuery.sizeOf(context).width;
+    final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= 640;
     final sidebarWidth = windowWidth >= 900 ? 280.0 : 232.0;
     final dockedPlayerPanel = windowWidth >= 1120 &&
@@ -193,7 +192,7 @@ class _HomeShellState extends State<HomeShell> {
                       if (wide)
                         _Sidebar(
                           width: sidebarWidth,
-                          topInset: Platform.isMacOS ? 68 : 18,
+                          topInset: macOS ? 68 : 18,
                           selected: _index,
                           onSelect: _selectPage,
                           onSearch: (query) {
@@ -205,7 +204,7 @@ class _HomeShellState extends State<HomeShell> {
                       Expanded(
                         child: GWindowControlsSafeRegion(
                           child: SafeArea(
-                            top: !Platform.isMacOS,
+                            top: !macOS,
                             bottom: false,
                             child: Padding(
                               padding: EdgeInsets.zero,
@@ -252,7 +251,7 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
             ),
-          if (Platform.isMacOS && wide)
+          if (macOS && wide)
             Positioned(
               left: 0,
               width: sidebarWidth,
