@@ -289,3 +289,39 @@ jobs:
           curl -fsSL --retry 5 --retry-all-errors \
             -o "${RUNNER_TEMP}/public-${apk_name}" "${base_url}/${apk_name}"
           echo "${MIGRATION_APK_SHA256}  ${RUNNER_TEMP}/public-${apk_name}" | sha256sum --check --strict
+
+  diagnose-ecs-access:
+    if: contains(github.event.head_commit.message, '[diagnose-ecs]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose ECS deploy key
+        shell: bash
+        env:
+          ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${ECS_SSH_PRIVATE_KEY}" ]] || { echo "::error title=ECS SSH diagnostic::ECS_SSH_PRIVATE_KEY is empty"; exit 1; }
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+          chmod 600 ~/.ssh/duckmusic_ecs
+          public_key="$(ssh-keygen -y -f ~/.ssh/duckmusic_ecs)"
+          fingerprint="$(ssh-keygen -lf ~/.ssh/duckmusic_ecs | awk '{print $2}')"
+          echo "::notice title=ECS deploy public key::${public_key}"
+          echo "::notice title=ECS deploy key fingerprint::${fingerprint}"
+          printf '%s\n' \
+            'api.751152.xyz ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG/x49fgr05tJGpnR/6K74mh6+oesV5n9knc9aMs03Xj' \
+            > ~/.ssh/known_hosts
+
+          set +e
+          ssh_output="$(ssh -o BatchMode=yes -o ConnectTimeout=10 \
+            -i ~/.ssh/duckmusic_ecs root@api.751152.xyz 'printf connected' 2>&1)"
+          ssh_status=$?
+          set -e
+          if [[ ${ssh_status} -ne 0 ]]; then
+            ssh_output="${ssh_output//$'\n'/ }"
+            echo "::error title=ECS SSH diagnostic::${ssh_output}"
+            exit "${ssh_status}"
+          fi
+          [[ "${ssh_output}" == "connected" ]]
