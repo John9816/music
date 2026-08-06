@@ -18,6 +18,8 @@ Android 老用户直升 ECS 的固定链路：
 4. Android 签名构建和校验成功后，独立任务立即将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`。需要四端产物时另用 `flutter-v<version>` 标签生成多平台 GitHub Release。
 5. 最后从 `https://api.751152.xyz/updates/latest.json` 和其中的 `downloadUrl` 回读校验版本、构建号与 APK 哈希。任何一步失败都不能手工上传 debug 签名 APK。
 
+ECS 上传可配置其中一种 Actions Secret：`ECS_SSH_PRIVATE_KEY`，或 `ECS_PASSWORD`。密码只放在 GitHub Secret 中，不写入代码、日志或 `latest.json`。
+
 正式发布 `1.2.0`、构建号 `12` 的标准流程：
 
 ```bash

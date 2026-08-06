@@ -331,10 +331,11 @@ jobs:
         shell: bash
         env:
           ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+          ECS_PASSWORD: ${{ secrets.ECS_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "${ECS_SSH_PRIVATE_KEY}" ]]; then
-            echo "ECS_SSH_PRIVATE_KEY is required so existing Android users can update." >&2
+          if [[ -z "${ECS_SSH_PRIVATE_KEY}" && -z "${ECS_PASSWORD}" ]]; then
+            echo "Configure ECS_SSH_PRIVATE_KEY or ECS_PASSWORD so existing Android users can update." >&2
             exit 1
           fi
 
@@ -349,11 +350,23 @@ jobs:
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
-          chmod 600 ~/.ssh/duckmusic_ecs
           printf '%s\n' \
             'api.751152.xyz ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG/x49fgr05tJGpnR/6K74mh6+oesV5n9knc9aMs03Xj' \
             > ~/.ssh/known_hosts
+
+          declare -a ssh_runner scp_runner
+          if [[ -n "${ECS_SSH_PRIVATE_KEY}" ]]; then
+            printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+            chmod 600 ~/.ssh/duckmusic_ecs
+            ssh_runner=(ssh -i ~/.ssh/duckmusic_ecs)
+            scp_runner=(scp -i ~/.ssh/duckmusic_ecs)
+          else
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends sshpass
+            export SSHPASS="${ECS_PASSWORD}"
+            ssh_runner=(sshpass -e ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+            scp_runner=(sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          fi
 
           manifest="${RUNNER_TEMP}/latest.json"
           cat > "${manifest}" <<EOF
@@ -372,9 +385,9 @@ jobs:
           }
           EOF
 
-          ssh -i ~/.ssh/duckmusic_ecs -p "${port}" \
+          "${ssh_runner[@]}" -p "${port}" \
             "${user}@${host}" "mkdir -p '${update_dir}'"
-          scp -i ~/.ssh/duckmusic_ecs -P "${port}" \
+          "${scp_runner[@]}" -P "${port}" \
             "${apk_path}" "${manifest}" \
             "${user}@${host}:${update_dir}/"
           curl -fsSL "${base_url}/latest.json" | jq -e \
