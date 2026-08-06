@@ -14,13 +14,13 @@ class AppBrand {
   AppBrand._();
 
   /// 品牌红：Apple Music 红
-  static const Color red = Color(0xFFFF2D55);
+  static const Color red = Color(0xFF2FD365);
 
   /// 品牌红渐变终点
-  static const Color redDeep = Color(0xFFD7002D);
+  static const Color redDeep = Color(0xFF20B950);
 
   /// 收藏红心
-  static const Color favoriteRed = Color(0xFFFF2D55);
+  static const Color favoriteRed = Color(0xFF2FD365);
 
   /// iOS 系统绿（语音/在线状态）
   static const Color systemGreen = Color(0xFF34C759);

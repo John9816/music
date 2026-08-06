@@ -17,7 +17,15 @@ class ArtistInfo {
     final name = _text(json['name']) ?? fallbackName.trim();
     return ArtistInfo(
       name: name,
-      imageUrl: _secureUrl(_text(json['imgurl'])),
+      imageUrl: _secureUrl(
+        _text(
+          json['imgurl'] ??
+              json['imageUrl'] ??
+              json['picUrl'] ??
+              json['avatar'] ??
+              json['coverUrl'],
+        ),
+      ),
       profile: _text(json['profile']) ?? '',
     );
   }

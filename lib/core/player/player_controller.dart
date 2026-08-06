@@ -9,6 +9,7 @@ import '../api/api_client.dart';
 import '../api/music_api.dart';
 import '../models/song.dart';
 import '../services/cache_service.dart';
+import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
@@ -19,17 +20,29 @@ enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 class PlayerController extends ChangeNotifier {
   PlayerController({required SettingsController settings})
       : _settings = settings {
+    _positionStream = _player.positionStream;
     _playbackSub = _player.playbackEventStream.listen(
       _onPlaybackEvent,
       onError: _onPlaybackError,
     );
+    _playingSub = _player.playingStream.distinct().listen((_) {
+      notifyListeners();
+    });
+    // Some streams expose their duration after playback has already started.
+    // Notify consumers so progress bars recalculate their denominator.
+    _durationSub = _player.durationStream.distinct().listen((_) {
+      notifyListeners();
+    });
   }
 
   final SettingsController _settings;
   final AudioPlayer _player = AudioPlayer();
   final MusicApi _api = MusicApi();
+  late final Stream<Duration> _positionStream;
 
   StreamSubscription<PlaybackEvent>? _playbackSub;
+  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<Duration?>? _durationSub;
   Timer? _seekTimer;
   Duration? _pendingSeek;
   Completer<void>? _seekCompleter;
@@ -60,12 +73,21 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLiked(bool value) {
+    if (_liked == value) return;
+    _liked = value;
+    notifyListeners();
+  }
+
   /// 播放请求序号：快速连点时只有最后一次操作生效，
   /// 旧请求即使晚返回也不会覆盖当前状态（彻底消除点歌竞态卡死）。
   int _playSeq = 0;
 
   /// 播放成功后的回调（用于记录播放历史等副作用）。
   void Function(Song song)? onSongPlayed;
+
+  /// 当前歌曲变化时的回调（用于同步收藏等账号状态）。
+  void Function(Song song)? onSongChanged;
 
   /// 播放接口要求有效会员时通知主界面打开兑换入口。
   VoidCallback? onMembershipRequired;
@@ -75,8 +97,17 @@ class PlayerController extends ChangeNotifier {
   Song? get current => _current;
   bool get playing => _player.playing;
   Duration get position => _player.position;
-  Stream<Duration> get positionStream => _player.positionStream;
-  Duration? get duration => _player.duration;
+
+  /// Shared for the controller lifetime so widget rebuilds cannot restart the
+  /// progress clock before it emits its next value.
+  Stream<Duration> get positionStream => _positionStream;
+  Duration? get duration {
+    final loaded = _player.duration;
+    if (loaded != null && loaded > Duration.zero) return loaded;
+    final fallbackMs = _current?.durationMs ?? 0;
+    return fallbackMs > 0 ? Duration(milliseconds: fallbackMs) : loaded;
+  }
+
   String get lyric => _lyric;
   bool get loading => _loading;
   String? get error => _error;
@@ -103,31 +134,64 @@ class PlayerController extends ChangeNotifier {
     await playAt(index);
   }
 
+  /// 将队列中的指定歌曲移到当前歌曲之后，不中断当前播放。
+  void moveToNext(int index) {
+    if (index < 0 || index >= _queue.length || index == _index) return;
+    final song = _queue.removeAt(index);
+    if (index < _index) _index--;
+    final target = (_index + 1).clamp(0, _queue.length);
+    _queue.insert(target, song);
+    _queueSnapshot = null;
+    notifyListeners();
+  }
+
+  /// 将任意歌曲插入当前歌曲之后，用于各端统一的“下一首播放”。
+  void playNext(Song song, {int? queueIndex}) {
+    if (_current == null || _queue.isEmpty) {
+      unawaited(playQueue([song]));
+      return;
+    }
+    if (song.id == _current!.id && song.source == _current!.source) return;
+    if (queueIndex != null &&
+        queueIndex >= 0 &&
+        queueIndex < _queue.length &&
+        _queue[queueIndex].id == song.id &&
+        _queue[queueIndex].source == song.source) {
+      moveToNext(queueIndex);
+      return;
+    }
+
+    final existing = _queue.indexWhere(
+      (item) => item.id == song.id && item.source == song.source,
+    );
+    if (existing >= 0) {
+      _queue.removeAt(existing);
+      if (existing < _index) _index--;
+    }
+    _queue.insert((_index + 1).clamp(0, _queue.length), song);
+    _queueSnapshot = null;
+    notifyListeners();
+  }
+
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
     final seq = ++_playSeq;
     _index = index;
     _current = _queue[index];
+    _liked = false;
     _loading = true;
     _error = null;
     _errorKind = PlaybackErrorKind.none;
     _lyric = '';
     notifyListeners();
+    onSongChanged?.call(_current!);
     try {
       await _player.stop();
       if (seq != _playSeq) return;
       final song = _current!;
-      final url = await _api
-          .getSongUrl(
-            song.id,
-            source: song.source,
-            quality: _settings.quality,
-          )
-          .timeout(const Duration(seconds: 22));
+      final downloadedFile =
+          await SongDownloadService.instance.localFileFor(song);
       if (seq != _playSeq) return; // 已被更新的操作取代
-      if (url == null || url.isEmpty) {
-        throw Exception('未获取到播放地址，请切换音乐源后重试');
-      }
       final mediaItem = MediaItem(
         id: song.id,
         title: song.name,
@@ -140,21 +204,42 @@ class PlayerController extends ChangeNotifier {
             : null,
       );
       final AudioSource source;
-      if (_settings.automaticAudioCache) {
-        final cacheFile = await CacheService.instance.audioFileFor(
-          song,
-          _settings.quality,
-        );
-        // just_audio still marks its disk-backed cache source experimental,
-        // but it is the package's supported API for progressive audio caching.
-        // ignore: experimental_member_use
-        source = LockCachingAudioSource(
-          Uri.parse(url),
-          cacheFile: cacheFile,
-          tag: mediaItem,
-        );
+      final audioHeaders = _audioHeadersFor(song.source);
+      if (downloadedFile != null) {
+        source = AudioSource.uri(downloadedFile.uri, tag: mediaItem);
       } else {
-        source = AudioSource.uri(Uri.parse(url), tag: mediaItem);
+        final url = await _api
+            .getSongUrl(
+              song.id,
+              source: song.source,
+              quality: _settings.quality,
+            )
+            .timeout(const Duration(seconds: 22));
+        if (seq != _playSeq) return;
+        if (url == null || url.isEmpty) {
+          throw Exception('未获取到播放地址，请切换音乐源后重试');
+        }
+        if (_settings.automaticAudioCache) {
+          final cacheFile = await CacheService.instance.audioFileFor(
+            song,
+            _settings.quality,
+          );
+          // just_audio still marks its disk-backed cache source experimental,
+          // but it is the package's supported API for progressive audio caching.
+          // ignore: experimental_member_use
+          source = LockCachingAudioSource(
+            Uri.parse(url),
+            cacheFile: cacheFile,
+            headers: audioHeaders,
+            tag: mediaItem,
+          );
+        } else {
+          source = AudioSource.uri(
+            Uri.parse(url),
+            headers: audioHeaders,
+            tag: mediaItem,
+          );
+        }
       }
       // 带 MediaItem 标签：系统通知栏/锁屏显示歌名、歌手、封面。
       await _player.setAudioSource(source).timeout(const Duration(seconds: 20));
@@ -166,6 +251,7 @@ class PlayerController extends ChangeNotifier {
       // just_audio 的 play Future 在暂停或播放结束后才完成，不能在这里
       // await，否则整首歌期间都会被误判为“正在加载”。
       final playback = _player.play();
+      notifyListeners();
       unawaited(CacheService.instance.maintainAudioCache(_settings));
       if (seq == _playSeq) onSongPlayed?.call(song);
       unawaited(playback.catchError((Object error, StackTrace stackTrace) {
@@ -179,6 +265,20 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  Map<String, String> _audioHeadersFor(String source) {
+    final referer = switch (source.toLowerCase()) {
+      'qq' => 'https://y.qq.com/',
+      'kuwo' => 'https://www.kuwo.cn/',
+      _ => 'https://music.163.com/',
+    };
+    return {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+          'AppleWebKit/537.36',
+      'Referer': referer,
+      'Accept': 'audio/*,*/*;q=0.8',
+    };
   }
 
   void _loadLyric(int seq) {
@@ -265,6 +365,21 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> retry() async {
     if (_index >= 0) await playAt(_index);
+  }
+
+  Future<void> stopAndClear() async {
+    ++_playSeq;
+    await _player.stop();
+    _queue = [];
+    _queueSnapshot = null;
+    _index = -1;
+    _current = null;
+    _lyric = '';
+    _loading = false;
+    _liked = false;
+    _error = null;
+    _errorKind = PlaybackErrorKind.none;
+    notifyListeners();
   }
 
   Future<void> next() async {
@@ -393,6 +508,8 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     _playbackSub?.cancel();
+    _playingSub?.cancel();
+    _durationSub?.cancel();
     _seekTimer?.cancel();
     _volumeTimer?.cancel();
     _seekCompleter?.complete();

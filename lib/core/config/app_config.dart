@@ -8,7 +8,7 @@ class AppConfig {
   /// Release builds inject this from pubspec.yaml with --dart-define.
   static const String appVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.1.27',
+    defaultValue: '1.1.28',
   );
 
   /// GitHub repository used for release checks and desktop/Android installers.
@@ -34,6 +34,7 @@ class AppConfig {
   );
 
   static const String apiBaseUrl = 'https://api.751152.xyz/';
+  static const String userContentBaseUrl = 'https://hi.751152.xyz/';
 
   /// source 参数 -> 显示名（与 Android/macOS 版一致）
   static const Map<String, String> musicSources = {

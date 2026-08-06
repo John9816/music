@@ -70,7 +70,10 @@ class CacheService {
 
   Future<File> audioFileFor(Song song, String quality) async {
     final directory = await audioCacheDirectory;
-    final key = '${song.source}_${song.id}_$quality'
+    // QQ URLs require source headers on macOS; rotate its cache key so files
+    // produced by the old headerless request cannot be reused as audio.
+    final cacheVersion = song.source.toLowerCase() == 'qq' ? 'v2' : 'v1';
+    final key = '${song.source}_${song.id}_${quality}_$cacheVersion'
         .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     return File('${directory.path}/$key.audio');
   }

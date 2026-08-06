@@ -2,25 +2,37 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api/user_api.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../search/artist_names_link.dart';
+import 'desktop_player_panel.dart';
 import 'player_view.dart';
 import 'queue_view.dart';
 
 /// 全局播放栏。桌面端横跨侧栏和内容区，窄屏保留紧凑控制。
 class MiniPlayer extends StatefulWidget {
-  const MiniPlayer({super.key, this.sidebarWidth});
+  const MiniPlayer({
+    super.key,
+    this.sidebarWidth,
+    this.panel,
+    this.onPanelChanged,
+  });
 
   final double? sidebarWidth;
+  final MiniPlayerPanel? panel;
+  final ValueChanged<MiniPlayerPanel?>? onPanelChanged;
 
   @override
   State<MiniPlayer> createState() => _MiniPlayerState();
 }
 
 class _MiniPlayerState extends State<MiniPlayer> {
+  bool _favoriteBusy = false;
+
   void _openPlayer() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerView()),
@@ -41,7 +53,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
       height: desktop ? 80 : (ios ? 60 : 66),
       decoration: BoxDecoration(
         color: dark
-            ? const Color(0xFA2B181E)
+            ? const Color(0xFA10271B)
             : scheme.surfaceContainer.withValues(alpha: 0.98),
         border: Border(top: BorderSide(color: glassHairline(context))),
         boxShadow: [
@@ -207,7 +219,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
               size: 21,
               padding: 8,
               tint: liked ? AppBrand.favoriteRed : null,
-              onTap: player.toggleLike,
+              onTap:
+                  _favoriteBusy ? null : () => _toggleFavorite(current, player),
             ),
           ),
         ),
@@ -235,6 +248,42 @@ class _MiniPlayerState extends State<MiniPlayer> {
         ),
       ],
     );
+  }
+
+  Future<void> _toggleFavorite(
+    Song song,
+    PlayerController player,
+  ) async {
+    final token = context.read<AuthController>().token;
+    if (token == null) {
+      _message('请先登录后再收藏');
+      return;
+    }
+    final wasLiked = player.liked;
+    setState(() => _favoriteBusy = true);
+    try {
+      if (wasLiked) {
+        await UserApi().removeFavorite(song.id, song.source, token);
+      } else {
+        await UserApi().addFavorite(song, token);
+      }
+      final current = player.current;
+      if (current?.id == song.id && current?.source == song.source) {
+        player.setLiked(!wasLiked);
+      }
+      _message(wasLiked ? '已取消收藏' : '已收藏');
+    } catch (_) {
+      _message('操作失败，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _favoriteBusy = false);
+    }
+  }
+
+  void _message(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
   }
 
   Widget _compactBar(BuildContext context, Song current) {
@@ -376,22 +425,39 @@ class _MiniPlayerState extends State<MiniPlayer> {
           icon: CupertinoIcons.speaker_2,
           size: 19,
           padding: 6,
+          tooltip: '打开播放器',
           onTap: _openPlayer,
         ),
         _PlayerIconButton(
           icon: CupertinoIcons.text_bubble,
           size: 19,
           padding: 6,
-          onTap: _openPlayer,
+          tooltip: '歌词',
+          selected: widget.panel == MiniPlayerPanel.lyrics,
+          onTap: () => _togglePanel(MiniPlayerPanel.lyrics, _openPlayer),
         ),
         _PlayerIconButton(
           icon: CupertinoIcons.list_bullet,
           size: 20,
           padding: 6,
-          onTap: () => showQueueSheet(context),
+          tooltip: '播放队列',
+          selected: widget.panel == MiniPlayerPanel.queue,
+          onTap: () => _togglePanel(
+            MiniPlayerPanel.queue,
+            () => showQueueSheet(context),
+          ),
         ),
       ],
     );
+  }
+
+  void _togglePanel(MiniPlayerPanel panel, VoidCallback fallback) {
+    final onChanged = widget.onPanelChanged;
+    if (onChanged == null) {
+      fallback();
+      return;
+    }
+    onChanged(widget.panel == panel ? null : panel);
   }
 }
 
@@ -402,6 +468,8 @@ class _PlayerIconButton extends StatelessWidget {
     required this.size,
     required this.padding,
     this.tint,
+    this.tooltip,
+    this.selected = false,
   });
 
   final IconData icon;
@@ -409,20 +477,40 @@ class _PlayerIconButton extends StatelessWidget {
   final double size;
   final double padding;
   final Color? tint;
+  final String? tooltip;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
+    Widget button = GPressScale(
       onTap: onTap,
-      child: SizedBox.square(
-        dimension: size + padding * 2,
-        child: Icon(
-          icon,
-          size: size,
-          color: tint ?? scheme.onSurface.withValues(alpha: 0.78),
+      child: AnimatedContainer(
+        duration: Motion.fast,
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: selected
+              ? scheme.onSurface.withValues(alpha: 0.11)
+              : Colors.transparent,
+        ),
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        child: Center(
+          child: Icon(
+            icon,
+            size: size,
+            color: tint ?? scheme.onSurface.withValues(alpha: 0.78),
+          ),
         ),
       ),
+    );
+    if (tooltip != null) button = Tooltip(message: tooltip!, child: button);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: tooltip,
+      child: button,
     );
   }
 }

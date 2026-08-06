@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../../core/config/app_config.dart';
 import '../../core/services/cache_service.dart';
+import '../../core/services/song_download_service.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/glass.dart';
 import 'settings_components.dart';
@@ -257,7 +258,9 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
   }
 
   Future<void> _clearDownloads() async {
+    final downloads = context.read<SongDownloadService>();
     if (!await _confirm('清空全部下载？', '已下载歌曲、歌词和未完成任务会被永久删除。')) return;
+    await downloads.clear();
     await CacheService.instance.clearDownloads();
     await _reload();
     _message('下载内容已清空');

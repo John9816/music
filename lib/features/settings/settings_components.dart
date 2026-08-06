@@ -179,6 +179,7 @@ Future<T?> showSettingsPicker<T>(
 }) {
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: true,
     builder: (sheetContext) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,

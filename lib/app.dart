@@ -12,6 +12,7 @@ import 'core/player/player_controller.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/desktop_integration_service.dart';
 import 'core/services/sleep_timer.dart';
+import 'core/services/song_download_service.dart';
 import 'core/settings/settings_controller.dart';
 import 'features/home/home_shell.dart';
 import 'features/profile/login_view.dart';
@@ -29,6 +30,7 @@ class DuckMusicApp extends StatefulWidget {
 class _DuckMusicAppState extends State<DuckMusicApp> {
   late final SettingsController _settings;
   late final PlayerController _player;
+  late final AuthController _auth;
   late final DesktopIntegrationService _desktopIntegration;
 
   @override
@@ -36,6 +38,8 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     super.initState();
     _settings = SettingsController();
     _player = PlayerController(settings: _settings);
+    _auth = AuthController(onSessionCleared: _player.stopAndClear)..load();
+    unawaited(SongDownloadService.instance.initialize());
     _desktopIntegration = DesktopIntegrationService(
       settings: _settings,
       player: _player,
@@ -54,6 +58,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
   @override
   void dispose() {
     _desktopIntegration.dispose();
+    _auth.dispose();
     _player.dispose();
     _settings.dispose();
     super.dispose();
@@ -66,7 +71,8 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
         ChangeNotifierProvider.value(value: _settings),
         ChangeNotifierProvider.value(value: _player),
         ChangeNotifierProvider.value(value: _desktopIntegration),
-        ChangeNotifierProvider(create: (_) => AuthController()..load()),
+        ChangeNotifierProvider.value(value: SongDownloadService.instance),
+        ChangeNotifierProvider.value(value: _auth),
         ChangeNotifierProvider(create: (_) => SleepTimer()),
       ],
       child: const _ThemeBridge(),

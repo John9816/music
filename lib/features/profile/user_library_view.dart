@@ -3,8 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
+import '../../core/services/song_download_service.dart';
+import '../../core/services/user_playlist_library.dart';
+import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/song_action_menu.dart';
 import '../search/artist_names_link.dart';
 
 /// 通用的用户歌曲列表页（收藏 / 播放历史 / 歌单详情等）。
@@ -15,7 +19,6 @@ class UserLibraryView extends StatefulWidget {
     required this.loader,
     this.embedded = false,
     this.active = true,
-    this.onBack,
     this.onRemove,
     this.onClear,
   });
@@ -24,7 +27,6 @@ class UserLibraryView extends StatefulWidget {
   final Future<List<Song>> Function() loader;
   final bool embedded;
   final bool active;
-  final VoidCallback? onBack;
   final Future<void> Function(Song song)? onRemove;
   final Future<void> Function(List<Song> songs)? onClear;
 
@@ -42,6 +44,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   @override
   void initState() {
     super.initState();
+    UserPlaylistLibrary.instance.addListener(_onLibraryChanged);
     if (widget.active) _future = _startLoad();
   }
 
@@ -53,16 +56,18 @@ class _UserLibraryViewState extends State<UserLibraryView> {
 
   @override
   void dispose() {
+    UserPlaylistLibrary.instance.removeListener(_onLibraryChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onLibraryChanged() {
+    if (_favorites && widget.active) _reload();
   }
 
   bool get _favorites => widget.title.contains('喜欢');
 
   Future<List<Song>> _startLoad() {
-    final existing = _loadingFuture;
-    if (existing != null) return existing;
-
     final future = Future<List<Song>>.sync(widget.loader);
     _loadingFuture = future;
     future.then<void>(
@@ -94,12 +99,10 @@ class _UserLibraryViewState extends State<UserLibraryView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _LibraryTopBar(
+          GAppBar(
             title: _favorites ? '我喜欢的音乐' : '最近播放',
-            onBack: widget.onBack ??
-                (widget.embedded
-                    ? null
-                    : () => Navigator.of(context).maybePop()),
+            onBack:
+                widget.embedded ? null : () => Navigator.of(context).maybePop(),
           ),
           Expanded(child: _buildBody()),
         ],
@@ -149,6 +152,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
               onPlay: songs.isEmpty
                   ? null
                   : () => context.read<PlayerController>().playQueue(songs),
+              onDownload: songs.isEmpty ? null : () => _downloadAll(songs),
             ),
           ),
           if (songs.isEmpty)
@@ -182,7 +186,36 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     );
   }
 
+  Future<void> _downloadAll(List<Song> songs) async {
+    final service = context.read<SongDownloadService>();
+    final quality = context.read<SettingsController>().downloadQuality;
+    final pending = songs.where((song) => !service.isDownloaded(song)).toList();
+    if (pending.isEmpty) {
+      _message('这些歌曲都已下载');
+      return;
+    }
+    _message('开始下载 ${pending.length} 首歌曲');
+    var failed = 0;
+    for (final song in pending) {
+      try {
+        await service.download(song, quality: quality);
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (!mounted) return;
+    _message(failed == 0 ? '全部下载完成' : '下载完成，$failed 首失败');
+  }
+
+  void _message(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
   Widget _buildHistory(List<Song> songs) {
+    final scheme = Theme.of(context).colorScheme;
     final normalized = _query.trim().toLowerCase();
     final visible = normalized.isEmpty
         ? songs
@@ -203,17 +236,21 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   child: TextField(
                     controller: _searchController,
                     onChanged: (value) => setState(() => _query = value),
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: scheme.onSurface,
+                    ),
+                    cursorColor: scheme.primary,
                     decoration: InputDecoration(
                       hintText: '搜索播放记录',
                       hintStyle: TextStyle(
                         fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: scheme.onSurfaceVariant,
                       ),
                       prefixIcon: Icon(
                         Icons.search_rounded,
                         size: 20,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: scheme.onSurfaceVariant,
                       ),
                       prefixIconConstraints: const BoxConstraints(minWidth: 40),
                       filled: true,
@@ -365,43 +402,6 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   }
 }
 
-class _LibraryTopBar extends StatelessWidget {
-  const _LibraryTopBar({required this.title, this.onBack});
-
-  final String title;
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 56,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          children: [
-            GIconButton(
-              icon: Icons.arrow_back_ios_new_rounded,
-              tooltip: '返回',
-              size: 20,
-              padding: 10,
-              backgroundColor: Colors.transparent,
-              onTap: onBack,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: TypeScale.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _FavoritesHero extends StatelessWidget {
   const _FavoritesHero({required this.count});
 
@@ -469,10 +469,15 @@ class _FavoritesHero extends StatelessWidget {
 }
 
 class _FavoritesActions extends StatelessWidget {
-  const _FavoritesActions({required this.enabled, this.onPlay});
+  const _FavoritesActions({
+    required this.enabled,
+    this.onPlay,
+    this.onDownload,
+  });
 
   final bool enabled;
   final VoidCallback? onPlay;
+  final VoidCallback? onDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -515,27 +520,29 @@ class _FavoritesActions extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 22),
-          SizedBox(
-            width: 119,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.download_for_offline_outlined,
-                  size: 17,
-                  color: scheme.outline,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '全部下载',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: TypeScale.semibold,
-                    color: scheme.outline,
-                  ),
-                ),
-              ],
-            ),
+          GPressScale(
+            onTap: enabled ? onDownload : null,
+            child: SizedBox(
+                width: 119,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.download_for_offline_outlined,
+                      size: 17,
+                      color: scheme.outline,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '全部下载',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: TypeScale.semibold,
+                        color: scheme.outline,
+                      ),
+                    ),
+                  ],
+                )),
           ),
         ],
       ),
@@ -644,7 +651,11 @@ class _LibrarySongRow extends StatelessWidget {
                   size: 20,
                   padding: 8,
                   backgroundColor: Colors.transparent,
-                  onTap: () {},
+                  onTap: () => showSongActions(
+                    context,
+                    song: song,
+                    onPlay: onTap,
+                  ),
                 ),
                 if (onDelete != null)
                   GIconButton(

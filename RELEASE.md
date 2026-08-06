@@ -10,6 +10,14 @@
 
 ## 1. 发布速查
 
+Android 老用户直升 ECS 的固定链路：
+
+1. `pubspec.yaml` 同时递增版本号和构建号，且 `applicationId` 保持 `com.music.player`。
+2. 推送代码到 `flutter-migration`，再推送匹配的 `flutter-v<version>` 标签。
+3. GitHub Actions 从 Secrets 恢复历史正式证书，并校验证书 SHA-256 为 `c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72`。
+4. CI 构建 universal APK，先发布 GitHub Release，再将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`。
+5. 最后从 `https://api.751152.xyz/updates/latest.json` 和其中的 `downloadUrl` 回读校验版本、构建号与 APK 哈希。任何一步失败都不能手工上传 debug 签名 APK。
+
 正式发布 `1.2.0`、构建号 `12` 的标准流程：
 
 ```bash
@@ -76,7 +84,7 @@ version: 1.2.0+12
 
 当前应用标识：
 
-- Android application ID：`com.n.duck_music`
+- Android application ID：`com.music.player`
 - iOS/macOS bundle ID：`com.751152.duckMusic`
 
 应用标识决定系统和商店是否将安装包识别为同一个应用。除非明确进行应用迁移，否则不要修改。

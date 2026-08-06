@@ -1,159 +1,29 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/player/player_controller.dart';
-import '../../core/services/app_update_service.dart';
-import '../../core/services/cache_service.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/glass.dart';
+import 'about_view.dart';
+import 'desktop_settings_view.dart';
+import 'notifications_view.dart';
+import 'settings_components.dart';
+import 'storage_settings_view.dart';
 
-/// 设置页：音乐源 / 主题 / 睡眠定时 / 缓存 / 更新
-class SettingsView extends StatefulWidget {
+/// 统一设置入口，承载从“我的”中移出的偏好与支持功能。
+class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
-
-  @override
-  State<SettingsView> createState() => _SettingsViewState();
-}
-
-class _SettingsViewState extends State<SettingsView> {
-  int _cacheBytes = -1;
-  String? _latestVersion;
-  bool _checkingUpdate = false;
-  double _downloadProgress = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCacheSize();
-  }
-
-  Future<void> _loadCacheSize() async {
-    final bytes = await CacheService.instance.totalSizeBytes();
-    if (mounted) setState(() => _cacheBytes = bytes);
-  }
-
-  Future<void> _clearCache() async {
-    await CacheService.instance.clearAll();
-    if (mounted) {
-      setState(() => _cacheBytes = 0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('缓存已清理')),
-      );
-    }
-  }
-
-  Future<void> _checkUpdate() async {
-    setState(() => _checkingUpdate = true);
-    final service = AppUpdateService();
-    final result = await service.checkLatest();
-    if (!mounted) return;
-    setState(() => _checkingUpdate = false);
-
-    if (result.status == UpdateCheckStatus.failed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? '检查更新失败')),
-      );
-      return;
-    }
-
-    final release = result.release!;
-    setState(() => _latestVersion = release.version);
-    if (result.status == UpdateCheckStatus.upToDate) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已是最新版本（${release.version}）')),
-      );
-      return;
-    }
-
-    final mobileStore = AppUpdateService.currentTarget == UpdateTarget.ios;
-    final downloadUrl = release.assetUrl;
-    if (mobileStore || downloadUrl == null) {
-      final action = mobileStore && AppConfig.iosAppStoreId.isNotEmpty
-          ? '前往 App Store'
-          : '打开下载页';
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('发现新版本 ${release.version}'),
-          content: Text(
-            mobileStore ? 'iOS 更新由 App Store 安装。' : '当前发布未提供此平台的安装包，可前往发布页查看。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('稍后'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(action),
-            ),
-          ],
-        ),
-      );
-      if (confirmed == true) {
-        final opened = await service.openReleaseDestination(release);
-        if (!opened && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('无法打开更新地址')),
-          );
-        }
-      }
-      return;
-    }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('发现新版本'),
-        content: Text('${release.version} 可用，是否下载并安装？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('稍后'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('下载'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-
-    setState(() => _downloadProgress = 0);
-    final filePath = await service.downloadUpdate(
-      downloadUrl,
-      onProgress: (p) {
-        if (mounted) setState(() => _downloadProgress = p);
-      },
-    );
-    if (!mounted || filePath == null) {
-      if (mounted) {
-        setState(() => _downloadProgress = -1);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('下载失败')),
-        );
-      }
-      return;
-    }
-
-    setState(() => _downloadProgress = -1);
-    final installed = await service.installUpdate(filePath);
-    if (!installed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法打开系统安装器，请稍后重试')),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsController>();
     final sleepTimer = context.watch<SleepTimer>();
-    final scheme = Theme.of(context).colorScheme;
+    final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
     return Scaffold(
       appBar: GAppBar(
@@ -161,137 +31,214 @@ class _SettingsViewState extends State<SettingsView> {
         onBack: () => Navigator.of(context).maybePop(),
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
         children: [
-          const _Section('通用'),
-          GListTile(
-            leading: const Icon(Icons.language),
-            title: const Text('音乐源'),
-            subtitle: Text(
-              '${AppConfig.musicSources[settings.source] ?? settings.source}'
-              ' (${settings.source})',
-            ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _pick<String>(
-              title: '选择音乐源',
-              current: settings.source,
-              options: AppConfig.musicSources.entries
-                  .map((e) => (value: e.key, label: '${e.value} (${e.key})'))
-                  .toList(),
-              onSelected: settings.setSource,
-            ),
+          const SettingsSection('通用'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                icon: Icons.language_rounded,
+                title: '音乐源',
+                subtitle: '推荐、歌单详情与播放使用的数据源；搜索会合并三源结果',
+                value: AppConfig.musicSources[settings.source] ??
+                    settings.source,
+                onTap: () => _pickSource(context, settings),
+              ),
+            ],
           ),
-          GListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('主题'),
-            subtitle: Text(settings.theme.name),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _pick<String>(
-              title: '选择主题',
-              current: settings.theme.id,
-              options: AppTheme.all
-                  .map((t) => (value: t.id, label: t.name))
-                  .toList(),
-              onSelected: settings.setTheme,
-            ),
+          const SettingsSection('外观'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                icon: Icons.brightness_6_rounded,
+                title: '深浅模式',
+                subtitle: '深色、浅色或跟随系统',
+                value: const {
+                      'system': '跟随系统',
+                      'dark': '深色',
+                      'light': '浅色',
+                    }[settings.themeModeId] ??
+                    '跟随系统',
+                onTap: () => _pickThemeMode(context, settings),
+              ),
+              SettingsRow(
+                icon: Icons.palette_outlined,
+                title: '主题色',
+                subtitle: '调整强调色与界面氛围',
+                value: AppAccent.byId(settings.accentId).name,
+                onTap: () => _pickAccent(context, settings),
+              ),
+              SettingsRow(
+                icon: Icons.blur_circular_rounded,
+                title: '液态玻璃质量',
+                subtitle: '影响导航、播放栏与弹出菜单',
+                value: const {
+                      'smooth': '流畅',
+                      'detailed': '精细',
+                      'auto': '自动',
+                    }[settings.glassQuality] ??
+                    '流畅',
+                onTap: () => _pickGlassQuality(context, settings),
+              ),
+              SettingsRow(
+                icon: Icons.auto_awesome_rounded,
+                title: '减弱动态效果',
+                subtitle: '减少封面、歌词和页面过渡动画',
+                trailing: SettingsSwitch(
+                  value: settings.reduceMotion,
+                  onChanged: settings.setReduceMotion,
+                ),
+              ),
+            ],
           ),
-          const Divider(),
-          const _Section('播放'),
-          GListTile(
-            leading: const Icon(Icons.high_quality_outlined),
-            title: const Text('音质'),
-            subtitle: Text(
-              AppConfig.qualityValues[settings.quality] ?? settings.quality,
-            ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _pick<String>(
-              title: '选择音质',
-              current: settings.quality,
-              options: AppConfig.qualityValues.entries
-                  .map((e) => (value: e.key, label: e.value))
-                  .toList(),
-              onSelected: settings.setQuality,
-            ),
+          const SettingsSection('播放与体验'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                icon: Icons.graphic_eq_rounded,
+                title: '默认播放音质',
+                subtitle: '为音乐播放选择合适的音质',
+                value: AppConfig.qualityLabels[settings.quality] ??
+                    settings.quality,
+                onTap: () => _pickQuality(context, settings),
+              ),
+              SettingsRow(
+                icon: Icons.timer_outlined,
+                title: '睡眠定时',
+                subtitle: sleepTimer.isActive
+                    ? '剩余 ${sleepTimer.displayText}，点击可重新设置'
+                    : '到点后自动暂停播放',
+                value: sleepTimer.isActive ? '已开启' : null,
+                onTap: () => _showSleepTimerPicker(context),
+              ),
+            ],
           ),
-          GListTile(
-            leading: const Icon(Icons.timer_outlined),
-            title: const Text('睡眠定时'),
-            subtitle: Text(
-              sleepTimer.isActive
-                  ? '剩余 ${sleepTimer.displayText}，点击取消'
-                  : '到点后自动暂停播放',
-            ),
-            trailing: sleepTimer.isActive
-                ? GButton(
-                    label: '取消',
-                    filled: false,
-                    onTap: sleepTimer.stop,
-                  )
-                : const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _showSleepTimerPicker(context),
+          const SettingsSection('存储与设备'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                icon: Icons.inventory_2_outlined,
+                title: '存储与缓存',
+                subtitle: '下载音质、缓存上限、有效期与分类清理',
+                onTap: () => _open(context, const StorageSettingsView()),
+              ),
+              if (desktop)
+                SettingsRow(
+                  icon: Icons.desktop_mac_outlined,
+                  title: '桌面与快捷键',
+                  subtitle: '状态栏歌词、全局快捷键与窗口控制',
+                  onTap: () => _open(context, const DesktopSettingsView()),
+                ),
+            ],
           ),
-          const Divider(),
-          const _Section('存储'),
-          GListTile(
-            leading: const Icon(Icons.cleaning_services_outlined),
-            title: const Text('缓存管理'),
-            subtitle: Text(
-              _cacheBytes < 0
-                  ? '计算中…'
-                  : '当前缓存 ${CacheService.formatBytes(_cacheBytes)}',
-            ),
-            trailing: _cacheBytes > 0
-                ? GButton(label: '清理', filled: false, onTap: _clearCache)
-                : null,
-          ),
-          const Divider(),
-          const _Section('关于'),
-          GListTile(
-            leading: const Icon(Icons.system_update_alt),
-            title: const Text('检查更新'),
-            subtitle: Text(
-              _downloadProgress >= 0
-                  ? '正在下载 ${(_downloadProgress * 100).round()}%'
-                  : _latestVersion != null
-                      ? '线上版本：$_latestVersion'
-                      : '当前版本：${AppConfig.appVersion}',
-            ),
-            trailing: _checkingUpdate || _downloadProgress >= 0
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      value: _downloadProgress >= 0 ? _downloadProgress : null,
-                    ),
-                  )
-                : const Icon(Icons.chevron_right, size: 18),
-            onTap:
-                _checkingUpdate || _downloadProgress >= 0 ? null : _checkUpdate,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: Text(
-              '柒伍壹壹音乐 v${AppConfig.appVersion} · Flutter 跨平台版\n'
-              '一套代码覆盖 iOS / Android / macOS / Windows\n'
-              '基于 just_audio 播放 | 数据源：api.751152.xyz',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
-            ),
+          const SettingsSection('通知与支持'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                icon: Icons.notifications_rounded,
+                title: '通知',
+                subtitle: '查看服务通知与重要公告',
+                onTap: () => _open(context, const NotificationsView()),
+              ),
+              SettingsRow(
+                icon: Icons.info_rounded,
+                title: '关于 ${AppConfig.appName}',
+                subtitle: '版本、更新与服务状态',
+                onTap: () => _open(context, const AboutView()),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _showSleepTimerPicker(BuildContext context) {
+  Future<void> _pickSource(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '选择音乐源',
+      current: settings.source,
+      options: AppConfig.musicSources.entries
+          .map((entry) => (value: entry.key, label: entry.value))
+          .toList(),
+    );
+    if (value != null) await settings.setSource(value);
+  }
+
+  Future<void> _pickThemeMode(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '显示模式',
+      current: settings.themeModeId,
+      options: const [
+        (value: 'system', label: '跟随系统'),
+        (value: 'dark', label: '深色'),
+        (value: 'light', label: '浅色'),
+      ],
+    );
+    if (value != null) await settings.setThemeMode(value);
+  }
+
+  Future<void> _pickAccent(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '主题色',
+      current: settings.accentId,
+      options: AppAccent.all
+          .map((accent) => (value: accent.id, label: accent.name))
+          .toList(),
+    );
+    if (value != null) await settings.setAccentColor(value);
+  }
+
+  Future<void> _pickGlassQuality(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '液态玻璃质量',
+      current: settings.glassQuality,
+      options: const [
+        (value: 'smooth', label: '流畅'),
+        (value: 'detailed', label: '精细'),
+        (value: 'auto', label: '自动'),
+      ],
+    );
+    if (value != null) await settings.setGlassQuality(value);
+  }
+
+  Future<void> _pickQuality(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '默认播放音质',
+      current: settings.quality,
+      options: AppConfig.qualityLabels.entries
+          .map((entry) => (value: entry.key, label: entry.value))
+          .toList(),
+    );
+    if (value != null) await settings.setQuality(value);
+  }
+
+  Future<void> _showSleepTimerPicker(BuildContext context) async {
     final player = context.read<PlayerController>();
     final timer = context.read<SleepTimer>();
-    showModalBottomSheet<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xE61A1A1A)
-          : const Color(0xE6FFFFFF),
-      builder: (sheetCtx) => SafeArea(
+      useRootNavigator: true,
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -299,15 +246,16 @@ class _SettingsViewState extends State<SettingsView> {
               padding: EdgeInsets.all(16),
               child: Text(
                 '睡眠定时',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
               ),
             ),
             GListTile(
-              leading: const Icon(Icons.timer_off),
+              leading: const Icon(Icons.timer_off_rounded),
               title: const Text('取消定时'),
+              selected: !timer.isActive,
               onTap: () {
                 timer.stop();
-                Navigator.of(sheetCtx).pop();
+                Navigator.of(sheetContext).pop();
               },
             ),
             for (final minutes in [15, 30, 45, 60, 90])
@@ -317,9 +265,9 @@ class _SettingsViewState extends State<SettingsView> {
                 onTap: () {
                   timer.start(
                     Duration(minutes: minutes),
-                    onTimeout: () => player.pause(),
+                    onTimeout: player.pause,
                   );
-                  Navigator.of(sheetCtx).pop();
+                  Navigator.of(sheetContext).pop();
                 },
               ),
             const SizedBox(height: 8),
@@ -329,66 +277,9 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 
-  Future<void> _pick<T>({
-    required String title,
-    required T current,
-    required List<({T value, String label})> options,
-    required Future<void> Function(T) onSelected,
-  }) async {
-    final selected = await showModalBottomSheet<T>(
-      context: context,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xE61A1A1A)
-          : const Color(0xE6FFFFFF),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                title,
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              ),
-            ),
-            for (final option in options)
-              GListTile(
-                selected: option.value == current,
-                title: Text(option.label),
-                trailing: option.value == current
-                    ? Icon(Icons.check,
-                        color: Theme.of(sheetCtx).colorScheme.primary)
-                    : null,
-                onTap: () => Navigator.of(sheetCtx).pop(option.value),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (selected != null) await onSelected(selected);
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 1,
-        ),
-      ),
+  void _open(BuildContext context, Widget page) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => page),
     );
   }
 }

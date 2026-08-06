@@ -9,13 +9,16 @@ import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
+import '../../core/services/user_playlist_library.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/user_avatar.dart';
 import '../discover/discover_view.dart';
 import '../library/library_view.dart';
 import '../playlists/playlists_view.dart';
 import '../playlists/playlist_import_view.dart';
 import '../player/mini_player.dart';
+import '../player/desktop_player_panel.dart';
 import '../profile/login_view.dart';
 import '../profile/profile_view.dart';
 import '../profile/user_library_view.dart';
@@ -36,7 +39,9 @@ class _HomeShellState extends State<HomeShell> {
   static const _pageCount = 7;
 
   int _index = 0;
+  String? _pendingSearchQuery;
   int _sourceVersion = 0;
+  MiniPlayerPanel? _miniPlayerPanel;
   final Set<int> _visitedPages = {0};
   final List<GlobalKey<_TabNavigatorState>> _tabKeys = List.generate(
     _pageCount,
@@ -47,7 +52,7 @@ class _HomeShellState extends State<HomeShell> {
   late final PlayerController _player;
   late final AuthController _auth;
 
-  static const _tabToPageIndex = [0, 3, 1, 2, 6];
+  static const _tabToPageIndex = [0, 3, 1, 6];
 
   static const _tabs = [
     (
@@ -66,11 +71,6 @@ class _HomeShellState extends State<HomeShell> {
       selectedIcon: CupertinoIcons.search
     ),
     (
-      label: '资料库',
-      icon: CupertinoIcons.music_albums,
-      selectedIcon: CupertinoIcons.music_albums_fill,
-    ),
-    (
       label: '我的',
       icon: CupertinoIcons.person,
       selectedIcon: CupertinoIcons.person_fill,
@@ -85,6 +85,7 @@ class _HomeShellState extends State<HomeShell> {
     _auth = context.read<AuthController>();
     _lastSource = _settings.source;
     _player.onSongPlayed = _recordPlayedSong;
+    _player.onSongChanged = _syncFavoriteState;
     _player.onMembershipRequired = _openMembershipCenter;
     _settings.addListener(_onSettingsChanged);
   }
@@ -93,6 +94,28 @@ class _HomeShellState extends State<HomeShell> {
     final token = _auth.token;
     if (!_auth.isLoggedIn || token == null) return;
     UserApi().addHistory(song, token).catchError((_) {});
+  }
+
+  Future<void> _syncFavoriteState(Song song) async {
+    final token = _auth.token;
+    if (!_auth.isLoggedIn || token == null) {
+      _player.setLiked(false);
+      return;
+    }
+    try {
+      final items = await UserApi().getFavorites(token);
+      final current = _player.current;
+      if (current?.id != song.id || current?.source != song.source) return;
+      _player.setLiked(
+        items.any((item) {
+          final id = item['songId'] ?? item['id'];
+          final source = item['source'] ?? 'netease';
+          return id?.toString() == song.id && source.toString() == song.source;
+        }),
+      );
+    } catch (_) {
+      // 收藏状态查询失败不影响播放。
+    }
   }
 
   void _openMembershipCenter() {
@@ -112,6 +135,9 @@ class _HomeShellState extends State<HomeShell> {
     _settings.removeListener(_onSettingsChanged);
     if (_player.onSongPlayed == _recordPlayedSong) {
       _player.onSongPlayed = null;
+    }
+    if (_player.onSongChanged == _syncFavoriteState) {
+      _player.onSongChanged = null;
     }
     if (_player.onMembershipRequired == _openMembershipCenter) {
       _player.onMembershipRequired = null;
@@ -145,10 +171,13 @@ class _HomeShellState extends State<HomeShell> {
     final windowWidth = MediaQuery.sizeOf(context).width;
     final wide = windowWidth >= 640;
     final sidebarWidth = windowWidth >= 900 ? 280.0 : 232.0;
+    final dockedPlayerPanel = windowWidth >= 1120 &&
+        context.select<PlayerController, bool>((p) => p.current != null);
+    final playerPanelWidth = (windowWidth * 0.30).clamp(360.0, 420.0);
     final pages = List<Widget>.generate(
       _pageCount,
       (pageIndex) => _visitedPages.contains(pageIndex)
-          ? _buildPage(pageIndex)
+          ? _buildPage(pageIndex, wide: wide)
           : const SizedBox.shrink(),
     );
 
@@ -167,36 +196,68 @@ class _HomeShellState extends State<HomeShell> {
                           topInset: Platform.isMacOS ? 68 : 18,
                           selected: _index,
                           onSelect: _selectPage,
+                          onSearch: (query) {
+                            setState(() => _pendingSearchQuery = query);
+                            _selectPage(1);
+                          },
+                          searchQuery: _pendingSearchQuery,
                         ),
                       Expanded(
-                        child: SafeArea(
-                          top: !Platform.isMacOS,
-                          bottom: false,
-                          child: IndexedStack(
-                            index: _index,
-                            children: [
-                              for (var i = 0; i < pages.length; i++)
-                                _TabNavigator(
-                                  key: _tabKeys[i],
-                                  child: pages[i],
-                                ),
-                            ],
+                        child: GWindowControlsSafeRegion(
+                          child: SafeArea(
+                            top: !Platform.isMacOS,
+                            bottom: false,
+                            child: Padding(
+                              padding: EdgeInsets.zero,
+                              child: IndexedStack(
+                                index: _index,
+                                children: [
+                                  for (var i = 0; i < pages.length; i++)
+                                    _TabNavigator(
+                                      key: _tabKeys[i],
+                                      child: pages[i],
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                MiniPlayer(sidebarWidth: wide ? sidebarWidth : null),
+                MiniPlayer(
+                  sidebarWidth: wide ? sidebarWidth : null,
+                  panel: dockedPlayerPanel ? _miniPlayerPanel : null,
+                  onPanelChanged: dockedPlayerPanel
+                      ? (panel) => setState(() => _miniPlayerPanel = panel)
+                      : null,
+                ),
               ],
             ),
           ),
-          if (Platform.isMacOS)
-            const Positioned(
-              left: 0,
-              right: 100,
+          if (dockedPlayerPanel)
+            AnimatedPositioned(
+              duration: Motion.normal,
+              curve: Curves.easeOutCubic,
               top: 0,
-              child: _WindowDragBar(),
+              bottom: 80,
+              right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
+              width: playerPanelWidth,
+              child: IgnorePointer(
+                ignoring: _miniPlayerPanel == null,
+                child: DesktopPlayerPanel(
+                  panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
+                  onClose: () => setState(() => _miniPlayerPanel = null),
+                ),
+              ),
+            ),
+          if (Platform.isMacOS && wide)
+            Positioned(
+              left: 0,
+              width: sidebarWidth,
+              top: 0,
+              child: const _WindowDragBar(),
             ),
         ],
       ),
@@ -209,7 +270,7 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  Widget _buildPage(int pageIndex) {
+  Widget _buildPage(int pageIndex, {required bool wide}) {
     switch (pageIndex) {
       case 0:
         return DiscoverView(
@@ -217,7 +278,10 @@ class _HomeShellState extends State<HomeShell> {
           title: '首页',
         );
       case 1:
-        return SearchView(key: ValueKey('search_$_sourceVersion'));
+        return SearchView(
+          key: ValueKey('search_$_pendingSearchQuery'),
+          initialQuery: _pendingSearchQuery,
+        );
       case 2:
         return LibraryView(
           key: ValueKey('library_$_sourceVersion'),
@@ -237,7 +301,6 @@ class _HomeShellState extends State<HomeShell> {
           embedded: true,
           active: _index == _favoritesIndex,
           loader: () => _loadUserSongs(favorites: true),
-          onBack: () => switchTo(0),
           onRemove: (song) async {
             final token = _auth.token;
             if (token == null) return;
@@ -251,7 +314,6 @@ class _HomeShellState extends State<HomeShell> {
           embedded: true,
           active: _index == _historyIndex,
           loader: () => _loadUserSongs(favorites: false),
-          onBack: () => switchTo(0),
           onRemove: (song) async {
             final token = _auth.token;
             final recordId = song.libraryId;
@@ -273,7 +335,8 @@ class _HomeShellState extends State<HomeShell> {
         return ProfileView(
           key: const ValueKey('profile'),
           embedded: true,
-          onBack: () => switchTo(0),
+          onOpenFavorites: wide ? () => _selectPage(_favoritesIndex) : null,
+          onOpenHistory: wide ? () => _selectPage(_historyIndex) : null,
         );
       default:
         return const SizedBox.shrink();
@@ -356,12 +419,16 @@ class _Sidebar extends StatefulWidget {
     required this.topInset,
     required this.selected,
     required this.onSelect,
+    required this.onSearch,
+    this.searchQuery,
   });
 
   final double width;
   final double topInset;
   final int selected;
   final ValueChanged<int> onSelect;
+  final ValueChanged<String> onSearch;
+  final String? searchQuery;
 
   @override
   State<_Sidebar> createState() => _SidebarState();
@@ -369,14 +436,21 @@ class _Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<_Sidebar> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   List<Map<String, dynamic>> _userPlaylists = [];
   bool _loadingPlaylists = false;
   String? _loadedToken;
   bool _reloadScheduled = false;
+  int _playlistLoadSequence = 0;
 
   @override
   void initState() {
     super.initState();
+    UserPlaylistLibrary.instance.addListener(_onPlaylistLibraryChanged);
+  }
+
+  void _onPlaylistLibraryChanged() {
+    if (mounted) _loadUserPlaylists();
   }
 
   @override
@@ -394,12 +468,28 @@ class _SidebarState extends State<_Sidebar> {
   }
 
   @override
+  void didUpdateWidget(covariant _Sidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.searchQuery != oldWidget.searchQuery &&
+        widget.searchQuery != null &&
+        widget.searchQuery!.isNotEmpty) {
+      _searchController.value = TextEditingValue(
+        text: widget.searchQuery!,
+        selection: TextSelection.collapsed(offset: widget.searchQuery!.length),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    UserPlaylistLibrary.instance.removeListener(_onPlaylistLibraryChanged);
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadUserPlaylists() async {
+    final sequence = ++_playlistLoadSequence;
     final auth = context.read<AuthController>();
     final token = auth.token;
     if (token == null) {
@@ -412,11 +502,17 @@ class _SidebarState extends State<_Sidebar> {
     setState(() => _loadingPlaylists = true);
     try {
       final items = await UserApi().getUserPlaylists(token);
-      if (mounted) setState(() => _userPlaylists = items);
+      if (mounted && sequence == _playlistLoadSequence) {
+        setState(() => _userPlaylists = items);
+      }
     } catch (_) {
-      if (mounted) setState(() => _userPlaylists = []);
+      if (mounted && sequence == _playlistLoadSequence) {
+        setState(() => _userPlaylists = []);
+      }
     } finally {
-      if (mounted) setState(() => _loadingPlaylists = false);
+      if (mounted && sequence == _playlistLoadSequence) {
+        setState(() => _loadingPlaylists = false);
+      }
     }
   }
 
@@ -430,10 +526,10 @@ class _SidebarState extends State<_Sidebar> {
     }
     final imported = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => PlaylistImportView(onImported: _loadUserPlaylists),
+        builder: (_) => const PlaylistImportView(),
       ),
     );
-    if (imported == true && mounted) _loadUserPlaylists();
+    if (imported == true && mounted) UserPlaylistLibrary.instance.markChanged();
   }
 
   void _onCreatePlaylist() {
@@ -466,7 +562,6 @@ class _SidebarState extends State<_Sidebar> {
               Navigator.of(dialogContext).pop();
               try {
                 await UserApi().createPlaylist(name, null, auth.token!);
-                if (mounted) _loadUserPlaylists();
               } catch (_) {}
             },
             child: const Text('创建'),
@@ -507,7 +602,7 @@ class _SidebarState extends State<_Sidebar> {
             ? const LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [Color(0xFF2E2923), Color(0xFF322E2E)],
+                colors: [Color(0xFF242725), Color(0xFF252926)],
               )
             : null,
         border: Border(right: BorderSide(color: glassHairline(context))),
@@ -519,33 +614,58 @@ class _SidebarState extends State<_Sidebar> {
           // 搜索框
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: GPressScale(
-              onTap: () => widget.onSelect(1),
+            child: GestureDetector(
+              key: const ValueKey('sidebar_search_control'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                _searchFocusNode.requestFocus();
+                widget.onSelect(1);
+              },
               child: Container(
-                height: 30,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                height: 40,
                 decoration: BoxDecoration(
                   color:
-                      dark ? const Color(0xFF3A3837) : scheme.surfaceContainer,
+                      dark ? const Color(0xFF383B39) : scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: glassHairline(context)),
+                  border: Border.all(
+                    color: widget.selected == 1
+                        ? scheme.primary
+                        : glassHairline(context),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
+                child: TextField(
+                  key: const ValueKey('sidebar_search_field'),
+                  focusNode: _searchFocusNode,
+                  controller: _searchController,
+                  onTap: () => widget.onSelect(1),
+                  onSubmitted: (value) {
+                    final query = value.trim();
+                    if (query.isNotEmpty) widget.onSearch(query);
+                  },
+                  textInputAction: TextInputAction.search,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: scheme.onSurface,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '搜索音乐',
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: scheme.onSurface.withValues(alpha: 0.52),
+                    ),
+                    prefixIcon: Icon(
                       CupertinoIcons.search,
                       size: 18,
-                      color: scheme.onSurface.withValues(alpha: 0.58),
+                      color: widget.selected == 1
+                          ? scheme.primary
+                          : scheme.onSurface.withValues(alpha: 0.58),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '搜索音乐',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: scheme.onSurface.withValues(alpha: 0.52),
-                      ),
-                    ),
-                  ],
+                    prefixIconConstraints:
+                        const BoxConstraints.tightFor(width: 38, height: 40),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.only(right: 10),
+                  ),
                 ),
               ),
             ),
@@ -648,6 +768,7 @@ class _SidebarState extends State<_Sidebar> {
           _UserFooter(
             loggedIn: auth.isLoggedIn,
             name: name,
+            avatarUrl: auth.avatarUrl,
             selected: widget.selected == _HomeShellState._profileIndex,
             onTap: () => widget.onSelect(_HomeShellState._profileIndex),
           ),
@@ -689,23 +810,47 @@ class _SidebarState extends State<_Sidebar> {
         ),
       );
     }
-    return ListView.builder(
+    final owned =
+        _userPlaylists.where(UserApi.isOwnedPlaylist).toList(growable: false);
+    final favorites = _userPlaylists
+        .where(UserApi.isFavoritePlaylist)
+        .toList(growable: false);
+    return ListView(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      itemCount: _userPlaylists.length,
-      itemBuilder: (context, i) {
-        final item = _userPlaylists[i];
-        final rawTitle = item['name'] ?? item['playlistName'];
-        final title = rawTitle == null || rawTitle.toString().trim().isEmpty
-            ? '未命名歌单'
-            : rawTitle.toString().trim();
-        return _SidebarItem(
-          icon: CupertinoIcons.music_note_list,
-          selectedIcon: CupertinoIcons.music_note_list,
-          label: title,
-          selected: false,
-          onTap: () => _openPlaylist(item),
-        );
-      },
+      children: [
+        if (owned.isNotEmpty) ...[
+          _playlistSectionTitle('我的歌单', scheme),
+          ...owned.map(_playlistItem),
+        ],
+        if (favorites.isNotEmpty) ...[
+          _playlistSectionTitle('收藏歌单', scheme),
+          ...favorites.map(_playlistItem),
+        ],
+      ],
+    );
+  }
+
+  Widget _playlistSectionTitle(String title, ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 7, 12, 5),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: TypeScale.semibold,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _playlistItem(Map<String, dynamic> item) {
+    return _SidebarItem(
+      icon: CupertinoIcons.music_note_list,
+      selectedIcon: CupertinoIcons.music_note_list,
+      label: userPlaylistName(item),
+      selected: false,
+      onTap: () => _openPlaylist(item),
     );
   }
 }
@@ -715,12 +860,14 @@ class _UserFooter extends StatelessWidget {
   const _UserFooter({
     required this.loggedIn,
     required this.name,
+    required this.avatarUrl,
     required this.selected,
     required this.onTap,
   });
 
   final bool loggedIn;
   final String name;
+  final String? avatarUrl;
   final bool selected;
   final VoidCallback onTap;
 
@@ -732,7 +879,7 @@ class _UserFooter extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected
             ? (Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF573335)
+                ? const Color(0xFF24482F)
                 : AppBrand.red.withValues(alpha: 0.14))
             : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
@@ -743,23 +890,15 @@ class _UserFooter extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           child: Row(
             children: [
-              CircleAvatar(
+              UserAvatar(
                 radius: 14,
+                name: name,
+                showInitial: loggedIn,
+                imageUrl: loggedIn ? avatarUrl : null,
                 backgroundColor: scheme.primaryContainer,
-                child: loggedIn && name.isNotEmpty
-                    ? Text(
-                        name[0].toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: TypeScale.bold,
-                          color: scheme.onPrimaryContainer,
-                        ),
-                      )
-                    : Icon(
-                        CupertinoIcons.person_fill,
-                        size: 16,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                foregroundColor: loggedIn
+                    ? scheme.onPrimaryContainer
+                    : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -815,7 +954,7 @@ class _SidebarItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           color: selected
               ? (Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF573335)
+                  ? const Color(0xFF24482F)
                   : AppBrand.red.withValues(alpha: 0.14))
               : Colors.transparent,
         ),
@@ -846,7 +985,7 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
-/// 窄屏底部导航（5 个主入口）
+/// 窄屏底部导航：资料库已融合到“我的”。
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.selected, required this.onSelect});
 
@@ -925,6 +1064,7 @@ class _BottomNav extends StatelessWidget {
 class _WindowDragBar extends StatelessWidget {
   const _WindowDragBar();
 
+  static const double height = 36;
   static const MethodChannel _channel = MethodChannel('duckmusic/window');
 
   @override
@@ -937,7 +1077,7 @@ class _WindowDragBar extends StatelessWidget {
           {'dx': d.delta.dx, 'dy': d.delta.dy},
         );
       },
-      child: const SizedBox(height: 36, width: double.infinity),
+      child: const SizedBox(height: height, width: double.infinity),
     );
   }
 }

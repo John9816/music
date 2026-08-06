@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
 
-/// TuneFreeNext 风格的统一设置模型。
+/// 柒伍壹壹音乐的统一设置模型。
 ///
 /// 所有会影响播放、外观、缓存和桌面行为的选项都在这里持久化，页面不再
 /// 保存只在当前生命周期有效的临时状态。

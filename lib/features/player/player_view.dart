@@ -3,6 +3,7 @@ import 'dart:math' show pi;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api/user_api.dart';
@@ -40,7 +41,7 @@ class _PlayerViewState extends State<PlayerView> {
     }
     final wide = MediaQuery.sizeOf(context).width >= 820;
 
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: wide ? null : Colors.black,
       body: Stack(
         fit: StackFit.expand,
@@ -95,6 +96,19 @@ class _PlayerViewState extends State<PlayerView> {
           ),
         ],
       ),
+    );
+    if (wide) return content;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: content,
     );
   }
 }
@@ -175,7 +189,7 @@ class _TopBar extends StatelessWidget {
               alignment: Alignment.center,
               children: [
                 Positioned(
-                  left: 6,
+                  left: 6 + macOSWindowControlsInset(context),
                   child: _ImmersiveIconButton(
                     icon: Icons.keyboard_arrow_down_rounded,
                     tooltip: '收起播放器',
@@ -232,13 +246,13 @@ class _TopBar extends StatelessWidget {
                 GIconButton(
                   icon: Icons.close_rounded,
                   tooltip: '关闭播放器',
-                  size: 25,
-                  padding: 11,
+                  size: 20,
+                  padding: 2,
                   filled: true,
                   backgroundColor: glassFill(context, alpha: 0.10),
                   onTap: () => Navigator.of(context).maybePop(),
                 ),
-                const SizedBox(width: 18),
+                const SizedBox(width: 12),
               ],
             ),
     );
@@ -256,7 +270,13 @@ class _MobilePlayer extends StatefulWidget {
 }
 
 class _MobilePlayerState extends State<_MobilePlayer> {
-  bool _showLyrics = true;
+  bool _showLyrics = false;
+
+  @override
+  void didUpdateWidget(covariant _MobilePlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.song.id != widget.song.id) _showLyrics = false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +297,7 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                 : _MobileDiscStage(
                     key: ValueKey('mobile-disc-${widget.song.id}'),
                     song: widget.song,
+                    onOpenLyrics: () => setState(() => _showLyrics = true),
                   ),
           ),
         ),
@@ -292,7 +313,7 @@ class _MobilePlayerState extends State<_MobilePlayer> {
         _MobileControls(
           song: widget.song,
           showingLyrics: _showLyrics,
-          onToggleView: () => setState(() => _showLyrics = !_showLyrics),
+          onShowCover: () => setState(() => _showLyrics = false),
         ),
       ],
     );
@@ -300,9 +321,14 @@ class _MobilePlayerState extends State<_MobilePlayer> {
 }
 
 class _MobileDiscStage extends StatelessWidget {
-  const _MobileDiscStage({super.key, required this.song});
+  const _MobileDiscStage({
+    super.key,
+    required this.song,
+    required this.onOpenLyrics,
+  });
 
   final Song song;
+  final VoidCallback onOpenLyrics;
 
   @override
   Widget build(BuildContext context) {
@@ -315,10 +341,17 @@ class _MobileDiscStage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _DiscCover(
-              url: song.album.picUrl,
-              size: coverSize,
-              playing: player.playing,
+            Semantics(
+              button: true,
+              label: '查看歌词',
+              child: GPressScale(
+                onTap: onOpenLyrics,
+                child: _DiscCover(
+                  url: song.album.picUrl,
+                  size: coverSize,
+                  playing: player.playing,
+                ),
+              ),
             ),
             const SizedBox(height: 34),
             Text(
@@ -354,12 +387,12 @@ class _MobileControls extends StatelessWidget {
   const _MobileControls({
     required this.song,
     required this.showingLyrics,
-    required this.onToggleView,
+    required this.onShowCover,
   });
 
   final Song song;
   final bool showingLyrics;
-  final VoidCallback onToggleView;
+  final VoidCallback onShowCover;
 
   @override
   Widget build(BuildContext context) {
@@ -373,14 +406,15 @@ class _MobileControls extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _FavoriteBtn(song: song, immersive: true),
-              _ImmersiveIconButton(
-                icon: showingLyrics
-                    ? Icons.album_outlined
-                    : Icons.lyrics_outlined,
-                tooltip: showingLyrics ? '切换到唱片' : '切换到歌词',
-                size: 22,
-                onTap: onToggleView,
-              ),
+              if (showingLyrics)
+                _ImmersiveIconButton(
+                  icon: Icons.album_outlined,
+                  tooltip: '返回封面',
+                  size: 22,
+                  onTap: onShowCover,
+                )
+              else
+                const SizedBox(width: 46, height: 46),
               _ImmersiveIconButton(
                 icon: Icons.timer_outlined,
                 tooltip: '睡眠定时',
@@ -719,6 +753,7 @@ void _showSleepTimer(BuildContext context) {
   final player = context.read<PlayerController>();
   showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
     builder: (sheetContext) => SafeArea(
       child: Column(
@@ -1036,11 +1071,19 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
       if (!mounted) return;
       setState(() {
         _fav = items.any(
-          (e) =>
-              e['songId'] == widget.song.id &&
-              e['source'] == widget.song.source,
+          (e) {
+            final id = e['songId'] ?? e['id'];
+            final source = e['source'] ?? 'netease';
+            return id?.toString() == widget.song.id &&
+                source.toString() == widget.song.source;
+          },
         );
       });
+      final player = context.read<PlayerController>();
+      if (player.current?.id == widget.song.id &&
+          player.current?.source == widget.song.source) {
+        player.setLiked(_fav);
+      }
     } catch (_) {}
   }
 
@@ -1063,6 +1106,11 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
       }
       if (mounted) {
         setState(() => _fav = !_fav);
+        final player = context.read<PlayerController>();
+        if (player.current?.id == widget.song.id &&
+            player.current?.source == widget.song.source) {
+          player.setLiked(_fav);
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(_fav ? '已收藏' : '已取消收藏')),
         );
@@ -1168,7 +1216,6 @@ class _DiscCoverState extends State<_DiscCover>
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -1187,34 +1234,10 @@ class _DiscCoverState extends State<_DiscCover>
           boxShadow: ShadowToken.cover(context, radius: 32),
         ),
         padding: EdgeInsets.all(widget.size * 0.07),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            AsyncCover(
-              url: widget.url,
-              size: widget.size * 0.86,
-              radius: widget.size * 0.43,
-            ),
-            // 中心轴帽
-            Container(
-              width: widget.size * 0.10,
-              height: widget.size * 0.10,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: scheme.surfaceContainerLowest,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 4,
-                  ),
-                ],
-              ),
-            ),
-          ],
+        child: AsyncCover(
+          url: widget.url,
+          size: widget.size * 0.86,
+          radius: widget.size * 0.43,
         ),
       ),
     );

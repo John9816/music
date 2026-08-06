@@ -53,10 +53,13 @@ Future<void> main() async {
       await JustAudioBackground.init(
         androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
         androidNotificationChannelName: '音频播放',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
+        androidNotificationOngoing: false,
+        // 暂停后仍保留系统下拉媒体卡，便于继续播放。
+        androidStopForegroundOnPause: false,
       );
-    } catch (_) {}
+    } catch (error, stack) {
+      debugPrint('=== 系统媒体卡初始化失败 ===\n$error\n$stack');
+    }
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());

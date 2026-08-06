@@ -4,12 +4,14 @@ import 'package:provider/provider.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/song_action_menu.dart';
 import '../search/artist_names_link.dart';
 
 /// 弹出播放队列面板（底部弹层，不再整窗跳转）
 Future<void> showQueueSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     useSafeArea: true,
@@ -65,7 +67,7 @@ class _QueueSheet extends StatelessWidget {
                   icon: Icons.close,
                   tooltip: '关闭播放队列',
                   size: 18,
-                  padding: 8,
+                  padding: 2,
                   onTap: () => Navigator.of(context).maybePop(),
                 ),
               ],
@@ -96,6 +98,11 @@ class _QueueSheet extends StatelessWidget {
                   subtitle: ArtistNamesLink(
                     artists: song.artists,
                     source: song.source,
+                  ),
+                  trailing: SongActionButton(
+                    song: song,
+                    queueIndex: i,
+                    onPlay: () => player.playAt(i),
                   ),
                   onTap: () => player.playAt(i),
                 );

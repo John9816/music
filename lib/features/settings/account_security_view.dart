@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/api/auth_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../widgets/glass.dart';
+import '../profile/login_view.dart';
 import 'settings_components.dart';
 
 class AccountSecurityView extends StatefulWidget {
@@ -16,7 +17,6 @@ class AccountSecurityView extends StatefulWidget {
 class _AccountSecurityViewState extends State<AccountSecurityView> {
   final AuthApi _api = AuthApi();
   Future<List<Map<String, dynamic>>>? _devices;
-  bool _resettingPassword = false;
 
   @override
   void didChangeDependencies() {
@@ -72,15 +72,10 @@ class _AccountSecurityViewState extends State<AccountSecurityView> {
               SettingsRow(
                 icon: Icons.lock_reset_rounded,
                 title: '重置密码',
-                subtitle: '向当前账号邮箱发送安全重置链接',
-                trailing: _resettingPassword
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: _resettingPassword ? null : () => _resetPassword(auth),
+                subtitle: '使用邮箱验证码设置新密码',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ForgotPasswordView()),
+                ),
               ),
             ],
           ),
@@ -187,21 +182,6 @@ class _AccountSecurityViewState extends State<AccountSecurityView> {
               onTap: () => _revokeDevice(id, name, token),
             ),
     );
-  }
-
-  Future<void> _resetPassword(AuthController auth) async {
-    final account = auth.username;
-    final token = auth.token;
-    if (account == null || token == null) return;
-    setState(() => _resettingPassword = true);
-    try {
-      final message = await _api.requestPasswordReset(account, token);
-      _message(message);
-    } catch (error) {
-      _message(error.toString());
-    } finally {
-      if (mounted) setState(() => _resettingPassword = false);
-    }
   }
 
   Future<void> _revokeDevice(String id, String name, String token) async {

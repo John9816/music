@@ -28,6 +28,34 @@ class SearchArtist {
       );
 }
 
+/// 搜索专辑结果（api/v1/music/search type=ALBUM）
+class SearchAlbum {
+  const SearchAlbum({
+    required this.id,
+    required this.name,
+    this.artist,
+    this.coverUrl,
+    this.trackCount,
+    this.source,
+  });
+
+  final String id;
+  final String name;
+  final String? artist;
+  final String? coverUrl;
+  final int? trackCount;
+  final String? source;
+
+  factory SearchAlbum.fromJson(Map<String, dynamic> json) => SearchAlbum(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        artist: _textOrNull(json['artist']),
+        coverUrl: _textOrNull(json['coverUrl']),
+        trackCount: (json['trackCount'] as num?)?.toInt(),
+        source: _textOrNull(json['source']),
+      );
+}
+
 /// 歌手页使用的专辑及其歌曲。
 class ArtistAlbum {
   const ArtistAlbum({required this.album, required this.songs});
@@ -38,14 +66,23 @@ class ArtistAlbum {
 
 /// 歌手页音乐目录。当前由歌曲搜索结果聚合，后续可无缝替换专用接口。
 class ArtistCatalog {
-  const ArtistCatalog({required this.songs, required this.albums});
+  const ArtistCatalog({
+    required this.songs,
+    required this.albums,
+    this.hasMore = false,
+    this.nextOffset = 0,
+  });
 
   final List<Song> songs;
   final List<ArtistAlbum> albums;
+  final bool hasMore;
+  final int nextOffset;
 
   factory ArtistCatalog.fromSongs({
     required String artistName,
     required List<Song> searchedSongs,
+    bool hasMore = false,
+    int? nextOffset,
   }) {
     final normalizedName = _normalizeArtistName(artistName);
     final songs = searchedSongs.where((song) {
@@ -75,6 +112,8 @@ class ArtistCatalog {
             songs: List.unmodifiable(albumGroups[entry.key]!),
           ),
       ]),
+      hasMore: hasMore,
+      nextOffset: nextOffset ?? searchedSongs.length,
     );
   }
 }
@@ -199,6 +238,26 @@ class MusicApi {
     return _playlistList(data);
   }
 
+  /// 搜索专辑
+  Future<List<SearchAlbum>> searchAlbums(
+    String keyword, {
+    String source = _defaultSource,
+    int offset = 0,
+    int limit = 30,
+  }) async {
+    final data = await _client.getJson('api/v1/music/search', params: {
+      'source': source,
+      'keyword': keyword,
+      'type': 'ALBUM',
+      'page': '${(offset ~/ limit) + 1}',
+      'pageSize': '$limit',
+    });
+    return _jsonList(data['albums'])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .map(SearchAlbum.fromJson)
+        .toList();
+  }
+
   /// 搜索歌手（返回歌手列表，点击后可用歌手名再搜歌曲）
   Future<List<SearchArtist>> searchArtists(
     String keyword, {
@@ -219,6 +278,22 @@ class MusicApi {
         .toList();
   }
 
+  /// 获取专辑歌曲。
+  Future<List<Song>> getAlbumDetail(
+    String id, {
+    String source = _defaultSource,
+    int offset = 0,
+    int limit = 100,
+  }) async {
+    final data = await _client.getJson('api/v1/music/album/detail', params: {
+      'source': source,
+      'id': id,
+      'page': '${(offset ~/ limit) + 1}',
+      'pageSize': '$limit',
+    });
+    return _songList(data);
+  }
+
   /// 获取歌手歌曲与专辑目录。
   ///
   /// 现有 V1 API 暂无歌手专辑端点，因此先按歌手名搜索歌曲、精确匹配
@@ -227,16 +302,36 @@ class MusicApi {
     String artistName, {
     String source = _defaultSource,
     String? artistId,
-    int limit = 100,
+    int limit = 30,
+  }) async {
+    return getArtistCatalogPage(
+      artistName,
+      artistId: artistId,
+      source: source,
+      limit: limit,
+    );
+  }
+
+  Future<ArtistCatalog> getArtistCatalogPage(
+    String artistName, {
+    String source = _defaultSource,
+    String? artistId,
+    int offset = 0,
+    int limit = 30,
   }) async {
     final searched = await searchSongs(
       artistName,
       source: source,
+      offset: offset,
       limit: limit,
     );
     return ArtistCatalog.fromSongs(
       artistName: artistName,
       searchedSongs: searched,
+      hasMore: searched.length >= limit,
+      // The API paginates by page/pageSize. Advance by the requested page
+      // size so a short page cannot map the next request back to page 1.
+      nextOffset: offset + limit,
     );
   }
 

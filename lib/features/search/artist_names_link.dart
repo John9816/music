@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/artist_info_api.dart';
 import '../../core/api/music_api.dart';
 import '../../core/models/artist_info.dart';
 import '../../core/models/song.dart';
@@ -8,6 +9,8 @@ import '../../widgets/glass.dart';
 import 'artist_detail_view.dart';
 
 typedef ArtistInfoLoader = Future<ArtistInfo> Function();
+
+final Map<String, Future<ArtistInfo>> _artistInfoCache = {};
 
 /// 可点击的歌手名称。多歌手时先选择歌手，再进入资料页。
 class ArtistNamesLink extends StatelessWidget {
@@ -83,6 +86,7 @@ Future<void> openArtistInfo(
   } else {
     artist = await showModalBottomSheet<Artist>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
         child: Padding(
@@ -103,11 +107,7 @@ Future<void> openArtistInfo(
               for (final item in available)
                 GListTile(
                   leading: ClipOval(
-                    child: AsyncCover(
-                      url: item.picUrl,
-                      size: 42,
-                      radius: 21,
-                    ),
+                    child: _ArtistAvatar(artist: item),
                   ),
                   title: Text(item.name),
                   trailing: const Icon(Icons.chevron_right_rounded, size: 18),
@@ -134,6 +134,33 @@ Future<void> openArtistInfo(
       ),
     ),
   );
+}
+
+class _ArtistAvatar extends StatelessWidget {
+  const _ArtistAvatar({required this.artist});
+
+  final Artist artist;
+
+  @override
+  Widget build(BuildContext context) {
+    final initialUrl = artist.picUrl;
+    if (initialUrl != null && initialUrl.isNotEmpty) {
+      return AsyncCover(url: initialUrl, size: 42, radius: 21);
+    }
+    final key = artist.name.trim().toLowerCase();
+    final future = _artistInfoCache.putIfAbsent(
+      key,
+      () => ArtistInfoApi().getArtistInfo(artist.name),
+    );
+    return FutureBuilder<ArtistInfo>(
+      future: future,
+      builder: (context, snapshot) => AsyncCover(
+        url: snapshot.data?.imageUrl,
+        size: 42,
+        radius: 21,
+      ),
+    );
+  }
 }
 
 List<Artist> _availableArtists(List<Artist> artists) {

@@ -1,5 +1,15 @@
 import 'api_client.dart';
 
+class PasswordResetCodeInfo {
+  const PasswordResetCodeInfo({
+    required this.resendAfterSeconds,
+    required this.expiresInSeconds,
+  });
+
+  final int resendAfterSeconds;
+  final int expiresInSeconds;
+}
+
 class AuthApi {
   final ApiClient _client = ApiClient.instance;
 
@@ -41,13 +51,30 @@ class AuthApi {
     return data;
   }
 
-  Future<String> requestPasswordReset(String account, String token) async {
+  Future<PasswordResetCodeInfo> requestPasswordResetCode(String email) async {
     final data = await _client.postJson(
-      'api/auth/forgot-password',
-      body: {'email': account, 'username': account},
-      headers: {'Authorization': 'Bearer $token'},
+      'api/auth/password-reset/email-code',
+      body: {'email': email},
     );
-    return data['message']?.toString() ?? '安全重置邮件已发送';
+    return PasswordResetCodeInfo(
+      resendAfterSeconds: _intValue(data['resendAfterSeconds'], 60),
+      expiresInSeconds: _intValue(data['expiresInSeconds'], 600),
+    );
+  }
+
+  Future<void> confirmPasswordReset(
+    String email,
+    String verificationCode,
+    String newPassword,
+  ) async {
+    await _client.postJson(
+      'api/auth/password-reset/confirm',
+      body: {
+        'email': email,
+        'verificationCode': verificationCode,
+        'newPassword': newPassword,
+      },
+    );
   }
 
   Future<List<Map<String, dynamic>>> getDevices(String token) async {
@@ -75,5 +102,10 @@ class AuthApi {
       'api/user/me',
       headers: {'Authorization': 'Bearer $token'},
     );
+  }
+
+  int _intValue(Object? value, int fallback) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
   }
 }

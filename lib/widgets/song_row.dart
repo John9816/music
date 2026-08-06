@@ -4,6 +4,7 @@ import '../core/models/song.dart';
 import '../features/search/artist_names_link.dart';
 import 'async_cover.dart';
 import 'glass.dart';
+import 'song_action_menu.dart';
 
 /// 歌曲行（纯 GestureDetector，无 MouseRegion）
 class SongRow extends StatelessWidget {
@@ -57,16 +58,21 @@ class SongRow extends StatelessWidget {
         style: const TextStyle(fontSize: 12),
       ),
       trailing: trailing ??
-          (song.durationMs > 0
-              ? Text(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (song.durationMs > 0)
+                Text(
                   _formatDuration(song.durationMs),
                   style: TextStyle(
                     fontSize: 11.5,
                     color: scheme.outline,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
-                )
-              : null),
+                ),
+              SongActionButton(song: song, onPlay: onTap),
+            ],
+          ),
     );
   }
 

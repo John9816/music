@@ -3,56 +3,49 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api/membership_api.dart';
+import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/models/membership.dart';
-import '../../core/services/cache_service.dart';
+import '../../core/models/song.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/glass.dart';
-import '../settings/about_view.dart';
+import '../../widgets/user_avatar.dart';
+import '../library/downloads_view.dart';
 import '../settings/account_security_view.dart';
+import '../settings/about_view.dart';
 import '../settings/desktop_settings_view.dart';
 import '../settings/notifications_view.dart';
+import '../settings/settings_view.dart';
+import '../settings/settings_components.dart';
 import '../settings/storage_settings_view.dart';
 import '../tools/tools_view.dart';
 import 'login_view.dart';
+import 'user_library_view.dart';
+import 'user_playlists_view.dart';
 
 /// 个人中心。嵌入主框架时保留侧栏和全局播放栏。
 class ProfileView extends StatefulWidget {
   const ProfileView({
     super.key,
     this.embedded = false,
-    this.onBack,
+    this.onOpenFavorites,
+    this.onOpenHistory,
   });
 
   final bool embedded;
-  final VoidCallback? onBack;
+  final VoidCallback? onOpenFavorites;
+  final VoidCallback? onOpenHistory;
 
   @override
   State<ProfileView> createState() => _ProfileViewState();
 }
 
 class _ProfileViewState extends State<ProfileView> {
-  int _cacheBytes = -1;
   String? _membershipToken;
   Membership? _membership;
   bool _membershipLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCacheSize();
-  }
-
-  Future<void> _loadCacheSize() async {
-    try {
-      final bytes = await CacheService.instance.totalSizeBytes();
-      if (mounted) setState(() => _cacheBytes = bytes);
-    } catch (_) {
-      if (mounted) setState(() => _cacheBytes = 0);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,28 +54,34 @@ class _ProfileViewState extends State<ProfileView> {
       child: Column(
         children: [
           if (widget.embedded)
-            _ProfileHeader(onBack: widget.onBack)
+            _ProfileHeader(onSettings: () => _openSettings(context))
           else
             GAppBar(
-              title: '个人中心',
+              title: '我的',
               onBack: () => Navigator.of(context).maybePop(),
               transparent: true,
+              actions: [
+                GIconButton(
+                  icon: Icons.settings_outlined,
+                  tooltip: '设置',
+                  size: 20,
+                  padding: 10,
+                  onTap: () => _openSettings(context),
+                ),
+              ],
             ),
           Expanded(child: _buildContent(context)),
         ],
       ),
     );
     return widget.embedded
-        ? ColoredBox(color: Colors.transparent, child: content)
+        ? Material(type: MaterialType.transparency, child: content)
         : Scaffold(body: content);
   }
 
   Widget _buildContent(BuildContext context) {
     final auth = context.watch<AuthController>();
     final settings = context.watch<SettingsController>();
-    final selectedAccent = AppAccent.all.indexWhere(
-      (accent) => accent.id == settings.accentId,
-    );
     final name = auth.username ?? '未登录';
     if (_membershipToken != auth.token) {
       _membershipToken = auth.token;
@@ -99,6 +98,7 @@ class _ProfileViewState extends State<ProfileView> {
       children: [
         _AccountCard(
           name: name,
+          avatarUrl: auth.avatarUrl,
           loggedIn: auth.isLoggedIn,
           membershipLoading: _membershipLoading,
           membershipText: _membershipText(),
@@ -109,6 +109,49 @@ class _ProfileViewState extends State<ProfileView> {
           onMembershipTap: auth.isLoggedIn
               ? () => _showRedeemDialog(auth.token!)
               : () => _openLogin(context),
+        ),
+        const _SectionTitle('音乐资料库'),
+        _SettingsGroup(
+          children: [
+            _SettingRow(
+              icon: Icons.favorite_rounded,
+              title: '喜欢的音乐',
+              subtitle: '查看收藏的歌曲',
+              onTap: widget.onOpenFavorites ??
+                  () => _openSongLibrary(context, favorites: true),
+            ),
+            _SettingRow(
+              icon: Icons.queue_music_rounded,
+              title: '我的歌单',
+              subtitle: '管理创建和导入的歌单',
+              onTap: () => _openPlaylists(
+                context,
+                filter: UserPlaylistFilter.owned,
+              ),
+            ),
+            _SettingRow(
+              icon: Icons.bookmark_rounded,
+              title: '收藏的歌单',
+              subtitle: '查看收藏的在线歌单',
+              onTap: () => _openPlaylists(
+                context,
+                filter: UserPlaylistFilter.favorites,
+              ),
+            ),
+            _SettingRow(
+              icon: Icons.history_rounded,
+              title: '播放历史',
+              subtitle: '查看完整播放记录',
+              onTap: widget.onOpenHistory ??
+                  () => _openSongLibrary(context, favorites: false),
+            ),
+            _SettingRow(
+              icon: Icons.download_for_offline_rounded,
+              title: '下载管理',
+              subtitle: '管理已下载的歌曲',
+              onTap: () => _openPage(context, const DownloadsView()),
+            ),
+          ],
         ),
         const _SectionTitle('外观'),
         _SettingsGroup(
@@ -123,12 +166,23 @@ class _ProfileViewState extends State<ProfileView> {
                     'light': '浅色',
                   }[settings.themeModeId] ??
                   '跟随系统',
-              valuePill: true,
-              onTap: () => _pickTheme(context, settings),
+              onTap: () => _pickThemeMode(context, settings),
             ),
-            _ThemeColorRow(
-              selectedIndex: selectedAccent < 0 ? 2 : selectedAccent,
-              onSelected: (index) => _selectAccent(index, settings),
+            _AccentPaletteRow(
+              accentId: settings.accentId,
+              onSelected: settings.setAccentColor,
+            ),
+          ],
+        ),
+        const _SectionTitle('数据源'),
+        _SettingsGroup(
+          children: [
+            _SettingRow(
+              icon: Icons.language_rounded,
+              title: '默认音乐源',
+              subtitle: '推荐、歌单详情与播放使用；搜索会合并红源、绿源、橙源',
+              value: AppConfig.musicSources[settings.source] ?? settings.source,
+              onTap: () => _pickSource(context, settings),
             ),
           ],
         ),
@@ -141,7 +195,6 @@ class _ProfileViewState extends State<ProfileView> {
               subtitle: '为音乐播放选择合适的音质',
               value:
                   AppConfig.qualityLabels[settings.quality] ?? settings.quality,
-              valuePill: true,
               onTap: () => _pickQuality(context, settings),
             ),
             _SettingRow(
@@ -154,14 +207,13 @@ class _ProfileViewState extends State<ProfileView> {
                     'auto': '自动',
                   }[settings.glassQuality] ??
                   '流畅',
-              valuePill: true,
-              onTap: () => _pickGlassQuality(settings),
+              onTap: () => _pickGlassQuality(context, settings),
             ),
             _SettingRow(
               icon: Icons.auto_awesome_rounded,
               title: '减弱动态效果',
               subtitle: '减少封面、歌词和页面过渡动画',
-              trailing: _CompactSwitch(
+              trailing: SettingsSwitch(
                 value: settings.reduceMotion,
                 onChanged: settings.setReduceMotion,
               ),
@@ -169,23 +221,21 @@ class _ProfileViewState extends State<ProfileView> {
             _SettingRow(
               icon: Icons.inventory_2_outlined,
               title: '存储与缓存',
-              subtitle: _cacheBytes < 0
-                  ? '正在计算缓存占用'
-                  : '缓存上限、有效期与分类清理 · ${CacheService.formatBytes(_cacheBytes)}',
-              onTap: () async {
-                await _openPage(context, const StorageSettingsView());
-                _loadCacheSize();
-              },
+              subtitle: '缓存上限、有效期与分类清理',
+              onTap: () => _openPage(context, const StorageSettingsView()),
             ),
-            _SettingRow(
-              icon: Icons.desktop_mac_outlined,
-              title: '桌面与快捷键',
-              subtitle: '状态栏歌词、全局快捷键与窗口控制',
-              onTap: () => _openPage(context, const DesktopSettingsView()),
-            ),
+            if (Theme.of(context).platform == TargetPlatform.macOS ||
+                Theme.of(context).platform == TargetPlatform.windows ||
+                Theme.of(context).platform == TargetPlatform.linux)
+              _SettingRow(
+                icon: Icons.desktop_mac_outlined,
+                title: '桌面与快捷键',
+                subtitle: '状态栏歌词、全局快捷键与窗口控制',
+                onTap: () => _openPage(context, const DesktopSettingsView()),
+              ),
           ],
         ),
-        const _SectionTitle('工具与服务'),
+        const _SectionTitle('账户与支持'),
         _SettingsGroup(
           children: [
             _SettingRow(
@@ -196,7 +246,7 @@ class _ProfileViewState extends State<ProfileView> {
             ),
           ],
         ),
-        const _SectionTitle('账户与支持'),
+        const _SectionTitle('账户'),
         _SettingsGroup(
           children: [
             _SettingRow(
@@ -212,7 +262,6 @@ class _ProfileViewState extends State<ProfileView> {
               onTap: auth.isLoggedIn
                   ? () => _openPage(context, const AccountSecurityView())
                   : () => _openLogin(context),
-              value: auth.isLoggedIn ? null : '登录 / 注册',
             ),
             _SettingRow(
               icon: Icons.info_rounded,
@@ -226,24 +275,58 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  Color _profileBackground(BuildContext context) {
-    return Theme.of(context).colorScheme.surfaceContainerLowest;
-  }
-
-  void _openLogin(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const LoginView()),
+  Future<void> _pickSource(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '选择默认音乐源',
+      current: settings.source,
+      options: AppConfig.musicSources.entries
+          .map((entry) => (value: entry.key, label: entry.value))
+          .toList(),
     );
+    if (value != null) await settings.setSource(value);
   }
 
-  Future<void> _openPage(BuildContext context, Widget page) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => page),
+  Future<void> _pickThemeMode(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '显示模式',
+      current: settings.themeModeId,
+      options: const [
+        (value: 'system', label: '跟随系统'),
+        (value: 'dark', label: '深色'),
+        (value: 'light', label: '浅色'),
+      ],
     );
+    if (value != null) await settings.setThemeMode(value);
   }
 
-  Future<void> _pickGlassQuality(SettingsController settings) async {
-    final value = await _pick<String>(
+  Future<void> _pickQuality(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
+      context,
+      title: '默认播放音质',
+      current: settings.quality,
+      options: AppConfig.qualityLabels.entries
+          .map((entry) => (value: entry.key, label: entry.value))
+          .toList(),
+    );
+    if (value != null) await settings.setQuality(value);
+  }
+
+  Future<void> _pickGlassQuality(
+    BuildContext context,
+    SettingsController settings,
+  ) async {
+    final value = await showSettingsPicker<String>(
       context,
       title: '液态玻璃质量',
       current: settings.glassQuality,
@@ -256,8 +339,76 @@ class _ProfileViewState extends State<ProfileView> {
     if (value != null) await settings.setGlassQuality(value);
   }
 
-  void _selectAccent(int index, SettingsController settings) {
-    settings.setAccentColor(AppAccent.all[index].id);
+  Color _profileBackground(BuildContext context) {
+    return Theme.of(context).colorScheme.surfaceContainerLowest;
+  }
+
+  void _openLogin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LoginView()),
+    );
+  }
+
+  Future<void> _openSongLibrary(
+    BuildContext context, {
+    required bool favorites,
+  }) async {
+    final token = context.read<AuthController>().token;
+    if (token == null) {
+      _openLogin(context);
+      return;
+    }
+    await _openPage(
+      context,
+      UserLibraryView(
+        title: favorites ? '喜欢的音乐' : '播放历史',
+        loader: () async {
+          final items = favorites
+              ? await UserApi().getFavorites(token)
+              : await UserApi().getHistory(token);
+          return items.map(itemToSong).toList();
+        },
+        onRemove: (song) => _removeLibrarySong(
+          song,
+          token: token,
+          favorites: favorites,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _removeLibrarySong(
+    Song song, {
+    required String token,
+    required bool favorites,
+  }) async {
+    if (favorites) {
+      await UserApi().removeFavorite(song.id, song.source, token);
+      return;
+    }
+    final recordId = song.libraryId;
+    if (recordId != null) await UserApi().deleteHistory(recordId, token);
+  }
+
+  void _openPlaylists(
+    BuildContext context, {
+    required UserPlaylistFilter filter,
+  }) {
+    if (context.read<AuthController>().token == null) {
+      _openLogin(context);
+      return;
+    }
+    _openPage(context, UserPlaylistsView(filter: filter));
+  }
+
+  Future<void> _openPage(BuildContext context, Widget page) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  void _openSettings(BuildContext context) {
+    _openPage(context, const SettingsView());
   }
 
   Future<void> _loadMembership(String token) async {
@@ -296,77 +447,6 @@ class _ProfileViewState extends State<ProfileView> {
     setState(() => _membership = result.membership);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.message)),
-    );
-  }
-
-  Future<void> _pickTheme(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await _pick<String>(
-      context,
-      title: '显示模式',
-      current: settings.themeModeId,
-      options: const [
-        (value: 'system', label: '跟随系统'),
-        (value: 'dark', label: '深色'),
-        (value: 'light', label: '浅色'),
-      ],
-    );
-    if (value != null) await settings.setThemeMode(value);
-  }
-
-  Future<void> _pickQuality(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await _pick<String>(
-      context,
-      title: '默认播放音质',
-      current: settings.quality,
-      options: AppConfig.qualityLabels.entries
-          .map((e) => (value: e.key, label: e.value))
-          .toList(),
-    );
-    if (value != null) await settings.setQuality(value);
-  }
-
-  Future<T?> _pick<T>(
-    BuildContext context, {
-    required String title,
-    required T current,
-    required List<({T value, String label})> options,
-  }) {
-    return showModalBottomSheet<T>(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: TypeScale.bold,
-                ),
-              ),
-            ),
-            for (final option in options)
-              GListTile(
-                selected: option.value == current,
-                title: Text(option.label),
-                trailing: option.value == current
-                    ? const Icon(Icons.check_rounded, size: 19)
-                    : null,
-                onTap: () => Navigator.of(sheetContext).pop(option.value),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -471,6 +551,7 @@ class _RedeemCodeDialogState extends State<_RedeemCodeDialog> {
 class _AccountCard extends StatelessWidget {
   const _AccountCard({
     required this.name,
+    required this.avatarUrl,
     required this.loggedIn,
     required this.membershipLoading,
     required this.membershipText,
@@ -480,6 +561,7 @@ class _AccountCard extends StatelessWidget {
   });
 
   final String name;
+  final String? avatarUrl;
   final bool loggedIn;
   final bool membershipLoading;
   final String membershipText;
@@ -509,25 +591,16 @@ class _AccountCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    CircleAvatar(
+                    UserAvatar(
                       radius: 32,
+                      name: name,
+                      showInitial: loggedIn,
+                      imageUrl: loggedIn ? avatarUrl : null,
                       backgroundColor: membershipActive
                           ? const Color(0xFF5E2B39)
                           : scheme.surfaceContainerHighest,
-                      child: loggedIn && name.isNotEmpty
-                          ? Text(
-                              name.characters.first.toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: TypeScale.heavy,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              Icons.person_rounded,
-                              size: 28,
-                              color: scheme.onSurfaceVariant,
-                            ),
+                      foregroundColor:
+                          loggedIn ? Colors.white : scheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -641,31 +714,33 @@ class _AccountCard extends StatelessWidget {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({this.onBack});
+  const _ProfileHeader({required this.onSettings});
 
-  final VoidCallback? onBack;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 56,
-      child: Row(
-        children: [
-          const SizedBox(width: 10),
-          GIconButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            tooltip: '返回',
-            size: 20,
-            padding: 10,
-            backgroundColor: Colors.transparent,
-            onTap: onBack,
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            '个人中心',
-            style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 10, 0),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '我的',
+                style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+              ),
+            ),
+            GIconButton(
+              icon: Icons.settings_outlined,
+              tooltip: '设置',
+              size: 20,
+              padding: 10,
+              onTap: onSettings,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -728,7 +803,6 @@ class _SettingRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.value,
-    this.valuePill = false,
     this.trailing,
     this.onTap,
   });
@@ -737,7 +811,6 @@ class _SettingRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? value;
-  final bool valuePill;
   final Widget? trailing;
   final VoidCallback? onTap;
 
@@ -782,36 +855,25 @@ class _SettingRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 12),
-                trailing!,
-              ] else if (value != null) ...[
+              if (value != null) ...[
                 const SizedBox(width: 12),
                 Container(
                   constraints: const BoxConstraints(minWidth: 48),
-                  padding: valuePill
-                      ? const EdgeInsets.symmetric(horizontal: 14, vertical: 8)
-                      : EdgeInsets.zero,
-                  decoration: valuePill
-                      ? BoxDecoration(
-                          color: glassFill(context, alpha: 0.08),
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(color: scheme.outlineVariant),
-                        )
-                      : null,
                   child: Text(
                     value!,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight:
-                          valuePill ? TypeScale.semibold : TypeScale.medium,
+                      fontWeight: TypeScale.medium,
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
               ],
-              if (onTap != null && trailing == null && !valuePill) ...[
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ] else if (onTap != null) ...[
                 const SizedBox(width: 6),
                 Icon(
                   Icons.chevron_right_rounded,
@@ -827,166 +889,75 @@ class _SettingRow extends StatelessWidget {
   }
 }
 
-class _ThemeColorRow extends StatelessWidget {
-  const _ThemeColorRow({
-    required this.selectedIndex,
-    required this.onSelected,
-  });
+class _AccentPaletteRow extends StatelessWidget {
+  const _AccentPaletteRow({required this.accentId, required this.onSelected});
 
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  static const colors = [
-    Color(0xFFFF375F),
-    Color(0xFFFF9F0A),
-    Color(0xFF30D158),
-    Color(0xFF40C8E0),
-    Color(0xFF0A84FF),
-    Color(0xFFBF5AF2),
-    Color(0xFFFF6482),
-  ];
+  final String accentId;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 110,
+      height: 116,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Row(
           children: [
-            Row(
-              children: [
-                const SizedBox(
-                  width: 24,
-                  child: Icon(Icons.stars_rounded, size: 19),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '主题色',
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: TypeScale.semibold,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '强调色与背景氛围随之变化',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  const [
-                    '律动红',
-                    '落日橙',
-                    '森林绿',
-                    '湖水青',
-                    '天际蓝',
-                    '幻夜紫',
-                    '蔷薇粉',
-                  ][selectedIndex],
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 9),
-            Row(
-              children: [
-                const SizedBox(width: 40),
-                for (var index = 0; index < colors.length; index++) ...[
-                  GPressScale(
-                    onTap: () => onSelected(index),
-                    child: Container(
-                      width: 29,
-                      height: 29,
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: selectedIndex == index
-                              ? scheme.onSurface
-                              : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: colors[index],
-                        ),
-                        child: selectedIndex == index
-                            ? const Icon(
-                                Icons.check_rounded,
-                                size: 15,
-                                color: Colors.white,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                  if (index != colors.length - 1) const SizedBox(width: 9),
+            const SizedBox(width: 40),
+            const Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('主题色',
+                      style: TextStyle(
+                          fontSize: 14.5, fontWeight: TypeScale.semibold)),
+                  SizedBox(height: 3),
+                  Text('强调色与背景氛围随之变化',
+                      style:
+                          TextStyle(fontSize: 11.5, color: Color(0xFF929A95))),
                 ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactSwitch extends StatelessWidget {
-  const _CompactSwitch({required this.value, required this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      toggled: value,
-      button: true,
-      child: GPressScale(
-        onTap: () => onChanged(!value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          width: 46,
-          height: 26,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: value
-                ? scheme.primary
-                : scheme.onSurfaceVariant.withValues(alpha: 0.42),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: AnimatedAlign(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
               ),
             ),
-          ),
+            Text(
+              AppAccent.byId(accentId).name,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: 12),
+            Wrap(
+              spacing: 8,
+              children: AppAccent.all.map((accent) {
+                final selected = accent.id == accentId;
+                return GPressScale(
+                  onTap: () => onSelected(accent.id),
+                  child: Container(
+                    width: selected ? 30 : 25,
+                    height: selected ? 30 : 25,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: accent.color,
+                      border: selected
+                          ? Border.all(color: Colors.white, width: 2)
+                          : null,
+                      boxShadow: selected
+                          ? [
+                              BoxShadow(
+                                  color: accent.color.withValues(alpha: 0.35),
+                                  blurRadius: 0,
+                                  spreadRadius: 2)
+                            ]
+                          : null,
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            color: Colors.white, size: 19)
+                        : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
       ),
     );

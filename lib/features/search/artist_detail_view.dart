@@ -22,6 +22,7 @@ class ArtistDetailView extends StatefulWidget {
     this.initialTrackCount,
     this.loader,
     this.catalogLoader,
+    this.catalogPageLoader,
   });
 
   final String artistName;
@@ -33,6 +34,7 @@ class ArtistDetailView extends StatefulWidget {
   /// 可注入加载器，便于测试和复用。
   final Future<ArtistInfo> Function()? loader;
   final Future<ArtistCatalog> Function()? catalogLoader;
+  final Future<ArtistCatalog> Function(int offset)? catalogPageLoader;
 
   @override
   State<ArtistDetailView> createState() => _ArtistDetailViewState();
@@ -40,32 +42,113 @@ class ArtistDetailView extends StatefulWidget {
 
 class _ArtistDetailViewState extends State<ArtistDetailView> {
   final MusicApi _musicApi = MusicApi();
+  final ScrollController _scrollController = ScrollController();
   late Future<ArtistInfo> _infoFuture;
   late Future<ArtistCatalog> _catalogFuture;
+  ArtistCatalog? _latestCatalog;
   int _selectedTab = 0;
   bool _bioExpanded = false;
+  bool _loadingMore = false;
+  String? _loadMoreError;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _infoFuture = _fetchInfo();
     _catalogFuture = _fetchCatalog();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<ArtistInfo> _fetchInfo() =>
       widget.loader?.call() ?? ArtistInfoApi().getArtistInfo(widget.artistName);
 
-  Future<ArtistCatalog> _fetchCatalog() =>
-      widget.catalogLoader?.call() ??
-      _musicApi.getArtistCatalog(
-        widget.artistName,
-        artistId: widget.artistId,
-        source: widget.source,
-      );
+  Future<ArtistCatalog> _fetchCatalog() async {
+    final catalog = await (widget.catalogLoader?.call() ??
+        _musicApi.getArtistCatalog(
+          widget.artistName,
+          artistId: widget.artistId,
+          source: widget.source,
+        ));
+    _latestCatalog = catalog;
+    _scheduleAutoLoad();
+    return catalog;
+  }
 
   void _reloadInfo() => setState(() => _infoFuture = _fetchInfo());
 
-  void _reloadCatalog() => setState(() => _catalogFuture = _fetchCatalog());
+  void _reloadCatalog() {
+    _latestCatalog = null;
+    setState(() => _catalogFuture = _fetchCatalog());
+  }
+
+  void _onScroll() {
+    _maybeLoadMore();
+  }
+
+  void _maybeLoadMore() {
+    if (!_scrollController.hasClients || _selectedTab == 0) return;
+    if (_scrollController.position.extentAfter <= 600) {
+      final catalog = _latestCatalog;
+      if (catalog != null) _loadMoreCatalog(catalog);
+    }
+  }
+
+  void _scheduleAutoLoad() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedTab == 0 || !_scrollController.hasClients) {
+        return;
+      }
+      if (_scrollController.position.extentAfter <= 600) {
+        final catalog = _latestCatalog;
+        if (catalog != null) _loadMoreCatalog(catalog);
+      }
+    });
+  }
+
+  Future<void> _loadMoreCatalog(ArtistCatalog catalog) async {
+    if (_loadingMore ||
+        !catalog.hasMore ||
+        (widget.catalogLoader != null && widget.catalogPageLoader == null)) {
+      return;
+    }
+    setState(() {
+      _loadingMore = true;
+      _loadMoreError = null;
+    });
+    try {
+      final page = await widget.catalogPageLoader?.call(catalog.nextOffset) ??
+          await _musicApi.getArtistCatalogPage(
+            widget.artistName,
+            artistId: widget.artistId,
+            source: widget.source,
+            offset: catalog.nextOffset,
+          );
+      final byKey = <String, Song>{
+        for (final song in catalog.songs) '${song.source}:${song.id}': song,
+        for (final song in page.songs) '${song.source}:${song.id}': song,
+      };
+      final merged = ArtistCatalog.fromSongs(
+        artistName: widget.artistName,
+        searchedSongs: byKey.values.toList(),
+        hasMore: page.hasMore,
+        nextOffset: page.nextOffset,
+      );
+      if (!mounted) return;
+      _latestCatalog = merged;
+      setState(() {});
+      _scheduleAutoLoad();
+    } catch (error) {
+      if (mounted) setState(() => _loadMoreError = error.toString());
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
 
   void _playSongs(List<Song> songs, {int index = 0}) {
     if (songs.isEmpty) return;
@@ -75,6 +158,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
   void _showAlbum(ArtistAlbum artistAlbum) {
     showModalBottomSheet<void>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) {
@@ -158,41 +242,63 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 720;
                   final info = infoSnapshot.data;
-                  final catalog = catalogSnapshot.data;
-                  return SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 18 : 36,
-                      compact ? 24 : 34,
-                      compact ? 18 : 36,
-                      42,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 980),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _ArtistHeader(
-                              name: info?.name ?? widget.artistName,
-                              imageUrl:
-                                  info?.imageUrl ?? widget.initialImageUrl,
-                              songCount: catalog?.songs.length ??
-                                  widget.initialTrackCount,
-                              albumCount: catalog?.albums.length,
-                              compact: compact,
-                              canPlay: catalog?.songs.isNotEmpty ?? false,
-                              onPlay: () => _playSongs(catalog!.songs),
-                            ),
-                            const SizedBox(height: 30),
-                            _buildTabs(catalog),
-                            const SizedBox(height: 22),
-                            _buildSelectedContent(
-                              infoSnapshot,
-                              catalogSnapshot,
-                              compact: compact,
-                            ),
-                          ],
+                  // Keep the original Future alive while pages are appended.
+                  // Replacing it briefly rebuilds a shorter snapshot and can
+                  // clamp the parent scroll position back to the top.
+                  final catalog = _latestCatalog ?? catalogSnapshot.data;
+                  final effectiveCatalogSnapshot = _latestCatalog == null
+                      ? catalogSnapshot
+                      : AsyncSnapshot.withData(
+                          ConnectionState.done,
+                          _latestCatalog!,
+                        );
+                  return NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is ScrollUpdateNotification ||
+                          notification is ScrollEndNotification) {
+                        _maybeLoadMore();
+                      }
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        compact ? 18 : 36,
+                        compact ? 24 : 34,
+                        compact ? 18 : 36,
+                        42,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 980),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _ArtistHeader(
+                                name: info?.name ?? widget.artistName,
+                                imageUrl:
+                                    info?.imageUrl ?? widget.initialImageUrl,
+                                songCount: widget.initialTrackCount ??
+                                    catalog?.songs.length,
+                                albumCount: catalog?.albums.length,
+                                songCountIsPartial:
+                                    widget.initialTrackCount == null &&
+                                        (catalog?.hasMore ?? false),
+                                compact: compact,
+                                canPlay: catalog?.songs.isNotEmpty ?? false,
+                                onPlay: () => _playSongs(catalog!.songs),
+                              ),
+                              const SizedBox(height: 30),
+                              _buildTabs(catalog),
+                              const SizedBox(height: 22),
+                              _buildSelectedContent(
+                                infoSnapshot,
+                                effectiveCatalogSnapshot,
+                                compact: compact,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -212,11 +318,22 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     return GSegmented(
       items: [
         '主页',
-        songCount == null ? '歌曲' : '歌曲 $songCount',
+        songCount == null
+            ? '歌曲'
+            : '歌曲 $songCount${catalog!.hasMore ? '+' : ''}',
         albumCount == null ? '专辑' : '专辑 $albumCount',
       ],
       selected: _selectedTab,
-      onSelected: (index) => setState(() => _selectedTab = index),
+      onSelected: (index) {
+        setState(() => _selectedTab = index);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(0);
+          }
+          _scheduleAutoLoad();
+        });
+      },
     );
   }
 
@@ -284,7 +401,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
   }
 
   Widget _buildBio(AsyncSnapshot<ArtistInfo> snapshot) {
-    if (snapshot.connectionState != ConnectionState.done) {
+    if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
       return const GLoading(padding: 18);
     }
     if (snapshot.hasError) {
@@ -307,7 +424,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
   }
 
   Widget _buildSongPreview(AsyncSnapshot<ArtistCatalog> snapshot) {
-    if (snapshot.connectionState != ConnectionState.done) {
+    if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
       return const GLoading(padding: 24);
     }
     if (snapshot.hasError) {
@@ -336,7 +453,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     AsyncSnapshot<ArtistCatalog> snapshot, {
     required bool compact,
   }) {
-    if (snapshot.connectionState != ConnectionState.done) {
+    if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
       return const GLoading(padding: 24);
     }
     if (snapshot.hasError) {
@@ -356,7 +473,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
   }
 
   Widget _buildSongs(AsyncSnapshot<ArtistCatalog> snapshot) {
-    if (snapshot.connectionState != ConnectionState.done) {
+    if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
       return const GLoading(padding: 60);
     }
     if (snapshot.hasError) {
@@ -398,6 +515,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
             song: songs[index],
             onTap: () => _playSongs(songs, index: index),
           ),
+        _buildLoadMore(snapshot.data!),
       ],
     );
   }
@@ -406,7 +524,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     AsyncSnapshot<ArtistCatalog> snapshot, {
     required bool compact,
   }) {
-    if (snapshot.connectionState != ConnectionState.done) {
+    if (!snapshot.hasData && snapshot.connectionState != ConnectionState.done) {
       return const GLoading(padding: 60);
     }
     if (snapshot.hasError) {
@@ -433,7 +551,44 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
         ),
         const SizedBox(height: 16),
         _AlbumGrid(albums: albums, onTap: _showAlbum),
+        _buildLoadMore(snapshot.data!),
       ],
+    );
+  }
+
+  Widget _buildLoadMore(ArtistCatalog catalog) {
+    if (!catalog.hasMore ||
+        (widget.catalogLoader != null && widget.catalogPageLoader == null)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Center(
+        child: _loadMoreError == null
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Column(
+                children: [
+                  Text(
+                    _loadMoreError!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GButton(
+                    label: '重试',
+                    filled: false,
+                    small: true,
+                    onTap: () => _loadMoreCatalog(catalog),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -444,6 +599,7 @@ class _ArtistHeader extends StatelessWidget {
     required this.imageUrl,
     required this.songCount,
     required this.albumCount,
+    required this.songCountIsPartial,
     required this.compact,
     required this.canPlay,
     required this.onPlay,
@@ -453,6 +609,7 @@ class _ArtistHeader extends StatelessWidget {
   final String? imageUrl;
   final int? songCount;
   final int? albumCount;
+  final bool songCountIsPartial;
   final bool compact;
   final bool canPlay;
   final VoidCallback onPlay;
@@ -511,7 +668,9 @@ class _ArtistHeader extends StatelessWidget {
 
   String _countText() {
     final parts = <String>[];
-    if (songCount != null) parts.add('$songCount 首歌曲');
+    if (songCount != null) {
+      parts.add('$songCount${songCountIsPartial ? '+' : ''} 首歌曲');
+    }
     if (albumCount != null) parts.add('$albumCount 张专辑');
     return parts.isEmpty ? '歌手' : parts.join(' · ');
   }

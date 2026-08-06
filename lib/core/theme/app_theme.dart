@@ -62,7 +62,7 @@ class AppTheme {
   static AppTheme byId(String id) =>
       all.firstWhere((t) => t.id == id, orElse: () => all[0]);
 
-  /// TuneFreeNext 将主题色与深浅模式分开保存。这里用同一套中性色表面，
+  /// 主题色与深浅模式分开保存。这里用同一套中性色表面，
   /// 仅替换强调色，避免切换主题色时意外强制进入深色模式。
   static AppTheme forAccent(String accentId, {required bool dark}) {
     final accent = AppAccent.byId(accentId);
@@ -92,37 +92,37 @@ class AppTheme {
 
   static const ColorScheme _darkScheme = ColorScheme(
     brightness: Brightness.dark,
-    primary: Color(0xFFFF375F),
+    primary: Color(0xFF2FD365),
     onPrimary: Colors.white,
-    primaryContainer: Color(0xFF5A2532),
-    onPrimaryContainer: Color(0xFFFFE7EC),
-    secondary: Color(0xFFC7B7BC),
-    onSecondary: Color(0xFF241016),
-    secondaryContainer: Color(0xFF45252D),
+    primaryContainer: Color(0xFF204D31),
+    onPrimaryContainer: Color(0xFFE8FFF0),
+    secondary: Color(0xFFAAB8AE),
+    onSecondary: Color(0xFF102018),
+    secondaryContainer: Color(0xFF263D30),
     onSecondaryContainer: Color(0xFFF5F5F7),
-    tertiary: Color(0xFFB29FA5),
+    tertiary: Color(0xFFA2ADA5),
     onTertiary: Colors.black,
-    tertiaryContainer: Color(0xFF51313A),
+    tertiaryContainer: Color(0xFF2C4033),
     onTertiaryContainer: Color(0xFFEBEBF0),
     error: Color(0xFFFF453A),
     onError: Colors.white,
     errorContainer: Color(0x33FF453A),
     onErrorContainer: Color(0xFFFFD6D6),
-    surface: Color(0xFF251118),
-    onSurface: Color(0xFFF8F3F5),
-    surfaceContainerLowest: Color(0xFF251118),
-    surfaceContainerLow: Color(0xFF2B181E),
-    surfaceContainer: Color(0xFF332126),
-    surfaceContainerHigh: Color(0xFF3C2A2F),
-    surfaceContainerHighest: Color(0xFF49363B),
-    onSurfaceVariant: Color(0xFFAA999F),
-    outline: Color(0xFF88767C),
-    outlineVariant: Color(0x30F5DDE4),
+    surface: Color(0xFF102319),
+    onSurface: Color(0xFFF3F7F4),
+    surfaceContainerLowest: Color(0xFF0D2116),
+    surfaceContainerLow: Color(0xFF13271C),
+    surfaceContainer: Color(0xFF192E22),
+    surfaceContainerHigh: Color(0xFF21372A),
+    surfaceContainerHighest: Color(0xFF2D4235),
+    onSurfaceVariant: Color(0xFF929A95),
+    outline: Color(0xFF768078),
+    outlineVariant: Color(0x2EE7F7EC),
     shadow: Colors.black,
     scrim: Colors.black,
     inverseSurface: Colors.white,
     onInverseSurface: Colors.black,
-    inversePrimary: Color(0xFFFF2D55),
+    inversePrimary: Color(0xFF2FD365),
   );
 
   static const ColorScheme _lightScheme = ColorScheme(

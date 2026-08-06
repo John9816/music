@@ -19,12 +19,14 @@ class MainFlutterWindow: NSWindow {
     titlebarAppearsTransparent = true
     titleVisibility = .hidden
     title = ""
-    isMovableByWindowBackground = true
+    // Flutter 的全部控件都绘制在同一个 NSView 中。开启整窗背景拖动会让
+    // NSWindow 抢先处理轻微移动的点击，导致部分 Flutter 按钮收不到事件。
+    isMovableByWindowBackground = false
     isOpaque = false
     appearance = NSAppearance(named: .darkAqua)
-    // 与 Flutter 侧暗棕黑底色一致，避免浅色标题栏/闪白
+    // 与 Flutter 内容区的森林绿底色一致，避免标题栏或启动阶段闪白。
     backgroundColor = NSColor(
-      srgbRed: 37.0 / 255.0, green: 17.0 / 255.0, blue: 24.0 / 255.0, alpha: 1.0)
+      srgbRed: 13.0 / 255.0, green: 33.0 / 255.0, blue: 22.0 / 255.0, alpha: 1.0)
     hasShadow = true
     minSize = NSSize(width: 800, height: 600)
     setContentSize(NSSize(width: 1280, height: 800))

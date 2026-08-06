@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('TuneFreeNext settings survive controller recreation', () async {
+  test('settings survive controller recreation', () async {
     SharedPreferences.setMockInitialValues(const {});
     final settings = SettingsController();
 
@@ -51,7 +51,7 @@ void main() {
     expect(restored.shortcutBindings, contains('playPause'));
   });
 
-  test('all seven TuneFreeNext accent colors build in light and dark', () {
+  test('all seven accent colors build in light and dark', () {
     expect(AppAccent.all, hasLength(7));
     expect(
       AppAccent.all.map((accent) => accent.name),

@@ -7,6 +7,31 @@ import '../core/theme/design_tokens.dart';
 export '../core/theme/design_tokens.dart';
 export '../core/theme/app_theme.dart' show GlassTokens, GlassTheme;
 
+const double _macOSWindowControlsInset = 76;
+
+/// 标记内容已经通过侧栏等布局避开了 macOS 左上角窗口按钮。
+class GWindowControlsSafeRegion extends InheritedWidget {
+  const GWindowControlsSafeRegion({
+    super.key,
+    required super.child,
+  });
+
+  static bool contains(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<GWindowControlsSafeRegion>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(GWindowControlsSafeRegion oldWidget) => false;
+}
+
+/// 全屏内容需要避让红黄绿按钮；主框架右侧内容已经由侧栏完成避让。
+double macOSWindowControlsInset(BuildContext context) {
+  final macOS = Theme.of(context).platform == TargetPlatform.macOS;
+  return macOS && !GWindowControlsSafeRegion.contains(context)
+      ? _macOSWindowControlsInset
+      : 0;
+}
+
 /// ============================================================
 /// 设计系统基础组件（大厂风格）
 /// 全部基于 GestureDetector 实现：不注册 MouseRegion，
@@ -42,11 +67,22 @@ class GPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = MediaQuery.sizeOf(context).width < 600;
+    final windowControlsInset = macOSWindowControlsInset(context);
     return Padding(
       padding: padding ??
           (compact
-              ? const EdgeInsets.fromLTRB(18, 18, 18, 12)
-              : const EdgeInsets.fromLTRB(24, 28, 24, 14)),
+              ? EdgeInsets.fromLTRB(
+                  18 + windowControlsInset,
+                  18,
+                  18,
+                  12,
+                )
+              : EdgeInsets.fromLTRB(
+                  24 + windowControlsInset,
+                  28,
+                  24,
+                  14,
+                )),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -175,6 +211,7 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final ios = Theme.of(context).platform == TargetPlatform.iOS;
     final scheme = Theme.of(context).colorScheme;
+    final windowControlsInset = macOSWindowControlsInset(context);
     final titleContent = DefaultTextStyle(
       style: TextStyle(
         fontSize: 17,
@@ -216,7 +253,7 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
             )
           : Row(
               children: [
-                const SizedBox(width: 6),
+                SizedBox(width: 6 + windowControlsInset),
                 if (onBack != null)
                   GIconButton(
                     icon: Icons.arrow_back_ios_new_rounded,
@@ -455,18 +492,22 @@ class GIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final platform = Theme.of(context).platform;
+    final minimumTargetSize = switch (platform) {
+      TargetPlatform.android || TargetPlatform.iOS => 44.0,
+      _ => 36.0,
+    };
+    final visualSize = size + padding * 2;
+    final targetSize =
+        visualSize > minimumTargetSize ? visualSize : minimumTargetSize;
     final color = tint ?? (disabled ? scheme.outlineVariant : scheme.onSurface);
     final bg = backgroundColor ??
         (filled
             ? scheme.primary.withValues(alpha: 0.92)
             : scheme.primary.withValues(alpha: 0.10));
     final enabled = !disabled && onTap != null;
-    final button = ConstrainedBox(
-      constraints: BoxConstraints(
-        minWidth: ios ? 44 : 0,
-        minHeight: ios ? 44 : 0,
-      ),
+    final button = SizedBox.square(
+      dimension: targetSize,
       child: GPressScale(
         onTap: enabled ? onTap : null,
         disabled: !enabled,
@@ -613,6 +654,7 @@ class _GProgressBarState extends State<GProgressBar> {
     return LayoutBuilder(
       builder: (context, constraints) {
         void seekAt(double dx, {bool preview = false}) {
+          if (constraints.maxWidth <= 0) return;
           final ratio = (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
           if (preview) setState(() => _dragFraction = ratio);
           widget.onSeek(Duration(milliseconds: (total * ratio).round()));
@@ -633,6 +675,7 @@ class _GProgressBarState extends State<GProgressBar> {
               child: SizedBox(
                 height: widget.height,
                 child: Stack(
+                  clipBehavior: Clip.none,
                   alignment: Alignment.centerLeft,
                   children: [
                     // 轨道

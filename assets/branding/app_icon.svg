@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#F4F6F5"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#171A1F"/>
+  <text x="512" y="716" text-anchor="middle"
+        font-family="Avenir Next, Arial Rounded MT Bold, Arial, sans-serif"
+        font-size="318" font-weight="800" fill="#F4F6F5">7511</text>
+  <path d="M458 350 V216 L598 182 V316"
+        fill="none" stroke="#2FC36A" stroke-width="38"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="429" cy="362" r="48" fill="#2FC36A"/>
+  <circle cx="570" cy="328" r="48" fill="#FFD15A"/>
+</svg>
