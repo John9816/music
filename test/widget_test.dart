@@ -156,6 +156,34 @@ void main() {
     expect(failed.status, UpdateCheckStatus.failed);
   });
 
+  test('android update check prefers the ECS manifest', () async {
+    var requestCount = 0;
+    final service = AppUpdateService(
+      client: MockClient((request) async {
+        requestCount++;
+        expect(request.url.host, 'api.751152.xyz');
+        return http.Response(
+          '''{
+            "version": "1.1.33",
+            "buildNumber": 44,
+            "downloadUrl": "https://api.751152.xyz/updates/app.apk"
+          }''',
+          200,
+        );
+      }),
+    );
+
+    final result = await service.checkLatest(
+      currentVersion: '1.1.27',
+      target: UpdateTarget.android,
+    );
+
+    expect(result.status, UpdateCheckStatus.updateAvailable);
+    expect(result.release?.version, '1.1.33');
+    expect(result.release?.assetUrl, 'https://api.751152.xyz/updates/app.apk');
+    expect(requestCount, 1);
+  });
+
   test('iOS update check uses the App Store version and destination', () async {
     final service = AppUpdateService(
       client: MockClient((request) async {

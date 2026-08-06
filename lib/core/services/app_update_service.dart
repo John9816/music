@@ -80,6 +80,11 @@ class AppUpdateService {
       return const UpdateCheckResult.failed('当前平台暂不支持在线更新');
     }
 
+    if (resolvedTarget == UpdateTarget.android) {
+      final ecsResult = await _checkAndroidManifest(currentVersion);
+      if (ecsResult != null) return ecsResult;
+    }
+
     try {
       final response = await _client.get(
         Uri.parse(
@@ -129,6 +134,46 @@ class AppUpdateService {
       return const UpdateCheckResult.failed('更新信息无法解析');
     } catch (_) {
       return const UpdateCheckResult.failed('无法连接更新服务');
+    }
+  }
+
+  Future<UpdateCheckResult?> _checkAndroidManifest(String currentVersion) async {
+    try {
+      final response = await _client.get(
+        Uri.parse('https://api.751152.xyz/updates/latest.json'),
+        headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'DuckMusic-Flutter',
+        },
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+
+      final json = jsonDecode(response.body);
+      if (json is! Map) return null;
+      final manifest = Map<String, dynamic>.from(json);
+      final version = manifest['version']?.toString().trim();
+      if (version == null || version.isEmpty) return null;
+
+      final downloads = manifest['downloads'];
+      String? assetUrl;
+      if (downloads is Map) {
+        assetUrl = downloads[Abi.current().toString()]?.toString().trim();
+      }
+      assetUrl ??= manifest['downloadUrl']?.toString().trim();
+      if (assetUrl?.isEmpty == true) assetUrl = null;
+
+      final release = UpdateRelease(
+        version: version,
+        releasePageUrl: 'https://api.751152.xyz/updates/latest.json',
+        assetUrl: assetUrl,
+      );
+      return isNewer(version, currentVersion)
+          ? UpdateCheckResult.available(release)
+          : UpdateCheckResult.upToDate(release);
+    } on FormatException {
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
