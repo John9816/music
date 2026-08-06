@@ -303,25 +303,15 @@ jobs:
           name: windows-release
           path: windows/dist/*
 
-  publish:
+  publish-android-ecs:
     if: needs.validate.outputs.is_release == 'true'
-    needs: [validate, android, macos, windows]
+    needs: [validate, android]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: "*-release"
+          name: android-release
           path: dist
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: DuckMusic Flutter v${{ needs.validate.outputs.version }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: dist/*
 
       - name: Publish Android migration update to ECS
         shell: bash
@@ -377,3 +367,23 @@ jobs:
           scp -i ~/.ssh/duckmusic_ecs -P "${ECS_PORT:-22}" \
             "${apk_path}" "${manifest}" \
             "${ECS_USER}@${ECS_HOST}:${ECS_UPDATE_DIR}/"
+
+  publish:
+    if: needs.validate.outputs.is_release == 'true'
+    needs: [validate, android, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-release"
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: DuckMusic Flutter v${{ needs.validate.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
