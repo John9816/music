@@ -13,9 +13,9 @@
 Android 老用户直升 ECS 的固定链路：
 
 1. `pubspec.yaml` 同时递增版本号和构建号，且 `applicationId` 保持 `com.music.player`。
-2. 推送代码到 `flutter-migration`，再推送匹配的 `flutter-v<version>` 标签。
+2. 推送代码到 `flutter-migration`，再推送匹配的 `android-ecs-v<version>` 标签；该标签只构建 Android，不启动桌面任务。
 3. GitHub Actions 从 Secrets 恢复历史正式证书，并校验证书 SHA-256 为 `c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72`。
-4. Android 签名构建和校验成功后，独立任务立即将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`，不等待 macOS 或 Windows；多平台 GitHub Release 继续单独生成。
+4. Android 签名构建和校验成功后，独立任务立即将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`。需要四端产物时另用 `flutter-v<version>` 标签生成多平台 GitHub Release。
 5. 最后从 `https://api.751152.xyz/updates/latest.json` 和其中的 `downloadUrl` 回读校验版本、构建号与 APK 哈希。任何一步失败都不能手工上传 debug 签名 APK。
 
 正式发布 `1.2.0`、构建号 `12` 的标准流程：
@@ -196,15 +196,16 @@ git status --short
 
 ## 5. GitHub Actions 自动发布
 
-工作流有两种触发方式：
+工作流有三种触发方式：
 
-1. 推送 `flutter-v*` 标签：正式发布。CI 校验、构建、签名、公证，并创建 GitHub Release。
-2. 在 Actions 页面手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。没有配置凭据时，Android 可能使用 debug key，macOS/Windows 可能未签名，因此这些 artifacts 只能用于内部测试。
+1. 推送 `android-ecs-v*` 标签：只构建并验证正式签名 Android APK，然后直接更新 ECS 升级通道。
+2. 推送 `flutter-v*` 标签：四端正式发布。CI 校验、构建、签名、公证，并创建 GitHub Release；Android 同时更新 ECS。
+3. 在 Actions 页面手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。没有配置凭据时，Android 可能使用 debug key，macOS/Windows 可能未签名，因此这些 artifacts 只能用于内部测试。
 
 正式发布时，`validate` job 会从 `pubspec.yaml` 读取版本，并要求：
 
 ```text
-标签 flutter-v1.2.0 <=> pubspec version 1.2.0+12
+标签 flutter-v1.2.0 或 android-ecs-v1.2.0 <=> pubspec version 1.2.0+12
 ```
 
 构建期间还会自动注入：

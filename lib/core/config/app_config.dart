@@ -8,7 +8,7 @@ class AppConfig {
   /// Release builds inject this from pubspec.yaml with --dart-define.
   static const String appVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.1.31',
+    defaultValue: '1.1.32',
   );
 
   /// GitHub repository used for release checks and desktop/Android installers.

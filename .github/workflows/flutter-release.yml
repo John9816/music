@@ -5,6 +5,7 @@ on:
   push:
     tags:
       - "flutter-v*"
+      - "android-ecs-v*"
 
 permissions:
   contents: read
@@ -20,6 +21,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       build_number: ${{ steps.version.outputs.build_number }}
       is_release: ${{ steps.version.outputs.is_release }}
+      android_only: ${{ steps.version.outputs.android_only }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,9 +44,18 @@ jobs:
             exit 1
           fi
           is_release=false
+          android_only=false
           if [[ "${GITHUB_REF}" == refs/tags/flutter-v* ]]; then
             is_release=true
             expected="flutter-v${version}"
+            if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
+              echo "Tag ${GITHUB_REF_NAME} must match ${expected}" >&2
+              exit 1
+            fi
+          elif [[ "${GITHUB_REF}" == refs/tags/android-ecs-v* ]]; then
+            is_release=true
+            android_only=true
+            expected="android-ecs-v${version}"
             if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
               echo "Tag ${GITHUB_REF_NAME} must match ${expected}" >&2
               exit 1
@@ -53,6 +64,7 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "build_number=${build_number}" >> "${GITHUB_OUTPUT}"
           echo "is_release=${is_release}" >> "${GITHUB_OUTPUT}"
+          echo "android_only=${android_only}" >> "${GITHUB_OUTPUT}"
 
       - run: flutter pub get
       - run: flutter analyze
@@ -148,6 +160,7 @@ jobs:
 
   macos:
     needs: validate
+    if: needs.validate.outputs.android_only != 'true'
     strategy:
       matrix:
         include:
@@ -248,6 +261,7 @@ jobs:
 
   windows:
     needs: validate
+    if: needs.validate.outputs.android_only != 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -317,7 +331,6 @@ jobs:
         shell: bash
         env:
           ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
-          ECS_KNOWN_HOSTS: ${{ secrets.ECS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           if [[ -z "${ECS_SSH_PRIVATE_KEY}" ]]; then
@@ -338,11 +351,9 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
           chmod 600 ~/.ssh/duckmusic_ecs
-          if [[ -n "${ECS_KNOWN_HOSTS}" ]]; then
-            printf '%s\n' "${ECS_KNOWN_HOSTS}" > ~/.ssh/known_hosts
-          else
-            ssh-keyscan -p "${port}" -H "${host}" > ~/.ssh/known_hosts 2>/dev/null
-          fi
+          printf '%s\n' \
+            'api.751152.xyz ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG/x49fgr05tJGpnR/6K74mh6+oesV5n9knc9aMs03Xj' \
+            > ~/.ssh/known_hosts
 
           manifest="${RUNNER_TEMP}/latest.json"
           cat > "${manifest}" <<EOF
@@ -372,7 +383,7 @@ jobs:
             '.version == $version and .downloadUrl == $url' >/dev/null
 
   publish:
-    if: needs.validate.outputs.is_release == 'true'
+    if: needs.validate.outputs.is_release == 'true' && needs.validate.outputs.android_only != 'true'
     needs: [validate, android, macos, windows]
     runs-on: ubuntu-latest
     permissions:
