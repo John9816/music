@@ -85,6 +85,7 @@ version: 1.2.0+12
 - 不要手动修改 `android/local.properties`、`ios/Flutter/Generated.xcconfig`、`macos/Flutter/ephemeral/*` 等生成文件。
 - 正式标签必须严格等于 `flutter-v<用户版本>`，否则 CI 会立即失败。
 - 已发布的标签不要删除后复用。工作流失败时可在 GitHub 重新运行；如果标签对应的代码需要改变，请提升版本并创建新标签。
+- 如果 Android-only 工作流因 GitHub runner、网络或平台内部错误在发布前失败，可在不改代码和版本的前提下创建 `android-ecs-v<version>-r1`、`-r2` 重试标签。业务代码、版本或 APK 已改变时禁止使用重试标签，必须递增版本和构建号。
 - 应用内更新依赖 `APP_VERSION`、`flutter-v` 标签前缀和 `DuckMusic-Flutter-` 资产名前缀，不要随意改变命名。
 
 当前应用标识：

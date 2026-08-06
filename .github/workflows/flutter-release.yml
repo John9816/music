@@ -56,8 +56,9 @@ jobs:
             is_release=true
             android_only=true
             expected="android-ecs-v${version}"
-            if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
-              echo "Tag ${GITHUB_REF_NAME} must match ${expected}" >&2
+            if [[ "${GITHUB_REF_NAME}" != "${expected}" &&
+                  ! "${GITHUB_REF_NAME}" =~ ^${expected}-r[1-9][0-9]*$ ]]; then
+              echo "Tag ${GITHUB_REF_NAME} must match ${expected} or ${expected}-r<number>" >&2
               exit 1
             fi
           fi
