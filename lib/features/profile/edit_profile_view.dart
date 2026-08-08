@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -30,37 +29,140 @@ class _EditProfileViewState extends State<EditProfileView> {
   Future<void> _pickAvatar() async {
     if (_saving) return;
     try {
-      const typeGroup = XTypeGroup(
-        label: 'images',
-        extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-        mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+      final file = await openFile(
+        acceptedTypeGroups: <XTypeGroup>[_avatarTypeGroup()],
       );
-      final file = await openFile(acceptedTypeGroups: const [typeGroup]);
       if (file == null || !mounted) return;
 
-      final extension = file.name.contains('.')
-          ? file.name.split('.').last.toLowerCase()
-          : '';
-      if (!_avatarExtensions.contains(extension)) {
-        setState(() => _error = '头像仅支持 JPG、PNG、WebP 或 GIF 格式');
+      // Content URIs from Android/iOS may not support XFile.length(). Reading
+      // once also avoids a second provider permission check.
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        if (mounted) setState(() => _error = '所选图片为空，请重新选择');
         return;
       }
-      final size = await file.length();
-      if (size > _maxAvatarBytes) {
+      if (bytes.length > _maxAvatarBytes) {
         setState(() => _error = '头像文件不能超过 2 MB');
         return;
       }
-      final bytes = await file.readAsBytes();
+      final extension = _avatarExtension(file, bytes);
+      if (extension == null) {
+        setState(() => _error = '头像仅支持 JPG、PNG、WebP 或 GIF 格式');
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _avatarBytes = bytes;
-        _avatarName = file.name;
+        _avatarName = _avatarFilename(file.name, extension);
         _error = null;
       });
     } catch (_) {
-      if (mounted) setState(() => _error = '头像读取失败，请重试');
+      if (mounted) setState(() => _error = '无法读取所选图片，请重新选择');
     }
   }
+
+  XTypeGroup _avatarTypeGroup() {
+    if (kIsWeb) {
+      return const XTypeGroup(
+        label: 'images',
+        webWildCards: ['image/*'],
+      );
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return const XTypeGroup(
+          label: 'images',
+          uniformTypeIdentifiers: ['public.image'],
+        );
+      case TargetPlatform.windows:
+      case TargetPlatform.fuchsia:
+        return const XTypeGroup(
+          label: 'images',
+          extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+        );
+      case TargetPlatform.android:
+      case TargetPlatform.linux:
+        return const XTypeGroup(
+          label: 'images',
+          extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+          mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+        );
+    }
+  }
+
+  String? _avatarExtension(XFile file, Uint8List bytes) {
+    final name = file.name.trim();
+    final dot = name.lastIndexOf('.');
+    if (dot >= 0 && dot < name.length - 1) {
+      final extension = name.substring(dot + 1).toLowerCase();
+      if (_avatarExtensions.contains(extension)) return extension;
+    }
+
+    switch (file.mimeType?.toLowerCase()) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'image/gif':
+        return 'gif';
+    }
+
+    if (_isPng(bytes)) return 'png';
+    if (_isGif(bytes)) return 'gif';
+    if (_isJpeg(bytes)) return 'jpg';
+    if (_isWebp(bytes)) return 'webp';
+    return null;
+  }
+
+  String _avatarFilename(String name, String extension) {
+    final trimmed = name.trim();
+    final dot = trimmed.lastIndexOf('.');
+    if (dot > 0 &&
+        _avatarExtensions.contains(trimmed.substring(dot + 1).toLowerCase())) {
+      return trimmed;
+    }
+    return 'avatar.$extension';
+  }
+
+  bool _isPng(Uint8List bytes) =>
+      bytes.length >= 8 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4e &&
+      bytes[3] == 0x47 &&
+      bytes[4] == 0x0d &&
+      bytes[5] == 0x0a &&
+      bytes[6] == 0x1a &&
+      bytes[7] == 0x0a;
+
+  bool _isGif(Uint8List bytes) =>
+      bytes.length >= 6 &&
+      bytes[0] == 0x47 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x38 &&
+      (bytes[4] == 0x37 || bytes[4] == 0x39) &&
+      bytes[5] == 0x61;
+
+  bool _isJpeg(Uint8List bytes) =>
+      bytes.length >= 3 &&
+      bytes[0] == 0xff &&
+      bytes[1] == 0xd8 &&
+      bytes[2] == 0xff;
+
+  bool _isWebp(Uint8List bytes) =>
+      bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50;
 
   Future<void> _save() async {
     if (!_hasSelectedAvatar) {
