@@ -3,7 +3,9 @@ import '../services/user_playlist_library.dart';
 import 'api_client.dart';
 
 class UserApi {
-  final ApiClient _client = ApiClient.instance;
+  UserApi({ApiClient? client}) : _client = client ?? ApiClient.instance;
+
+  final ApiClient _client;
 
   Future<List<Map<String, dynamic>>> getFavorites(String token) async {
     return _getAllPages('api/user/music/favorites', token);
@@ -137,6 +139,41 @@ class UserApi {
     });
     UserPlaylistLibrary.instance.markChanged();
     return playlist;
+  }
+
+  Future<Map<String, dynamic>> syncPlaylist(
+    String playlistId,
+    String token,
+  ) async {
+    final playlist = await _client.postJson(
+      'api/user/music/playlists/${Uri.encodeComponent(playlistId)}/sync',
+      body: null,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    UserPlaylistLibrary.instance.markChanged();
+    return playlist;
+  }
+
+  Future<void> deleteUserPlaylist(String playlistId, String token) async {
+    await _client.deleteJson(
+      'api/user/music/playlists/${Uri.encodeComponent(playlistId)}',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    UserPlaylistLibrary.instance.markChanged();
+  }
+
+  Future<void> deleteUserPlaylistSong(
+    String playlistId,
+    String itemId,
+    String token,
+  ) async {
+    final playlist = Uri.encodeComponent(playlistId);
+    final item = Uri.encodeComponent(itemId);
+    await _client.deleteJson(
+      'api/user/music/playlists/$playlist/items/$item',
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    UserPlaylistLibrary.instance.markChanged();
   }
 
   Future<void> addSongToPlaylist(

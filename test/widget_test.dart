@@ -6,10 +6,12 @@ import 'package:duck_music/core/api/music_api.dart';
 import 'package:duck_music/core/api/user_api.dart';
 import 'package:duck_music/core/models/membership.dart';
 import 'package:duck_music/core/models/playlist.dart';
+import 'package:duck_music/core/models/book.dart';
 import 'package:duck_music/app.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/player/player_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:duck_music/core/player/lrc_parser.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
@@ -23,6 +25,7 @@ import 'package:duck_music/features/profile/profile_view.dart';
 import 'package:duck_music/features/profile/login_view.dart';
 import 'package:duck_music/features/profile/legal_document_view.dart';
 import 'package:duck_music/features/profile/user_library_view.dart';
+import 'package:duck_music/features/profile/user_playlists_view.dart';
 import 'package:duck_music/features/search/search_view.dart';
 import 'package:duck_music/features/search/artist_detail_view.dart';
 import 'package:duck_music/features/search/artist_names_link.dart';
@@ -31,9 +34,11 @@ import 'package:duck_music/features/playlists/playlist_detail_view.dart';
 import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/settings/settings_components.dart';
 import 'package:duck_music/features/tools/tools_view.dart';
+import 'package:duck_music/features/books/book_reader_view.dart';
 import 'package:duck_music/widgets/glass.dart';
 import 'package:duck_music/widgets/async_cover.dart';
 import 'package:duck_music/widgets/song_row.dart';
+import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,6 +46,15 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void _noop() {}
+
+Future<void> _sendSystemBack(WidgetTester tester) async {
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.navigation.name,
+    const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
+    (_) {},
+  );
+  await tester.pumpAndSettle();
+}
 
 void main() {
   test('update service selects only the current platform asset', () {
@@ -264,6 +278,9 @@ void main() {
       'album': '测试专辑',
       'coverUrl': Uri.parse('https://example.com/cover.jpg'),
       'durationSec': 180,
+      'artistId': '11',
+      'artistIds': ['11', '22'],
+      'availableQualities': ['128k', 'flac'],
     });
     final playlist = Playlist.fromV1({
       'id': 654321,
@@ -280,6 +297,8 @@ void main() {
     expect(song.id, '123456');
     expect(song.name, '2026');
     expect(song.album.id, 98);
+    expect(song.artists.map((artist) => artist.id), [11, 22]);
+    expect(song.availableQualities, ['128k', 'flac']);
     expect(playlist.id, 654321);
     expect(playlist.name, '2026');
     expect(userSong.id, '42');
@@ -605,6 +624,8 @@ void main() {
   testWidgets('mini player fits desktop and compact widths', (tester) async {
     final player = _PreviewPlayerController();
     addTearDown(player.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     Future<void> pumpAt(Size size, {double? sidebarWidth}) async {
       tester.view.devicePixelRatio = 1;
@@ -633,7 +654,116 @@ void main() {
 
     await pumpAt(const Size(1280, 720), sidebarWidth: 280);
     await pumpAt(const Size(760, 600), sidebarWidth: 232);
+    await pumpAt(const Size(900, 700), sidebarWidth: 236);
+    await pumpAt(const Size(768, 1024));
     await pumpAt(const Size(390, 844));
+  });
+
+  testWidgets('mini player takes no space before the first song is played',
+      (tester) async {
+    final settings = SettingsController();
+    final player = PlayerController(settings: settings);
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 800);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PlayerController>.value(
+        value: player,
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.macOS,
+              ),
+          home: const Scaffold(body: MiniPlayer(sidebarWidth: 264)),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.getSize(find.byType(MiniPlayer)), Size.zero);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('press scale activates from keyboard focus', (tester) async {
+    var activations = 0;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: GPressScale(
+              onTap: () => activations++,
+              child: const Text('键盘操作'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Focus.of(tester.element(find.text('键盘操作'))).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+
+    expect(activations, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('page header stacks actions on compact widths', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: GPageHeader(
+            title: '个人资料',
+            subtitle: '管理你的账户信息',
+            trailing: GButton(label: '编辑', onTap: _noop),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final title = find.text('个人资料');
+    final action = find.text('编辑');
+    expect(
+      tester.getTopLeft(action).dy,
+      greaterThan(tester.getBottomLeft(title).dy),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty book reader explains when no chapters are available',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.byId('light').data.copyWith(
+              platform: TargetPlatform.iOS,
+            ),
+        home: const BookReaderView(
+          book: Book(sourceId: 'test', name: '测试小说', bookUrl: 'book://test'),
+          chapters: [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无可读章节'), findsOneWidget);
+    expect(find.byTooltip('上一章'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('desktop mini player toggles functional lyrics and queue panels',
@@ -748,6 +878,7 @@ void main() {
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
+    final theme = AppTheme.forAccent('skyBlue', dark: true).data;
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1000, 760);
 
@@ -776,9 +907,7 @@ void main() {
           ChangeNotifierProvider<AuthController>.value(value: auth),
         ],
         child: MaterialApp(
-          theme: AppTheme.byId('light').data.copyWith(
-                platform: TargetPlatform.macOS,
-              ),
+          theme: theme.copyWith(platform: TargetPlatform.macOS),
           home: PlaylistDetailView(
             playlist: Playlist(
               id: 7511,
@@ -800,6 +929,19 @@ void main() {
     expect(playlistCover, findsOneWidget);
     expect(tester.getSize(playlistCover), const Size.square(200));
     expect(tester.getSize(find.text('全部播放')).height, lessThan(32));
+    expect(
+      find.ancestor(
+        of: find.text('全部播放'),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration! as BoxDecoration).color ==
+                  theme.colorScheme.primary,
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('展开全部'), findsOneWidget);
 
     await tester.tap(find.text('展开全部'));
@@ -916,8 +1058,35 @@ void main() {
       tester.getSize(find.byType(GAppBar)).height,
       inInclusiveRange(103, 104),
     );
-    expect(tester.getSize(find.byType(GIconButton)).shortestSide, 44);
+    expect(tester.getSize(find.byType(GBackButton)).shortestSide, 44);
     expect(tester.getCenter(find.text('详情')).dx, closeTo(195, 0.5));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('iOS back button keeps its full target clickable',
+      (tester) async {
+    var tapped = false;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.byId('dark').data.copyWith(
+              platform: TargetPlatform.iOS,
+            ),
+        home: Scaffold(
+          body: GAppBar(
+            title: '详情',
+            onBack: () => tapped = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('返回'), findsNothing);
+    final backRect = tester.getRect(find.byType(GBackButton));
+    await tester.tapAt(Offset(backRect.right - 1, backRect.center.dy));
+    expect(tapped, isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -1019,6 +1188,81 @@ void main() {
     await tester.pump();
     expect(profileTitle, findsNothing);
     expect(find.text('首页'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile library routes keep the same nested shell behavior',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {
+      'auth_token': 'library-route-token',
+      'auth_username': '测试用户',
+    });
+    final auth = AuthController(api: _PlaylistAuthApi());
+    await auth.load();
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final timer = SleepTimer();
+    addTearDown(auth.dispose);
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 800);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.macOS,
+              ),
+          home: const HomeShell(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('测试用户').last);
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ProfileView),
+        matching: find.text('我的歌单'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(UserPlaylistsView), findsOneWidget);
+    expect(find.byTooltip('返回'), findsOneWidget);
+    expect(find.byType(MiniPlayer), findsOneWidget);
+
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ProfileView),
+        matching: find.text('播放历史'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(UserLibraryView), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(UserLibraryView),
+        matching: find.text('播放历史'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('返回'), findsOneWidget);
+    expect(find.byType(MiniPlayer), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1179,6 +1423,7 @@ void main() {
       app(
         UserLibraryView(
           title: '喜欢的音乐',
+          kind: UserLibraryKind.favorites,
           embedded: true,
           loader: () async => const <Song>[],
         ),
@@ -1192,12 +1437,62 @@ void main() {
       app(
         UserLibraryView(
           title: '喜欢的音乐',
+          kind: UserLibraryKind.favorites,
           loader: () async => const <Song>[],
         ),
       ),
     );
     await tester.pump();
     expect(find.byTooltip('返回'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('playlist libraries keep their title and follow the active skin',
+      (tester) async {
+    final player = _PreviewPlayerController();
+    addTearDown(player.dispose);
+    final theme = AppTheme.forAccent('skyBlue', dark: true).data;
+
+    Widget app(UserLibraryView child) =>
+        ChangeNotifierProvider<PlayerController>.value(
+          value: player,
+          child: MaterialApp(theme: theme, home: child),
+        );
+
+    await tester.pumpWidget(
+      app(
+        UserLibraryView(
+          title: '周末歌单',
+          kind: UserLibraryKind.playlist,
+          loader: () async => const <Song>[],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('周末歌单'), findsOneWidget);
+    expect(find.text('播放历史'), findsNothing);
+    expect(find.text('最近播放'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
+      '搜索歌曲',
+    );
+
+    await tester.pumpWidget(
+      app(
+        UserLibraryView(
+          title: '喜欢的音乐',
+          kind: UserLibraryKind.favorites,
+          loader: () async => const <Song>[],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final favoriteIcon = tester.widget<Icon>(
+      find.byIcon(Icons.favorite_rounded).first,
+    );
+    expect(favoriteIcon.color, theme.colorScheme.primary);
     expect(tester.takeException(), isNull);
   });
 
@@ -1242,6 +1537,19 @@ void main() {
       expect(find.text(label), findsOneWidget);
     }
 
+    for (final label in const [
+      '深浅模式',
+      '主题色',
+      '默认音乐源',
+      '默认播放音质',
+      '液态玻璃质量',
+      '减弱动态效果',
+      '存储与缓存',
+      '通知',
+    ]) {
+      expect(find.text(label), findsNothing);
+    }
+
     await tester.tap(find.text('喜欢的音乐'));
     await tester.tap(find.text('播放历史'));
     expect(favoritesOpened, isTrue);
@@ -1259,6 +1567,8 @@ void main() {
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
     addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
 
@@ -1289,13 +1599,151 @@ void main() {
     expect(find.text('穿过人海只为与你相见'), findsNothing);
     expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
+    expect(find.byTooltip('歌词'), findsOneWidget);
+    expect(find.byTooltip('播放队列'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsNothing);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('歌词'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('穿过人海只为与你相见'), findsOneWidget);
+    expect(find.byTooltip('返回封面'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('返回封面'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('查看歌词'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('穿过人海只为与你相见'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'mobile full-screen player keeps controls visible at supported sizes',
+      (tester) async {
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Future<void> pumpPlayer(Size size, TargetPlatform platform) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<PlayerController>.value(value: player),
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.byId('light').data.copyWith(platform: platform),
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: size,
+                padding: platform == TargetPlatform.iOS
+                    ? const EdgeInsets.only(top: 47, bottom: 34)
+                    : const EdgeInsets.only(top: 24, bottom: 24),
+              ),
+              child: const PlayerView(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    for (final platform in const [
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      for (final size in const [
+        Size(320, 568),
+        Size(375, 667),
+        Size(390, 844),
+        Size(430, 932),
+      ]) {
+        await pumpPlayer(size, platform);
+
+        expect(find.text('正在播放'), findsOneWidget);
+        expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
+        expect(find.byTooltip('歌词'), findsOneWidget);
+        expect(find.byTooltip('睡眠定时'), findsOneWidget);
+        expect(find.byTooltip('播放队列'), findsOneWidget);
+        expect(find.byTooltip('随机播放'), findsOneWidget);
+        expect(find.byTooltip('循环模式'), findsOneWidget);
+
+        final viewport = Offset.zero & size;
+        for (final finder in [
+          find.byIcon(Icons.play_arrow_rounded),
+          find.byTooltip('歌词'),
+          find.byTooltip('睡眠定时'),
+          find.byTooltip('播放队列'),
+        ]) {
+          expect(viewport.contains(tester.getCenter(finder)), isTrue);
+        }
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
+  testWidgets('mobile full-screen player returns to cover when song changes',
+      (tester) async {
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('light').data.copyWith(
+                platform: TargetPlatform.iOS,
+              ),
+          home: const PlayerView(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('歌词'));
+    await tester.pump(const Duration(milliseconds: 400));
+    player.replaceCurrent(
+      _song(
+        'replacement',
+        '下一首测试歌曲',
+        artists: const ['测试歌手'],
+        albumId: 99,
+        album: '测试专辑',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
+    expect(find.text('下一首测试歌曲'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1306,6 +1754,8 @@ void main() {
     final settings = SettingsController();
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     tester.view.devicePixelRatio = 1;
 
     Widget app(Widget child) => MultiProvider(
@@ -1319,7 +1769,12 @@ void main() {
           ),
         );
 
-    for (final size in const [Size(1280, 800), Size(430, 760)]) {
+    for (final size in const [
+      Size(1280, 800),
+      Size(900, 700),
+      Size(768, 1024),
+      Size(430, 760),
+    ]) {
       tester.view.physicalSize = size;
       for (final page in const <Widget>[
         SearchView(),
@@ -1605,6 +2060,8 @@ void main() {
     ];
     expect(labelCenters, orderedEquals([...labelCenters]..sort()));
     expect(find.text('资料库'), findsNothing);
+    expect(find.text('影视'), findsNothing);
+    expect(find.text('直播'), findsNothing);
 
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
@@ -1640,6 +2097,221 @@ void main() {
     expect(find.byType(MiniPlayer), findsOneWidget);
     expect(find.text('首页'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('toolbox exposes live TV without playlist import',
+      (tester) async {
+    final settings = SettingsController();
+    final player = _PreviewPlayerController();
+    addTearDown(settings.dispose);
+    addTearDown(player.dispose);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data,
+          home: const ToolsView(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('电视直播'), findsOneWidget);
+    expect(find.text('导入歌单'), findsNothing);
+  });
+
+  testWidgets('Android system back unwinds the active tab before the app',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    final platformCalls = <MethodCall>[];
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformCalls.add(call);
+        return null;
+      },
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(430, 760);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.android,
+              ),
+          home: const HomeShell(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('深浅模式'), findsOneWidget);
+
+    await _sendSystemBack(tester);
+    expect(find.text('深浅模式'), findsNothing);
+    expect(find.byType(ProfileView), findsOneWidget);
+
+    await _sendSystemBack(tester);
+    expect(find.byType(ProfileView), findsNothing);
+    expect(find.byType(DiscoverView), findsOneWidget);
+
+    await _sendSystemBack(tester);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      hasLength(1),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('inactive tab history does not intercept Android system back',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    final platformCalls = <MethodCall>[];
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformCalls.add(call);
+        return null;
+      },
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(430, 760);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.android,
+              ),
+          home: const HomeShell(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('首页').last);
+    await tester.pumpAndSettle();
+
+    await _sendSystemBack(tester);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      hasLength(1),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('iOS edge swipe pops a nested page', (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(430, 760);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.iOS,
+              ),
+          home: const HomeShell(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('深浅模式'), findsOneWidget);
+
+    await tester.dragFrom(const Offset(1, 300), const Offset(360, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('深浅模式'), findsNothing);
+    expect(find.byType(ProfileView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('mobile themes preserve native back transitions', () {
+    final builders = AppTheme.byId('dark').data.pageTransitionsTheme.builders;
+
+    expect(
+      builders[TargetPlatform.android],
+      isA<PredictiveBackPageTransitionsBuilder>(),
+    );
+    expect(
+      builders[TargetPlatform.iOS],
+      isA<cupertino.CupertinoPageTransitionsBuilder>(),
+    );
   });
 }
 
@@ -1774,7 +2446,7 @@ class _PreviewPlayerController extends PlayerController {
   int? movedToNextIndex;
   Song? playedNext;
 
-  final Song _song = Song(
+  Song _song = Song(
     id: 'preview',
     name: 'The Gentlemen (Live)',
     source: 'netease',
@@ -1808,6 +2480,11 @@ class _PreviewPlayerController extends PlayerController {
 
   @override
   Song get current => _song;
+
+  void replaceCurrent(Song song) {
+    _song = song;
+    notifyListeners();
+  }
 
   @override
   List<Song> get queue => _previewQueue;

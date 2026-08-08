@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   // 全局异常兜底：任何未捕获异常只记录日志，绝不导致界面冻结/白屏。
   FlutterError.onError = (details) {

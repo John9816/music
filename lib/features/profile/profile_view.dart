@@ -5,22 +5,15 @@ import 'package:provider/provider.dart';
 import '../../core/api/membership_api.dart';
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
-import '../../core/config/app_config.dart';
 import '../../core/models/membership.dart';
 import '../../core/models/song.dart';
-import '../../core/settings/settings_controller.dart';
-import '../../core/theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/user_avatar.dart';
 import '../library/downloads_view.dart';
 import '../settings/account_security_view.dart';
-import '../settings/about_view.dart';
-import '../settings/desktop_settings_view.dart';
-import '../settings/notifications_view.dart';
 import '../settings/settings_view.dart';
-import '../settings/settings_components.dart';
-import '../settings/storage_settings_view.dart';
 import '../tools/tools_view.dart';
+import 'edit_profile_view.dart';
 import 'login_view.dart';
 import 'user_library_view.dart';
 import 'user_playlists_view.dart';
@@ -81,7 +74,6 @@ class _ProfileViewState extends State<ProfileView> {
 
   Widget _buildContent(BuildContext context) {
     final auth = context.watch<AuthController>();
-    final settings = context.watch<SettingsController>();
     final name = auth.username ?? '未登录';
     if (_membershipToken != auth.token) {
       _membershipToken = auth.token;
@@ -98,13 +90,14 @@ class _ProfileViewState extends State<ProfileView> {
       children: [
         _AccountCard(
           name: name,
+          email: auth.email,
           avatarUrl: auth.avatarUrl,
           loggedIn: auth.isLoggedIn,
           membershipLoading: _membershipLoading,
           membershipText: _membershipText(),
           membershipActive: _membership?.active == true,
           onAccountTap: auth.isLoggedIn
-              ? () => _openPage(context, const AccountSecurityView())
+              ? () => _openPage(context, const EditProfileView())
               : () => _openLogin(context),
           onMembershipTap: auth.isLoggedIn
               ? () => _showRedeemDialog(auth.token!)
@@ -153,89 +146,7 @@ class _ProfileViewState extends State<ProfileView> {
             ),
           ],
         ),
-        const _SectionTitle('外观'),
-        _SettingsGroup(
-          children: [
-            _SettingRow(
-              icon: Icons.brightness_6_rounded,
-              title: '深浅模式',
-              subtitle: '深色、浅色或跟随系统',
-              value: const {
-                    'system': '跟随系统',
-                    'dark': '深色',
-                    'light': '浅色',
-                  }[settings.themeModeId] ??
-                  '跟随系统',
-              onTap: () => _pickThemeMode(context, settings),
-            ),
-            _AccentPaletteRow(
-              accentId: settings.accentId,
-              onSelected: settings.setAccentColor,
-            ),
-          ],
-        ),
-        const _SectionTitle('数据源'),
-        _SettingsGroup(
-          children: [
-            _SettingRow(
-              icon: Icons.language_rounded,
-              title: '默认音乐源',
-              subtitle: '推荐、歌单详情与播放使用；搜索会合并红源、绿源、橙源',
-              value: AppConfig.musicSources[settings.source] ?? settings.source,
-              onTap: () => _pickSource(context, settings),
-            ),
-          ],
-        ),
-        const _SectionTitle('播放与体验'),
-        _SettingsGroup(
-          children: [
-            _SettingRow(
-              icon: Icons.graphic_eq_rounded,
-              title: '默认播放音质',
-              subtitle: '为音乐播放选择合适的音质',
-              value:
-                  AppConfig.qualityLabels[settings.quality] ?? settings.quality,
-              onTap: () => _pickQuality(context, settings),
-            ),
-            _SettingRow(
-              icon: Icons.blur_circular_rounded,
-              title: '液态玻璃质量',
-              subtitle: '影响导航、播放栏、弹出菜单与设置控件',
-              value: const {
-                    'smooth': '流畅',
-                    'detailed': '精细',
-                    'auto': '自动',
-                  }[settings.glassQuality] ??
-                  '流畅',
-              onTap: () => _pickGlassQuality(context, settings),
-            ),
-            _SettingRow(
-              icon: Icons.auto_awesome_rounded,
-              title: '减弱动态效果',
-              subtitle: '减少封面、歌词和页面过渡动画',
-              trailing: SettingsSwitch(
-                value: settings.reduceMotion,
-                onChanged: settings.setReduceMotion,
-              ),
-            ),
-            _SettingRow(
-              icon: Icons.inventory_2_outlined,
-              title: '存储与缓存',
-              subtitle: '缓存上限、有效期与分类清理',
-              onTap: () => _openPage(context, const StorageSettingsView()),
-            ),
-            if (Theme.of(context).platform == TargetPlatform.macOS ||
-                Theme.of(context).platform == TargetPlatform.windows ||
-                Theme.of(context).platform == TargetPlatform.linux)
-              _SettingRow(
-                icon: Icons.desktop_mac_outlined,
-                title: '桌面与快捷键',
-                subtitle: '状态栏歌词、全局快捷键与窗口控制',
-                onTap: () => _openPage(context, const DesktopSettingsView()),
-              ),
-          ],
-        ),
-        const _SectionTitle('账户与支持'),
+        const _SectionTitle('更多'),
         _SettingsGroup(
           children: [
             _SettingRow(
@@ -243,17 +154,6 @@ class _ProfileViewState extends State<ProfileView> {
               title: '工具箱',
               subtitle: 'AI 绘画、视频解析与歌单导入',
               onTap: () => _openPage(context, const ToolsView()),
-            ),
-          ],
-        ),
-        const _SectionTitle('账户'),
-        _SettingsGroup(
-          children: [
-            _SettingRow(
-              icon: Icons.notifications_rounded,
-              title: '通知',
-              subtitle: '查看服务通知与重要公告',
-              onTap: () => _openPage(context, const NotificationsView()),
             ),
             _SettingRow(
               icon: Icons.shield_outlined,
@@ -263,80 +163,10 @@ class _ProfileViewState extends State<ProfileView> {
                   ? () => _openPage(context, const AccountSecurityView())
                   : () => _openLogin(context),
             ),
-            _SettingRow(
-              icon: Icons.info_rounded,
-              title: '关于 ${AppConfig.appName}',
-              subtitle: '版本、更新与服务状态',
-              onTap: () => _openPage(context, const AboutView()),
-            ),
           ],
         ),
       ],
     );
-  }
-
-  Future<void> _pickSource(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '选择默认音乐源',
-      current: settings.source,
-      options: AppConfig.musicSources.entries
-          .map((entry) => (value: entry.key, label: entry.value))
-          .toList(),
-    );
-    if (value != null) await settings.setSource(value);
-  }
-
-  Future<void> _pickThemeMode(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '显示模式',
-      current: settings.themeModeId,
-      options: const [
-        (value: 'system', label: '跟随系统'),
-        (value: 'dark', label: '深色'),
-        (value: 'light', label: '浅色'),
-      ],
-    );
-    if (value != null) await settings.setThemeMode(value);
-  }
-
-  Future<void> _pickQuality(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '默认播放音质',
-      current: settings.quality,
-      options: AppConfig.qualityLabels.entries
-          .map((entry) => (value: entry.key, label: entry.value))
-          .toList(),
-    );
-    if (value != null) await settings.setQuality(value);
-  }
-
-  Future<void> _pickGlassQuality(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '液态玻璃质量',
-      current: settings.glassQuality,
-      options: const [
-        (value: 'smooth', label: '流畅'),
-        (value: 'detailed', label: '精细'),
-        (value: 'auto', label: '自动'),
-      ],
-    );
-    if (value != null) await settings.setGlassQuality(value);
   }
 
   Color _profileBackground(BuildContext context) {
@@ -362,6 +192,7 @@ class _ProfileViewState extends State<ProfileView> {
       context,
       UserLibraryView(
         title: favorites ? '喜欢的音乐' : '播放历史',
+        kind: favorites ? UserLibraryKind.favorites : UserLibraryKind.history,
         loader: () async {
           final items = favorites
               ? await UserApi().getFavorites(token)
@@ -373,6 +204,16 @@ class _ProfileViewState extends State<ProfileView> {
           token: token,
           favorites: favorites,
         ),
+        onClear: favorites
+            ? null
+            : (songs) async {
+                for (final song in songs) {
+                  final recordId = song.libraryId;
+                  if (recordId != null) {
+                    await UserApi().deleteHistory(recordId, token);
+                  }
+                }
+              },
       ),
     );
   }
@@ -551,6 +392,7 @@ class _RedeemCodeDialogState extends State<_RedeemCodeDialog> {
 class _AccountCard extends StatelessWidget {
   const _AccountCard({
     required this.name,
+    required this.email,
     required this.avatarUrl,
     required this.loggedIn,
     required this.membershipLoading,
@@ -561,6 +403,7 @@ class _AccountCard extends StatelessWidget {
   });
 
   final String name;
+  final String? email;
   final String? avatarUrl;
   final bool loggedIn;
   final bool membershipLoading;
@@ -597,10 +440,13 @@ class _AccountCard extends StatelessWidget {
                       showInitial: loggedIn,
                       imageUrl: loggedIn ? avatarUrl : null,
                       backgroundColor: membershipActive
-                          ? const Color(0xFF5E2B39)
+                          ? scheme.primaryContainer
                           : scheme.surfaceContainerHighest,
-                      foregroundColor:
-                          loggedIn ? Colors.white : scheme.onSurfaceVariant,
+                      foregroundColor: membershipActive
+                          ? scheme.onPrimaryContainer
+                          : loggedIn
+                              ? scheme.onSurface
+                              : scheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -620,7 +466,11 @@ class _AccountCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 7),
                           Text(
-                            loggedIn ? name : '登录后同步收藏与歌单',
+                            loggedIn && email != null && email!.isNotEmpty
+                                ? email!
+                                : loggedIn
+                                    ? name
+                                    : '登录后同步收藏与歌单',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -656,14 +506,16 @@ class _AccountCard extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF624936),
+                        color: scheme.primaryContainer,
                         borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: const Color(0xFF98754D)),
+                        border: Border.all(
+                          color: scheme.primary.withValues(alpha: 0.45),
+                        ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'VIP',
                         style: TextStyle(
-                          color: Color(0xFFFFD47A),
+                          color: scheme.onPrimaryContainer,
                           fontSize: 11,
                           fontWeight: TypeScale.heavy,
                         ),
@@ -802,16 +654,12 @@ class _SettingRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
-    this.value,
-    this.trailing,
     this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final String? value;
-  final Widget? trailing;
   final VoidCallback? onTap;
 
   @override
@@ -855,25 +703,7 @@ class _SettingRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (value != null) ...[
-                const SizedBox(width: 12),
-                Container(
-                  constraints: const BoxConstraints(minWidth: 48),
-                  child: Text(
-                    value!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: TypeScale.medium,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-              if (trailing != null) ...[
-                const SizedBox(width: 8),
-                trailing!,
-              ] else if (onTap != null) ...[
+              if (onTap != null) ...[
                 const SizedBox(width: 6),
                 Icon(
                   Icons.chevron_right_rounded,
@@ -883,81 +713,6 @@ class _SettingRow extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AccentPaletteRow extends StatelessWidget {
-  const _AccentPaletteRow({required this.accentId, required this.onSelected});
-
-  final String accentId;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 116,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        child: Row(
-          children: [
-            const SizedBox(width: 40),
-            const Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('主题色',
-                      style: TextStyle(
-                          fontSize: 14.5, fontWeight: TypeScale.semibold)),
-                  SizedBox(height: 3),
-                  Text('强调色与背景氛围随之变化',
-                      style:
-                          TextStyle(fontSize: 11.5, color: Color(0xFF929A95))),
-                ],
-              ),
-            ),
-            Text(
-              AppAccent.byId(accentId).name,
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(width: 12),
-            Wrap(
-              spacing: 8,
-              children: AppAccent.all.map((accent) {
-                final selected = accent.id == accentId;
-                return GPressScale(
-                  onTap: () => onSelected(accent.id),
-                  child: Container(
-                    width: selected ? 30 : 25,
-                    height: selected ? 30 : 25,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: accent.color,
-                      border: selected
-                          ? Border.all(color: Colors.white, width: 2)
-                          : null,
-                      boxShadow: selected
-                          ? [
-                              BoxShadow(
-                                  color: accent.color.withValues(alpha: 0.35),
-                                  blurRadius: 0,
-                                  spreadRadius: 2)
-                            ]
-                          : null,
-                    ),
-                    child: selected
-                        ? const Icon(Icons.check_rounded,
-                            color: Colors.white, size: 19)
-                        : null,
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
         ),
       ),
     );

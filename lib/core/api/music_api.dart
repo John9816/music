@@ -1,4 +1,5 @@
 import '../config/app_config.dart';
+import '../models/artist_info.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import 'api_client.dart';
@@ -165,6 +166,16 @@ class MusicApi {
     return _playlistList(data);
   }
 
+  /// 首页匿名推荐歌单。
+  Future<List<Playlist>> getRecommendedPlaylists({
+    String source = _defaultSource,
+    int limit = 20,
+  }) async {
+    final data = await _client.getJson('api/v1/music/playlist/recommend',
+        params: {'source': source, 'limit': '$limit'});
+    return _playlistList(data);
+  }
+
   /// 歌单分类目录（本地默认值，不依赖后端）
   List<PlaylistCategoryGroup> getPlaylistCategories() => kPlaylistCategories;
 
@@ -294,10 +305,26 @@ class MusicApi {
     return _songList(data);
   }
 
+  /// 获取后端聚合的歌手资料。
+  Future<ArtistInfo> getArtistInfo(
+    String artistId, {
+    String source = _defaultSource,
+    String fallbackName = '',
+  }) async {
+    final data = await _client.getJson('api/v1/music/artist', params: {
+      'source': source,
+      'ids': artistId,
+    });
+    final items = _jsonList(data['list']);
+    final raw = items.isEmpty
+        ? const <String, dynamic>{}
+        : Map<String, dynamic>.from(items.first as Map);
+    return ArtistInfo.fromJson(raw, fallbackName: fallbackName);
+  }
+
   /// 获取歌手歌曲与专辑目录。
   ///
-  /// 现有 V1 API 暂无歌手专辑端点，因此先按歌手名搜索歌曲、精确匹配
-  /// 歌手字段，再按 albumId（缺失时按专辑名）聚合专辑。
+  /// 有歌手 ID 时使用后端专用作品接口；旧数据没有 ID 时保留搜索聚合回退。
   Future<ArtistCatalog> getArtistCatalog(
     String artistName, {
     String source = _defaultSource,
@@ -319,6 +346,26 @@ class MusicApi {
     int offset = 0,
     int limit = 30,
   }) async {
+    if (artistId != null && artistId.trim().isNotEmpty) {
+      final pageSize = limit;
+      final data = await _client.getJson('api/v1/music/artist/works', params: {
+        'source': source,
+        'id': artistId,
+        'type': 'song',
+        'page': '${(offset ~/ pageSize) + 1}',
+        'pageSize': '$pageSize',
+      });
+      final songs = _songListValue(data['songs']);
+      final total = (data['total'] as num?)?.toInt();
+      return ArtistCatalog.fromSongs(
+        artistName: artistName,
+        searchedSongs: songs,
+        hasMore: total == null
+            ? songs.length >= pageSize
+            : offset + songs.length < total,
+        nextOffset: offset + pageSize,
+      );
+    }
     final searched = await searchSongs(
       artistName,
       source: source,
@@ -363,7 +410,11 @@ class MusicApi {
   }
 
   List<Song> _songList(Map<String, dynamic> data) {
-    return _jsonList(data['list'])
+    return _songListValue(data['list']);
+  }
+
+  List<Song> _songListValue(Object? value) {
+    return _jsonList(value)
         .map((e) => Song.fromV1(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
@@ -381,12 +432,12 @@ class MusicApi {
   }
 
   Album _albumFromSong(Map<String, dynamic> json) {
-    final id = json['albumId'] is num
-        ? (json['albumId'] as num).toInt()
-        : int.tryParse(json['albumId']?.toString() ?? '') ?? 0;
+    final sourceId = json['albumId']?.toString().trim() ?? '';
+    final id = int.tryParse(sourceId) ?? 0;
     final albumName = json['album']?.toString() ?? '';
     return Album(
       id: id,
+      sourceId: sourceId.isEmpty ? null : sourceId,
       name: albumName.isEmpty ? (json['name']?.toString() ?? '') : albumName,
       picUrl: _textOrNull(json['coverUrl']),
     );

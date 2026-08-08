@@ -77,7 +77,7 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
               SettingsRow(
                 icon: Icons.music_note_rounded,
                 title: '自动缓存歌曲',
-                subtitle: '播放时保存完整音频，关闭后直接在线播放',
+                subtitle: '播放时缓存兼容音源，其他音源自动直接播放',
                 trailing: SettingsSwitch(
                   value: settings.automaticAudioCache,
                   onChanged: settings.setAutomaticAudioCache,

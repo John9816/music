@@ -1,8 +1,13 @@
 import Cocoa
 import FlutterMacOS
+import AVKit
 
-class MainFlutterWindow: NSWindow {
+class MainFlutterWindow: NSWindow, AVRoutePickerViewDelegate {
   private var lyricStatusItem: NSStatusItem?
+  private var castChannel: FlutterMethodChannel?
+  private var castPlayer: AVPlayer?
+  private var castRoutePicker: AVRoutePickerView?
+  private var castRouteObservation: NSKeyValueObservation?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -68,6 +73,123 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
+    let castRegistrar = flutterViewController.registrar(forPlugin: "DuckMusicCast")
+    let castChannel = FlutterMethodChannel(
+      name: "com.751152.duckmusic/cast", binaryMessenger: castRegistrar.messenger)
+    self.castChannel = castChannel
+    castChannel.setMethodCallHandler { [weak self] call, result in
+      self?.handleCastCall(call, result: result)
+    }
+
+  }
+
+  private func handleCastCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "startCast":
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let rawURL = arguments["url"] as? String,
+        let url = URL(string: rawURL),
+        url.scheme?.lowercased() == "https",
+        url.host != nil
+      else {
+        result(FlutterError(code: "invalid_url", message: "投屏地址无效", details: nil))
+        return
+      }
+      presentCastPicker(url: url, result: result)
+    case "stopCast":
+      resetCastPlayer(notify: true)
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func presentCastPicker(url: URL, result: @escaping FlutterResult) {
+    resetCastPlayer(notify: false)
+    let player = AVPlayer(url: url)
+    player.allowsExternalPlayback = true
+    let picker = AVRoutePickerView(frame: NSRect(x: 0, y: 0, width: 2, height: 2))
+    picker.player = player
+    picker.delegate = self
+    picker.alphaValue = 0.01
+    picker.isRoutePickerButtonBordered = false
+    contentView?.addSubview(picker)
+    picker.layoutSubtreeIfNeeded()
+
+    castPlayer = player
+    castRoutePicker = picker
+    castRouteObservation = player.observe(
+      \.isExternalPlaybackActive,
+      options: [.new]
+    ) { [weak self] observedPlayer, _ in
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        if observedPlayer.isExternalPlaybackActive {
+          observedPlayer.play()
+          self.notifyCastState(connected: true)
+        } else {
+          observedPlayer.pause()
+          self.notifyCastState(connected: false)
+        }
+      }
+    }
+
+    guard let button = routeButton(in: picker) else {
+      resetCastPlayer(notify: false)
+      result(FlutterError(code: "unavailable", message: "无法打开投屏设备列表", details: nil))
+      return
+    }
+    button.performClick(nil)
+    result([
+      "supported": true,
+      "connected": player.isExternalPlaybackActive,
+      "pauseLocal": player.isExternalPlaybackActive,
+      "message": player.isExternalPlaybackActive ? "已连接 AirPlay 设备" : "请选择 AirPlay 设备",
+    ])
+  }
+
+  func routePickerViewDidEndPresentingRoutes(_ routePickerView: AVRoutePickerView) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+      guard let self = self, let player = self.castPlayer else { return }
+      if player.isExternalPlaybackActive {
+        player.play()
+        self.notifyCastState(connected: true)
+      } else {
+        player.pause()
+        self.notifyCastState(connected: false)
+      }
+    }
+  }
+
+  private func notifyCastState(connected: Bool) {
+    castChannel?.invokeMethod(
+      "castStateChanged",
+      arguments: [
+        "connected": connected,
+        "pauseLocal": connected,
+        "message": connected ? "已连接 AirPlay 设备" : "AirPlay 已断开",
+      ]
+    )
+  }
+
+  private func resetCastPlayer(notify: Bool) {
+    castRouteObservation?.invalidate()
+    castRouteObservation = nil
+    castPlayer?.pause()
+    castPlayer?.replaceCurrentItem(with: nil)
+    castPlayer = nil
+    castRoutePicker?.removeFromSuperview()
+    castRoutePicker = nil
+    if notify { notifyCastState(connected: false) }
+  }
+
+  private func routeButton(in view: NSView) -> NSButton? {
+    if let button = view as? NSButton { return button }
+    for subview in view.subviews {
+      if let button = routeButton(in: subview) { return button }
+    }
+    return nil
   }
 
   private func showMainWindow() {

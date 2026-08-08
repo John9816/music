@@ -48,7 +48,7 @@ class _HomeViewState extends State<HomeView> {
 
   void _loadPlaylists() {
     final source = context.read<SettingsController>().source;
-    _playlistsFuture = _api.getTopPlaylists(
+    _playlistsFuture = _api.getRecommendedPlaylists(
       source: source,
       limit: 10,
     );
@@ -379,8 +379,8 @@ class _RadioCard extends StatelessWidget {
                     scheme.surfaceContainer.withValues(alpha: 0.6),
                   ]
                 : [
-                    AppBrand.red.withValues(alpha: 0.14),
-                    AppBrand.red.withValues(alpha: 0.04),
+                    scheme.primary.withValues(alpha: 0.14),
+                    scheme.primary.withValues(alpha: 0.04),
                     scheme.surfaceContainer,
                   ],
           ),
@@ -530,7 +530,7 @@ class _QuickActionCard extends StatelessWidget {
           mainAxisAlignment:
               tall ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 19, color: AppBrand.red),
+            Icon(icon, size: 19, color: scheme.primary),
             const SizedBox(width: 8),
             Text(
               label,
@@ -609,7 +609,7 @@ class _TrendingCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: TypeScale.bold,
-                        color: rank <= 3 ? AppBrand.red : Colors.white,
+                        color: rank <= 3 ? scheme.primary : Colors.white,
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),

@@ -45,6 +45,12 @@ class CacheService {
 
   static const int automaticLimitBytes = 2 * 1024 * 1024 * 1024;
 
+  /// The streaming cache proxy depends on standards-compliant MIME and range
+  /// responses. QQ and Kuwo currently return responses that browsers can sniff
+  /// but AVFoundation cannot parse after they pass through that proxy.
+  static bool supportsAutomaticAudioCache(String source) =>
+      source.trim().toLowerCase() == 'netease';
+
   Future<Directory> _temporaryBase() => _temporaryDirectory();
 
   Future<Directory> get appCacheDirectory async {

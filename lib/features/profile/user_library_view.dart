@@ -21,6 +21,8 @@ class UserLibraryView extends StatefulWidget {
     this.active = true,
     this.onRemove,
     this.onClear,
+    this.onSync,
+    this.kind = UserLibraryKind.playlist,
   });
 
   final String title;
@@ -29,10 +31,16 @@ class UserLibraryView extends StatefulWidget {
   final bool active;
   final Future<void> Function(Song song)? onRemove;
   final Future<void> Function(List<Song> songs)? onClear;
+  final Future<void> Function()? onSync;
+  final UserLibraryKind kind;
 
   @override
   State<UserLibraryView> createState() => _UserLibraryViewState();
 }
+
+/// Describes the source of this list explicitly. Titles are user content and
+/// must not be used to decide whether a playlist is history or favorites.
+enum UserLibraryKind { favorites, history, playlist }
 
 class _UserLibraryViewState extends State<UserLibraryView> {
   Future<List<Song>>? _future;
@@ -40,6 +48,8 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   bool _mutating = false;
+  bool _selectionMode = false;
+  final Set<String> _selected = <String>{};
 
   @override
   void initState() {
@@ -51,7 +61,16 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   @override
   void didUpdateWidget(covariant UserLibraryView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.active && !oldWidget.active) _reload();
+    final contentChanged = oldWidget.kind != widget.kind ||
+        (widget.kind == UserLibraryKind.playlist &&
+            oldWidget.title != widget.title);
+    if (contentChanged) {
+      _searchController.clear();
+      _query = '';
+      _selectionMode = false;
+      _selected.clear();
+    }
+    if (widget.active && (!oldWidget.active || contentChanged)) _reload();
   }
 
   @override
@@ -62,10 +81,11 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   }
 
   void _onLibraryChanged() {
-    if (_favorites && widget.active) _reload();
+    if (!_history && widget.active) _reload();
   }
 
-  bool get _favorites => widget.title.contains('喜欢');
+  bool get _favorites => widget.kind == UserLibraryKind.favorites;
+  bool get _history => widget.kind == UserLibraryKind.history;
 
   Future<List<Song>> _startLoad() {
     final future = Future<List<Song>>.sync(widget.loader);
@@ -94,15 +114,39 @@ class _UserLibraryViewState extends State<UserLibraryView> {
 
   @override
   Widget build(BuildContext context) {
-    final content = ColoredBox(
+    final content = Material(
       color: _libraryBackground(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GAppBar(
-            title: _favorites ? '我喜欢的音乐' : '最近播放',
+            title: switch (widget.kind) {
+              UserLibraryKind.favorites => '我喜欢的音乐',
+              UserLibraryKind.history => '播放历史',
+              UserLibraryKind.playlist => widget.title,
+            },
             onBack:
                 widget.embedded ? null : () => Navigator.of(context).maybePop(),
+            actions: [
+              if (widget.onRemove != null)
+                GIconButton(
+                  icon: _selectionMode
+                      ? Icons.close_rounded
+                      : Icons.checklist_rounded,
+                  tooltip: _selectionMode ? '退出管理' : '管理歌曲',
+                  size: 18,
+                  padding: 9,
+                  onTap: _selectionMode ? _exitSelection : _enterSelection,
+                ),
+              if (widget.onSync != null)
+                GIconButton(
+                  icon: Icons.sync_rounded,
+                  tooltip: '同步歌单',
+                  size: 18,
+                  padding: 9,
+                  onTap: _syncPlaylist,
+                ),
+            ],
           ),
           Expanded(child: _buildBody()),
         ],
@@ -112,10 +156,23 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     return Scaffold(body: content);
   }
 
+  Future<void> _syncPlaylist() async {
+    if (_mutating || widget.onSync == null) return;
+    setState(() => _mutating = true);
+    try {
+      await widget.onSync!();
+      if (!mounted) return;
+      _message('歌单已同步');
+      _reload();
+    } catch (error) {
+      if (mounted) _message(error.toString());
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
+  }
+
   Color _libraryBackground(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF251118)
-        : Theme.of(context).colorScheme.surfaceContainerLowest;
+    return Theme.of(context).colorScheme.surfaceContainerLowest;
   }
 
   Widget _buildBody() {
@@ -135,12 +192,14 @@ class _UserLibraryViewState extends State<UserLibraryView> {
           );
         }
         final songs = snapshot.data ?? const <Song>[];
-        return _favorites ? _buildFavorites(songs) : _buildHistory(songs);
+        if (_favorites) return _buildFavorites(songs);
+        return _buildTrackList(songs, history: _history);
       },
     );
   }
 
   Widget _buildFavorites(List<Song> songs) {
+    final visible = _visibleSongs(songs);
     return RefreshIndicator(
       onRefresh: _refresh,
       child: CustomScrollView(
@@ -155,29 +214,56 @@ class _UserLibraryViewState extends State<UserLibraryView> {
               onDownload: songs.isEmpty ? null : () => _downloadAll(songs),
             ),
           ),
-          if (songs.isEmpty)
-            const SliverFillRemaining(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+              child: SizedBox(
+                height: 40,
+                child: _searchField(history: false),
+              ),
+            ),
+          ),
+          if (_selectionMode)
+            SliverToBoxAdapter(
+              child: _SongSelectionToolbar(
+                selectedCount: _selected.length,
+                totalCount: visible.length,
+                onSelectAll: () => _selectAll(visible),
+                onDelete:
+                    _selected.isEmpty ? null : () => _deleteSelected(visible),
+              ),
+            ),
+          if (visible.isEmpty)
+            SliverFillRemaining(
               hasScrollBody: false,
               child: _LibraryEmptyState(
-                icon: Icons.favorite_border_rounded,
-                title: '还没有喜欢的歌曲',
-                subtitle: '在歌曲菜单或播放器中点亮喜欢，音乐会出现在这里',
+                icon: _query.trim().isEmpty
+                    ? Icons.favorite_border_rounded
+                    : Icons.search_off_rounded,
+                title: _query.trim().isEmpty ? '还没有喜欢的歌曲' : '没有匹配的歌曲',
+                subtitle: _query.trim().isEmpty
+                    ? '在歌曲菜单或播放器中点亮喜欢，音乐会出现在这里'
+                    : '换个歌曲或歌手名称试试',
               ),
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
               sliver: SliverList.builder(
-                itemCount: songs.length,
+                itemCount: visible.length,
                 itemBuilder: (context, index) => _LibrarySongRow(
                   index: index + 1,
-                  song: songs[index],
-                  onTap: () => context
-                      .read<PlayerController>()
-                      .playQueue(songs, index: index),
-                  onDelete: widget.onRemove == null
+                  song: visible[index],
+                  selected: _selected.contains(_songKey(visible[index])),
+                  selectionMode: _selectionMode,
+                  onTap: _selectionMode
+                      ? () => _toggleSelection(visible[index])
+                      : () => context.read<PlayerController>().playQueue(songs,
+                          index: songs.indexOf(visible[index])),
+                  onDelete: widget.onRemove == null || _selectionMode
                       ? null
-                      : () => _removeSong(songs[index]),
+                      : () => _removeSong(visible[index]),
+                  onSelect: () => _toggleSelection(visible[index]),
                 ),
               ),
             ),
@@ -214,16 +300,9 @@ class _UserLibraryViewState extends State<UserLibraryView> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Widget _buildHistory(List<Song> songs) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget _buildTrackList(List<Song> songs, {required bool history}) {
+    final visible = _visibleSongs(songs);
     final normalized = _query.trim().toLowerCase();
-    final visible = normalized.isEmpty
-        ? songs
-        : songs
-            .where((song) =>
-                song.name.toLowerCase().contains(normalized) ||
-                song.artistNames.toLowerCase().contains(normalized))
-            .toList();
     return Column(
       children: [
         Padding(
@@ -233,70 +312,40 @@ class _UserLibraryViewState extends State<UserLibraryView> {
               Expanded(
                 child: SizedBox(
                   height: 40,
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _query = value),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: scheme.onSurface,
-                    ),
-                    cursorColor: scheme.primary,
-                    decoration: InputDecoration(
-                      hintText: '搜索播放记录',
-                      hintStyle: TextStyle(
-                        fontSize: 14,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search_rounded,
-                        size: 20,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 40),
-                      filled: true,
-                      fillColor: Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF3A2930)
-                          : Theme.of(context).colorScheme.surfaceContainer,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.35),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: _searchField(history: history),
                 ),
               ),
               const SizedBox(width: 10),
-              _DeleteHistoryButton(
-                onTap: songs.isEmpty || widget.onClear == null || _mutating
-                    ? null
-                    : () => _clearHistory(songs),
-              ),
+              if (history)
+                _DeleteHistoryButton(
+                  onTap: songs.isEmpty || widget.onClear == null || _mutating
+                      ? null
+                      : () => _clearHistory(songs),
+                ),
             ],
           ),
         ),
+        if (_selectionMode)
+          _SongSelectionToolbar(
+            selectedCount: _selected.length,
+            totalCount: visible.length,
+            onSelectAll: () => _selectAll(visible),
+            onDelete: _selected.isEmpty ? null : () => _deleteSelected(visible),
+          ),
         Expanded(
           child: visible.isEmpty
               ? _LibraryEmptyState(
                   icon: normalized.isEmpty
-                      ? Icons.history_rounded
+                      ? (history
+                          ? Icons.history_rounded
+                          : Icons.queue_music_rounded)
                       : Icons.search_off_rounded,
-                  title: normalized.isEmpty ? '还没有播放记录' : '没有匹配的播放记录',
-                  subtitle:
-                      normalized.isEmpty ? '播放过的歌曲会按时间出现在这里' : '换个歌曲或歌手名称试试',
+                  title: normalized.isEmpty
+                      ? (history ? '还没有播放记录' : '歌单为空')
+                      : (history ? '没有匹配的播放记录' : '没有匹配的歌曲'),
+                  subtitle: normalized.isEmpty
+                      ? (history ? '播放过的歌曲会按时间出现在这里' : '添加歌曲后会显示在这里')
+                      : '换个歌曲或歌手名称试试',
                 )
               : RefreshIndicator(
                   onRefresh: _refresh,
@@ -308,7 +357,9 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            _historyGroupTitle(visible),
+                            history
+                                ? _historyGroupTitle(visible)
+                                : '${visible.length} 首歌曲',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: TypeScale.bold,
@@ -320,18 +371,65 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                       final queueIndex = songs.indexOf(song);
                       return _LibrarySongRow(
                         song: song,
-                        onTap: () => context
-                            .read<PlayerController>()
-                            .playQueue(songs, index: queueIndex),
-                        onDelete: widget.onRemove == null
+                        selected: _selected.contains(_songKey(song)),
+                        selectionMode: _selectionMode,
+                        onTap: _selectionMode
+                            ? () => _toggleSelection(song)
+                            : () => context
+                                .read<PlayerController>()
+                                .playQueue(songs, index: queueIndex),
+                        onDelete: widget.onRemove == null || _selectionMode
                             ? null
                             : () => _removeSong(song),
+                        onSelect: () => _toggleSelection(song),
                       );
                     },
                   ),
                 ),
         ),
       ],
+    );
+  }
+
+  List<Song> _visibleSongs(List<Song> songs) {
+    final normalized = _query.trim().toLowerCase();
+    if (normalized.isEmpty) return songs;
+    return songs
+        .where((song) =>
+            song.name.toLowerCase().contains(normalized) ||
+            song.artistNames.toLowerCase().contains(normalized))
+        .toList();
+  }
+
+  Widget _searchField({required bool history}) {
+    final scheme = Theme.of(context).colorScheme;
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) => setState(() => _query = value),
+      style: TextStyle(fontSize: 14, color: scheme.onSurface),
+      cursorColor: scheme.primary,
+      decoration: InputDecoration(
+        hintText: history ? '搜索播放记录' : '搜索歌曲',
+        hintStyle: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+        prefixIcon: Icon(Icons.search_rounded,
+            size: 20, color: scheme.onSurfaceVariant),
+        prefixIconConstraints: const BoxConstraints(minWidth: 40),
+        filled: true,
+        fillColor: scheme.surfaceContainer,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.35)),
+        ),
+      ),
     );
   }
 
@@ -371,6 +469,83 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     }
   }
 
+  void _enterSelection() {
+    if (_mutating || widget.onRemove == null) return;
+    setState(() => _selectionMode = true);
+  }
+
+  void _exitSelection() {
+    if (_mutating) return;
+    setState(() {
+      _selectionMode = false;
+      _selected.clear();
+    });
+  }
+
+  String _songKey(Song song) => '${song.source}:${song.id}:${song.libraryId}';
+
+  void _toggleSelection(Song song) {
+    final key = _songKey(song);
+    setState(() {
+      if (!_selected.add(key)) _selected.remove(key);
+    });
+  }
+
+  void _selectAll(List<Song> songs) {
+    setState(() {
+      final keys = songs.map(_songKey).toSet();
+      if (keys.isNotEmpty && _selected.containsAll(keys)) {
+        _selected.removeAll(keys);
+      } else {
+        _selected.addAll(keys);
+      }
+    });
+  }
+
+  Future<void> _deleteSelected(List<Song> songs) async {
+    final remove = widget.onRemove;
+    if (remove == null || _mutating || _selected.isEmpty) return;
+    final selected = songs
+        .where((song) => _selected.contains(_songKey(song)))
+        .toList(growable: false);
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('删除所选歌曲？'),
+            content: Text('将删除 ${selected.length} 首歌曲。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('删除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    setState(() => _mutating = true);
+    var failed = 0;
+    try {
+      for (final song in selected) {
+        try {
+          await remove(song);
+        } catch (_) {
+          failed++;
+        }
+      }
+      _selectionMode = false;
+      _selected.clear();
+      await _refresh();
+      if (mounted) _message(failed == 0 ? '歌曲已删除' : '$failed 首歌曲删除失败');
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
+  }
+
   Future<void> _clearHistory(List<Song> songs) async {
     final clear = widget.onClear;
     if (clear == null || _mutating) return;
@@ -402,6 +577,41 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   }
 }
 
+class _SongSelectionToolbar extends StatelessWidget {
+  const _SongSelectionToolbar({
+    required this.selectedCount,
+    required this.totalCount,
+    required this.onSelectAll,
+    required this.onDelete,
+  });
+
+  final int selectedCount;
+  final int totalCount;
+  final VoidCallback onSelectAll;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: Row(
+        children: [
+          Text('$selectedCount/$totalCount 已选'),
+          const Spacer(),
+          TextButton(onPressed: onSelectAll, child: const Text('全选')),
+          GIconButton(
+            icon: Icons.delete_outline_rounded,
+            tooltip: '删除所选歌曲',
+            size: 18,
+            padding: 9,
+            onTap: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FavoritesHero extends StatelessWidget {
   const _FavoritesHero({required this.count});
 
@@ -418,13 +628,13 @@ class _FavoritesHero extends StatelessWidget {
             width: 118,
             height: 118,
             decoration: BoxDecoration(
-              color: const Color(0xFF4F1424),
+              color: scheme.primaryContainer,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.favorite_rounded,
               size: 40,
-              color: Color(0xFFFF375F),
+              color: scheme.primary,
             ),
           ),
           const SizedBox(width: 16),
@@ -433,11 +643,11 @@ class _FavoritesHero extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '系统歌单',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Color(0xFFFF375F),
+                    color: scheme.primary,
                     fontWeight: TypeScale.bold,
                   ),
                 ),
@@ -493,23 +703,23 @@ class _FavoritesActions extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: enabled
-                      ? const Color(0xFFFF375F)
-                      : const Color(0xFFB52749),
+                      ? scheme.primary
+                      : scheme.primary.withValues(alpha: 0.38),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       Icons.play_arrow_rounded,
                       size: 20,
-                      color: Colors.white,
+                      color: scheme.onPrimary,
                     ),
-                    SizedBox(width: 6),
+                    const SizedBox(width: 6),
                     Text(
                       '全部播放',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: scheme.onPrimary,
                         fontSize: 15,
                         fontWeight: TypeScale.bold,
                       ),
@@ -584,12 +794,18 @@ class _LibrarySongRow extends StatelessWidget {
     required this.onTap,
     this.index,
     this.onDelete,
+    this.selected = false,
+    this.selectionMode = false,
+    this.onSelect,
   });
 
   final Song song;
   final VoidCallback onTap;
   final int? index;
   final VoidCallback? onDelete;
+  final bool selected;
+  final bool selectionMode;
+  final VoidCallback? onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -645,28 +861,35 @@ class _LibrarySongRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                GIconButton(
-                  icon: Icons.more_horiz_rounded,
-                  tooltip: '更多',
-                  size: 20,
-                  padding: 8,
-                  backgroundColor: Colors.transparent,
-                  onTap: () => showSongActions(
-                    context,
-                    song: song,
-                    onPlay: onTap,
-                  ),
-                ),
-                if (onDelete != null)
+                if (selectionMode)
+                  Checkbox(
+                    value: selected,
+                    onChanged: (_) => onSelect?.call(),
+                  )
+                else ...[
                   GIconButton(
-                    icon: Icons.delete_outline_rounded,
-                    tooltip: '删除',
-                    size: 19,
+                    icon: Icons.more_horiz_rounded,
+                    tooltip: '更多',
+                    size: 20,
                     padding: 8,
-                    tint: scheme.outline,
                     backgroundColor: Colors.transparent,
-                    onTap: onDelete,
+                    onTap: () => showSongActions(
+                      context,
+                      song: song,
+                      onPlay: onTap,
+                    ),
                   ),
+                  if (onDelete != null)
+                    GIconButton(
+                      icon: Icons.delete_outline_rounded,
+                      tooltip: '删除',
+                      size: 19,
+                      padding: 8,
+                      tint: scheme.outline,
+                      backgroundColor: Colors.transparent,
+                      onTap: onDelete,
+                    ),
+                ],
               ],
             ),
           ),
@@ -704,9 +927,7 @@ class _LibraryEmptyState extends StatelessWidget {
                 height: 58,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF321D24)
-                      : scheme.surfaceContainer,
+                  color: scheme.surfaceContainer,
                 ),
                 child: Icon(icon, size: 27, color: scheme.outline),
               ),

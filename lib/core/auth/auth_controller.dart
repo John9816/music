@@ -10,6 +10,7 @@ class AuthController extends ChangeNotifier {
   static const _tokenKey = 'auth_token';
   static const _refreshKey = 'auth_refresh_token';
   static const _usernameKey = 'auth_username';
+  static const _emailKey = 'auth_email';
   static const _avatarUrlKey = 'auth_avatar_url';
 
   AuthController({
@@ -25,15 +26,18 @@ class AuthController extends ChangeNotifier {
   String? _token;
   String? _refresh;
   String? _username;
+  String? _email;
   String? _avatarUrl;
   bool _loading = false;
   bool _initialized = false;
   String? _error;
-  bool _refreshing = false;
+  Future<bool>? _refreshFuture;
+  bool _refreshRejected = false;
   bool _restoring = false;
 
   String? get token => _token;
   String? get username => _username;
+  String? get email => _email;
   String? get avatarUrl => _avatarUrl;
   bool get isLoggedIn => _token != null;
   bool get loading => _loading;
@@ -48,6 +52,7 @@ class AuthController extends ChangeNotifier {
       _token = prefs.getString(_tokenKey);
       _refresh = prefs.getString(_refreshKey);
       _username = prefs.getString(_usernameKey);
+      _email = prefs.getString(_emailKey);
       final storedAvatarUrl = prefs.getString(_avatarUrlKey);
       _avatarUrl = _normalizeAvatarUrl(storedAvatarUrl);
       if (_avatarUrl != storedAvatarUrl) {
@@ -81,6 +86,7 @@ class AuthController extends ChangeNotifier {
       _username ??= username;
       if (_token == null) throw Exception('登录响应缺少 accessToken');
       ApiClient.instance.bearerToken = _token;
+      if (_email == null || _avatarUrl == null) await _restoreProfile();
       await _persist();
       return true;
     } catch (e) {
@@ -102,8 +108,10 @@ class AuthController extends ChangeNotifier {
       _refresh = _pick(d, 'refreshToken', 'refresh_token');
       _applyProfile(d, clearMissing: true);
       _username ??= username;
+      _email ??= email;
       if (_token == null) throw Exception('注册响应缺少 accessToken');
       ApiClient.instance.bearerToken = _token;
+      if (_avatarUrl == null) await _restoreProfile();
       await _persist();
       return true;
     } catch (e) {
@@ -128,10 +136,68 @@ class AuthController extends ChangeNotifier {
   /// 密码重置后服务端会使所有令牌失效，此处只清理本地会话。
   Future<void> clearSessionAfterPasswordReset() => _clearSession();
 
+  Future<bool> updateProfile({
+    required String username,
+    required String email,
+  }) async {
+    final token = _token;
+    if (token == null) {
+      _error = '请先登录';
+      notifyListeners();
+      return false;
+    }
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final data = await _api.updateProfile(username, email, token);
+      _applyProfile(data);
+      await _persist();
+      return true;
+    } catch (error) {
+      _error = error is ApiException ? error.message : error.toString();
+      return false;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> uploadAvatar({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final token = _token;
+    if (token == null) {
+      _error = '请先登录';
+      notifyListeners();
+      return false;
+    }
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final data = await _api.uploadAvatar(bytes, filename, token);
+      _applyProfile(data);
+      await _persist();
+      return true;
+    } catch (error) {
+      _error = error is ApiException ? error.message : error.toString();
+      return false;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> _handleUnauthorized() async {
-    if (_restoring || _refreshing || _token == null) return;
+    if (_restoring || _token == null) return;
     final refreshed = await _refreshSession();
     if (!refreshed) {
+      if (_refreshRejected || !_hasRefreshToken) {
+        await _clearSession(error: '登录已失效，请重新登录');
+        return;
+      }
       _error = '登录凭据暂时无法验证，已保留本机登录状态';
       notifyListeners();
     }
@@ -144,8 +210,17 @@ class AuthController extends ChangeNotifier {
       _error = null;
       await _persist();
     } on ApiException catch (error) {
-      if (!error.unauthorized || !await _refreshSession()) {
-        _error = error.unauthorized ? '登录凭据暂时无法验证，已保留本机登录状态' : error.message;
+      if (!error.unauthorized) {
+        _error = error.message;
+        return;
+      }
+      final refreshed = await _refreshSession();
+      if (!refreshed) {
+        if (_refreshRejected || !_hasRefreshToken) {
+          await _clearSession(error: '登录已失效，请重新登录');
+        } else {
+          _error = '登录凭据暂时无法验证，已保留本机登录状态';
+        }
         return;
       }
       try {
@@ -161,10 +236,24 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _refreshSession() async {
+  Future<bool> _refreshSession() {
+    final activeRefresh = _refreshFuture;
+    if (activeRefresh != null) return activeRefresh;
     final refresh = _refresh;
-    if (_refreshing || refresh == null || refresh.isEmpty) return false;
-    _refreshing = true;
+    if (refresh == null || refresh.isEmpty) {
+      _refreshRejected = false;
+      return Future.value(false);
+    }
+    late final Future<bool> future;
+    future = _performRefresh(refresh).whenComplete(() {
+      if (identical(_refreshFuture, future)) _refreshFuture = null;
+    });
+    _refreshFuture = future;
+    return future;
+  }
+
+  Future<bool> _performRefresh(String refresh) async {
+    _refreshRejected = false;
     try {
       final data = await _api.refreshToken(refresh);
       final nextToken = _pick(data, 'accessToken', 'access_token', 'token');
@@ -177,18 +266,22 @@ class AuthController extends ChangeNotifier {
       await _persist();
       notifyListeners();
       return true;
+    } on ApiException catch (error) {
+      _refreshRejected = error.unauthorized;
+      return false;
     } catch (_) {
       return false;
-    } finally {
-      _refreshing = false;
     }
   }
+
+  bool get _hasRefreshToken => _refresh != null && _refresh!.isNotEmpty;
 
   Future<void> _clearSession({String? error}) async {
     await onSessionCleared?.call();
     _token = null;
     _refresh = null;
     _username = null;
+    _email = null;
     _avatarUrl = null;
     _error = error;
     ApiClient.instance.bearerToken = null;
@@ -196,6 +289,7 @@ class AuthController extends ChangeNotifier {
     await prefs.remove(_tokenKey);
     await prefs.remove(_refreshKey);
     await prefs.remove(_usernameKey);
+    await prefs.remove(_emailKey);
     await prefs.remove(_avatarUrlKey);
     notifyListeners();
   }
@@ -205,6 +299,7 @@ class AuthController extends ChangeNotifier {
     await _writeOrRemove(prefs, _tokenKey, _token);
     await _writeOrRemove(prefs, _refreshKey, _refresh);
     await _writeOrRemove(prefs, _usernameKey, _username);
+    await _writeOrRemove(prefs, _emailKey, _email);
     await _writeOrRemove(prefs, _avatarUrlKey, _avatarUrl);
   }
 
@@ -233,12 +328,22 @@ class AuthController extends ChangeNotifier {
     Map<String, dynamic> data, {
     bool clearMissing = false,
   }) {
-    _username = _pick(data, 'username', 'name') ?? _username;
-    if (data.containsKey('avatarUrl')) {
-      _avatarUrl = _normalizeAvatarUrl(_pick(data, 'avatarUrl'));
+    final nested = data['user'];
+    final profile =
+        nested is Map ? {...data, ...Map<String, dynamic>.from(nested)} : data;
+    _username = _pick(profile, 'username', 'userName', 'name') ?? _username;
+    _email = _pick(profile, 'email') ?? (clearMissing ? null : _email);
+    if (_containsAny(profile, const ['avatarUrl', 'avatar_url', 'avatar'])) {
+      _avatarUrl = _normalizeAvatarUrl(
+        _pick(profile, 'avatarUrl', 'avatar_url', 'avatar'),
+      );
     } else if (clearMissing) {
       _avatarUrl = null;
     }
+  }
+
+  bool _containsAny(Map<String, dynamic> data, List<String> keys) {
+    return keys.any(data.containsKey);
   }
 
   String? _normalizeAvatarUrl(String? value) {

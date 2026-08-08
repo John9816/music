@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../config/app_config.dart';
 
@@ -25,13 +26,15 @@ class ApiException implements Exception {
 /// 带浏览器 UA/Referer，解析 {code, message, data} 响应外壳。
 /// 所有请求带超时 + 中文错误提示，避免网络异常时界面无限转圈。
 class ApiClient {
-  ApiClient._();
+  ApiClient._() : _client = http.Client();
+
+  ApiClient.forTesting(this._client);
 
   static final ApiClient instance = ApiClient._();
 
   static const Duration timeout = Duration(seconds: 10);
 
-  final http.Client _client = http.Client();
+  final http.Client _client;
   String? bearerToken;
   Future<void> Function()? onUnauthorized;
 
@@ -44,6 +47,15 @@ class ApiClient {
         if (bearerToken != null) 'Authorization': 'Bearer $bearerToken',
       };
 
+  Map<String, String> _requestHeaders(Map<String, String>? headers) {
+    final merged = {..._headers, ...?headers};
+    final token = bearerToken;
+    if (token != null && token.isNotEmpty) {
+      merged['Authorization'] = 'Bearer $token';
+    }
+    return merged;
+  }
+
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? params,
@@ -53,7 +65,7 @@ class ApiClient {
       () {
         final uri = Uri.parse('${AppConfig.apiBaseUrl}$path')
             .replace(queryParameters: params);
-        return _client.get(uri, headers: {..._headers, ...?headers});
+        return _client.get(uri, headers: _requestHeaders(headers));
       },
       retry: true,
     );
@@ -63,14 +75,79 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? headers,
+    bool retryUnauthorized = true,
+  }) {
+    return _request(
+      () {
+        final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
+        return _client.post(
+          uri,
+          headers: _requestHeaders(headers),
+          body: jsonEncode(body ?? const {}),
+        );
+      },
+      retryUnauthorized: retryUnauthorized,
+    );
+  }
+
+  Future<Map<String, dynamic>> putJson(
+    String path, {
+    Object? body,
+    Map<String, String>? headers,
   }) {
     return _request(() {
       final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
-      return _client.post(
+      return _client.put(
         uri,
-        headers: {..._headers, ...?headers},
+        headers: _requestHeaders(headers),
         body: jsonEncode(body ?? const {}),
       );
+    });
+  }
+
+  Future<Map<String, dynamic>> patchJson(
+    String path, {
+    Object? body,
+    Map<String, String>? headers,
+  }) {
+    return _request(() {
+      final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
+      return _client.patch(
+        uri,
+        headers: _requestHeaders(headers),
+        body: jsonEncode(body ?? const {}),
+      );
+    });
+  }
+
+  /// Uploads one file using multipart/form-data. The multipart request owns
+  /// its Content-Type header so the boundary is generated correctly.
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required String fieldName,
+    required List<int> bytes,
+    required String filename,
+    String? contentType,
+    Map<String, String>? headers,
+  }) {
+    return _request(() async {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${AppConfig.apiBaseUrl}$path'),
+      );
+      final requestHeaders = _requestHeaders(headers)..remove('Content-Type');
+      request.headers.addAll(requestHeaders);
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          fieldName,
+          bytes,
+          filename: filename,
+          contentType:
+              contentType == null ? null : MediaType.parse(contentType),
+        ),
+      );
+      final response = await _client.send(request);
+      return http.Response.fromStream(response);
     });
   }
 
@@ -82,7 +159,7 @@ class ApiClient {
     return _request(() {
       final uri = Uri.parse('${AppConfig.apiBaseUrl}$path')
           .replace(queryParameters: params);
-      return _client.delete(uri, headers: {..._headers, ...?headers});
+      return _client.delete(uri, headers: _requestHeaders(headers));
     });
   }
 
@@ -90,6 +167,7 @@ class ApiClient {
   Future<Map<String, dynamic>> _request(
     Future<http.Response> Function() send, {
     bool retry = false,
+    bool retryUnauthorized = true,
   }) async {
     http.Response? res;
     try {
@@ -104,7 +182,22 @@ class ApiClient {
         throw ApiException(_friendlyError(e));
       }
     }
-    return _unwrap(res);
+    try {
+      return _unwrap(res);
+    } on ApiException catch (error) {
+      if (!retryUnauthorized ||
+          !error.unauthorized ||
+          bearerToken == null ||
+          onUnauthorized == null) {
+        rethrow;
+      }
+      final previousToken = bearerToken;
+      try {
+        await onUnauthorized!();
+      } catch (_) {}
+      if (bearerToken == null || bearerToken == previousToken) rethrow;
+      return _request(send, retryUnauthorized: false);
+    }
   }
 
   String _friendlyError(Object e) {
@@ -129,7 +222,6 @@ class ApiClient {
     final message = json['message']?.toString();
     final unauthorized = _isUnauthorized(res.statusCode, code, message);
     if (unauthorized) {
-      _notifyUnauthorized();
       throw ApiException(
         '登录已失效，请重新登录',
         unauthorized: true,
@@ -171,10 +263,5 @@ class ApiClient {
         normalizedMessage.contains('token expired') ||
         normalizedMessage.contains('unauthorized') ||
         normalizedMessage.contains('unauthenticated');
-  }
-
-  void _notifyUnauthorized() {
-    if (bearerToken == null || onUnauthorized == null) return;
-    unawaited(onUnauthorized!().catchError((_) {}));
   }
 }

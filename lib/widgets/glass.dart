@@ -1,10 +1,14 @@
+import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/theme/design_tokens.dart';
+import '../core/theme/platform_motion.dart';
 
 export '../core/theme/design_tokens.dart';
+export '../core/theme/platform_motion.dart';
 export '../core/theme/app_theme.dart' show GlassTokens, GlassTheme;
 
 const double _macOSWindowControlsInset = 76;
@@ -22,6 +26,15 @@ class GWindowControlsSafeRegion extends InheritedWidget {
 
   @override
   bool updateShouldNotify(GWindowControlsSafeRegion oldWidget) => false;
+}
+
+class GBreakpoints {
+  GBreakpoints._();
+
+  static const double compact = 600;
+  static const double sidebar = 840;
+  static const double desktopPlayer = 1080;
+  static const double contentMax = 1320;
 }
 
 /// 全屏内容需要避让红黄绿按钮；主框架右侧内容已经由侧栏完成避让。
@@ -71,46 +84,50 @@ class GPageHeader extends StatelessWidget {
     return Padding(
       padding: padding ??
           (compact
-              ? EdgeInsets.fromLTRB(
-                  18 + windowControlsInset,
-                  18,
-                  18,
-                  12,
-                )
-              : EdgeInsets.fromLTRB(
-                  24 + windowControlsInset,
-                  28,
-                  24,
-                  14,
-                )),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Column(
+              ? EdgeInsets.fromLTRB(18 + windowControlsInset, 18, 18, 12)
+              : EdgeInsets.fromLTRB(24 + windowControlsInset, 24, 24, 14)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stackActions = trailing != null && constraints.maxWidth < 420;
+          final heading = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: pageTitleStyle(context), maxLines: 2),
+              if (subtitle != null) ...[
+                const SizedBox(height: 5),
+                Text(
+                  subtitle!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: TypeScale.body,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          );
+          if (stackActions) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: pageTitleStyle(context)),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    subtitle!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: TypeScale.body,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+                heading,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: trailing!),
               ],
-            ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 16),
-            trailing!,
-          ],
-        ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: heading),
+              if (trailing != null) ...[
+                const SizedBox(width: 16),
+                trailing!,
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -160,27 +177,61 @@ class GPressScale extends StatefulWidget {
 
 class _GPressScaleState extends State<GPressScale> {
   bool _pressed = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final enabled = !widget.disabled && widget.onTap != null;
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final ios = PlatformMotion.isIOS(context);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final duration = reduceMotion ? Duration.zero : Motion.fast;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? widget.onTap : null,
-      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-      child: AnimatedOpacity(
-        opacity: ios && _pressed ? 0.56 : 1,
-        duration: duration,
-        child: AnimatedScale(
-          scale: !reduceMotion && !ios && _pressed ? widget.scale : 1,
-          duration: duration,
-          curve: Curves.easeOut,
-          child: widget.child,
+    final duration = PlatformMotion.duration(context, Motion.fast);
+    return Semantics(
+      button: enabled,
+      enabled: enabled,
+      child: Focus(
+        canRequestFocus: enabled,
+        onFocusChange: (value) {
+          if (mounted) setState(() => _focused = value);
+        },
+        onKeyEvent: (_, event) {
+          if (!enabled || event is! KeyDownEvent) {
+            return KeyEventResult.ignored;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.onTap?.call();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? widget.onTap : null,
+          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+          onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+          child: AnimatedContainer(
+            duration: duration,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(RadiusToken.sm),
+              border: _focused
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
+                  : null,
+            ),
+            child: AnimatedOpacity(
+              opacity: ios && _pressed ? 0.72 : 1,
+              duration: duration,
+              child: AnimatedScale(
+                scale: !reduceMotion && !ios && _pressed ? widget.scale : 1,
+                duration: duration,
+                curve: Curves.easeOut,
+                child: widget.child,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -210,6 +261,7 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final back = onBack;
     final scheme = Theme.of(context).colorScheme;
     final windowControlsInset = macOSWindowControlsInset(context);
     final titleContent = DefaultTextStyle(
@@ -232,16 +284,10 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 72),
                   child: Center(child: titleContent),
                 ),
-                if (onBack != null)
+                if (back != null)
                   Positioned(
                     left: 4,
-                    child: GIconButton(
-                      icon: Icons.arrow_back_ios_new_rounded,
-                      tooltip: '返回',
-                      size: 17,
-                      padding: 11,
-                      onTap: onBack,
-                    ),
+                    child: GBackButton(onTap: back),
                   ),
                 if (actions != null)
                   Positioned(
@@ -254,14 +300,8 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
           : Row(
               children: [
                 SizedBox(width: 6 + windowControlsInset),
-                if (onBack != null)
-                  GIconButton(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    tooltip: '返回',
-                    size: 16,
-                    padding: 12,
-                    onTap: onBack,
-                  )
+                if (back != null)
+                  GBackButton(onTap: back)
                 else
                   const SizedBox(width: 12),
                 const SizedBox(width: 4),
@@ -284,6 +324,52 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
       child: SafeArea(
         bottom: false,
         child: toolbar,
+      ),
+    );
+  }
+}
+
+/// 跨平台统一返回控件：iOS 使用系统 chevron，Android 使用 Material
+/// 返回箭头。视觉内容和触控区域保持在同一个按钮内。
+class GBackButton extends StatelessWidget {
+  const GBackButton({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ios = Theme.of(context).platform == TargetPlatform.iOS;
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      enabled: true,
+      label: '返回',
+      child: Tooltip(
+        message: '返回',
+        child: GPressScale(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: 44,
+              minHeight: 44,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    ios
+                        ? cupertino.CupertinoIcons.chevron_back
+                        : Icons.arrow_back_rounded,
+                    size: ios ? 21 : 22,
+                    color: ios ? scheme.primary : scheme.onSurface,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -342,13 +428,17 @@ class SectionHeader extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: TypeScale.section,
-              fontWeight: TypeScale.bold,
-              letterSpacing: 0,
-              height: 1.1,
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: TypeScale.section,
+                fontWeight: TypeScale.bold,
+                letterSpacing: 0,
+                height: 1.1,
+              ),
             ),
           ),
           if (subtitle != null) ...[
@@ -404,7 +494,7 @@ class GButton extends StatelessWidget {
         height: 16,
         child: CircularProgressIndicator(
           strokeWidth: 2,
-          color: filled ? Colors.white : scheme.primary,
+          color: filled ? scheme.onPrimary : scheme.primary,
         ),
       );
     } else {
@@ -413,15 +503,21 @@ class GButton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (icon != null) ...[
-            Icon(icon!, size: small ? 15 : 18),
+            Icon(
+              icon!,
+              size: small ? 15 : 18,
+              color: filled ? scheme.onPrimary : scheme.primary,
+            ),
             const SizedBox(width: 6),
           ],
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: small ? 13 : 14,
               fontWeight: TypeScale.semibold,
-              color: filled ? Colors.white : scheme.primary,
+              color: filled ? scheme.onPrimary : scheme.primary,
             ),
           ),
         ],
@@ -438,6 +534,12 @@ class GButton extends StatelessWidget {
           child: AnimatedContainer(
             duration: Motion.fast,
             width: expand ? double.infinity : null,
+            constraints: BoxConstraints(
+              minHeight: switch (Theme.of(context).platform) {
+                TargetPlatform.android || TargetPlatform.iOS => 44,
+                _ => 36,
+              },
+            ),
             padding: EdgeInsets.symmetric(
               horizontal: small ? 16 : 22,
               vertical: small ? 7 : 11,
@@ -518,7 +620,11 @@ class GIconButton extends StatelessWidget {
               shape: BoxShape.circle,
               color: bg,
             ),
-            child: Icon(icon, size: size, color: filled ? Colors.white : color),
+            child: Icon(
+              icon,
+              size: size,
+              color: filled ? scheme.onPrimary : color,
+            ),
           ),
         ),
       ),
@@ -707,10 +813,10 @@ class _GProgressBarState extends State<GProgressBar> {
                           height: 11,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white,
+                            color: scheme.onPrimary,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.28),
+                                color: scheme.shadow.withValues(alpha: 0.28),
                                 blurRadius: 4,
                                 offset: const Offset(0, 1),
                               ),
@@ -769,7 +875,7 @@ class GChoiceChip extends StatelessWidget {
           style: TextStyle(
             fontSize: mini ? 12 : 13,
             fontWeight: selected ? TypeScale.semibold : TypeScale.medium,
-            color: selected ? Colors.white : scheme.onSurface,
+            color: selected ? scheme.onPrimary : scheme.onSurface,
           ),
         ),
       ),
@@ -813,14 +919,12 @@ class GSegmented extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(9),
                   color: i == selected
-                      ? (Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF2C2C2E)
-                          : Colors.white)
+                      ? scheme.surfaceContainerHigh
                       : Colors.transparent,
                   boxShadow: i == selected
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.16),
+                            color: scheme.shadow.withValues(alpha: 0.16),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),

@@ -405,7 +405,7 @@ class AppTheme {
       iconTheme: IconThemeData(color: scheme.onSurface),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: _SlideFadeTransitionsBuilder(),
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
           TargetPlatform.iOS: cupertino.CupertinoPageTransitionsBuilder(),
           TargetPlatform.macOS: _SlideFadeTransitionsBuilder(),
           TargetPlatform.windows: _SlideFadeTransitionsBuilder(),

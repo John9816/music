@@ -11,6 +11,7 @@ import 'core/config/app_config.dart';
 import 'core/player/player_controller.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/desktop_integration_service.dart';
+import 'core/services/ios_sideload_service.dart';
 import 'core/services/sleep_timer.dart';
 import 'core/services/song_download_service.dart';
 import 'core/settings/settings_controller.dart';
@@ -32,6 +33,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
   late final PlayerController _player;
   late final AuthController _auth;
   late final DesktopIntegrationService _desktopIntegration;
+  late final IosSideloadService _iosSideload;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     _settings = SettingsController();
     _player = PlayerController(settings: _settings);
     _auth = AuthController(onSessionCleared: _player.stopAndClear)..load();
+    _iosSideload = IosSideloadService(stateStore: FileIosSideloadStateStore());
     unawaited(SongDownloadService.instance.initialize());
     _desktopIntegration = DesktopIntegrationService(
       settings: _settings,
@@ -52,6 +55,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     unawaited(_settings.load().then((_) async {
       await CacheService.instance.maintainAudioCache(_settings);
       await _desktopIntegration.initialize();
+      await _iosSideload.autoRefreshIfNeeded();
     }));
   }
 
@@ -59,6 +63,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
   void dispose() {
     _desktopIntegration.dispose();
     _auth.dispose();
+    _iosSideload.dispose();
     _player.dispose();
     _settings.dispose();
     super.dispose();
@@ -74,6 +79,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
         ChangeNotifierProvider.value(value: SongDownloadService.instance),
         ChangeNotifierProvider.value(value: _auth),
         ChangeNotifierProvider(create: (_) => SleepTimer()),
+        ChangeNotifierProvider.value(value: _iosSideload),
       ],
       child: const _ThemeBridge(),
     );
@@ -133,13 +139,19 @@ class _ThemeBridgeState extends State<_ThemeBridge> {
       scrollBehavior: const _NoScrollbarBehavior(),
       builder: (context, child) {
         final dark = Theme.of(context).brightness == Brightness.dark;
+        final mobile = Platform.isAndroid || Platform.isIOS;
         final mediaQuery = MediaQuery.of(context);
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
             statusBarBrightness: dark ? Brightness.dark : Brightness.light,
-            systemNavigationBarColor: Theme.of(context).scaffoldBackgroundColor,
+            // Mobile devices use gesture navigation and edge-to-edge layout.
+            // Keep the app surface visible behind the home indicator/nav
+            // gesture area; SafeArea still keeps controls out of that inset.
+            systemNavigationBarColor: mobile
+                ? Colors.transparent
+                : Theme.of(context).scaffoldBackgroundColor,
             systemNavigationBarIconBrightness:
                 dark ? Brightness.light : Brightness.dark,
             systemNavigationBarDividerColor: Colors.transparent,

@@ -45,6 +45,10 @@ class _HomeShellState extends State<HomeShell> {
     _pageCount,
     (_) => GlobalKey<_TabNavigatorState>(),
   );
+  final List<ValueNotifier<bool>> _tabCanPop = List.generate(
+    _pageCount,
+    (_) => ValueNotifier(false),
+  );
   late String _lastSource;
   late final SettingsController _settings;
   late final PlayerController _player;
@@ -140,6 +144,9 @@ class _HomeShellState extends State<HomeShell> {
     if (_player.onMembershipRequired == _openMembershipCenter) {
       _player.onMembershipRequired = null;
     }
+    for (final notifier in _tabCanPop) {
+      notifier.dispose();
+    }
     super.dispose();
   }
 
@@ -168,108 +175,127 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final windowWidth = MediaQuery.sizeOf(context).width;
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
-    final wide = windowWidth >= 640;
-    final sidebarWidth = windowWidth >= 900 ? 280.0 : 232.0;
-    final dockedPlayerPanel = windowWidth >= 1120 &&
+    final wide = windowWidth >= GBreakpoints.sidebar;
+    final sidebarWidth = windowWidth >= 1180 ? 264.0 : 236.0;
+    final dockedPlayerPanel = windowWidth >= GBreakpoints.desktopPlayer &&
         context.select<PlayerController, bool>((p) => p.current != null);
     final playerPanelWidth = (windowWidth * 0.30).clamp(360.0, 420.0);
     final pages = List<Widget>.generate(
       _pageCount,
       (pageIndex) => _visitedPages.contains(pageIndex)
-          ? _buildPage(pageIndex, wide: wide)
+          ? _buildPage(pageIndex)
           : const SizedBox.shrink(),
     );
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      if (wide)
-                        _Sidebar(
-                          width: sidebarWidth,
-                          topInset: macOS ? 68 : 18,
-                          selected: _index,
-                          onSelect: _selectPage,
-                          onSearch: (query) {
-                            setState(() => _pendingSearchQuery = query);
-                            _selectPage(1);
-                          },
-                          searchQuery: _pendingSearchQuery,
-                        ),
-                      Expanded(
-                        child: GWindowControlsSafeRegion(
-                          child: SafeArea(
-                            top: !macOS,
-                            bottom: false,
-                            child: Padding(
-                              padding: EdgeInsets.zero,
-                              child: IndexedStack(
-                                index: _index,
-                                children: [
-                                  for (var i = 0; i < pages.length; i++)
-                                    _TabNavigator(
-                                      key: _tabKeys[i],
-                                      child: pages[i],
-                                    ),
-                                ],
+    final canPopTab = _tabCanPop[_index];
+    return ValueListenableBuilder<bool>(
+      valueListenable: canPopTab,
+      builder: (context, tabCanPop, child) {
+        return PopScope<void>(
+          canPop: _index == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (!tabCanPop && _index != 0) {
+              switchTo(0);
+            }
+          },
+          child: child!,
+        );
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        if (wide)
+                          _Sidebar(
+                            width: sidebarWidth,
+                            topInset: macOS ? 48 : 18,
+                            selected: _index,
+                            onSelect: _selectPage,
+                            onOpenPlaylist: _openUserPlaylist,
+                            onSearch: (query) {
+                              setState(() => _pendingSearchQuery = query);
+                              _selectPage(1);
+                            },
+                            searchQuery: _pendingSearchQuery,
+                          ),
+                        Expanded(
+                          child: GWindowControlsSafeRegion(
+                            child: SafeArea(
+                              top: !macOS,
+                              bottom: false,
+                              child: Padding(
+                                padding: EdgeInsets.zero,
+                                child: _AnimatedTabStack(
+                                  index: _index,
+                                  children: [
+                                    for (var i = 0; i < pages.length; i++)
+                                      _TabNavigator(
+                                        key: _tabKeys[i],
+                                        active: _index == i,
+                                        canPopListenable: _tabCanPop[i],
+                                        child: pages[i],
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                MiniPlayer(
-                  sidebarWidth: wide ? sidebarWidth : null,
-                  panel: dockedPlayerPanel ? _miniPlayerPanel : null,
-                  onPanelChanged: dockedPlayerPanel
-                      ? (panel) => setState(() => _miniPlayerPanel = panel)
-                      : null,
-                ),
-              ],
-            ),
-          ),
-          if (dockedPlayerPanel)
-            AnimatedPositioned(
-              duration: Motion.normal,
-              curve: Curves.easeOutCubic,
-              top: 0,
-              bottom: 80,
-              right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
-              width: playerPanelWidth,
-              child: IgnorePointer(
-                ignoring: _miniPlayerPanel == null,
-                child: DesktopPlayerPanel(
-                  panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
-                  onClose: () => setState(() => _miniPlayerPanel = null),
-                ),
+                  MiniPlayer(
+                    sidebarWidth: wide ? sidebarWidth : null,
+                    panel: dockedPlayerPanel ? _miniPlayerPanel : null,
+                    onPanelChanged: dockedPlayerPanel
+                        ? (panel) => setState(() => _miniPlayerPanel = panel)
+                        : null,
+                  ),
+                ],
               ),
             ),
-          if (macOS && wide)
-            Positioned(
-              left: 0,
-              width: sidebarWidth,
-              top: 0,
-              child: const _WindowDragBar(),
-            ),
-        ],
+            if (dockedPlayerPanel)
+              AnimatedPositioned(
+                duration: Motion.normal,
+                curve: Curves.easeOutCubic,
+                top: 0,
+                bottom: 80,
+                right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
+                width: playerPanelWidth,
+                child: IgnorePointer(
+                  ignoring: _miniPlayerPanel == null,
+                  child: DesktopPlayerPanel(
+                    panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
+                    onClose: () => setState(() => _miniPlayerPanel = null),
+                  ),
+                ),
+              ),
+            if (macOS && wide)
+              Positioned(
+                left: 0,
+                width: sidebarWidth,
+                top: 0,
+                child: const _WindowDragBar(),
+              ),
+          ],
+        ),
+        bottomNavigationBar: wide
+            ? null
+            : _BottomNav(
+                selected: _index,
+                onSelect: _selectPage,
+              ),
       ),
-      bottomNavigationBar: wide
-          ? null
-          : _BottomNav(
-              selected: _index,
-              onSelect: _selectPage,
-            ),
     );
   }
 
-  Widget _buildPage(int pageIndex, {required bool wide}) {
+  Widget _buildPage(int pageIndex) {
     switch (pageIndex) {
       case 0:
         return DiscoverView(
@@ -284,8 +310,8 @@ class _HomeShellState extends State<HomeShell> {
       case 2:
         return LibraryView(
           key: ValueKey('library_$_sourceVersion'),
-          onOpenFavorites: () => _selectPage(_favoritesIndex),
-          onOpenHistory: () => _selectPage(_historyIndex),
+          onOpenFavorites: () => _openUserLibraryFromLibrary(favorites: true),
+          onOpenHistory: () => _openUserLibraryFromLibrary(favorites: false),
         );
       case 3:
         return PlaylistsView(
@@ -297,6 +323,7 @@ class _HomeShellState extends State<HomeShell> {
         return UserLibraryView(
           key: const ValueKey('favorites'),
           title: '喜欢的音乐',
+          kind: UserLibraryKind.favorites,
           embedded: true,
           active: _index == _favoritesIndex,
           loader: () => _loadUserSongs(favorites: true),
@@ -310,6 +337,7 @@ class _HomeShellState extends State<HomeShell> {
         return UserLibraryView(
           key: const ValueKey('history'),
           title: '播放历史',
+          kind: UserLibraryKind.history,
           embedded: true,
           active: _index == _historyIndex,
           loader: () => _loadUserSongs(favorites: false),
@@ -331,11 +359,9 @@ class _HomeShellState extends State<HomeShell> {
           },
         );
       case _profileIndex:
-        return ProfileView(
-          key: const ValueKey('profile'),
+        return const ProfileView(
+          key: ValueKey('profile'),
           embedded: true,
-          onOpenFavorites: wide ? () => _selectPage(_favoritesIndex) : null,
-          onOpenHistory: wide ? () => _selectPage(_historyIndex) : null,
         );
       default:
         return const SizedBox.shrink();
@@ -355,6 +381,76 @@ class _HomeShellState extends State<HomeShell> {
     switchTo(index);
   }
 
+  void _openUserLibraryFromLibrary({required bool favorites}) {
+    final token = _auth.token;
+    if (token == null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginView()),
+      );
+      return;
+    }
+
+    final page = UserLibraryView(
+      title: favorites ? '喜欢的音乐' : '播放历史',
+      kind: favorites ? UserLibraryKind.favorites : UserLibraryKind.history,
+      loader: () => _loadUserSongs(favorites: favorites),
+      onRemove: (song) async {
+        if (favorites) {
+          await UserApi().removeFavorite(song.id, song.source, token);
+          return;
+        }
+        final recordId = song.libraryId;
+        if (recordId != null) await UserApi().deleteHistory(recordId, token);
+      },
+      onClear: favorites
+          ? null
+          : (songs) async {
+              for (final song in songs) {
+                final recordId = song.libraryId;
+                if (recordId != null) {
+                  await UserApi().deleteHistory(recordId, token);
+                }
+              }
+            },
+    );
+
+    switchTo(2);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _tabKeys[2].currentState?.push(page);
+    });
+  }
+
+  void _openUserPlaylist(Map<String, dynamic> item) {
+    final token = _auth.token;
+    final id = userPlaylistId(item);
+    if (token == null || id == null) return;
+    final source = item['source']?.toString().trim();
+    final sourceId = item['sourceId']?.toString().trim();
+    final canSync = source != null &&
+        source.isNotEmpty &&
+        source != 'local' &&
+        sourceId != null &&
+        sourceId.isNotEmpty;
+    final page = UserLibraryView(
+      title: userPlaylistName(item),
+      kind: UserLibraryKind.playlist,
+      loader: () async {
+        final songs = await UserApi().getUserPlaylistSongs(id, token);
+        return songs.map(itemToSong).toList();
+      },
+      onSync: canSync
+          ? () async {
+              await UserApi().syncPlaylist(id, token);
+            }
+          : null,
+    );
+
+    switchTo(2);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _tabKeys[2].currentState?.push(page);
+    });
+  }
+
   Future<List<Song>> _loadUserSongs({required bool favorites}) async {
     final token = context.read<AuthController>().token;
     if (token == null) throw StateError('登录状态已失效，请重新登录');
@@ -367,20 +463,79 @@ class _HomeShellState extends State<HomeShell> {
 
 /// 每个栏目保留独立的内容导航栈；二级页不会遮住侧栏和全局播放栏。
 class _TabNavigator extends StatefulWidget {
-  const _TabNavigator({super.key, required this.child});
+  const _TabNavigator({
+    super.key,
+    required this.active,
+    required this.child,
+    required this.canPopListenable,
+  });
 
+  final bool active;
   final Widget child;
+  final ValueNotifier<bool> canPopListenable;
 
   @override
   State<_TabNavigator> createState() => _TabNavigatorState();
 }
 
+/// Fades between tabs while keeping every navigator mounted.
+///
+/// Keeping the stacks alive is important for mobile: switching tabs must not
+/// reset scroll position or a nested detail page. IgnorePointer and
+/// ExcludeSemantics ensure only the visible tab participates in interaction.
+class _AnimatedTabStack extends StatelessWidget {
+  const _AnimatedTabStack({required this.index, required this.children});
+
+  final int index;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = PlatformMotion.tabDuration(context);
+    final curve = PlatformMotion.curve(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        for (var i = 0; i < children.length; i++)
+          Positioned.fill(
+            child: Offstage(
+              offstage: i != index,
+              child: ExcludeSemantics(
+                excluding: i != index,
+                child: IgnorePointer(
+                  ignoring: i != index,
+                  child: TickerMode(
+                    enabled: i == index,
+                    child: AnimatedOpacity(
+                      opacity: i == index ? 1 : 0,
+                      duration: duration,
+                      curve: curve,
+                      child: children[i],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _TabNavigatorState extends State<_TabNavigator> {
   late final ValueNotifier<Widget> _rootPage = ValueNotifier(widget.child);
+
+  ValueNotifier<bool> get canPopListenable => widget.canPopListenable;
 
   void popToRoot() {
     final navigator = _navigatorKey.currentState;
     navigator?.popUntil((route) => route.isFirst);
+  }
+
+  void push(Widget page) {
+    _navigatorKey.currentState?.push<void>(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
   }
 
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -397,17 +552,50 @@ class _TabNavigatorState extends State<_TabNavigator> {
     super.dispose();
   }
 
+  void _syncCanPop() {
+    final value = _navigatorKey.currentState?.canPop() ?? false;
+    if (value != canPopListenable.value) canPopListenable.value = value;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Navigator(
-      key: _navigatorKey,
-      onGenerateRoute: (_) => MaterialPageRoute<void>(
-        builder: (_) => ValueListenableBuilder<Widget>(
-          valueListenable: _rootPage,
-          builder: (_, page, __) => page,
+    return NavigatorPopHandler<void>(
+      enabled: widget.active,
+      onPopWithResult: (_) {
+        _navigatorKey.currentState?.maybePop();
+      },
+      child: Navigator(
+        key: _navigatorKey,
+        observers: [_TabNavigatorObserver(_syncCanPop)],
+        onGenerateRoute: (_) => MaterialPageRoute<void>(
+          builder: (_) => ValueListenableBuilder<Widget>(
+            valueListenable: _rootPage,
+            builder: (_, page, __) => page,
+          ),
         ),
       ),
     );
+  }
+}
+
+class _TabNavigatorObserver extends NavigatorObserver {
+  _TabNavigatorObserver(this.onChanged);
+
+  final VoidCallback onChanged;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onChanged();
   }
 }
 
@@ -418,6 +606,7 @@ class _Sidebar extends StatefulWidget {
     required this.topInset,
     required this.selected,
     required this.onSelect,
+    required this.onOpenPlaylist,
     required this.onSearch,
     this.searchQuery,
   });
@@ -426,6 +615,7 @@ class _Sidebar extends StatefulWidget {
   final double topInset;
   final int selected;
   final ValueChanged<int> onSelect;
+  final ValueChanged<Map<String, dynamic>> onOpenPlaylist;
   final ValueChanged<String> onSearch;
   final String? searchQuery;
 
@@ -570,23 +760,6 @@ class _SidebarState extends State<_Sidebar> {
     );
   }
 
-  void _openPlaylist(Map<String, dynamic> item) {
-    final token = context.read<AuthController>().token;
-    final id = userPlaylistId(item);
-    if (token == null || id == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => UserLibraryView(
-          title: userPlaylistName(item),
-          loader: () async {
-            final songs = await UserApi().getUserPlaylistSongs(id, token);
-            return songs.map(itemToSong).toList();
-          },
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -596,14 +769,9 @@ class _SidebarState extends State<_Sidebar> {
     return Container(
       width: widget.width,
       decoration: BoxDecoration(
-        color: dark ? null : scheme.surfaceContainer.withValues(alpha: 0.96),
-        gradient: dark
-            ? const LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [Color(0xFF242725), Color(0xFF252926)],
-              )
-            : null,
+        color: dark
+            ? scheme.surfaceContainer.withValues(alpha: 0.92)
+            : scheme.surfaceContainer.withValues(alpha: 0.96),
         border: Border(right: BorderSide(color: glassHairline(context))),
       ),
       child: Column(
@@ -623,8 +791,7 @@ class _SidebarState extends State<_Sidebar> {
               child: Container(
                 height: 40,
                 decoration: BoxDecoration(
-                  color:
-                      dark ? const Color(0xFF383B39) : scheme.surfaceContainer,
+                  color: scheme.surfaceContainer,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(
                     color: widget.selected == 1
@@ -694,7 +861,7 @@ class _SidebarState extends State<_Sidebar> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 12, 5),
             child: Text(
-              '资料库',
+              '你的音乐',
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: TypeScale.semibold,
@@ -723,7 +890,7 @@ class _SidebarState extends State<_Sidebar> {
             child: Row(
               children: [
                 Text(
-                  '我的歌单',
+                  '歌单',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: TypeScale.semibold,
@@ -817,10 +984,7 @@ class _SidebarState extends State<_Sidebar> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 2),
       children: [
-        if (owned.isNotEmpty) ...[
-          _playlistSectionTitle('我的歌单', scheme),
-          ...owned.map(_playlistItem),
-        ],
+        if (owned.isNotEmpty) ...owned.map(_playlistItem),
         if (favorites.isNotEmpty) ...[
           _playlistSectionTitle('收藏歌单', scheme),
           ...favorites.map(_playlistItem),
@@ -849,7 +1013,7 @@ class _SidebarState extends State<_Sidebar> {
       selectedIcon: CupertinoIcons.music_note_list,
       label: userPlaylistName(item),
       selected: false,
-      onTap: () => _openPlaylist(item),
+      onTap: () => widget.onOpenPlaylist(item),
     );
   }
 }
@@ -877,9 +1041,11 @@ class _UserFooter extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       decoration: BoxDecoration(
         color: selected
-            ? (Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF24482F)
-                : AppBrand.red.withValues(alpha: 0.14))
+            ? scheme.primary.withValues(
+                alpha: Theme.of(context).brightness == Brightness.dark
+                    ? 0.18
+                    : 0.12,
+              )
             : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
@@ -940,7 +1106,7 @@ class _SidebarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final iconColor =
-        selected ? AppBrand.red : scheme.onSurface.withValues(alpha: 0.63);
+        selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.63);
     final textColor =
         selected ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.82);
     return GPressScale(
@@ -952,9 +1118,11 @@ class _SidebarItem extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: selected
-              ? (Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF24482F)
-                  : AppBrand.red.withValues(alpha: 0.14))
+              ? scheme.primary.withValues(
+                  alpha: Theme.of(context).brightness == Brightness.dark
+                      ? 0.18
+                      : 0.12,
+                )
               : Colors.transparent,
         ),
         child: Row(
@@ -994,10 +1162,9 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: dark ? const Color(0xF2101012) : const Color(0xF2FFFFFF),
+        color: scheme.surfaceContainer.withValues(alpha: 0.95),
         border: Border(top: BorderSide(color: glassHairline(context))),
       ),
       child: SafeArea(
@@ -1014,7 +1181,7 @@ class _BottomNav extends StatelessWidget {
                     label: _HomeShellState._tabs[i].label,
                     child: GPressScale(
                       onTap: () {
-                        HapticFeedback.selectionClick();
+                        PlatformMotion.selectionFeedback(context);
                         onSelect(_HomeShellState._tabToPageIndex[i]);
                       },
                       child: Column(

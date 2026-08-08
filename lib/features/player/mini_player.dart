@@ -43,18 +43,52 @@ class _MiniPlayerState extends State<MiniPlayer> {
   Widget build(BuildContext context) {
     final current = context.select<PlayerController, Song?>((p) => p.current);
     final desktop =
-        MediaQuery.sizeOf(context).width >= 1120 && widget.sidebarWidth != null;
+        MediaQuery.sizeOf(context).width >= GBreakpoints.desktopPlayer &&
+            widget.sidebarWidth != null;
     final ios = Theme.of(context).platform == TargetPlatform.iOS;
-    if (current == null && !desktop) return const SizedBox.shrink();
+    final height = desktop ? 80.0 : (ios ? 64.0 : 68.0);
+    final duration = PlatformMotion.duration(context, Motion.normal);
+    final content = current == null
+        ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
+        : KeyedSubtree(
+            key: const ValueKey('mini-player-active'),
+            child: _surface(
+              context,
+              current,
+              desktop: desktop,
+              height: height,
+            ),
+          );
+    return AnimatedSize(
+      duration: duration,
+      curve: PlatformMotion.curve(context),
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: PlatformMotion.curve(context),
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+        child: content,
+      ),
+    );
+  }
 
+  Widget _surface(
+    BuildContext context,
+    Song current, {
+    required bool desktop,
+    required double height,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      height: desktop ? 80 : (ios ? 60 : 66),
+      height: height,
       decoration: BoxDecoration(
-        color: dark
-            ? const Color(0xFA10271B)
-            : scheme.surfaceContainer.withValues(alpha: 0.98),
+        color: scheme.surfaceContainer.withValues(alpha: dark ? 0.98 : 0.96),
         border: Border(top: BorderSide(color: glassHairline(context))),
         boxShadow: [
           BoxShadow(
@@ -65,17 +99,16 @@ class _MiniPlayerState extends State<MiniPlayer> {
         ],
       ),
       child: desktop
-          ? current == null
-              ? _emptyDesktopBar(context)
-              : _desktopBar(context, current)
-          : _compactBar(context, current!),
+          ? _desktopBar(context, current)
+          : _compactBar(context, current),
     );
   }
 
+  // ignore: unused_element
   Widget _emptyDesktopBar(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final muted = scheme.onSurface.withValues(alpha: 0.32);
-    final trackAreaWidth = (widget.sidebarWidth ?? 280) + 80;
+    final trackAreaWidth = (widget.sidebarWidth ?? 264) + 64;
     Widget icon(IconData value, double size) =>
         Icon(value, size: size, color: muted);
 
@@ -197,35 +230,36 @@ class _MiniPlayerState extends State<MiniPlayer> {
   Widget _desktopBar(BuildContext context, Song current) {
     final player = context.read<PlayerController>();
     final liked = context.select<PlayerController, bool>((p) => p.liked);
-    final trackAreaWidth = (widget.sidebarWidth ?? 280) + 80;
+    final scheme = Theme.of(context).colorScheme;
+    final trackAreaWidth = (widget.sidebarWidth ?? 264) + 64;
     return Row(
       children: [
         SizedBox(
           width: trackAreaWidth,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
             child: _TrackIdentity(
               song: current,
-              coverSize: 56,
+              coverSize: 52,
               onTap: _openPlayer,
             ),
           ),
         ),
         SizedBox(
-          width: 80,
+          width: 48,
           child: Center(
             child: _PlayerIconButton(
               icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
               size: 21,
               padding: 8,
-              tint: liked ? AppBrand.favoriteRed : null,
+              tint: liked ? scheme.primary : null,
               onTap:
                   _favoriteBusy ? null : () => _toggleFavorite(current, player),
             ),
           ),
         ),
         SizedBox(
-          width: 400,
+          width: 360,
           child: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Column(
@@ -240,7 +274,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
         ),
         const Spacer(),
         SizedBox(
-          width: 260,
+          width: 238,
           child: Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _rightTools(context, player),
@@ -312,7 +346,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     padding: 7,
                     onTap: player.previous,
                   ),
-                _PlayButton(player: player, size: 36),
+                _PlayButton(player: player, size: 44),
                 if (!ios)
                   GIconButton(
                     icon: CupertinoIcons.forward_end_fill,
@@ -355,7 +389,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               icon: CupertinoIcons.shuffle,
               size: 16,
               padding: 8,
-              tint: shuffle ? AppBrand.red : scheme.onSurfaceVariant,
+              tint: shuffle ? scheme.primary : scheme.onSurfaceVariant,
               onTap: player.toggleShuffle,
             ),
           ),
@@ -389,7 +423,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                   : CupertinoIcons.repeat,
               size: 16,
               padding: 8,
-              tint: loopMode != 'off' ? AppBrand.red : scheme.onSurfaceVariant,
+              tint:
+                  loopMode != 'off' ? scheme.primary : scheme.onSurfaceVariant,
               onTap: player.cycleLoopMode,
             ),
           ),
@@ -401,53 +436,60 @@ class _MiniPlayerState extends State<MiniPlayer> {
   Widget _rightTools(BuildContext context, PlayerController player) {
     final volume = context.select<PlayerController, double>((p) => p.volume);
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        _PlayerIconButton(
-          icon: volume <= 0
-              ? CupertinoIcons.volume_off
-              : CupertinoIcons.volume_down,
-          size: 18,
-          padding: 6,
-          onTap: () => player.setVolume(volume <= 0 ? 0.7 : 0),
-        ),
-        const SizedBox(width: 3),
-        _VolumeBar(value: volume, onChanged: player.setVolume),
-        const SizedBox(width: 5),
-        Icon(
-          CupertinoIcons.volume_up,
-          size: 18,
-          color: scheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 6),
-        _PlayerIconButton(
-          icon: CupertinoIcons.speaker_2,
-          size: 19,
-          padding: 6,
-          tooltip: '打开播放器',
-          onTap: _openPlayer,
-        ),
-        _PlayerIconButton(
-          icon: CupertinoIcons.text_bubble,
-          size: 19,
-          padding: 6,
-          tooltip: '歌词',
-          selected: widget.panel == MiniPlayerPanel.lyrics,
-          onTap: () => _togglePanel(MiniPlayerPanel.lyrics, _openPlayer),
-        ),
-        _PlayerIconButton(
-          icon: CupertinoIcons.list_bullet,
-          size: 20,
-          padding: 6,
-          tooltip: '播放队列',
-          selected: widget.panel == MiniPlayerPanel.queue,
-          onTap: () => _togglePanel(
-            MiniPlayerPanel.queue,
-            () => showQueueSheet(context),
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dense = constraints.maxWidth < 260;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _PlayerIconButton(
+              icon: volume <= 0
+                  ? CupertinoIcons.volume_off
+                  : CupertinoIcons.volume_down,
+              size: 18,
+              padding: 6,
+              onTap: () => player.setVolume(volume <= 0 ? 0.7 : 0),
+            ),
+            if (!dense) ...[
+              const SizedBox(width: 3),
+              _VolumeBar(value: volume, onChanged: player.setVolume),
+              const SizedBox(width: 5),
+              Icon(
+                CupertinoIcons.volume_up,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+            const SizedBox(width: 6),
+            _PlayerIconButton(
+              icon: CupertinoIcons.speaker_2,
+              size: 19,
+              padding: 6,
+              tooltip: '打开播放器',
+              onTap: _openPlayer,
+            ),
+            _PlayerIconButton(
+              icon: CupertinoIcons.text_bubble,
+              size: 19,
+              padding: 6,
+              tooltip: '歌词',
+              selected: widget.panel == MiniPlayerPanel.lyrics,
+              onTap: () => _togglePanel(MiniPlayerPanel.lyrics, _openPlayer),
+            ),
+            _PlayerIconButton(
+              icon: CupertinoIcons.list_bullet,
+              size: 20,
+              padding: 6,
+              tooltip: '播放队列',
+              selected: widget.panel == MiniPlayerPanel.queue,
+              onTap: () => _togglePanel(
+                MiniPlayerPanel.queue,
+                () => showQueueSheet(context),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -487,15 +529,15 @@ class _PlayerIconButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: Motion.fast,
-        width: 32,
-        height: 32,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: selected
               ? scheme.onSurface.withValues(alpha: 0.11)
               : Colors.transparent,
         ),
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
         child: Center(
           child: Icon(
             icon,
@@ -692,7 +734,7 @@ class _PlaybackTimelineState extends State<_PlaybackTimeline> {
               onHorizontalDragCancel: () =>
                   setState(() => _dragFraction = null),
               child: SizedBox(
-                height: widget.showTimes ? 14 : 3,
+                height: widget.showTimes ? 14 : 12,
                 child: Center(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(3),

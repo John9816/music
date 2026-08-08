@@ -1,5 +1,4 @@
 import 'dart:io' show Platform;
-import 'dart:math' show pi;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -103,7 +102,9 @@ class _PlayerViewState extends State<PlayerView> {
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.black,
+        // The player is edge-to-edge on phones; the black ambient surface
+        // continues beneath the gesture indicator.
+        systemNavigationBarColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.light,
         systemNavigationBarDividerColor: Colors.transparent,
         systemNavigationBarContrastEnforced: false,
@@ -197,45 +198,15 @@ class _TopBar extends StatelessWidget {
                     onTap: () => Navigator.of(context).maybePop(),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 68),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        song!.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: TypeScale.semibold,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        song!.artistNames,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.54),
-                          fontSize: 11.5,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  right: 6,
-                  child: _ImmersiveIconButton(
-                    icon: Icons.queue_music_rounded,
-                    tooltip: '播放队列',
-                    size: 23,
-                    onTap: () => showQueueSheet(context),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 68),
+                  child: Text(
+                    '正在播放',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: TypeScale.semibold,
+                    ),
                   ),
                 ),
               ],
@@ -278,6 +249,14 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     if (oldWidget.song.id != widget.song.id) _showLyrics = false;
   }
 
+  void _showLyricsView() {
+    if (!_showLyrics) setState(() => _showLyrics = true);
+  }
+
+  void _showCoverView() {
+    if (_showLyrics) setState(() => _showLyrics = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
@@ -294,34 +273,27 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                     lrc: player.lyric,
                     immersive: true,
                   )
-                : _MobileDiscStage(
-                    key: ValueKey('mobile-disc-${widget.song.id}'),
+                : _MobileCoverStage(
+                    key: ValueKey('mobile-cover-${widget.song.id}'),
                     song: widget.song,
-                    onOpenLyrics: () => setState(() => _showLyrics = true),
+                    onOpenLyrics: _showLyricsView,
                   ),
           ),
         ),
-        if (player.error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: _PlaybackErrorBanner(
-              message: player.error!,
-              actionLabel: _playbackActionLabel(player),
-              onAction: () => _handlePlaybackError(context, player),
-            ),
-          ),
         _MobileControls(
           song: widget.song,
+          error: player.error,
           showingLyrics: _showLyrics,
-          onShowCover: () => setState(() => _showLyrics = false),
+          onShowLyrics: _showLyricsView,
+          onShowCover: _showCoverView,
         ),
       ],
     );
   }
 }
 
-class _MobileDiscStage extends StatelessWidget {
-  const _MobileDiscStage({
+class _MobileCoverStage extends StatelessWidget {
+  const _MobileCoverStage({
     super.key,
     required this.song,
     required this.onOpenLyrics,
@@ -332,53 +304,39 @@ class _MobileDiscStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    final width = MediaQuery.sizeOf(context).width;
-    final coverSize = (width * 0.72).clamp(230.0, 310.0);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 12, 28, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Semantics(
-              button: true,
-              label: '查看歌词',
-              child: GPressScale(
-                onTap: onOpenLyrics,
-                child: _DiscCover(
-                  url: song.album.picUrl,
-                  size: coverSize,
-                  playing: player.playing,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final widthLimit = MediaQuery.sizeOf(context).width * 0.72;
+        final heightLimit =
+            (constraints.maxHeight - 20).clamp(120.0, 310.0).toDouble();
+        final coverSize = widthLimit.clamp(120.0, heightLimit).toDouble();
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 14),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Semantics(
+                button: true,
+                label: '查看歌词',
+                child: GPressScale(
+                  onTap: onOpenLyrics,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: ShadowToken.cover(context, radius: 32),
+                    ),
+                    child: AsyncCover(
+                      url: song.album.picUrl,
+                      size: coverSize,
+                      radius: 16,
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 34),
-            Text(
-              song.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 21,
-                fontWeight: TypeScale.bold,
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              song.artistNames,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -386,12 +344,16 @@ class _MobileDiscStage extends StatelessWidget {
 class _MobileControls extends StatelessWidget {
   const _MobileControls({
     required this.song,
+    required this.error,
     required this.showingLyrics,
+    required this.onShowLyrics,
     required this.onShowCover,
   });
 
   final Song song;
+  final String? error;
   final bool showingLyrics;
+  final VoidCallback onShowLyrics;
   final VoidCallback onShowCover;
 
   @override
@@ -403,39 +365,66 @@ class _MobileControls extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _FavoriteBtn(song: song, immersive: true),
-              if (showingLyrics)
-                _ImmersiveIconButton(
-                  icon: Icons.album_outlined,
-                  tooltip: '返回封面',
-                  size: 22,
-                  onTap: onShowCover,
-                )
-              else
-                const SizedBox(width: 46, height: 46),
-              _ImmersiveIconButton(
-                icon: Icons.timer_outlined,
-                tooltip: '睡眠定时',
-                size: 22,
-                onTap: () => _showSleepTimer(context),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: TypeScale.bold,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ArtistNamesLink(
+                      artists: song.artists,
+                      source: song.source,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.58),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              _ImmersiveIconButton(
-                icon: Icons.queue_music_rounded,
-                tooltip: '播放队列',
-                size: 23,
-                onTap: () => showQueueSheet(context),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: _FavoriteBtn(song: song, immersive: true),
               ),
             ],
           ),
-          const SizedBox(height: 5),
+          SizedBox(
+            height: 58,
+            child: error == null
+                ? const SizedBox.shrink()
+                : _PlaybackErrorBanner(
+                    message: error!,
+                    actionLabel: _playbackActionLabel(player),
+                    onAction: () => _handlePlaybackError(context, player),
+                  ),
+          ),
           const _ProgressRow(immersive: true),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              const SizedBox(width: 46, height: 46),
+              _ImmersiveIconButton(
+                icon: Icons.shuffle_rounded,
+                tooltip: player.shuffle ? '关闭随机播放' : '随机播放',
+                selected: player.shuffle,
+                onTap: player.toggleShuffle,
+              ),
               _ImmersiveIconButton(
                 icon: Icons.skip_previous_rounded,
                 tooltip: '上一首',
@@ -455,7 +444,39 @@ class _MobileControls extends StatelessWidget {
                 size: 34,
                 onTap: player.next,
               ),
-              const SizedBox(width: 46, height: 46),
+              _ImmersiveIconButton(
+                icon: player.loopMode.name == 'one'
+                    ? Icons.repeat_one_rounded
+                    : Icons.repeat_rounded,
+                tooltip: '循环模式',
+                selected: player.loopMode.name != 'off',
+                onTap: player.cycleLoopMode,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _ImmersiveIconButton(
+                icon: showingLyrics
+                    ? Icons.album_outlined
+                    : Icons.lyrics_outlined,
+                tooltip: showingLyrics ? '返回封面' : '歌词',
+                selected: showingLyrics,
+                onTap: showingLyrics ? onShowCover : onShowLyrics,
+              ),
+              _ImmersiveIconButton(
+                icon: Icons.timer_outlined,
+                tooltip: '睡眠定时',
+                onTap: () => _showSleepTimer(context),
+              ),
+              _ImmersiveIconButton(
+                icon: Icons.queue_music_rounded,
+                tooltip: '播放队列',
+                size: 23,
+                onTap: () => showQueueSheet(context),
+              ),
             ],
           ),
         ],
@@ -470,12 +491,14 @@ class _ImmersiveIconButton extends StatelessWidget {
     required this.tooltip,
     required this.onTap,
     this.size = 22,
+    this.selected = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final double size;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -492,7 +515,9 @@ class _ImmersiveIconButton extends StatelessWidget {
             child: Icon(
               icon,
               size: size,
-              color: Colors.white.withValues(alpha: 0.92),
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white.withValues(alpha: 0.92),
             ),
           ),
         ),
@@ -1153,92 +1178,11 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
                 _fav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
                 size: 22,
                 color: _fav
-                    ? AppBrand.favoriteRed
+                    ? scheme.primary
                     : widget.immersive
                         ? Colors.white.withValues(alpha: 0.92)
                         : scheme.onSurface,
               ),
-      ),
-    );
-  }
-}
-
-/// 旋转碟片封面（播放时匀速旋转，暂停时停住）
-class _DiscCover extends StatefulWidget {
-  const _DiscCover({
-    required this.url,
-    required this.size,
-    required this.playing,
-  });
-
-  final String? url;
-  final double size;
-  final bool playing;
-
-  @override
-  State<_DiscCover> createState() => _DiscCoverState();
-}
-
-class _DiscCoverState extends State<_DiscCover>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late bool _wasPlaying;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 24),
-    );
-    _wasPlaying = widget.playing;
-    if (widget.playing) _controller.repeat();
-  }
-
-  @override
-  void didUpdateWidget(covariant _DiscCover oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.playing != _wasPlaying) {
-      _wasPlaying = widget.playing;
-      if (widget.playing) {
-        _controller.repeat();
-      } else {
-        _controller.stop();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Transform.rotate(
-          angle: _controller.value * 2 * pi,
-          child: child,
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.22),
-            width: 1.2,
-          ),
-          boxShadow: ShadowToken.cover(context, radius: 32),
-        ),
-        padding: EdgeInsets.all(widget.size * 0.07),
-        child: AsyncCover(
-          url: widget.url,
-          size: widget.size * 0.86,
-          radius: widget.size * 0.43,
-        ),
       ),
     );
   }

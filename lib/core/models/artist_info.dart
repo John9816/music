@@ -1,14 +1,18 @@
-/// 第三方歌手资料接口返回的歌手信息。
+/// 歌手资料接口返回的歌手信息。
 class ArtistInfo {
   const ArtistInfo({
     required this.name,
     required this.profile,
     this.imageUrl,
+    this.songCount,
+    this.albumCount,
   });
 
   final String name;
   final String? imageUrl;
   final String profile;
+  final int? songCount;
+  final int? albumCount;
 
   factory ArtistInfo.fromJson(
     Map<String, dynamic> json, {
@@ -26,9 +30,16 @@ class ArtistInfo {
               json['coverUrl'],
         ),
       ),
-      profile: _text(json['profile']) ?? '',
+      profile: _text(json['profile'] ?? json['description']) ?? '',
+      songCount: _int(json['songCount']),
+      albumCount: _int(json['albumCount']),
     );
   }
+}
+
+int? _int(Object? value) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
 }
 
 String? _text(Object? value) {

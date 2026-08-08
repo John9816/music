@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/player/player_controller.dart';
 import '../../widgets/glass.dart';
-import '../playlists/playlist_import_view.dart';
+import '../books/book_sources_view.dart';
+import '../live_tv/live_tv_view.dart';
 import 'ai_draw_view.dart';
 import 'video_parse_view.dart';
 
@@ -11,33 +14,39 @@ class ToolsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final player = context.read<PlayerController>();
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
           const GPageHeader(
             title: '工具箱',
-            subtitle: '创作、解析与歌单管理',
+            subtitle: '创作、直播与歌单管理',
           ),
           const SectionHeader('常用工具'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: _buildCards(context, const [
-              _ToolSpec(
+            child: _buildCards(context, [
+              const _ToolSpec(
                   icon: Icons.auto_awesome,
                   label: 'AI 绘画',
                   desc: '一句话生成图片',
                   page: AiDrawView()),
-              _ToolSpec(
+              const _ToolSpec(
                   icon: Icons.video_library,
                   label: '视频解析',
                   desc: '无水印下载地址',
                   page: VideoParseView()),
+              const _ToolSpec(
+                  icon: Icons.menu_book_rounded,
+                  label: '小说阅读',
+                  desc: '搜索、书架与阅读器',
+                  page: BookSourcesView()),
               _ToolSpec(
-                  icon: Icons.playlist_add_rounded,
-                  label: '导入歌单',
-                  desc: '从分享链接导入',
-                  page: PlaylistImportView()),
+                  icon: Icons.live_tv,
+                  label: '电视直播',
+                  desc: '频道搜索与多线路播放',
+                  page: LiveTvView(onBeforeOpenChannel: player.pause)),
             ]),
           ),
           const SectionHeader('即将上线'),
@@ -46,16 +55,6 @@ class ToolsView extends StatelessWidget {
             child: _buildCards(context, const [
               _ToolSpec(
                   icon: Icons.radio, label: '电台', desc: '全国电台直播', coming: true),
-              _ToolSpec(
-                  icon: Icons.live_tv,
-                  label: '电视直播',
-                  desc: 'IPTV 频道',
-                  coming: true),
-              _ToolSpec(
-                  icon: Icons.videocam,
-                  label: '电视点播',
-                  desc: '视频点播',
-                  coming: true),
             ]),
           ),
         ],

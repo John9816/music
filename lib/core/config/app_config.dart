@@ -33,8 +33,22 @@ class AppConfig {
     'IOS_APP_STORE_ID',
   );
 
+  /// Optional ECS manifest for the desktop iOS install center.
+  static const String iosSideloadManifestUrl = String.fromEnvironment(
+    'IOS_SIDELOAD_MANIFEST_URL',
+    defaultValue: 'https://api.751152.xyz/ios/latest.json',
+  );
+
+  /// Optional absolute path to the local signing helper executable.
+  static const String iosSideloadHelperPath = String.fromEnvironment(
+    'IOS_SIDELOAD_HELPER_PATH',
+  );
+
   static const String apiBaseUrl = 'https://api.751152.xyz/';
   static const String userContentBaseUrl = 'https://hi.751152.xyz/';
+
+  static const String liveTvM3uUrl =
+      'https://develop202.github.io/migu_video/interface.txt';
 
   /// source 参数 -> 显示名（与 Android/macOS 版一致）
   static const Map<String, String> musicSources = {

@@ -150,6 +150,7 @@ class _SearchViewState extends State<SearchView> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlaylistDetailView(
+          kind: PlaylistDetailKind.album,
           playlist: Playlist(
             id: numericId,
             name: album.name,
@@ -366,7 +367,6 @@ class _SearchViewState extends State<SearchView> {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final entries = AppConfig.musicSources.entries.toList();
-    const colors = [Color(0xFFFF375F), Color(0xFF2FD365), Color(0xFFFF9F0A)];
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 0, 24, desktop ? 14 : 8),
       child: Container(
@@ -407,7 +407,10 @@ class _SearchViewState extends State<SearchView> {
                           height: 7,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: colors[i],
+                            color: settings.source == entries[i].key
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant
+                                    .withValues(alpha: 0.45),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -891,6 +894,79 @@ class _SearchViewState extends State<SearchView> {
   Widget _buildPagination() {
     final scheme = Theme.of(context).colorScheme;
     final canGoBack = !_searching && _page > 1;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    if (compact) {
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+          child: Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: '上一页',
+                  child: GButton(
+                    label: '上一页',
+                    icon: Icons.chevron_left_rounded,
+                    filled: false,
+                    small: true,
+                    expand: true,
+                    onTap: canGoBack
+                        ? () => _search(_keyword, page: _page - 1)
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              SizedBox(
+                width: 58,
+                child: _searching
+                    ? Center(
+                        child: SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      )
+                    : Text(
+                        '第 $_page 页',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: TypeScale.semibold,
+                          color: _pageError == null
+                              ? scheme.onSurfaceVariant
+                              : scheme.error,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Tooltip(
+                  message: _pageError == null ? '下一页' : '重试当前页',
+                  child: GButton(
+                    label: _pageError == null ? '下一页' : '重试',
+                    icon: Icons.chevron_right_rounded,
+                    filled: true,
+                    small: true,
+                    expand: true,
+                    onTap: _searching
+                        ? null
+                        : _pageError != null
+                            ? () => _search(_keyword, page: _page)
+                            : _hasNextPage
+                                ? () => _search(_keyword, page: _page + 1)
+                                : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return SafeArea(
       top: false,
       child: Container(

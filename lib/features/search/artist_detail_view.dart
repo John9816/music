@@ -65,8 +65,18 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     super.dispose();
   }
 
-  Future<ArtistInfo> _fetchInfo() =>
-      widget.loader?.call() ?? ArtistInfoApi().getArtistInfo(widget.artistName);
+  Future<ArtistInfo> _fetchInfo() {
+    if (widget.loader != null) return widget.loader!();
+    final artistId = widget.artistId;
+    if (artistId != null && artistId.isNotEmpty) {
+      return _musicApi.getArtistInfo(
+        artistId,
+        source: widget.source,
+        fallbackName: widget.artistName,
+      );
+    }
+    return ArtistInfoApi().getArtistInfo(widget.artistName);
+  }
 
   Future<ArtistCatalog> _fetchCatalog() async {
     final catalog = await (widget.catalogLoader?.call() ??
@@ -279,9 +289,11 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                 name: info?.name ?? widget.artistName,
                                 imageUrl:
                                     info?.imageUrl ?? widget.initialImageUrl,
-                                songCount: widget.initialTrackCount ??
+                                songCount: info?.songCount ??
+                                    widget.initialTrackCount ??
                                     catalog?.songs.length,
-                                albumCount: catalog?.albums.length,
+                                albumCount:
+                                    info?.albumCount ?? catalog?.albums.length,
                                 songCountIsPartial:
                                     widget.initialTrackCount == null &&
                                         (catalog?.hasMore ?? false),

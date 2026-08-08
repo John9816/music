@@ -176,6 +176,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
     final downloads = SongDownloadService.instance;
     final downloading = downloads.isDownloading(widget.song);
     final downloaded = downloads.isDownloaded(widget.song);
+    final scheme = Theme.of(context).colorScheme;
     final actions = <Widget>[
       _action(
         Icons.play_arrow_rounded,
@@ -191,7 +192,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
         _liked ? '取消喜欢' : '喜欢',
         _toggleFavorite,
-        color: _liked ? AppBrand.favoriteRed : null,
+        color: _liked ? scheme.primary : null,
       ),
       _action(
         Icons.playlist_add_rounded,

@@ -681,7 +681,7 @@ class _QueueRow extends StatelessWidget {
                 _QueueSongAction.favorite,
                 liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 liked ? '取消喜欢' : '喜欢',
-                color: liked ? AppBrand.favoriteRed : null,
+                color: liked ? scheme.primary : null,
               ),
               _menuItem(
                 _QueueSongAction.playlist,

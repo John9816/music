@@ -524,6 +524,7 @@ class _AuthPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 600;
+    final back = onBack;
     return Scaffold(
       body: Stack(
         children: [
@@ -575,17 +576,11 @@ class _AuthPage extends StatelessWidget {
               ),
             ),
           ),
-          if (onBack != null)
+          if (back != null)
             Positioned(
               top: 8,
               left: 6 + macOSWindowControlsInset(context),
-              child: GIconButton(
-                icon: Icons.arrow_back_ios_new_rounded,
-                tooltip: '返回',
-                size: 18,
-                padding: 11,
-                onTap: onBack,
-              ),
+              child: GBackButton(onTap: back),
             ),
         ],
       ),

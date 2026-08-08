@@ -16,16 +16,20 @@ import '../../widgets/glass.dart';
 import '../../widgets/song_action_menu.dart';
 import '../search/artist_names_link.dart';
 
+enum PlaylistDetailKind { playlist, album }
+
 /// Desktop playlist detail matching the persistent sidebar/player shell.
 class PlaylistDetailView extends StatefulWidget {
   const PlaylistDetailView({
     super.key,
     required this.playlist,
+    this.kind = PlaylistDetailKind.playlist,
     this.loader,
     this.userApi,
   });
 
   final Playlist playlist;
+  final PlaylistDetailKind kind;
 
   /// Custom loader used by charts; regular playlists use playlist/detail.
   final Future<List<Song>> Function()? loader;
@@ -52,22 +56,26 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
     super.initState();
     _userApi = widget.userApi ?? UserApi();
     _future = _startLoad();
-    unawaited(_loadFavoriteState());
+    if (_supportsPlaylistFavorites) unawaited(_loadFavoriteState());
   }
 
   @override
   void didUpdateWidget(covariant PlaylistDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playlist.id != widget.playlist.id) {
+    if (oldWidget.playlist.id != widget.playlist.id ||
+        oldWidget.kind != widget.kind) {
       _isFavorite = false;
       _favoriteLoading = false;
       _isAdded = false;
       _descriptionExpanded = false;
       _loadingFuture = null;
       _reload();
-      unawaited(_loadFavoriteState());
+      if (_supportsPlaylistFavorites) unawaited(_loadFavoriteState());
     }
   }
+
+  bool get _supportsPlaylistFavorites =>
+      widget.kind == PlaylistDetailKind.playlist;
 
   Future<List<Song>> _load() async {
     if (widget.loader != null) return widget.loader!();
@@ -102,6 +110,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   }
 
   Future<void> _loadFavoriteState() async {
+    if (!_supportsPlaylistFavorites) return;
     final token = context.read<AuthController>().token;
     if (token == null) return;
     try {
@@ -111,7 +120,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
         widget.playlist.id.toString(),
         token,
       );
-      if (!mounted) return;
+      if (!mounted || !_supportsPlaylistFavorites) return;
       setState(() {
         _isFavorite = status['favorite'] == true;
         _isAdded = _isFavorite;
@@ -240,6 +249,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                     sliver: SliverToBoxAdapter(
                       child: _PlaylistHeader(
                         playlist: widget.playlist,
+                        kind: widget.kind,
                         songs: songs,
                         desktop: desktop,
                         isFavorite: _isFavorite,
@@ -273,11 +283,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                     ),
                   ),
                   if (songs.isEmpty)
-                    const SliverFillRemaining(
+                    SliverFillRemaining(
                       hasScrollBody: false,
                       child: GEmptyState(
                         icon: Icons.queue_music_rounded,
-                        text: '歌单为空',
+                        text: widget.kind == PlaylistDetailKind.album
+                            ? '专辑中没有歌曲'
+                            : '歌单为空',
                       ),
                     )
                   else
@@ -336,14 +348,7 @@ class _PlaylistTopBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(
             children: [
               SizedBox(width: 4 + windowControlsInset),
-              GIconButton(
-                icon: Icons.arrow_back_ios_new_rounded,
-                tooltip: '返回',
-                size: 20,
-                padding: 14,
-                backgroundColor: Colors.transparent,
-                onTap: onBack,
-              ),
+              GBackButton(onTap: onBack),
               const SizedBox(width: 19),
               Expanded(
                 child: Text(
@@ -368,6 +373,7 @@ class _PlaylistTopBar extends StatelessWidget implements PreferredSizeWidget {
 class _PlaylistHeader extends StatelessWidget {
   const _PlaylistHeader({
     required this.playlist,
+    required this.kind,
     required this.songs,
     required this.desktop,
     required this.isFavorite,
@@ -380,6 +386,7 @@ class _PlaylistHeader extends StatelessWidget {
   });
 
   final Playlist playlist;
+  final PlaylistDetailKind kind;
   final List<Song> songs;
   final bool desktop;
   final bool isFavorite;
@@ -406,6 +413,7 @@ class _PlaylistHeader extends StatelessWidget {
     );
     final information = _HeaderInformation(
       playlist: playlist,
+      kind: kind,
       songs: songs,
       descriptionExpanded: descriptionExpanded,
       showDescription: desktop,
@@ -419,6 +427,7 @@ class _PlaylistHeader extends StatelessWidget {
       isAdded: isAdded,
       onFavorite: onFavorite,
       onAdd: onAdd,
+      showCollectionActions: kind == PlaylistDetailKind.playlist,
     );
 
     if (!desktop) {
@@ -477,6 +486,7 @@ class _PlaylistHeader extends StatelessWidget {
 class _HeaderInformation extends StatelessWidget {
   const _HeaderInformation({
     required this.playlist,
+    required this.kind,
     required this.songs,
     required this.descriptionExpanded,
     required this.showDescription,
@@ -484,6 +494,7 @@ class _HeaderInformation extends StatelessWidget {
   });
 
   final Playlist playlist;
+  final PlaylistDetailKind kind;
   final List<Song> songs;
   final bool descriptionExpanded;
   final bool showDescription;
@@ -498,7 +509,7 @@ class _HeaderInformation extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '歌单',
+          kind == PlaylistDetailKind.album ? '专辑' : '歌单',
           style: TextStyle(
             color: scheme.primary,
             fontSize: 12,
@@ -615,6 +626,7 @@ class _HeaderActions extends StatelessWidget {
     required this.isAdded,
     required this.onFavorite,
     required this.onAdd,
+    required this.showCollectionActions,
   });
 
   final List<Song> songs;
@@ -624,6 +636,7 @@ class _HeaderActions extends StatelessWidget {
   final bool isAdded;
   final VoidCallback onFavorite;
   final VoidCallback onAdd;
+  final bool showCollectionActions;
 
   @override
   Widget build(BuildContext context) {
@@ -646,27 +659,29 @@ class _HeaderActions extends StatelessWidget {
               onTap: () => context.read<PlayerController>().playQueue(songs),
             ),
           ),
-        SizedBox(width: desktop ? 8 : 10),
-        _CircleAction(
-          icon: isFavorite
-              ? Icons.favorite_rounded
-              : Icons.favorite_outline_rounded,
-          color: isFavorite ? AppBrand.favoriteRed : null,
-          compact: desktop,
-          loading: favoriteLoading,
-          tooltip: isFavorite ? '取消收藏' : '收藏歌单',
-          onTap: favoriteLoading ? null : onFavorite,
-        ),
-        SizedBox(width: desktop ? 6 : 8),
-        _CircleAction(
-          icon: isAdded
-              ? Icons.playlist_add_check_rounded
-              : Icons.playlist_add_rounded,
-          color: isAdded ? scheme.primary : null,
-          compact: desktop,
-          tooltip: isAdded ? '从我的歌单移除' : '加入我的歌单',
-          onTap: onAdd,
-        ),
+        if (showCollectionActions) ...[
+          SizedBox(width: desktop ? 8 : 10),
+          _CircleAction(
+            icon: isFavorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_outline_rounded,
+            color: isFavorite ? scheme.primary : null,
+            compact: desktop,
+            loading: favoriteLoading,
+            tooltip: isFavorite ? '取消收藏' : '收藏歌单',
+            onTap: favoriteLoading ? null : onFavorite,
+          ),
+          SizedBox(width: desktop ? 6 : 8),
+          _CircleAction(
+            icon: isAdded
+                ? Icons.playlist_add_check_rounded
+                : Icons.playlist_add_rounded,
+            color: isAdded ? scheme.primary : null,
+            compact: desktop,
+            tooltip: isAdded ? '从我的歌单移除' : '加入我的歌单',
+            onTap: onAdd,
+          ),
+        ],
       ],
     );
   }
@@ -702,13 +717,13 @@ class _PlayAllButton extends StatelessWidget {
             Icon(
               Icons.play_arrow_rounded,
               size: compact ? 17 : 20,
-              color: Colors.white,
+              color: scheme.onPrimary,
             ),
             const SizedBox(width: 5),
             Text(
               '全部播放',
               style: TextStyle(
-                color: Colors.white,
+                color: scheme.onPrimary,
                 fontSize: compact ? 13 : 15,
                 fontWeight: TypeScale.bold,
               ),

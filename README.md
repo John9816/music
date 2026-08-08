@@ -114,6 +114,16 @@ Windows 建议配置 `WINDOWS_CERTIFICATE_BASE64` 和 `WINDOWS_CERTIFICATE_PASSW
 
 iOS 上架后，在 GitHub Actions Variables 中设置 `IOS_APP_STORE_ID`。iOS 新版本仍需通过 Xcode / App Store Connect 上传审核；审核发布后，应用内检查会自动识别线上版本。
 
+### 桌面端 iOS 安装中心（实验性）
+
+macOS 和 Windows 桌面版设置中提供“iOS 安装中心”。它从 ECS 读取 `IOS_SIDELOAD_MANIFEST_URL` 指向的清单，校验 IPA 的 SHA-256，再交给用户本机的签名助手处理。Apple ID、双重认证、证书私钥和描述文件不会上传到 ECS。
+
+桌面端只能在签名到期前刷新用户自己的设备；免费个人签名的有效期、设备数量和 App 数量仍由 Apple 决定。ECS 不代签，也不提供共享企业证书。缺少本机签名助手时，页面会显示诊断信息，不会报告虚假的安装成功。
+
+DMG/EXE 会内置 `duckmusic-ios-helper`。macOS 版本现在可以使用用户本机钥匙串中的 Apple Development 身份、有效描述文件和已配对设备完成 IPA 重签名及 `devicectl` 安装；Apple 账号、验证码、私钥不会传到 ECS。Windows 版本当前仍只做 Apple Devices/Bonjour 诊断，真实签名需要后续接入经过许可证审核的 Windows 本地签名服务。
+
+macOS Helper 会读取 Xcode 生成的描述文件，因此首次配置仍需在本机 Xcode 登录 Apple 账号并让 Xcode 为 `com.751152.duckMusic` 生成个人开发描述文件。免费个人签名的有效期、设备数量和 App 数量由 Apple 决定；Helper 只能在描述文件仍有效时重新签名安装，不能凭空延长 Apple 的有效期。桌面端发布包必须使用 Developer ID 签名并公证，才能让内置 Helper 正常访问本机签名工具和设备服务。
+
 ## 设计与 UI/UX
 
 项目已按大厂级设计系统重构（Apple Music 风格），详见 [DESIGN.md](DESIGN.md)：

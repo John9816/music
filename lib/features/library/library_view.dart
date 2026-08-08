@@ -287,7 +287,7 @@ class _HeaderButton extends StatelessWidget {
           child: Icon(
             icon,
             size: emphasized ? 25 : 19,
-            color: emphasized ? Colors.white : scheme.onSurface,
+            color: emphasized ? scheme.onPrimary : scheme.onSurface,
           ),
         ),
       ),

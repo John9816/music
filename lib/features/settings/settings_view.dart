@@ -11,6 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import 'about_view.dart';
 import 'desktop_settings_view.dart';
+import 'ios_sideload_view.dart';
 import 'notifications_view.dart';
 import 'settings_components.dart';
 import 'storage_settings_view.dart';
@@ -128,6 +129,13 @@ class SettingsView extends StatelessWidget {
                   title: '桌面与快捷键',
                   subtitle: '状态栏歌词、全局快捷键与窗口控制',
                   onTap: () => _open(context, const DesktopSettingsView()),
+                ),
+              if (Platform.isMacOS || Platform.isWindows)
+                SettingsRow(
+                  icon: Icons.phone_iphone_outlined,
+                  title: 'iOS 安装中心',
+                  subtitle: '从 ECS 获取 IPA，在本机签名、安装和刷新',
+                  onTap: () => _open(context, const IosSideloadView()),
                 ),
             ],
           ),

@@ -11,6 +11,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('streaming audio cache is limited to compatible sources', () {
+    expect(CacheService.supportsAutomaticAudioCache('netease'), isTrue);
+    expect(CacheService.supportsAutomaticAudioCache('NETEASE'), isTrue);
+    expect(CacheService.supportsAutomaticAudioCache('qq'), isFalse);
+    expect(CacheService.supportsAutomaticAudioCache('kuwo'), isFalse);
+  });
+
   test('settings survive controller recreation', () async {
     SharedPreferences.setMockInitialValues(const {});
     final settings = SettingsController();

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api/music_api.dart';
+import '../../core/models/playlist.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_row.dart';
+import '../playlists/playlist_detail_view.dart';
 import '../search/artist_names_link.dart';
 
 /// 发现页：问候 + 主推横幅 + 每日推荐 + 最新专辑
@@ -16,23 +18,26 @@ class DiscoverView extends StatefulWidget {
     super.key,
     this.title = '发现',
     this.subtitle,
+    this.api,
   });
 
   final String title;
   final String? subtitle;
+  final MusicApi? api;
 
   @override
   State<DiscoverView> createState() => _DiscoverViewState();
 }
 
 class _DiscoverViewState extends State<DiscoverView> {
-  final MusicApi _api = MusicApi();
+  late final MusicApi _api;
   late Future<(List<Song>, List<Album>)> _future;
   Future<(List<Song>, List<Album>)>? _loadingFuture;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? MusicApi();
     _future = _startLoad();
   }
 
@@ -107,6 +112,33 @@ class _DiscoverViewState extends State<DiscoverView> {
               SliverToBoxAdapter(child: _buildHero(context, daily)),
               SliverToBoxAdapter(
                 child: SectionHeader(
+                  '最新专辑',
+                  action: Text(
+                    '${albums.length} 张',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 172,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    itemCount: albums.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    itemBuilder: (context, i) => _AlbumCard(
+                      album: albums[i],
+                      onTap: () => _openAlbum(context, albums[i]),
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SectionHeader(
                   '每日推荐',
                   subtitle: '根据你的口味精选',
                   action: Text(
@@ -136,30 +168,6 @@ class _DiscoverViewState extends State<DiscoverView> {
                   },
                 ),
               ),
-              SliverToBoxAdapter(
-                child: SectionHeader(
-                  '最新专辑',
-                  action: Text(
-                    '${albums.length} 张',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 172,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    itemCount: albums.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
-                    itemBuilder: (context, i) => _AlbumCard(album: albums[i]),
-                  ),
-                ),
-              ),
               const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
           );
@@ -175,173 +183,145 @@ class _DiscoverViewState extends State<DiscoverView> {
     final wide = MediaQuery.sizeOf(context).width >= 560;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: GestureDetector(
+      child: GPressScale(
         onTap: () => _play(context, daily, 0),
-        child: GPressScale(
-          onTap: () => _play(context, daily, 0),
-          child: Stack(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(RadiusToken.xxl),
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      scheme.primary.withValues(alpha: 0.28),
-                      scheme.primary.withValues(alpha: 0.05),
-                      glassFill(context, alpha: 0.08),
-                    ],
-                  ),
-                  border: Border.all(color: glassHairline(context)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.18),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                height: wide ? 160 : null,
-                padding: wide ? null : const EdgeInsets.all(16),
-                child: wide
-                    ? Row(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.22),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: AsyncCover(
-                                url: hero.album.picUrl,
-                                size: 132,
-                                radius: RadiusToken.lg,
-                              ),
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(RadiusToken.md),
+                color: scheme.surfaceContainerHigh.withValues(alpha: 0.72),
+                border: Border.all(color: glassHairline(context)),
+              ),
+              height: wide ? 160 : null,
+              padding: wide ? null : const EdgeInsets.all(16),
+              child: wide
+                  ? Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.22),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
                             ),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 18),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _greeting(),
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: scheme.outline,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    hero.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: pageTitleStyle(context)
-                                        .copyWith(fontSize: 20),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  ArtistNamesLink(
-                                    artists: hero.artists,
-                                    source: hero.source,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 13, color: scheme.outline),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  GButton(
-                                    label: '立即播放',
-                                    icon: Icons.play_arrow,
-                                    onTap: () => _play(context, daily, 0),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          AsyncCover(
+                            child: AsyncCover(
                               url: hero.album.picUrl,
-                              size: 118,
-                              radius: RadiusToken.lg),
-                          const SizedBox(height: 12),
-                          Text(
-                            _greeting(),
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.outline,
-                                fontWeight: FontWeight.w500),
+                              size: 132,
+                              radius: RadiusToken.lg,
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            hero.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                pageTitleStyle(context).copyWith(fontSize: 18),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 18),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '今日主推',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: scheme.outline,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  hero.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: pageTitleStyle(context)
+                                      .copyWith(fontSize: 20),
+                                ),
+                                const SizedBox(height: 4),
+                                ArtistNamesLink(
+                                  artists: hero.artists,
+                                  source: hero.source,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 13, color: scheme.outline),
+                                ),
+                                const SizedBox(height: 14),
+                                GButton(
+                                  label: '立即播放',
+                                  icon: Icons.play_arrow,
+                                  onTap: () => _play(context, daily, 0),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 2),
-                          ArtistNamesLink(
-                            artists: hero.artists,
-                            source: hero.source,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                TextStyle(fontSize: 12, color: scheme.outline),
-                          ),
-                          const SizedBox(height: 10),
-                          GButton(
-                            label: '立即播放',
-                            icon: Icons.play_arrow,
-                            onTap: () => _play(context, daily, 0),
-                          ),
-                        ],
-                      ),
-              ),
-              // 每日推荐角标（网易云风格）
-              Positioned(
-                top: 12,
-                left: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Text(
-                    '每日推荐',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        AsyncCover(
+                            url: hero.album.picUrl,
+                            size: 118,
+                            radius: RadiusToken.lg),
+                        const SizedBox(height: 12),
+                        Text(
+                          '今日主推',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.outline,
+                              fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          hero.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: pageTitleStyle(context).copyWith(fontSize: 18),
+                        ),
+                        const SizedBox(height: 2),
+                        ArtistNamesLink(
+                          artists: hero.artists,
+                          source: hero.source,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: scheme.outline),
+                        ),
+                        const SizedBox(height: 10),
+                        GButton(
+                          label: '立即播放',
+                          icon: Icons.play_arrow,
+                          onTap: () => _play(context, daily, 0),
+                        ),
+                      ],
                     ),
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '每日推荐',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onPrimaryContainer,
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -349,6 +329,27 @@ class _DiscoverViewState extends State<DiscoverView> {
 
   void _play(BuildContext context, List<Song> songs, int index) {
     context.read<PlayerController>().playQueue(songs, index: index);
+  }
+
+  void _openAlbum(BuildContext context, Album album) {
+    final source = context.read<SettingsController>().source;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailView(
+          kind: PlaylistDetailKind.album,
+          playlist: Playlist(
+            id: album.id,
+            name: album.name,
+            source: source,
+            coverUrl: album.picUrl,
+          ),
+          loader: () => _api.getAlbumDetail(
+            album.detailId,
+            source: source,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -403,42 +404,46 @@ class _RankCover extends StatelessWidget {
 }
 
 class _AlbumCard extends StatelessWidget {
-  const _AlbumCard({required this.album});
+  const _AlbumCard({required this.album, required this.onTap});
 
   final Album album;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 140,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+    return GPressScale(
+      onTap: onTap,
+      child: SizedBox(
+        width: 140,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: AsyncCover(url: album.picUrl, size: 140, radius: 14),
             ),
-            child: AsyncCover(url: album.picUrl, size: 140, radius: 14),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            album.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurface,
+            const SizedBox(height: 8),
+            Text(
+              album.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

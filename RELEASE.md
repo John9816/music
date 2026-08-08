@@ -4,7 +4,8 @@
 
 当前发布方式：
 
-- Android、macOS、Windows：推送 `flutter-v*` Git 标签后，由 GitHub Actions 构建并上传到 GitHub Release。
+- Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
+- Android、macOS、Windows 联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建并上传到同一条 GitHub Release；Android 同时更新 ECS。
 - iOS：在 macOS 上构建 IPA，再通过 App Store Connect 上传和审核。
 - `.github/workflows/flutter-release.yml` 是自动发布流程的实现，`pubspec.yaml` 是版本号的唯一来源。
 
@@ -15,10 +16,51 @@ Android 老用户直升 ECS 的固定链路：
 1. `pubspec.yaml` 同时递增版本号和构建号，且 `applicationId` 保持 `com.music.player`。
 2. 推送代码到 `flutter-migration`，再推送匹配的 `android-ecs-v<version>` 标签；该标签只构建 Android，不启动桌面任务。
 3. GitHub Actions 从 Secrets 恢复历史正式证书，并校验证书 SHA-256 为 `c6821dcc9ac2395eb9a810f1b9ff250a3a7186ab899fdd8de772d852cf542a72`。
-4. Android 签名构建和校验成功后，独立任务立即将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`。需要四端产物时另用 `flutter-v<version>` 标签生成多平台 GitHub Release。
-5. 最后从 `https://api.751152.xyz/updates/latest.json` 和其中的 `downloadUrl` 回读校验版本、构建号与 APK 哈希。任何一步失败都不能手工上传 debug 签名 APK。
+4. Android 签名构建和校验成功后，独立任务立即将 APK 和 `latest.json` 上传至 ECS `/opt/website/updates`，并创建 `flutter-v<version>` GitHub Release 兼容 `1.1.27` 更新器。
+5. 最后同时回读 ECS 清单、GitHub Releases API 和两个 APK 下载地址。任何一步失败都不能手工上传 debug 签名 APK。
+
+Android 有两条更新通道：`1.1.27` Flutter 客户端只读取 GitHub Releases，并选取 API 返回的第一条非 draft、非 prerelease `flutter-v*`；新版本优先读取 ECS `latest.json`，GitHub 仅作兜底。因此 Android-only 工作流创建桥接 Release 时必须设置 `target_commitish: ${{ github.sha }}`，保证桥接 Release 指向本次发布提交。不要删除或复用已发布的版本标签。
 
 ECS 上传可配置其中一种 Actions Secret：`ECS_SSH_PRIVATE_KEY`，或 `ECS_PASSWORD`。密码只放在 GitHub Secret 中，不写入代码、日志或 `latest.json`。
+
+### Android-only 最短流程
+
+以下命令在干净的 release checkout 中执行。当前发布分支是 `flutter-migration`，不要把 `main` 当作发布分支；正式 Android 更新不需要手工登录 ECS 或上传文件。
+
+```bash
+VERSION=1.2.0
+BUILD_NUMBER=12
+
+git fetch origin flutter-migration --tags
+git switch flutter-migration
+git pull --ff-only origin flutter-migration
+
+# 只修改 pubspec.yaml：version: ${VERSION}+${BUILD_NUMBER}
+flutter pub get
+flutter analyze
+flutter test
+
+git add pubspec.yaml pubspec.lock
+git commit -m "chore: release Flutter ${VERSION}"
+git push origin flutter-migration
+
+git tag -a "android-ecs-v${VERSION}" -m "DuckMusic Android ${VERSION}"
+git push origin "android-ecs-v${VERSION}"
+```
+
+推送标签后，在 Actions 中等待 `validate`、`android`、`publish-android-ecs` 和 `publish-android-github` 全部成功。工作流会自动完成正式签名、上传 ECS、生成 `latest.json`，并创建旧客户端可识别的 `flutter-v${VERSION}` Release。
+
+如果只是 GitHub runner、网络等基础设施故障，且发布前没有代码、版本号或 APK 内容变化，可以继续使用 `android-ecs-v${VERSION}-r1`、`-r2` 重试；发布成功后删除未使用的 retry 标签。业务内容发生变化时必须递增版本和构建号，不能继续重试旧版本。
+
+清理已经完成或废弃的 retry 标签时，只针对明确的 retry 标签执行：
+
+```bash
+RETRY_TAG=android-ecs-v${VERSION}-r1
+git tag -d "${RETRY_TAG}" 2>/dev/null || true
+git push origin --delete "${RETRY_TAG}"
+```
+
+### 四端联合发布
 
 正式发布 `1.2.0`、构建号 `12` 的标准流程：
 
@@ -31,7 +73,7 @@ flutter test
 # 2. 提交并先推送代码
 git add pubspec.yaml pubspec.lock
 git commit -m "chore: release Flutter 1.2.0"
-git push origin main
+git push origin flutter-migration
 
 # 3. 标签必须与 pubspec.yaml 中 + 之前的版本完全匹配
 git tag -a flutter-v1.2.0 -m "DuckMusic Flutter 1.2.0"
@@ -80,8 +122,9 @@ version: 1.2.0+12
 注意：
 
 - 不要手动修改 `android/local.properties`、`ios/Flutter/Generated.xcconfig`、`macos/Flutter/ephemeral/*` 等生成文件。
-- 正式标签必须严格等于 `flutter-v<用户版本>`，否则 CI 会立即失败。
+- 四端联合发布标签必须严格等于 `flutter-v<用户版本>`；Android-only 发布标签必须严格等于 `android-ecs-v<用户版本>`，否则 CI 会立即失败。
 - 已发布的标签不要删除后复用。工作流失败时可在 GitHub 重新运行；如果标签对应的代码需要改变，请提升版本并创建新标签。
+- 如果 Android-only 工作流因 GitHub runner、网络或平台内部错误在发布前失败，可在不改代码和版本的前提下创建 `android-ecs-v<version>-r1`、`-r2` 重试标签。业务代码、版本或 APK 已改变时禁止使用重试标签，必须递增版本和构建号。
 - 应用内更新依赖 `APP_VERSION`、`flutter-v` 标签前缀和 `DuckMusic-Flutter-` 资产名前缀，不要随意改变命名。
 
 当前应用标识：
@@ -200,7 +243,7 @@ git status --short
 
 工作流有三种触发方式：
 
-1. 推送 `android-ecs-v*` 标签：只构建并验证正式签名 Android APK，然后直接更新 ECS 升级通道。
+1. 推送 `android-ecs-v*` 标签：只构建并验证正式签名 Android APK，然后更新 ECS 升级通道，并创建 `flutter-v<version>` GitHub Release 兼容旧 Flutter 客户端。
 2. 推送 `flutter-v*` 标签：四端正式发布。CI 校验、构建、签名、公证，并创建 GitHub Release；Android 同时更新 ECS。
 3. 在 Actions 页面手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。没有配置凭据时，Android 可能使用 debug key，macOS/Windows 可能未签名，因此这些 artifacts 只能用于内部测试。
 
@@ -339,15 +382,65 @@ build/ios/ipa/*.ipa
 
 如果 App Store 提示 build 已使用，保持用户版本不变并递增 `+构建号` 后重新构建。例如 `1.2.0+12` 改为 `1.2.0+13`。
 
+### 7.1 桌面端 iOS 安装中心（实验性）
+
+macOS/Windows 桌面端的“iOS 安装中心”不是 App Store 的替代品。它只负责读取 ECS 的未签名 IPA、校验 SHA-256，并调用用户本机的签名助手；ECS 不接收 Apple ID、2FA 验证码、开发证书私钥或登录会话。
+
+通过 `--dart-define=IOS_SIDELOAD_MANIFEST_URL=https://api.example.com/ios/latest.json` 配置 ECS 清单地址。清单至少包含：
+
+```json
+{
+  "version": "1.2.0",
+  "buildNumber": 12,
+  "downloadUrl": "https://api.example.com/ios/DuckMusic.ipa",
+  "sha256": "64 位十六进制 SHA-256",
+  "minimumOsVersion": "16.0",
+  "publishedAt": "2026-08-07T01:02:03Z"
+}
+```
+
+用户仍需在本机完成 Apple 账号准备、设备信任和开发者模式设置。免费个人签名通常需要在过期前刷新，不能通过 ECS 或 iOS App 自身绕过 Apple 的有效期和设备限制。没有本地签名助手时，桌面端必须显示诊断并停止安装。
+
+桌面发布构建会把 `tool/duckmusic_ios_helper.dart` 编译为 `duckmusic-ios-helper` 并放入 DMG/EXE。macOS Helper 使用本机 `security`、`codesign`、`plutil` 和 `xcrun devicectl` 完成描述文件匹配、IPA 重签名与设备安装；它不会向 ECS 发送 Apple 凭据。Windows Helper 当前只提供 Apple Devices/Bonjour 诊断，安装/刷新仍返回明确的 `helperMissing`，直到接入经过许可证审核的 Windows 本地签名后端。
+
+macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问用户 Xcode 描述文件、钥匙串签名身份和 CoreDevice 服务的必要条件。对外发布必须继续使用 Developer ID 签名、公证和 staple 校验；不要把未签名或未公证的调试 `.app` 当作普通用户安装包。
+
 ## 8. 发布后验收
 
-- GitHub Release 不是 draft 或 prerelease，标签和四个资产名都正确。
+- GitHub Release 不是 draft 或 prerelease，标签和对应平台资产名都正确。
+- GitHub Releases API 返回的第一条非 draft、非 prerelease `flutter-v*` 必须是本次 Android 版本；只检查 Release 页面存在还不够。
+- ECS `latest.json` 的 `version`、`buildNumber`、`downloadUrl` 与本次版本完全一致，APK 范围 GET 返回 HTTP 206 和 APK MIME 类型。
 - Android APK 可覆盖安装旧版，且签名证书 SHA-256 与历史版本一致。
 - Apple Silicon 和 Intel macOS 分别下载匹配的 DMG，Gatekeeper 不提示包已损坏或身份不明。
 - Windows 安装器显示预期发布者，可安装、启动、覆盖升级和卸载。
 - iOS App Store 页面展示新版本，旧版应用能跳转更新。
 - 四个平台“关于/设置”中的版本正确，应用内更新不会重复提示当前版本。
 - 核心路径完成冒烟测试：启动、网络请求、播放、后台播放、设置持久化和更新入口。
+
+Android 发布完成后，用下面的命令快速验收两条更新通道：
+
+```bash
+VERSION=1.2.0
+REPO=John9816/music
+ECS_BASE=https://api.751152.xyz/updates
+APK_URL="${ECS_BASE}/DuckMusic-Flutter-v${VERSION}-Android-universal.apk"
+
+curl -fsSL "${ECS_BASE}/latest.json" | jq -e \
+  --arg version "${VERSION}" \
+  --arg url "${APK_URL}" \
+  '.version == $version and .downloadUrl == $url'
+
+curl -fsS -D - -o /dev/null -H 'Range: bytes=0-0' "${APK_URL}"
+
+curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | jq -e \
+  --arg version "${VERSION}" \
+  '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("flutter-v")))][0] as $release
+   | select($release.tag_name == ("flutter-v" + $version))
+   | $release
+   | {tag_name, draft, prerelease, asset: (.assets[] | select(.name == ("DuckMusic-Flutter-v" + $version + "-Android-universal.apk")) | {name, size, digest})}'
+```
+
+预期结果：ECS 的 `version`、`buildNumber` 和 `downloadUrl` 对应本次发布；APK Range 请求返回 `206`；GitHub 第一条符合条件的 Release 是本次 `flutter-v${VERSION}`，且包含 universal APK。
 
 发现严重问题时不要覆盖旧标签或替换同名资产。停止分发后修复代码，提升 patch 版本和构建号，再按完整流程发布。
 
@@ -378,11 +471,14 @@ CI 计算出的 APK 证书指纹与 `ANDROID_SIGNING_CERT_SHA256` 不同。确�
 
 依次检查 Release 是否为非 draft、非 prerelease，标签是否以 `flutter-v` 开头，资产是否以 `DuckMusic-Flutter-` 开头，以及构建时的 `UPDATE_REPOSITORY` 是否指向实际仓库。
 
+对 `1.1.27` 必须直接读取 `https://api.github.com/repos/John9816/music/releases?per_page=20` 验证返回顺序。该版本不会在客户端内对 Release 做版本排序，而是使用第一条符合条件的 `flutter-v*`。如果第一条仍是已经过期的旧 Release，先确认新 Release、APK 和 ECS 都已存在，再在 GitHub Release 编辑页将过期 Release 标为 prerelease；不要删除标签、替换资产或复用版本号。后续 Android-only 工作流必须保留 `target_commitish: ${{ github.sha }}`，让桥接 Release 指向当前发布提交。
+
 ## 10. AI 执行约束
 
 AI 协助发版时应遵守：
 
 - 先读取本文件、`pubspec.yaml`、`.github/workflows/flutter-release.yml` 和 `windows/installer.iss`，以仓库当前配置为准。
+- 优先使用个人 Skill `$duckmusic-release` 执行准备、发布和验收，确保 ECS 与 GitHub 两条 Android 更新通道都被检查。
 - 可以修改版本、运行检查、准备命令和核对产物；没有用户明确授权时，不创建或推送 Git 标签，不上传商店，不创建 GitHub Release。
 - 不读取、打印、提交或猜测真实密码、私钥和签名文件内容。
 - 修改版本时只改 `pubspec.yaml`，除非平台配置已经明确脱离 Flutter 的版本映射。

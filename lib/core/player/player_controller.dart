@@ -11,6 +11,7 @@ import '../models/song.dart';
 import '../services/cache_service.dart';
 import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
+import 'audio_source_policy.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
@@ -36,7 +37,9 @@ class PlayerController extends ChangeNotifier {
   }
 
   final SettingsController _settings;
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer(
+    useProxyForRequestHeaders: !usesNativeAudioHeaders(defaultTargetPlatform),
+  );
   final MusicApi _api = MusicApi();
   late final Stream<Duration> _positionStream;
 
@@ -219,7 +222,8 @@ class PlayerController extends ChangeNotifier {
         if (url == null || url.isEmpty) {
           throw Exception('未获取到播放地址，请切换音乐源后重试');
         }
-        if (_settings.automaticAudioCache) {
+        if (_settings.automaticAudioCache &&
+            CacheService.supportsAutomaticAudioCache(song.source)) {
           final cacheFile = await CacheService.instance.audioFileFor(
             song,
             _settings.quality,

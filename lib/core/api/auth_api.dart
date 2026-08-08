@@ -32,9 +32,11 @@ class AuthApi {
   }
 
   Future<Map<String, dynamic>> refreshToken(String refresh) async {
-    final data = await _client.postJson('api/auth/refresh', body: {
-      'refresh_token': refresh,
-    });
+    final data = await _client.postJson(
+      'api/auth/refresh',
+      body: {'refresh_token': refresh},
+      retryUnauthorized: false,
+    );
     return data;
   }
 
@@ -49,6 +51,52 @@ class AuthApi {
       'Authorization': 'Bearer $token',
     });
     return data;
+  }
+
+  Future<Map<String, dynamic>> updateProfile(
+    String username,
+    String email,
+    String token,
+  ) async {
+    return _client.putJson(
+      'api/user/profile',
+      body: {
+        'username': username.trim(),
+        'email': email.trim(),
+      },
+      headers: {'Authorization': 'Bearer $token'},
+    );
+  }
+
+  Future<Map<String, dynamic>> uploadAvatar(
+    List<int> bytes,
+    String filename,
+    String token,
+  ) async {
+    return _client.postMultipart(
+      'api/user/avatar',
+      fieldName: 'file',
+      bytes: bytes,
+      filename: filename,
+      contentType: _avatarContentType(filename),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+  }
+
+  String? _avatarContentType(String filename) {
+    switch (filename.split('.').last.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return null;
+    }
   }
 
   Future<PasswordResetCodeInfo> requestPasswordResetCode(String email) async {

@@ -43,6 +43,7 @@ void main() {
     expect(auth.isLoggedIn, isTrue);
     expect(auth.token, 'saved-access');
     expect(auth.username, '云端用户');
+    expect(auth.email, isNull);
     expect(
       auth.avatarUrl,
       'https://hi.751152.xyz/api/v1/user/avatar/2-test.png',
@@ -53,6 +54,62 @@ void main() {
       'https://hi.751152.xyz/api/v1/user/avatar/2-test.png',
     );
     expect(api.getMeCalls, 1);
+  });
+
+  test('profile and avatar updates replace and persist account details',
+      () async {
+    SharedPreferences.setMockInitialValues(const {
+      'auth_token': 'saved-access',
+      'auth_username': '旧用户名',
+      'auth_email': 'old@751152.xyz',
+    });
+    final api = _FakeAuthApi(
+      onGetMe: (_) async => {
+        'username': '旧用户名',
+        'email': 'old@751152.xyz',
+      },
+      onUpdateProfile: (username, email, token) async {
+        expect(token, 'saved-access');
+        return {
+          'username': username,
+          'email': email,
+        };
+      },
+      onUploadAvatar: (bytes, filename, token) async {
+        expect(bytes, [1, 2, 3]);
+        expect(filename, 'avatar.png');
+        expect(token, 'saved-access');
+        return {'avatarUrl': '/api/v1/user/avatar/2-new.png'};
+      },
+    );
+    final auth = AuthController(api: api);
+    await auth.load();
+
+    expect(
+      await auth.updateProfile(
+        username: '新用户名',
+        email: 'new@751152.xyz',
+      ),
+      isTrue,
+    );
+    expect(
+      await auth.uploadAvatar(bytes: [1, 2, 3], filename: 'avatar.png'),
+      isTrue,
+    );
+
+    expect(auth.username, '新用户名');
+    expect(auth.email, 'new@751152.xyz');
+    expect(
+      auth.avatarUrl,
+      'https://hi.751152.xyz/api/v1/user/avatar/2-new.png',
+    );
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('auth_username'), '新用户名');
+    expect(prefs.getString('auth_email'), 'new@751152.xyz');
+    expect(
+      prefs.getString('auth_avatar_url'),
+      'https://hi.751152.xyz/api/v1/user/avatar/2-new.png',
+    );
   });
 
   test('expired access token refreshes and remains logged in', () async {
@@ -130,6 +187,36 @@ void main() {
     );
   });
 
+  test('rejected refresh token clears the stale local session', () async {
+    SharedPreferences.setMockInitialValues(const {
+      'auth_token': 'expired-access',
+      'auth_refresh_token': 'rejected-refresh',
+      'auth_username': '过期用户',
+    });
+    final api = _FakeAuthApi(
+      onGetMe: (_) async => throw ApiException(
+        '登录已失效',
+        unauthorized: true,
+        statusCode: 401,
+      ),
+      onRefresh: (_) async => throw ApiException(
+        'Invalid refresh token',
+        unauthorized: true,
+        statusCode: 401,
+      ),
+    );
+    final auth = AuthController(api: api);
+
+    await auth.load();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(auth.isLoggedIn, isFalse);
+    expect(auth.error, '登录已失效，请重新登录');
+    expect(prefs.containsKey('auth_token'), isFalse);
+    expect(prefs.containsKey('auth_refresh_token'), isFalse);
+    expect(prefs.containsKey('auth_username'), isFalse);
+  });
+
   test('explicit logout is the only operation that clears credentials',
       () async {
     SharedPreferences.setMockInitialValues(const {
@@ -181,10 +268,25 @@ void main() {
 }
 
 class _FakeAuthApi extends AuthApi {
-  _FakeAuthApi({this.onGetMe, this.onRefresh});
+  _FakeAuthApi({
+    this.onGetMe,
+    this.onRefresh,
+    this.onUpdateProfile,
+    this.onUploadAvatar,
+  });
 
   final Future<Map<String, dynamic>> Function(String token)? onGetMe;
   final Future<Map<String, dynamic>> Function(String refresh)? onRefresh;
+  final Future<Map<String, dynamic>> Function(
+    String username,
+    String email,
+    String token,
+  )? onUpdateProfile;
+  final Future<Map<String, dynamic>> Function(
+    List<int> bytes,
+    String filename,
+    String token,
+  )? onUploadAvatar;
   int getMeCalls = 0;
   int logoutCalls = 0;
 
@@ -206,5 +308,27 @@ class _FakeAuthApi extends AuthApi {
   @override
   Future<void> logout(String token) async {
     logoutCalls++;
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateProfile(
+    String username,
+    String email,
+    String token,
+  ) {
+    return onUpdateProfile?.call(username, email, token) ??
+        Future.value({
+          'username': username,
+          'email': email,
+        });
+  }
+
+  @override
+  Future<Map<String, dynamic>> uploadAvatar(
+    List<int> bytes,
+    String filename,
+    String token,
+  ) {
+    return onUploadAvatar?.call(bytes, filename, token) ?? Future.value({});
   }
 }

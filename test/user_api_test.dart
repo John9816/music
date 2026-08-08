@@ -1,42 +1,40 @@
+import 'dart:convert';
+
+import 'package:duck_music/core/api/api_client.dart';
 import 'package:duck_music/core/api/user_api.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
-  group('user playlist classification', () {
-    test('local playlists belong to my playlists', () {
-      final playlist = {
-        'id': 1,
-        'source': 'local',
-        'sourceId': 'local-1',
-        'sourceUrl': null,
-      };
+  test('deletes a playlist and a playlist item through the user API', () async {
+    final requests = <http.Request>[];
+    final client = ApiClient.forTesting(
+      MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({'code': 0, 'data': null}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final api = UserApi(client: client);
 
-      expect(UserApi.isOwnedPlaylist(playlist), isTrue);
-      expect(UserApi.isFavoritePlaylist(playlist), isFalse);
-    });
+    await api.deleteUserPlaylist('42', 'token');
+    await api.deleteUserPlaylistSong('42', '9', 'token');
 
-    test('URL imports belong to my playlists', () {
-      final playlist = {
-        'id': 2,
-        'source': 'qq',
-        'sourceId': 'remote-2',
-        'sourceUrl': 'https://y.qq.com/n/ryqq/playlist/remote-2',
-      };
-
-      expect(UserApi.isOwnedPlaylist(playlist), isTrue);
-      expect(UserApi.isFavoritePlaylist(playlist), isFalse);
-    });
-
-    test('remote favorites without a source URL are favorite playlists', () {
-      final playlist = {
-        'id': 3,
-        'source': 'netease',
-        'sourceId': 'remote-3',
-        'sourceUrl': null,
-      };
-
-      expect(UserApi.isOwnedPlaylist(playlist), isFalse);
-      expect(UserApi.isFavoritePlaylist(playlist), isTrue);
-    });
+    expect(requests.map((request) => request.method), ['DELETE', 'DELETE']);
+    expect(
+      requests.map((request) => request.url.path),
+      [
+        '/api/user/music/playlists/42',
+        '/api/user/music/playlists/42/items/9',
+      ],
+    );
+    expect(
+      requests.map((request) => request.headers['authorization']),
+      ['Bearer token', 'Bearer token'],
+    );
   });
 }

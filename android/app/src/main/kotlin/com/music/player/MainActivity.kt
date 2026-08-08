@@ -42,6 +42,20 @@ class MainActivity : AudioServiceActivity() {
                 }
                 result.success(openPackageInstaller(path))
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CAST_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startCast" -> result.success(
+                        mapOf(
+                            "supported" to false,
+                            "connected" to false,
+                            "message" to "Android 暂未配置 Google Cast 接收端，请使用外部播放页投屏",
+                        ),
+                    )
+                    "stopCast" -> result.success(null)
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onResume() {
@@ -78,5 +92,6 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         private const val UPDATE_CHANNEL = "duckmusic/update"
+        private const val CAST_CHANNEL = "com.751152.duckmusic/cast"
     }
 }
