@@ -13,6 +13,7 @@ dependencies:
   cached_network_image: ^3.3.0
   crypto: ^3.0.7
   file_selector: ^1.0.3
+  image_picker: ^1.1.2
   audio_session: ^0.1.25
   flutter_acrylic: ^1.1.4
   http: ^1.1.0

@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/auth_controller.dart';
@@ -29,9 +30,7 @@ class _EditProfileViewState extends State<EditProfileView> {
   Future<void> _pickAvatar() async {
     if (_saving) return;
     try {
-      final file = await openFile(
-        acceptedTypeGroups: <XTypeGroup>[_avatarTypeGroup()],
-      );
+      final file = await _pickAvatarFile();
       if (file == null || !mounted) return;
 
       // Content URIs from Android/iOS may not support XFile.length(). Reading
@@ -59,6 +58,16 @@ class _EditProfileViewState extends State<EditProfileView> {
     } catch (_) {
       if (mounted) setState(() => _error = '无法读取所选图片，请重新选择');
     }
+  }
+
+  Future<XFile?> _pickAvatarFile() {
+    final isMobile = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    if (isMobile) {
+      return ImagePicker().pickImage(source: ImageSource.gallery);
+    }
+    return openFile(acceptedTypeGroups: <XTypeGroup>[_avatarTypeGroup()]);
   }
 
   XTypeGroup _avatarTypeGroup() {
