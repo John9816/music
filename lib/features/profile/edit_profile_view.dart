@@ -27,6 +27,8 @@ class _EditProfileViewState extends State<EditProfileView> {
   final _email = TextEditingController();
   Uint8List? _avatarBytes;
   String? _avatarName;
+  String _initialUsername = '';
+  String _initialEmail = '';
   bool _saving = false;
   String? _error;
   bool _didInitialize = false;
@@ -39,6 +41,8 @@ class _EditProfileViewState extends State<EditProfileView> {
     final auth = context.read<AuthController>();
     _username.text = auth.username ?? '';
     _email.text = auth.email ?? '';
+    _initialUsername = _username.text;
+    _initialEmail = _email.text;
   }
 
   @override
@@ -86,10 +90,19 @@ class _EditProfileViewState extends State<EditProfileView> {
   Future<void> _save() async {
     final username = _username.text.trim();
     final email = _email.text.trim();
-    final error = _validate(username, email);
-    if (error != null) {
-      setState(() => _error = error);
+    final profileChanged =
+        username != _initialUsername || email != _initialEmail;
+    final avatarSelected = _avatarBytes != null && _avatarName != null;
+    if (!profileChanged && !avatarSelected) {
+      setState(() => _error = '请选择头像或修改资料后再保存');
       return;
+    }
+    if (profileChanged) {
+      final error = _validate(username, email);
+      if (error != null) {
+        setState(() => _error = error);
+        return;
+      }
     }
 
     final auth = context.read<AuthController>();
@@ -98,13 +111,15 @@ class _EditProfileViewState extends State<EditProfileView> {
       _error = null;
     });
     try {
-      final profileSaved = await auth.updateProfile(
-        username: username,
-        email: email,
-      );
-      if (!profileSaved) {
-        if (mounted) setState(() => _error = auth.error ?? '资料保存失败');
-        return;
+      if (profileChanged) {
+        final profileSaved = await auth.updateProfile(
+          username: username,
+          email: email,
+        );
+        if (!profileSaved) {
+          if (mounted) setState(() => _error = auth.error ?? '资料保存失败');
+          return;
+        }
       }
       final avatar = _avatarBytes;
       final filename = _avatarName;
