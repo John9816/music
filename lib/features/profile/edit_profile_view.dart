@@ -8,10 +8,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/user_avatar.dart';
 
-/// 编辑登录用户的基本资料。
-///
-/// 资料和头像使用两个后端接口，因此保存时按顺序提交：资料成功后再上传
-/// 新头像。这样资料更新失败时不会产生一个只上传头像的半成功状态。
+/// 编辑登录用户头像。用户名和邮箱是账号身份字段，只读展示。
 class EditProfileView extends StatefulWidget {
   const EditProfileView({super.key});
 
@@ -23,34 +20,12 @@ class _EditProfileViewState extends State<EditProfileView> {
   static const _maxAvatarBytes = 2 * 1024 * 1024;
   static const _avatarExtensions = {'jpg', 'jpeg', 'png', 'webp', 'gif'};
 
-  final _username = TextEditingController();
-  final _email = TextEditingController();
   Uint8List? _avatarBytes;
   String? _avatarName;
-  String _initialUsername = '';
-  String _initialEmail = '';
   bool _saving = false;
   String? _error;
-  bool _didInitialize = false;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_didInitialize) return;
-    _didInitialize = true;
-    final auth = context.read<AuthController>();
-    _username.text = auth.username ?? '';
-    _email.text = auth.email ?? '';
-    _initialUsername = _username.text;
-    _initialEmail = _email.text;
-  }
-
-  @override
-  void dispose() {
-    _username.dispose();
-    _email.dispose();
-    super.dispose();
-  }
+  bool get _hasSelectedAvatar => _avatarBytes != null && _avatarName != null;
 
   Future<void> _pickAvatar() async {
     if (_saving) return;
@@ -88,21 +63,9 @@ class _EditProfileViewState extends State<EditProfileView> {
   }
 
   Future<void> _save() async {
-    final username = _username.text.trim();
-    final email = _email.text.trim();
-    final profileChanged =
-        username != _initialUsername || email != _initialEmail;
-    final avatarSelected = _avatarBytes != null && _avatarName != null;
-    if (!profileChanged && !avatarSelected) {
-      setState(() => _error = '请选择头像或修改资料后再保存');
+    if (!_hasSelectedAvatar) {
+      setState(() => _error = '请先选择新的头像');
       return;
-    }
-    if (profileChanged) {
-      final error = _validate(username, email);
-      if (error != null) {
-        setState(() => _error = error);
-        return;
-      }
     }
 
     final auth = context.read<AuthController>();
@@ -111,16 +74,6 @@ class _EditProfileViewState extends State<EditProfileView> {
       _error = null;
     });
     try {
-      if (profileChanged) {
-        final profileSaved = await auth.updateProfile(
-          username: username,
-          email: email,
-        );
-        if (!profileSaved) {
-          if (mounted) setState(() => _error = auth.error ?? '资料保存失败');
-          return;
-        }
-      }
       final avatar = _avatarBytes;
       final filename = _avatarName;
       if (avatar != null && filename != null) {
@@ -135,24 +88,12 @@ class _EditProfileViewState extends State<EditProfileView> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('个人资料已更新')),
+        const SnackBar(content: Text('头像已更新')),
       );
       Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  String? _validate(String username, String email) {
-    if (username.length < 3 || username.length > 50) {
-      return '用户名需要 3-50 个字符';
-    }
-    final validEmail = RegExp(r'^[1-9]\d{4,10}@qq\.com$', caseSensitive: false)
-            .hasMatch(email) ||
-        RegExp(r'^[a-z0-9][a-z0-9._-]{0,63}@751152\.xyz$', caseSensitive: false)
-            .hasMatch(email);
-    if (!validEmail) return '请输入 QQ 邮箱或 751152.xyz 邮箱';
-    return null;
   }
 
   @override
@@ -161,7 +102,7 @@ class _EditProfileViewState extends State<EditProfileView> {
     if (!auth.isLoggedIn) {
       return Scaffold(
         appBar: GAppBar(
-          title: '编辑个人资料',
+          title: '编辑头像',
           onBack: () => Navigator.of(context).maybePop(),
         ),
         body: const GEmptyState(
@@ -175,7 +116,7 @@ class _EditProfileViewState extends State<EditProfileView> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: GAppBar(
-        title: '编辑个人资料',
+        title: '编辑头像',
         onBack: _saving ? null : () => Navigator.of(context).maybePop(),
       ),
       body: ListView(
@@ -228,26 +169,28 @@ class _EditProfileViewState extends State<EditProfileView> {
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                '点击头像选择图片',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ),
           ],
           const SizedBox(height: 28),
-          _field(
-            controller: _username,
+          _readOnlyInfo(
             label: '用户名',
-            hint: '3-50 个字符',
+            value: auth.username,
             icon: Icons.person_outline_rounded,
-            enabled: !_saving,
-            textInputAction: TextInputAction.next,
+            scheme: scheme,
           ),
           const SizedBox(height: 14),
-          _field(
-            controller: _email,
+          _readOnlyInfo(
             label: '邮箱',
-            hint: 'QQ 邮箱或 751152.xyz 邮箱',
+            value: auth.email,
             icon: Icons.mail_outline_rounded,
-            enabled: !_saving,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _saving ? null : _save(),
+            scheme: scheme,
           ),
           if (_error != null) ...[
             const SizedBox(height: 14),
@@ -258,14 +201,14 @@ class _EditProfileViewState extends State<EditProfileView> {
           ],
           const SizedBox(height: 26),
           FilledButton.icon(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || !_hasSelectedAvatar ? null : _save,
             icon: _saving
                 ? const SizedBox.square(
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.save_rounded),
-            label: Text(_saving ? '正在保存' : '保存资料'),
+            label: Text(_saving ? '正在上传' : '保存头像'),
           ),
         ],
       ),
@@ -292,27 +235,53 @@ class _EditProfileViewState extends State<EditProfileView> {
     );
   }
 
-  Widget _field({
-    required TextEditingController controller,
+  Widget _readOnlyInfo({
     required String label,
-    required String hint,
+    required String? value,
     required IconData icon,
-    required bool enabled,
-    TextInputType? keyboardType,
-    TextInputAction? textInputAction,
-    ValueChanged<String>? onSubmitted,
+    required ColorScheme scheme,
   }) {
-    return TextField(
-      controller: controller,
-      enabled: enabled,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      onSubmitted: onSubmitted,
-      maxLines: 1,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: glassHairline(context)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value?.isNotEmpty == true ? value! : '未设置',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.lock_outline_rounded,
+            size: 18,
+            color: scheme.outline,
+          ),
+        ],
       ),
     );
   }
