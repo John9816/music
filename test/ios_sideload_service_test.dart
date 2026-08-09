@@ -88,7 +88,8 @@ void main() {
     expect(await store.hasInstalledBuild(), isFalse);
     await store.saveInstalledBuild('1.2.0');
     expect(await store.hasInstalledBuild(), isTrue);
-    final contents = await File('${directory.path}/ios-sideload.json').readAsString();
+    final contents =
+        await File('${directory.path}/ios-sideload.json').readAsString();
     expect(contents, contains('"installed":true'));
     expect(contents, isNot(contains('password')));
     expect(contents, isNot(contains('mobileprovision')));
@@ -218,6 +219,7 @@ void main() {
       manifestUrl: manifestUrl,
       stateStore: stateStore,
       now: () => DateTime.utc(2026, 8, 7),
+      desktopPlatform: true,
     );
 
     await service.autoRefreshIfNeeded();

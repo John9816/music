@@ -372,12 +372,15 @@ class IosSideloadService extends ChangeNotifier {
     String? manifestUrl,
     IosSideloadStateStore? stateStore,
     DateTime Function()? now,
+    bool? desktopPlatform,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         _adapter = adapter ?? ProcessIosSideloadAdapter(),
         manifestUrl = manifestUrl ?? AppConfig.iosSideloadManifestUrl,
         _stateStore = stateStore,
-        _now = now ?? (() => DateTime.now().toUtc());
+        _now = now ?? (() => DateTime.now().toUtc()),
+        _desktopPlatform =
+            desktopPlatform ?? (Platform.isMacOS || Platform.isWindows);
 
   final http.Client _client;
   final bool _ownsClient;
@@ -385,6 +388,7 @@ class IosSideloadService extends ChangeNotifier {
   final String manifestUrl;
   final IosSideloadStateStore? _stateStore;
   final DateTime Function() _now;
+  final bool _desktopPlatform;
 
   IosSideloadManifest? manifest;
   IosSideloadStatus status = const IosSideloadStatus();
@@ -497,7 +501,7 @@ class IosSideloadService extends ChangeNotifier {
   /// Runs once when the desktop app starts. iOS cannot renew its own signature.
   Future<void> autoRefreshIfNeeded() async {
     final store = _stateStore;
-    if (store == null || (!Platform.isMacOS && !Platform.isWindows)) return;
+    if (store == null || !_desktopPlatform) return;
     if (!await store.hasInstalledBuild()) return;
     try {
       if (manifest == null) await loadManifest();
