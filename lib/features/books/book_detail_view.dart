@@ -71,7 +71,7 @@ class _BookDetailViewState extends State<BookDetailView> {
     final safeIndex = index.clamp(0, data.chapters.length - 1);
     final resumePosition =
         _progress?.chapterIndex == safeIndex ? _progress!.position : 0.0;
-    await Navigator.of(context).push<void>(
+    await Navigator.of(context, rootNavigator: true).push<void>(
       MaterialPageRoute(
         builder: (_) => BookReaderView(
           book: data.book,

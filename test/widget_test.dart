@@ -763,6 +763,10 @@ void main() {
 
     expect(find.text('暂无可读章节'), findsOneWidget);
     expect(find.byTooltip('上一章'), findsNothing);
+    final backButton = find.byTooltip('返回');
+    expect(backButton, findsOneWidget);
+    expect(tester.getTopLeft(backButton).dy, lessThan(80));
+    expect(tester.getSize(backButton).height, lessThan(80));
     expect(tester.takeException(), isNull);
   });
 
@@ -1471,8 +1475,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('周末歌单'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ColoredBox &&
+            widget.color == theme.colorScheme.surfaceContainerLowest,
+      ),
+      findsWidgets,
+    );
     expect(find.text('播放历史'), findsNothing);
     expect(find.text('最近播放'), findsNothing);
+    await tester.tap(find.byTooltip('搜索歌曲'));
+    await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
       '搜索歌曲',
@@ -1557,8 +1571,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('iOS player opens with cover and reveals lyrics on cover tap',
+  testWidgets('iOS player swipes between vinyl and lyrics with fixed controls',
       (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
     final player = _PreviewPlayerController();
     final settings = SettingsController();
     final auth = AuthController();
@@ -1597,23 +1612,51 @@ void main() {
     await tester.pump();
 
     expect(find.text('穿过人海只为与你相见'), findsNothing);
+    expect(find.text('心动'), findsOneWidget);
     expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
     expect(find.byTooltip('歌词'), findsOneWidget);
     expect(find.byTooltip('播放队列'), findsOneWidget);
+    expect(find.byTooltip('切换音质'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsNothing);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byTooltip('歌词'));
+    await tester.tap(find.byTooltip('切换音质'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前歌曲音质'), findsOneWidget);
+    await tester.tap(find.text('无损 SQ'));
+    await tester.pumpAndSettle();
+    expect(settings.quality, 'lossless');
+    expect(find.text('无损音质'), findsOneWidget);
+
+    final queueCenter = tester.getCenter(find.byTooltip('播放队列'));
+    final playCenter = tester.getCenter(find.byIcon(Icons.play_arrow_rounded));
+    await tester.drag(find.byType(PageView), const Offset(-340, 0));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('穿过人海只为与你相见'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
+    expect(find.byTooltip('返回封面'), findsOneWidget);
+    expect(tester.getCenter(find.byTooltip('播放队列')), queueCenter);
+    expect(tester.getCenter(find.byIcon(Icons.play_arrow_rounded)), playCenter);
+
+    await tester.ensureVisible(find.text('穿过人海只为与你相见'));
+    await tester.pump();
+    await tester.tap(find.text('穿过人海只为与你相见'));
+    await tester.pump();
+    expect(player.soughtTo, const Duration(minutes: 2, seconds: 49));
     expect(find.byTooltip('返回封面'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('返回封面'));
+    await tester.drag(find.byType(ListView), const Offset(0, -80));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byTooltip('返回封面'), findsOneWidget);
+
+    await tester.tapAt(const Offset(8, 330));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('穿过人海只为与你相见'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsOneWidget);
@@ -1674,13 +1717,14 @@ void main() {
       ]) {
         await pumpPlayer(size, platform);
 
-        expect(find.text('正在播放'), findsOneWidget);
+        expect(find.text('心动'), findsOneWidget);
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
         expect(find.byTooltip('歌词'), findsOneWidget);
         expect(find.byTooltip('睡眠定时'), findsOneWidget);
         expect(find.byTooltip('播放队列'), findsOneWidget);
-        expect(find.byTooltip('随机播放'), findsOneWidget);
         expect(find.byTooltip('循环模式'), findsOneWidget);
+        expect(find.byTooltip('歌曲百科'), findsOneWidget);
+        expect(find.byTooltip('更多'), findsOneWidget);
 
         final viewport = Offset.zero & size;
         for (final finder in [
@@ -2024,7 +2068,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('secondary content routes keep shell and mini player visible',
+  testWidgets(
+      'secondary content routes keep mini player and hide bottom navigation',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {});
     final player = _PreviewPlayerController();
@@ -2095,7 +2140,10 @@ void main() {
     await tester.tap(find.text('AI 绘画'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(MiniPlayer), findsOneWidget);
-    expect(find.text('首页'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -2244,6 +2292,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
+    await _sendSystemBack(tester);
+    expect(find.byType(ProfileView), findsOneWidget);
     await tester.tap(find.text('首页').last);
     await tester.pumpAndSettle();
 
@@ -2445,6 +2495,7 @@ class _PreviewPlayerController extends PlayerController {
 
   int? movedToNextIndex;
   Song? playedNext;
+  Duration? soughtTo;
 
   Song _song = Song(
     id: 'preview',
@@ -2517,6 +2568,9 @@ class _PreviewPlayerController extends PlayerController {
   Duration get position => const Duration(minutes: 2, seconds: 50);
 
   @override
+  Stream<Duration> get positionStream => const Stream.empty();
+
+  @override
   Duration? get duration => const Duration(minutes: 3, seconds: 27);
 
   @override
@@ -2532,6 +2586,11 @@ class _PreviewPlayerController extends PlayerController {
 
   @override
   double get volume => 0.7;
+
+  @override
+  Future<void> seek(Duration position) async {
+    soughtTo = position;
+  }
 }
 
 class _FakePlaylistUserApi extends UserApi {

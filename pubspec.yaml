@@ -14,6 +14,7 @@ dependencies:
   crypto: ^3.0.7
   file_selector: ^1.0.3
   image_picker: ^1.1.2
+  audio_service: ^0.18.19
   audio_session: ^0.1.25
   flutter_acrylic: ^1.1.4
   http: ^1.1.0
@@ -22,7 +23,6 @@ dependencies:
   path_provider: ^2.1.0
   provider: ^6.0.5
   shared_preferences: ^2.2.0
-  just_audio_background: ^0.0.1-beta.17
   video_player: ^2.9.2
   url_launcher: ^6.2.0
   hotkey_manager: ^0.2.3

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/config/app_config.dart';
 import 'core/player/player_controller.dart';
+import 'core/player/system_media_controller.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/desktop_integration_service.dart';
 import 'core/services/ios_sideload_service.dart';
@@ -40,6 +41,9 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     super.initState();
     _settings = SettingsController();
     _player = PlayerController(settings: _settings);
+    if (Platform.isAndroid || Platform.isIOS) {
+      SystemMediaController.instance.attach(_player);
+    }
     _auth = AuthController(onSessionCleared: _player.stopAndClear)..load();
     _iosSideload = IosSideloadService(stateStore: FileIosSideloadStateStore());
     unawaited(SongDownloadService.instance.initialize());
@@ -64,6 +68,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     _desktopIntegration.dispose();
     _auth.dispose();
     _iosSideload.dispose();
+    SystemMediaController.instance.detach(_player);
     _player.dispose();
     _settings.dispose();
     super.dispose();

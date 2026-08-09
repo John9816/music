@@ -67,22 +67,68 @@ class AppTheme {
   static AppTheme forAccent(String accentId, {required bool dark}) {
     final accent = AppAccent.byId(accentId);
     final base = dark ? _darkScheme : _lightScheme;
+    final surfaces = _accentSurfaces(accent.color, dark: dark);
     final scheme = base.copyWith(
       primary: accent.color,
       primaryContainer: dark
           ? Color.alphaBlend(
               accent.color.withValues(alpha: 0.30),
-              const Color(0xFF1A1A1D),
+              surfaces.container,
             )
           : accent.color.withValues(alpha: 0.14),
       onPrimaryContainer: dark ? Colors.white : const Color(0xFF1C1C1E),
       inversePrimary: accent.color,
+      surface: surfaces.surface,
+      surfaceContainerLowest: surfaces.lowest,
+      surfaceContainerLow: surfaces.low,
+      surfaceContainer: surfaces.container,
+      surfaceContainerHigh: surfaces.high,
+      surfaceContainerHighest: surfaces.highest,
+      secondaryContainer: Color.alphaBlend(
+        accent.color.withValues(alpha: dark ? 0.16 : 0.08),
+        surfaces.container,
+      ),
+      tertiaryContainer: Color.alphaBlend(
+        accent.color.withValues(alpha: dark ? 0.10 : 0.05),
+        surfaces.high,
+      ),
     );
     return AppTheme(
       id: '${accent.id}-${dark ? 'dark' : 'light'}',
       name: accent.name,
       dark: dark,
       scheme: scheme,
+    );
+  }
+
+  static ({
+    Color lowest,
+    Color surface,
+    Color low,
+    Color container,
+    Color high,
+    Color highest,
+  }) _accentSurfaces(Color accent, {required bool dark}) {
+    Color blend(double alpha, Color base) =>
+        Color.alphaBlend(accent.withValues(alpha: alpha), base);
+
+    if (dark) {
+      return (
+        lowest: blend(0.08, const Color(0xFF080A0B)),
+        surface: blend(0.10, const Color(0xFF0D1011)),
+        low: blend(0.12, const Color(0xFF111416)),
+        container: blend(0.15, const Color(0xFF171A1C)),
+        high: blend(0.18, const Color(0xFF202428)),
+        highest: blend(0.22, const Color(0xFF2A2F33)),
+      );
+    }
+    return (
+      lowest: blend(0.035, const Color(0xFFF3F3F7)),
+      surface: blend(0.025, Colors.white),
+      low: blend(0.04, const Color(0xFFF8F8FA)),
+      container: blend(0.055, const Color(0xFFF4F4F7)),
+      high: blend(0.08, const Color(0xFFECECF0)),
+      highest: blend(0.11, const Color(0xFFE2E2E7)),
     );
   }
 
@@ -334,11 +380,10 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor:
-            dark ? scheme.surfaceContainerHigh : const Color(0xE6FFFFFF),
+        backgroundColor: scheme.surfaceContainerHigh,
         contentTextStyle: TextStyle(
           fontSize: 13,
-          color: dark ? Colors.white : const Color(0xFF1C1C1E),
+          color: scheme.onSurface,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -346,10 +391,8 @@ class AppTheme {
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor:
-            dark ? scheme.surfaceContainerLow : const Color(0xF2FFFFFF),
-        modalBackgroundColor:
-            dark ? scheme.surfaceContainerLow : const Color(0xF2FFFFFF),
+        backgroundColor: scheme.surfaceContainerLow,
+        modalBackgroundColor: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius:
@@ -357,7 +400,7 @@ class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: dark ? scheme.surfaceContainer : Colors.white,
+        backgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -373,7 +416,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: dark ? scheme.surfaceContainer : const Color(0xFFF2F2F7),
+        fillColor: scheme.surfaceContainer,
         hintStyle: TextStyle(fontSize: 14, color: scheme.outline),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -418,8 +461,7 @@ class AppTheme {
           fillStrong: dark ? DarkPalette.glassStrong : LightPalette.glassStrong,
           hairline: hairline,
           hairlineStrong: hairlineStrong,
-          surfaceRaised:
-              dark ? const Color(0xFF1C1C1E) : const Color(0xFFF7F7FA),
+          surfaceRaised: scheme.surfaceContainerHigh,
         ),
       ],
     );

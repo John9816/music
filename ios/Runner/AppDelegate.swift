@@ -1,6 +1,7 @@
 import AVFAudio
 import AVKit
 import Flutter
+import MediaPlayer
 import UIKit
 
 @main
@@ -8,8 +9,12 @@ import UIKit
   AVRoutePickerViewDelegate
 {
   private var castChannel: FlutterMethodChannel?
+  private var systemMediaChannel: FlutterMethodChannel?
   private var routePickerView: AVRoutePickerView?
   private var routeObserver: NSObjectProtocol?
+  private var remoteCommandTargets: [Any] = []
+  private var remoteCommandsConfigured = false
+  private var currentArtworkURL: String?
 
   override func application(
     _ application: UIApplication,
@@ -29,6 +34,15 @@ import UIKit
       self?.handleCastCall(call, result: result)
     }
 
+    let systemMediaChannel = FlutterMethodChannel(
+      name: "com.751152.duckmusic/system_media",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    self.systemMediaChannel = systemMediaChannel
+    systemMediaChannel.setMethodCallHandler { [weak self] call, result in
+      self?.handleSystemMediaCall(call, result: result)
+    }
+
     if let observer = routeObserver {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -45,6 +59,147 @@ import UIKit
     if let observer = routeObserver {
       NotificationCenter.default.removeObserver(observer)
     }
+    removeRemoteCommandTargets()
+  }
+
+  private func handleSystemMediaCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    switch call.method {
+    case "initialize":
+      configureRemoteCommands()
+      result(nil)
+    case "update":
+      guard let arguments = call.arguments as? [String: Any] else {
+        result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
+        return
+      }
+      updateSystemMedia(arguments)
+      result(nil)
+    case "clear":
+      clearSystemMedia()
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func configureRemoteCommands() {
+    guard !remoteCommandsConfigured else { return }
+    remoteCommandsConfigured = true
+    let commandCenter = MPRemoteCommandCenter.shared()
+
+    remoteCommandTargets.append(commandCenter.playCommand.addTarget { [weak self] _ in
+      self?.systemMediaChannel?.invokeMethod("play", arguments: nil)
+      return .success
+    })
+    remoteCommandTargets.append(commandCenter.pauseCommand.addTarget { [weak self] _ in
+      self?.systemMediaChannel?.invokeMethod("pause", arguments: nil)
+      return .success
+    })
+    remoteCommandTargets.append(commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+      self?.systemMediaChannel?.invokeMethod("previous", arguments: nil)
+      return .success
+    })
+    remoteCommandTargets.append(commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+      self?.systemMediaChannel?.invokeMethod("next", arguments: nil)
+      return .success
+    })
+    remoteCommandTargets.append(
+      commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+        guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+          return .commandFailed
+        }
+        self?.systemMediaChannel?.invokeMethod(
+          "seek",
+          arguments: ["positionMs": Int(event.positionTime * 1000)]
+        )
+        return .success
+      }
+    )
+  }
+
+  private func updateSystemMedia(_ arguments: [String: Any]) {
+    configureRemoteCommands()
+    let playing = arguments["playing"] as? Bool ?? false
+    let commandCenter = MPRemoteCommandCenter.shared()
+    commandCenter.playCommand.isEnabled = !playing
+    commandCenter.pauseCommand.isEnabled = playing
+    commandCenter.previousTrackCommand.isEnabled = arguments["hasPrevious"] as? Bool ?? false
+    commandCenter.nextTrackCommand.isEnabled = arguments["hasNext"] as? Bool ?? false
+    commandCenter.changePlaybackPositionCommand.isEnabled = true
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(.playback, mode: .default)
+      if playing { try session.setActive(true) }
+    } catch {
+      NSLog("DuckMusic system media session error: %@", error.localizedDescription)
+    }
+
+    let duration = Double(arguments["durationMs"] as? Int ?? 0) / 1000
+    let position = Double(arguments["positionMs"] as? Int ?? 0) / 1000
+    var info: [String: Any] = [
+      MPMediaItemPropertyTitle: arguments["title"] as? String ?? "",
+      MPMediaItemPropertyArtist: arguments["artist"] as? String ?? "",
+      MPMediaItemPropertyAlbumTitle: arguments["album"] as? String ?? "",
+      MPMediaItemPropertyPlaybackDuration: duration,
+      MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+      MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+      MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
+      MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+    ]
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    if #available(iOS 13.0, *) {
+      MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
+    }
+
+    let artworkURL = arguments["artworkUrl"] as? String
+    guard artworkURL != currentArtworkURL else { return }
+    currentArtworkURL = artworkURL
+    guard let artworkURL, let url = URL(string: artworkURL) else { return }
+    URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+      guard
+        let self,
+        self.currentArtworkURL == artworkURL,
+        let data,
+        let image = UIImage(data: data)
+      else { return }
+      let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+      DispatchQueue.main.async {
+        guard self.currentArtworkURL == artworkURL else { return }
+        var latestInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
+        latestInfo[MPMediaItemPropertyArtwork] = artwork
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = latestInfo
+      }
+    }.resume()
+  }
+
+  private func clearSystemMedia() {
+    currentArtworkURL = nil
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    if #available(iOS 13.0, *) {
+      MPNowPlayingInfoCenter.default().playbackState = .stopped
+    }
+    let commandCenter = MPRemoteCommandCenter.shared()
+    commandCenter.playCommand.isEnabled = false
+    commandCenter.pauseCommand.isEnabled = false
+    commandCenter.previousTrackCommand.isEnabled = false
+    commandCenter.nextTrackCommand.isEnabled = false
+    commandCenter.changePlaybackPositionCommand.isEnabled = false
+  }
+
+  private func removeRemoteCommandTargets() {
+    let commandCenter = MPRemoteCommandCenter.shared()
+    for target in remoteCommandTargets {
+      commandCenter.playCommand.removeTarget(target)
+      commandCenter.pauseCommand.removeTarget(target)
+      commandCenter.previousTrackCommand.removeTarget(target)
+      commandCenter.nextTrackCommand.removeTarget(target)
+      commandCenter.changePlaybackPositionCommand.removeTarget(target)
+    }
+    remoteCommandTargets.removeAll()
   }
 
   private func handleCastCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

@@ -518,9 +518,7 @@ class _SearchViewState extends State<SearchView> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final desktop = MediaQuery.sizeOf(context).width >= 720;
-    final light = Theme.of(context).brightness == Brightness.light;
     return Scaffold(
-      backgroundColor: light ? scheme.surface : scheme.surfaceContainerLowest,
       body: Column(
         children: [
           _contentFrame(

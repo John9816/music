@@ -3,11 +3,12 @@ import 'dart:io' show Platform;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'app.dart';
+import 'core/player/system_media_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,14 +52,9 @@ Future<void> main() async {
 
   // Android / iOS：后台播放 + 系统媒体通知（锁屏控制）
   if (Platform.isAndroid || Platform.isIOS) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     try {
-      await JustAudioBackground.init(
-        androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
-        androidNotificationChannelName: '音频播放',
-        androidNotificationOngoing: false,
-        // 暂停后仍保留系统下拉媒体卡，便于继续播放。
-        androidStopForegroundOnPause: false,
-      );
+      await SystemMediaController.initialize();
     } catch (error, stack) {
       debugPrint('=== 系统媒体卡初始化失败 ===\n$error\n$stack');
     }

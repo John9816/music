@@ -64,4 +64,15 @@ void main() {
     expect((await store.load(book))?.chapterTitle, '第二章');
     expect((await store.loadBookshelf()).single.name, '书架测试');
   });
+
+  test('reader defaults to page mode and keeps an explicit scroll choice',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = BookProgressStore.instance;
+
+    expect(await store.loadReaderMode(), 'page');
+
+    await store.saveReaderMode('scroll');
+    expect(await store.loadReaderMode(), 'scroll');
+  });
 }

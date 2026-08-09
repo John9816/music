@@ -45,8 +45,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final desktop =
         MediaQuery.sizeOf(context).width >= GBreakpoints.desktopPlayer &&
             widget.sidebarWidth != null;
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
-    final height = desktop ? 80.0 : (ios ? 64.0 : 68.0);
+    final height = desktop ? 80.0 : 52.0;
     final duration = PlatformMotion.duration(context, Motion.normal);
     final content = current == null
         ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
@@ -86,17 +85,33 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
+      key: ValueKey(
+        desktop ? 'desktop-mini-player-surface' : 'mobile-mini-player-surface',
+      ),
       height: height,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainer.withValues(alpha: dark ? 0.98 : 0.96),
-        border: Border(top: BorderSide(color: glassHairline(context))),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, -5),
-          ),
-        ],
+        color: desktop
+            ? scheme.surfaceContainer.withValues(alpha: dark ? 0.98 : 0.96)
+            : scheme.surfaceContainerHigh.withValues(alpha: dark ? 0.97 : 0.94),
+        borderRadius: desktop ? null : BorderRadius.circular(26),
+        border: desktop
+            ? Border(top: BorderSide(color: glassHairline(context)))
+            : null,
+        boxShadow: desktop
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, -5),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: dark ? 0.28 : 0.16),
+                  blurRadius: 22,
+                  offset: const Offset(0, 8),
+                ),
+              ],
       ),
       child: desktop
           ? _desktopBar(context, current)
@@ -322,51 +337,25 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   Widget _compactBar(BuildContext context, Song current) {
     final player = context.read<PlayerController>();
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
-    return Column(
-      children: [
-        const _PlaybackTimeline(showTimes: false),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TrackIdentity(
-                    song: current,
-                    coverSize: ios ? 42 : 46,
-                    onTap: _openPlayer,
-                  ),
-                ),
-                if (!ios)
-                  GIconButton(
-                    icon: CupertinoIcons.backward_end_fill,
-                    tooltip: '上一首',
-                    size: 22,
-                    padding: 7,
-                    onTap: player.previous,
-                  ),
-                _PlayButton(player: player, size: 44),
-                if (!ios)
-                  GIconButton(
-                    icon: CupertinoIcons.forward_end_fill,
-                    tooltip: '下一首',
-                    size: 22,
-                    padding: 7,
-                    onTap: player.next,
-                  ),
-                GIconButton(
-                  icon: CupertinoIcons.list_bullet,
-                  tooltip: '播放队列',
-                  size: 19,
-                  padding: 7,
-                  onTap: () => showQueueSheet(context),
-                ),
-              ],
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: _CompactTrackIdentity(song: current, onTap: _openPlayer),
           ),
-        ),
-      ],
+          _PlayButton(player: player, size: 36, outlined: true),
+          const SizedBox(width: 12),
+          GIconButton(
+            icon: CupertinoIcons.list_bullet,
+            tooltip: '播放队列',
+            size: 27,
+            padding: 6,
+            backgroundColor: Colors.transparent,
+            onTap: () => showQueueSheet(context),
+          ),
+        ],
+      ),
     );
   }
 
@@ -647,11 +636,95 @@ class _TrackIdentity extends StatelessWidget {
   }
 }
 
+class _CompactTrackIdentity extends StatelessWidget {
+  const _CompactTrackIdentity({required this.song, required this.onTap});
+
+  final Song song;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = context.select<PlayerController, bool>((p) => p.loading);
+    final error = context.select<PlayerController, String?>((p) => p.error);
+    final scheme = Theme.of(context).colorScheme;
+    return GPressScale(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            key: const ValueKey('mobile-mini-player-disc'),
+            width: 54,
+            height: 54,
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xE6121212),
+            ),
+            child: AsyncCover(
+              url: song.album.picUrl,
+              size: 42,
+              radius: 21,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: song.name,
+                          style: TextStyle(color: scheme.onSurface),
+                        ),
+                        TextSpan(
+                          text: error == null
+                              ? ' - ${song.artistNames}'
+                              : ' - $error',
+                          style: TextStyle(
+                            color: error == null
+                                ? scheme.onSurfaceVariant
+                                : scheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: TypeScale.medium,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                if (loading) ...[
+                  const SizedBox(width: 7),
+                  const SizedBox.square(
+                    dimension: 11,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PlayButton extends StatelessWidget {
-  const _PlayButton({required this.player, required this.size});
+  const _PlayButton({
+    required this.player,
+    required this.size,
+    this.outlined = false,
+  });
 
   final PlayerController player;
   final double size;
+  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
@@ -660,9 +733,18 @@ class _PlayButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return GPressScale(
       onTap: loading ? null : player.togglePlay,
-      child: SizedBox(
+      child: Container(
         width: size,
         height: size,
+        decoration: outlined
+            ? BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: scheme.onSurface.withValues(alpha: 0.72),
+                  width: 2,
+                ),
+              )
+            : null,
         child: loading
             ? Padding(
                 padding: EdgeInsets.all(size * 0.28),
@@ -673,7 +755,7 @@ class _PlayButton extends StatelessWidget {
               )
             : Icon(
                 playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-                size: size * 0.82,
+                size: outlined ? size * 0.52 : size * 0.82,
                 color: scheme.onSurface,
               ),
       ),

@@ -263,6 +263,8 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     final ios = Theme.of(context).platform == TargetPlatform.iOS;
     final back = onBack;
     final scheme = Theme.of(context).colorScheme;
+    final seamlessMobile =
+        MediaQuery.sizeOf(context).width < GBreakpoints.sidebar;
     final windowControlsInset = macOSWindowControlsInset(context);
     final titleContent = DefaultTextStyle(
       style: TextStyle(
@@ -312,12 +314,18 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
             ),
     );
     return Container(
+      key: const ValueKey('g-app-bar-surface'),
       decoration: BoxDecoration(
-        color:
-            transparent ? Colors.transparent : glassFill(context, alpha: 0.06),
+        color: transparent
+            ? Colors.transparent
+            : seamlessMobile
+                ? scheme.surfaceContainerLowest
+                : glassFill(context, alpha: 0.06),
         border: Border(
           bottom: BorderSide(
-            color: transparent ? Colors.transparent : glassHairline(context),
+            color: transparent || seamlessMobile
+                ? Colors.transparent
+                : glassHairline(context),
           ),
         ),
       ),

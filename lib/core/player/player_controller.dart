@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 
 import '../api/api_client.dart';
 import '../api/music_api.dart';
@@ -12,6 +13,7 @@ import '../services/cache_service.dart';
 import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
 import 'audio_source_policy.dart';
+import 'playback_coordinator.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
@@ -21,6 +23,7 @@ enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 class PlayerController extends ChangeNotifier {
   PlayerController({required SettingsController settings})
       : _settings = settings {
+    PlaybackCoordinator.instance.register(this, pause);
     _positionStream = _player.positionStream;
     _playbackSub = _player.playbackEventStream.listen(
       _onPlaybackEvent,
@@ -60,6 +63,7 @@ class PlayerController extends ChangeNotifier {
   int _index = -1;
   Song? _current;
   String _lyric = '';
+  String? _effectiveQuality;
   bool _loading = false;
   bool _liked = false;
   bool _shuffle = false;
@@ -112,6 +116,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   String get lyric => _lyric;
+  String? get effectiveQuality => _effectiveQuality;
   bool get loading => _loading;
   String? get error => _error;
   PlaybackErrorKind get errorKind => _errorKind;
@@ -186,9 +191,12 @@ class PlayerController extends ChangeNotifier {
     _error = null;
     _errorKind = PlaybackErrorKind.none;
     _lyric = '';
+    _effectiveQuality = null;
     notifyListeners();
     onSongChanged?.call(_current!);
     try {
+      await PlaybackCoordinator.instance.activate(this);
+      if (seq != _playSeq) return;
       await _player.stop();
       if (seq != _playSeq) return;
       final song = _current!;
@@ -211,17 +219,10 @@ class PlayerController extends ChangeNotifier {
       if (downloadedFile != null) {
         source = AudioSource.uri(downloadedFile.uri, tag: mediaItem);
       } else {
-        final url = await _api
-            .getSongUrl(
-              song.id,
-              source: song.source,
-              quality: _settings.quality,
-            )
-            .timeout(const Duration(seconds: 22));
+        final resolved = await _resolveAudioUrl(song, audioHeaders);
         if (seq != _playSeq) return;
-        if (url == null || url.isEmpty) {
-          throw Exception('未获取到播放地址，请切换音乐源后重试');
-        }
+        final url = resolved.url;
+        _effectiveQuality = resolved.quality;
         if (_settings.automaticAudioCache &&
             CacheService.supportsAutomaticAudioCache(song.source)) {
           final cacheFile = await CacheService.instance.audioFileFor(
@@ -283,6 +284,66 @@ class PlayerController extends ChangeNotifier {
       'Referer': referer,
       'Accept': 'audio/*,*/*;q=0.8',
     };
+  }
+
+  Future<_ResolvedAudioUrl> _resolveAudioUrl(
+    Song song,
+    Map<String, String> headers,
+  ) async {
+    Object? lastError;
+    final requestedQuality = _settings.quality;
+    final qualities = playbackQualityCandidates(song.source, requestedQuality);
+    for (final quality in qualities) {
+      try {
+        final url = await _api
+            .getSongUrl(song.id, source: song.source, quality: quality)
+            .timeout(const Duration(seconds: 22));
+        if (url == null || url.isEmpty) continue;
+        if (song.source.trim().toLowerCase() != 'qq') {
+          return _ResolvedAudioUrl(url: url, quality: quality);
+        }
+        final playableUrl = await _validatedQqAudioUrl(url, headers);
+        if (playableUrl != null) {
+          return _ResolvedAudioUrl(url: playableUrl, quality: quality);
+        }
+      } on ApiException catch (error) {
+        if (error.unauthorized || error.statusCode == 403) rethrow;
+        lastError = error;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError is ApiException) throw lastError;
+    if (song.source.trim().toLowerCase() == 'qq') {
+      throw Exception('当前 QQ 音乐播放地址不可用，请稍后重试');
+    }
+    throw Exception('未获取到播放地址，请切换音乐源后重试');
+  }
+
+  Future<String?> _validatedQqAudioUrl(
+    String url,
+    Map<String, String> headers,
+  ) async {
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(url))
+        ..headers.addAll(headers)
+        ..headers['Range'] = 'bytes=0-1';
+      final response =
+          await client.send(request).timeout(const Duration(seconds: 12));
+      if (!isPlayableAudioResponse(
+        response.statusCode,
+        response.headers['content-type'],
+      )) {
+        return null;
+      }
+      await response.stream.first;
+      return response.request?.url.toString() ?? url;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
   }
 
   void _loadLyric(int seq) {
@@ -358,6 +419,7 @@ class PlayerController extends ChangeNotifier {
     if (_player.playing) {
       await _player.pause();
     } else {
+      await PlaybackCoordinator.instance.activate(this);
       final seq = _playSeq;
       unawaited(
           _player.play().catchError((Object error, StackTrace stackTrace) {
@@ -511,6 +573,7 @@ class PlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    PlaybackCoordinator.instance.unregister(this);
     _playbackSub?.cancel();
     _playingSub?.cancel();
     _durationSub?.cancel();
@@ -521,4 +584,11 @@ class PlayerController extends ChangeNotifier {
     _player.dispose();
     super.dispose();
   }
+}
+
+class _ResolvedAudioUrl {
+  const _ResolvedAudioUrl({required this.url, required this.quality});
+
+  final String url;
+  final String quality;
 }

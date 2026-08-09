@@ -128,6 +128,8 @@ class ApiClient {
     required List<int> bytes,
     required String filename,
     String? contentType,
+    Map<String, String>? fields,
+    List<http.MultipartFile> additionalFiles = const [],
     Map<String, String>? headers,
   }) {
     return _request(() async {
@@ -137,6 +139,7 @@ class ApiClient {
       );
       final requestHeaders = _requestHeaders(headers)..remove('Content-Type');
       request.headers.addAll(requestHeaders);
+      request.fields.addAll(fields ?? const {});
       request.files.add(
         http.MultipartFile.fromBytes(
           fieldName,
@@ -146,6 +149,7 @@ class ApiClient {
               contentType == null ? null : MediaType.parse(contentType),
         ),
       );
+      request.files.addAll(additionalFiles);
       final response = await _client.send(request);
       return http.Response.fromStream(response);
     });

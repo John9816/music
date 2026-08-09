@@ -434,7 +434,7 @@ class _AlbumCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               album.name,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,

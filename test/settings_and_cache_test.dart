@@ -74,11 +74,21 @@ void main() {
     );
 
     for (final accent in AppAccent.all) {
-      expect(AppTheme.forAccent(accent.id, dark: false).scheme.primary,
-          accent.color);
-      expect(AppTheme.forAccent(accent.id, dark: true).scheme.primary,
-          accent.color);
+      final light = AppTheme.forAccent(accent.id, dark: false);
+      final dark = AppTheme.forAccent(accent.id, dark: true);
+      expect(light.scheme.primary, accent.color);
+      expect(dark.scheme.primary, accent.color);
+      expect(light.data.scaffoldBackgroundColor,
+          light.scheme.surfaceContainerLowest);
+      expect(dark.data.scaffoldBackgroundColor,
+          dark.scheme.surfaceContainerLowest);
     }
+
+    final red = AppTheme.forAccent('rhythmRed', dark: true).scheme;
+    final blue = AppTheme.forAccent('skyBlue', dark: true).scheme;
+    expect(red.surfaceContainerLowest, isNot(blue.surfaceContainerLowest));
+    expect(red.surfaceContainer, isNot(blue.surfaceContainer));
+    expect(red.surfaceContainerHighest, isNot(blue.surfaceContainerHighest));
   });
 
   test('cache categories clear only DuckMusic cache files', () async {

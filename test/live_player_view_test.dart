@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:duck_music/core/models/live_tv.dart';
+import 'package:duck_music/core/player/playback_coordinator.dart';
 import 'package:duck_music/features/live_tv/live_player_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,7 +45,11 @@ class _FakeLiveMediaSession implements LiveMediaSession {
   bool get isPlaying => playing;
 
   @override
-  Widget buildVideo({VoidCallback? onShowLines}) => const ColoredBox(
+  Widget buildVideo({
+    VoidCallback? onShowLines,
+    VoidCallback? onPlaybackRequested,
+  }) =>
+      const ColoredBox(
         key: ValueKey('live-video-surface'),
         color: Colors.black,
       );
@@ -220,6 +225,26 @@ void main() {
     expect(session.muted, isTrue);
   });
 
+  testWidgets('opening live playback pauses another playback owner',
+      (tester) async {
+    final session = _FakeLiveMediaSession();
+    final musicOwner = Object();
+    var musicPauseCount = 0;
+    final coordinator = PlaybackCoordinator.instance;
+    coordinator.register(musicOwner, () async => musicPauseCount++);
+    addTearDown(() => coordinator.unregister(musicOwner));
+
+    await tester.pumpWidget(MaterialApp(
+      home: LivePlayerView(
+        channel: _channel,
+        mediaSessionFactory: () => session,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(musicPauseCount, 1);
+  });
+
   testWidgets('live player exposes fullscreen without seek controls',
       (tester) async {
     final session = _FakeLiveMediaSession();
@@ -240,7 +265,8 @@ void main() {
     expect(session.fullscreenToggleCount, 1);
   });
 
-  testWidgets('fullscreen live controls never expose seeking', (tester) async {
+  testWidgets('fullscreen live controls show on tap and hide automatically',
+      (tester) async {
     var routeCount = 0;
     var muteCount = 0;
     var playbackCount = 0;
@@ -260,22 +286,39 @@ void main() {
     ));
 
     expect(find.byType(Slider), findsNothing);
+    expect(find.byKey(const ValueKey('live-video-controls-surface')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('live-video-route-button')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('live-video-controls-surface')));
+    await tester.pump();
+
     expect(
         find.byKey(const ValueKey('live-video-route-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('live-video-mute-button')), findsNothing);
     expect(
-        find.byKey(const ValueKey('live-video-mute-button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('live-video-playback-button')),
-        findsOneWidget);
+        find.byKey(const ValueKey('live-video-playback-button')), findsNothing);
     expect(find.byKey(const ValueKey('live-video-overlay-fullscreen-button')),
         findsOneWidget);
 
+    final backButton = tester.getTopLeft(
+      find.byKey(const ValueKey('live-video-overlay-fullscreen-button')),
+    );
+    expect(backButton.dx, lessThan(40));
+    expect(backButton.dy, lessThan(40));
+
     await tester.tap(find.byKey(const ValueKey('live-video-route-button')));
-    await tester.tap(find.byKey(const ValueKey('live-video-mute-button')));
-    await tester.tap(find.byKey(const ValueKey('live-video-playback-button')));
     await tester.tap(
         find.byKey(const ValueKey('live-video-overlay-fullscreen-button')));
-    expect([routeCount, muteCount, playbackCount, fullscreenCount],
-        everyElement(1));
+    expect(routeCount, 1);
+    expect(muteCount, 0);
+    expect(playbackCount, 0);
+    expect(fullscreenCount, 1);
+
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(const ValueKey('live-video-route-button')), findsNothing);
+    expect(find.byKey(const ValueKey('live-video-overlay-fullscreen-button')),
+        findsNothing);
   });
 
   testWidgets('escape exits fullscreen live controls', (tester) async {

@@ -10,6 +10,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/models/playlist.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
+import '../../core/services/song_download_service.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
@@ -50,13 +51,29 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   bool _favoriteLoading = false;
   bool _isAdded = false;
   bool _descriptionExpanded = false;
+  bool _searchOpen = false;
+  String _searchQuery = '';
+  bool _mobileTitleVisible = false;
+  bool _mobilePlayHeaderPinned = false;
+  bool _reverseOrder = false;
+  bool _downloadAllBusy = false;
+  final ScrollController _mobileScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _userApi = widget.userApi ?? UserApi();
     _future = _startLoad();
+    _mobileScrollController.addListener(_updateMobileTitle);
     if (_supportsPlaylistFavorites) unawaited(_loadFavoriteState());
+  }
+
+  @override
+  void dispose() {
+    _mobileScrollController
+      ..removeListener(_updateMobileTitle)
+      ..dispose();
+    super.dispose();
   }
 
   @override
@@ -68,6 +85,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       _favoriteLoading = false;
       _isAdded = false;
       _descriptionExpanded = false;
+      _searchOpen = false;
+      _searchQuery = '';
+      _mobileTitleVisible = false;
+      _mobilePlayHeaderPinned = false;
+      _reverseOrder = false;
       _loadingFuture = null;
       _reload();
       if (_supportsPlaylistFavorites) unawaited(_loadFavoriteState());
@@ -201,13 +223,43 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
         : source;
   }
 
+  void _updateMobileTitle() {
+    final pinned = _mobileScrollController.hasClients &&
+        _mobileScrollController.offset >= 198;
+    if ((pinned != _mobileTitleVisible || pinned != _mobilePlayHeaderPinned) &&
+        mounted) {
+      setState(() {
+        _mobileTitleVisible = pinned;
+        _mobilePlayHeaderPinned = pinned;
+      });
+    }
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) _searchQuery = '';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width < 720) {
+      return _buildMobile(context);
+    }
+    return _buildDesktop(context);
+  }
+
+  Widget _buildDesktop(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: _PlaylistTopBar(
         title: widget.playlist.name,
         onBack: () => Navigator.of(context).maybePop(),
+        searchOpen: _searchOpen,
+        onSearch: _toggleSearch,
+        onSearchChanged: (value) => setState(() => _searchQuery = value),
+        onMore: _showMoreActions,
       ),
       body: FutureBuilder<List<Song>>(
         future: _future,
@@ -229,7 +281,15 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
             );
           }
 
-          final songs = snapshot.data ?? const <Song>[];
+          final allSongs = snapshot.data ?? const <Song>[];
+          final query = _searchQuery.trim().toLowerCase();
+          final songs = query.isEmpty
+              ? allSongs
+              : allSongs
+                  .where((song) =>
+                      song.name.toLowerCase().contains(query) ||
+                      song.artistNames.toLowerCase().contains(query))
+                  .toList(growable: false);
           return LayoutBuilder(
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 720;
@@ -317,13 +377,982 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       ),
     );
   }
+
+  Widget _buildMobile(BuildContext context) {
+    final mobileScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: mobileScheme.surfaceContainerLowest,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _PlaylistAmbientBackground(coverUrl: widget.playlist.coverUrl),
+          SafeArea(
+            bottom: false,
+            child: FutureBuilder<List<Song>>(
+              future: _future,
+              builder: (context, snapshot) {
+                final loadedSongs = snapshot.data ?? const <Song>[];
+                final query = _searchQuery.trim().toLowerCase();
+                var visibleSongs = query.isEmpty
+                    ? loadedSongs
+                    : loadedSongs
+                        .where(
+                          (song) =>
+                              song.name.toLowerCase().contains(query) ||
+                              song.artistNames.toLowerCase().contains(query) ||
+                              song.album.name.toLowerCase().contains(query),
+                        )
+                        .toList(growable: false);
+                if (_reverseOrder) {
+                  visibleSongs = visibleSongs.reversed.toList(growable: false);
+                }
+                return Stack(
+                  children: [
+                    _buildMobileScrollBody(
+                      context,
+                      snapshot: snapshot,
+                      allSongs: loadedSongs,
+                      visibleSongs: visibleSongs,
+                    ),
+                    if (_mobilePlayHeaderPinned)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 64,
+                        child: Container(
+                          height: 64,
+                          alignment: Alignment.topCenter,
+                          color: Color.alphaBlend(
+                            mobileScheme.onSurface.withValues(alpha: 0.105),
+                            mobileScheme.surfaceContainerLowest,
+                          ),
+                          child: _MobilePlayAllPanel(
+                            key: const ValueKey('mobile-play-panel-pinned'),
+                            songs: loadedSongs,
+                            trackCount: widget.playlist.trackCount ??
+                                loadedSongs.length,
+                            color: Color.alphaBlend(
+                              mobileScheme.onSurface.withValues(alpha: 0.105),
+                              mobileScheme.surfaceContainerLowest,
+                            ),
+                            loading: snapshot.connectionState !=
+                                ConnectionState.done,
+                            downloadBusy: _downloadAllBusy,
+                            reverseOrder: _reverseOrder,
+                            compact: true,
+                            onPlay: loadedSongs.isEmpty
+                                ? null
+                                : () => context
+                                    .read<PlayerController>()
+                                    .playQueue(loadedSongs),
+                            onFilter: _toggleSearch,
+                            onDownload: loadedSongs.isEmpty
+                                ? null
+                                : () => _downloadAll(loadedSongs),
+                            onSort: () => setState(
+                              () => _reverseOrder = !_reverseOrder,
+                            ),
+                          ),
+                        ),
+                      ),
+                    _MobilePlaylistTopBar(
+                      title: widget.playlist.name,
+                      titleVisible: _mobileTitleVisible,
+                      searchOpen: _searchOpen,
+                      onBack: () => Navigator.of(context).maybePop(),
+                      onSearch: _toggleSearch,
+                      onSearchChanged: (value) =>
+                          setState(() => _searchQuery = value),
+                      onMore: _showMoreActions,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileScrollBody(
+    BuildContext context, {
+    required AsyncSnapshot<List<Song>> snapshot,
+    required List<Song> allSongs,
+    required List<Song> visibleSongs,
+  }) {
+    const panelColor = Colors.transparent;
+    final current = context.select<PlayerController, Song?>((p) => p.current);
+    return CustomScrollView(
+      controller: _mobileScrollController,
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      slivers: [
+        SliverToBoxAdapter(
+          child: _MobilePlaylistHero(
+            playlist: widget.playlist,
+            kind: widget.kind,
+            isFavorite: _isFavorite,
+            favoriteLoading: _favoriteLoading,
+            onFavorite: _toggleFavorite,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _MobilePlayAllPanel(
+            key: const ValueKey('mobile-play-panel-expanded'),
+            songs: allSongs,
+            trackCount: widget.playlist.trackCount ?? allSongs.length,
+            color: panelColor,
+            loading: snapshot.connectionState != ConnectionState.done,
+            downloadBusy: _downloadAllBusy,
+            reverseOrder: _reverseOrder,
+            onPlay: allSongs.isEmpty
+                ? null
+                : () => context.read<PlayerController>().playQueue(allSongs),
+            onFilter: _toggleSearch,
+            onDownload: allSongs.isEmpty ? null : () => _downloadAll(allSongs),
+            onSort: () => setState(() => _reverseOrder = !_reverseOrder),
+          ),
+        ),
+        if (current != null)
+          SliverToBoxAdapter(
+            child: _MobileContinueRow(
+              song: current,
+              color: panelColor,
+              onTap: context.read<PlayerController>().togglePlay,
+            ),
+          ),
+        if (snapshot.connectionState != ConnectionState.done)
+          const SliverToBoxAdapter(
+            child: ColoredBox(
+              color: panelColor,
+              child: SizedBox(
+                height: 260,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          )
+        else if (snapshot.hasError)
+          SliverToBoxAdapter(
+            child: ColoredBox(
+              color: panelColor,
+              child: SizedBox(
+                height: 260,
+                child: GEmptyState(
+                  icon: Icons.error_outline_rounded,
+                  text: '加载失败，请检查网络后重试',
+                  onRetry: _reload,
+                ),
+              ),
+            ),
+          )
+        else if (visibleSongs.isEmpty)
+          SliverToBoxAdapter(
+            child: ColoredBox(
+              color: panelColor,
+              child: SizedBox(
+                height: 260,
+                child: GEmptyState(
+                  icon: Icons.queue_music_rounded,
+                  text: _searchQuery.trim().isNotEmpty
+                      ? '没有找到相关歌曲'
+                      : widget.kind == PlaylistDetailKind.album
+                          ? '专辑中没有歌曲'
+                          : '歌单为空',
+                ),
+              ),
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: visibleSongs.length,
+            itemBuilder: (context, index) => _MobilePlaylistSongRow(
+              song: visibleSongs[index],
+              songs: visibleSongs,
+              index: index,
+              color: panelColor,
+            ),
+          ),
+        const SliverToBoxAdapter(
+          child: ColoredBox(
+            color: panelColor,
+            child: SizedBox(height: 104),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _downloadAll(List<Song> songs) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('下载全部歌曲'),
+        content: Text('将下载歌单中的 ${songs.length} 首歌曲。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('下载'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _downloadAllBusy = true);
+    final quality = context.read<SettingsController>().downloadQuality;
+    var completed = 0;
+    try {
+      for (final song in songs) {
+        await SongDownloadService.instance.download(song, quality: quality);
+        completed++;
+      }
+      if (mounted) {
+        _showMessage('全部歌曲已下载');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage('已下载 $completed 首，${_errorText(error, '下载失败')}');
+      }
+    } finally {
+      if (mounted) setState(() => _downloadAllBusy = false);
+    }
+  }
+
+  void _showMoreActions() {
+    showMenu<String>(
+      context: context,
+      position: const RelativeRect.fromLTRB(999, 58, 12, 0),
+      items: const [
+        PopupMenuItem(value: 'refresh', child: Text('刷新详情')),
+      ],
+    ).then((value) {
+      if (value == 'refresh' && mounted) _reload();
+    });
+  }
+}
+
+class _PlaylistAmbientBackground extends StatelessWidget {
+  const _PlaylistAmbientBackground({required this.coverUrl});
+
+  final String? coverUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return ClipRect(
+      key: const ValueKey('mobile-playlist-ambient-background'),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: scheme.surfaceContainerLowest),
+          if (coverUrl != null && coverUrl!.isNotEmpty)
+            Transform.scale(
+              scale: 1.28,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 54, sigmaY: 54),
+                child: AsyncCover(
+                  url: coverUrl,
+                  size: double.infinity,
+                  radius: 0,
+                ),
+              ),
+            ),
+          ColoredBox(
+            color: scheme.surfaceContainerLowest.withValues(
+              alpha: dark ? 0.69 : 0.76,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobilePlaylistTopBar extends StatelessWidget {
+  const _MobilePlaylistTopBar({
+    required this.title,
+    required this.titleVisible,
+    required this.searchOpen,
+    required this.onBack,
+    required this.onSearch,
+    required this.onSearchChanged,
+    required this.onMore,
+  });
+
+  final String title;
+  final bool titleVisible;
+  final bool searchOpen;
+  final VoidCallback onBack;
+  final VoidCallback onSearch;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bar = AnimatedContainer(
+      duration: Motion.fast,
+      height: 64,
+      color: titleVisible
+          ? scheme.surfaceContainerLowest.withValues(alpha: 0.82)
+          : Colors.transparent,
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        height: 56,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (!searchOpen)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: titleVisible ? 1 : 0,
+                    duration: Motion.fast,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 96),
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: TypeScale.semibold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                const SizedBox(width: 4),
+                GIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  tooltip: '返回',
+                  size: 23,
+                  padding: 10,
+                  backgroundColor: Colors.transparent,
+                  onTap: onBack,
+                ),
+                if (searchOpen) ...[
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: TextField(
+                      autofocus: true,
+                      onChanged: onSearchChanged,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: InputDecoration(
+                        hintText: '搜索歌曲或歌手',
+                        hintStyle: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.56),
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ] else
+                  const Spacer(),
+                GIconButton(
+                  icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
+                  tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
+                  size: searchOpen ? 25 : 27,
+                  padding: 8,
+                  backgroundColor: Colors.transparent,
+                  onTap: onSearch,
+                ),
+                GIconButton(
+                  icon: Icons.more_vert_rounded,
+                  tooltip: '更多',
+                  size: 26,
+                  padding: 8,
+                  backgroundColor: Colors.transparent,
+                  onTap: onMore,
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!titleVisible) return bar;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: bar,
+      ),
+    );
+  }
+}
+
+class _MobilePlaylistHero extends StatelessWidget {
+  const _MobilePlaylistHero({
+    required this.playlist,
+    required this.kind,
+    required this.isFavorite,
+    required this.favoriteLoading,
+    required this.onFavorite,
+  });
+
+  final Playlist playlist;
+  final PlaylistDetailKind kind;
+  final bool isFavorite;
+  final bool favoriteLoading;
+  final VoidCallback onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final creator = playlist.creatorName?.trim();
+    return SizedBox(
+      height: 262,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 62, 20, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: AsyncCover(
+                    url: playlist.coverUrl,
+                    size: 112,
+                    radius: 6,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        playlist.name,
+                        key: const ValueKey('mobile-playlist-hero-title'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: TypeScale.bold,
+                          height: 1.17,
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                      Row(
+                        children: [
+                          ClipOval(
+                            child: AsyncCover(
+                              url: playlist.coverUrl,
+                              size: 20,
+                              radius: 10,
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              creator == null || creator.isEmpty
+                                  ? (kind == PlaylistDetailKind.album
+                                      ? '专辑'
+                                      : '歌单创建者')
+                                  : creator,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: scheme.onSurface.withValues(alpha: 0.72),
+                                fontSize: 13,
+                                fontWeight: TypeScale.semibold,
+                              ),
+                            ),
+                          ),
+                          if (playlist.playCount != null) ...[
+                            const SizedBox(width: 10),
+                            Container(
+                              width: 1,
+                              height: 14,
+                              color: scheme.onSurface.withValues(alpha: 0.16),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              '${_formatPlayCount(playlist.playCount!)}次播放',
+                              style: TextStyle(
+                                color: scheme.onSurface.withValues(alpha: 0.64),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            if (kind == PlaylistDetailKind.playlist)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Tooltip(
+                  message: isFavorite ? '取消收藏' : '收藏歌单',
+                  child: GPressScale(
+                    onTap: favoriteLoading ? null : onFavorite,
+                    child: Container(
+                      width: 109,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: scheme.onSurface.withValues(alpha: 0.105),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      alignment: Alignment.center,
+                      child: favoriteLoading
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isFavorite
+                                      ? Icons.inventory_2
+                                      : Icons.inventory_2_outlined,
+                                  size: 21,
+                                  color: scheme.onSurface
+                                      .withValues(alpha: isFavorite ? 1 : 0.68),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isFavorite ? '已收藏' : '收藏',
+                                  style: TextStyle(
+                                    color: scheme.onSurface.withValues(
+                                      alpha: isFavorite ? 1 : 0.68,
+                                    ),
+                                    fontSize: 14,
+                                    fontWeight: TypeScale.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobilePlayAllPanel extends StatelessWidget {
+  const _MobilePlayAllPanel({
+    super.key,
+    required this.songs,
+    required this.trackCount,
+    required this.color,
+    required this.loading,
+    required this.downloadBusy,
+    required this.reverseOrder,
+    required this.onPlay,
+    required this.onFilter,
+    required this.onDownload,
+    required this.onSort,
+    this.compact = false,
+  });
+
+  final List<Song> songs;
+  final int trackCount;
+  final Color color;
+  final bool loading;
+  final bool downloadBusy;
+  final bool reverseOrder;
+  final VoidCallback? onPlay;
+  final VoidCallback onFilter;
+  final VoidCallback? onDownload;
+  final VoidCallback onSort;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: compact ? 56 : 84,
+      padding: EdgeInsets.fromLTRB(20, compact ? 7 : 14, 10, compact ? 7 : 10),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: compact
+            ? BorderRadius.zero
+            : const BorderRadius.vertical(top: Radius.circular(10)),
+      ),
+      child: Row(
+        children: [
+          GPressScale(
+            onTap: onPlay,
+            disabled: onPlay == null,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFFF3338)
+                    .withValues(alpha: onPlay == null ? 0.45 : 1),
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                size: 27,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '播放全部',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: TypeScale.bold,
+                    height: 1.1,
+                  ),
+                ),
+                SizedBox(height: compact ? 3 : 5),
+                Text(
+                  loading
+                      ? '正在加载歌曲'
+                      : '$trackCount首 · ${_formatPlaylistDuration(songs)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.46),
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _MobileToolButton(
+            icon: Icons.filter_alt_outlined,
+            tooltip: '筛选歌曲',
+            onTap: onFilter,
+          ),
+          _MobileToolButton(
+            icon: Icons.download_for_offline_outlined,
+            tooltip: '下载全部',
+            busy: downloadBusy,
+            onTap: onDownload,
+          ),
+          _MobileToolButton(
+            icon:
+                reverseOrder ? Icons.sort_rounded : Icons.playlist_play_rounded,
+            tooltip: reverseOrder ? '恢复原排序' : '倒序排列',
+            onTap: onSort,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileToolButton extends StatelessWidget {
+  const _MobileToolButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: GPressScale(
+        onTap: busy ? null : onTap,
+        child: SizedBox.square(
+          dimension: 44,
+          child: Center(
+            child: busy
+                ? const SizedBox.square(
+                    dimension: 19,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    icon,
+                    size: 27,
+                    color: scheme.onSurface.withValues(alpha: 0.82),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileContinueRow extends StatelessWidget {
+  const _MobileContinueRow({
+    required this.song,
+    required this.color,
+    required this.onTap,
+  });
+
+  final Song song;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: color,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+        child: SizedBox(
+          height: 40,
+          child: Row(
+            children: [
+              GIconButton(
+                icon: Icons.play_arrow_rounded,
+                tooltip: '继续播放',
+                size: 22,
+                padding: 7,
+                backgroundColor: Colors.transparent,
+                onTap: onTap,
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(
+                        text: '继续播放：',
+                        style: TextStyle(fontWeight: TypeScale.semibold),
+                      ),
+                      TextSpan(text: '${song.name}-${song.artistNames}'),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.66),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobilePlaylistSongRow extends StatelessWidget {
+  const _MobilePlaylistSongRow({
+    required this.song,
+    required this.songs,
+    required this.index,
+    required this.color,
+  });
+
+  final Song song;
+  final List<Song> songs;
+  final int index;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final current = context.select<PlayerController, Song?>((p) => p.current);
+    final playing = current?.id == song.id && current?.source == song.source;
+    final highQuality = song.availableQualities.any(
+      (quality) => const {
+        'flac',
+        'lossless',
+        'hires',
+        'flac24bit',
+        'master',
+      }.contains(quality.toLowerCase()),
+    );
+    final artistAlbum = song.album.name.trim().isEmpty
+        ? song.artistNames
+        : '${song.artistNames} - ${song.album.name}';
+    return ColoredBox(
+      color: color,
+      child: SizedBox(
+        height: 62,
+        child: Row(
+          children: [
+            const SizedBox(width: 20),
+            GPressScale(
+              onTap: () => context
+                  .read<PlayerController>()
+                  .playQueue(songs, index: index),
+              scale: 0.99,
+              child: Row(
+                children: [
+                  AsyncCover(
+                    url: song.album.picUrl,
+                    size: 44,
+                    radius: 4,
+                  ),
+                  const SizedBox(width: 12),
+                ],
+              ),
+            ),
+            Expanded(
+              child: GPressScale(
+                onTap: () => context
+                    .read<PlayerController>()
+                    .playQueue(songs, index: index),
+                scale: 0.99,
+                child: SizedBox(
+                  height: 62,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: playing
+                              ? const Color(0xFFFF3338)
+                              : scheme.onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w400,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          if (highQuality) ...[
+                            const _QualityBadge(label: '超清母带'),
+                            const SizedBox(width: 5),
+                          ],
+                          Flexible(
+                            child: Text(
+                              artistAlbum,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: scheme.onSurface.withValues(alpha: 0.48),
+                                fontSize: 12.5,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SongActionButton(
+              song: song,
+              onPlay: () => context
+                  .read<PlayerController>()
+                  .playQueue(songs, index: index),
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QualityBadge extends StatelessWidget {
+  const _QualityBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFFD5A30D);
+    return Container(
+      height: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.88)),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: color,
+          fontSize: 10,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+String _formatPlaylistDuration(List<Song> songs) {
+  final totalMs = songs.fold<int>(0, (sum, song) => sum + song.durationMs);
+  final duration = Duration(milliseconds: totalMs);
+  if (duration.inHours >= 5) return '大于5小时';
+  if (duration.inHours > 0) {
+    return '${duration.inHours}小时${duration.inMinutes.remainder(60)}分钟';
+  }
+  return '${duration.inMinutes}分钟';
+}
+
+String _formatPlayCount(int count) {
+  if (count >= 100000000) {
+    return '${(count / 100000000).toStringAsFixed(1)}亿';
+  }
+  if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}万';
+  return '$count';
 }
 
 class _PlaylistTopBar extends StatelessWidget implements PreferredSizeWidget {
-  const _PlaylistTopBar({required this.title, required this.onBack});
+  const _PlaylistTopBar({
+    required this.title,
+    required this.onBack,
+    required this.searchOpen,
+    required this.onSearch,
+    required this.onSearchChanged,
+    required this.onMore,
+  });
 
   final String title;
   final VoidCallback onBack;
+  final bool searchOpen;
+  final VoidCallback onSearch;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onMore;
 
   @override
   Size get preferredSize => const Size.fromHeight(56);
@@ -351,17 +1380,44 @@ class _PlaylistTopBar extends StatelessWidget implements PreferredSizeWidget {
               GBackButton(onTap: onBack),
               const SizedBox(width: 19),
               Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: TypeScale.semibold,
-                  ),
-                ),
+                child: searchOpen
+                    ? TextField(
+                        autofocus: true,
+                        onChanged: onSearchChanged,
+                        style: const TextStyle(fontSize: 15),
+                        decoration: const InputDecoration(
+                          hintText: '搜索歌曲或歌手',
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                      )
+                    : Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: TypeScale.semibold,
+                        ),
+                      ),
               ),
-              const SizedBox(width: 16),
+              GIconButton(
+                icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
+                tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
+                size: 21,
+                padding: 9,
+                backgroundColor: Colors.transparent,
+                onTap: onSearch,
+              ),
+              GIconButton(
+                icon: Icons.more_vert_rounded,
+                tooltip: '更多',
+                size: 21,
+                padding: 9,
+                backgroundColor: Colors.transparent,
+                onTap: onMore,
+              ),
+              const SizedBox(width: 8),
             ],
           ),
         ),

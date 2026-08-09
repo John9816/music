@@ -16,13 +16,13 @@ class ToolsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
     return Scaffold(
+      appBar: GAppBar(
+        title: '工具箱',
+        onBack: () => Navigator.of(context).maybePop(),
+      ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
-          const GPageHeader(
-            title: '工具箱',
-            subtitle: '创作、直播与歌单管理',
-          ),
           const SectionHeader('常用工具'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),

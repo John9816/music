@@ -70,7 +70,7 @@ class BookProgressStore {
   Future<String> loadReaderMode() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_readerModeKey);
-    return value == 'page' ? 'page' : 'scroll';
+    return value == 'scroll' ? 'scroll' : 'page';
   }
 
   Future<void> saveReaderMode(String value) async {

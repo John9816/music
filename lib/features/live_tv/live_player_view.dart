@@ -9,6 +9,7 @@ import 'package:media_kit_video/media_kit_video_controls/media_kit_video_control
     as video_controls;
 
 import '../../core/models/live_tv.dart';
+import '../../core/player/playback_coordinator.dart';
 import 'live_line_failover.dart';
 import 'live_open_queue.dart';
 
@@ -24,7 +25,10 @@ abstract class LiveMediaSession {
   Future<void> setMuted(bool value);
   Future<void> toggleFullscreen();
   Future<void> dispose();
-  Widget buildVideo({VoidCallback? onShowLines});
+  Widget buildVideo({
+    VoidCallback? onShowLines,
+    VoidCallback? onPlaybackRequested,
+  });
 }
 
 class LivePlayerView extends StatefulWidget {
@@ -59,6 +63,7 @@ class _LivePlayerViewState extends State<LivePlayerView> {
   @override
   void initState() {
     super.initState();
+    PlaybackCoordinator.instance.register(this, _pauseLive);
     _errorSubscription = _media.errors.listen((_) {
       _failCurrentGeneration(_openGeneration);
     });
@@ -69,6 +74,7 @@ class _LivePlayerViewState extends State<LivePlayerView> {
   @override
   void dispose() {
     _openGeneration++;
+    PlaybackCoordinator.instance.unregister(this);
     final cancelErrors = _errorSubscription?.cancel() ?? Future<void>.value();
     unawaited(_openQueue.enqueue(() async {
       await cancelErrors;
@@ -97,6 +103,7 @@ class _LivePlayerViewState extends State<LivePlayerView> {
       _exhausted = false;
     });
     try {
+      await PlaybackCoordinator.instance.activate(this);
       await _openQueue.enqueue(() => _media.open(line.uri));
       if (!mounted || generation != _openGeneration) return;
       setState(() => _loading = false);
@@ -131,6 +138,7 @@ class _LivePlayerViewState extends State<LivePlayerView> {
     if (_media.isPlaying) {
       await _media.pause();
     } else {
+      await PlaybackCoordinator.instance.activate(this);
       await _media.play();
     }
     if (mounted) setState(() {});
@@ -140,6 +148,8 @@ class _LivePlayerViewState extends State<LivePlayerView> {
     await _media.setMuted(!_media.isMuted);
     if (mounted) setState(() {});
   }
+
+  Future<void> _pauseLive() => _media.pause();
 
   void _showLines() {
     showModalBottomSheet<void>(
@@ -210,7 +220,11 @@ class _LivePlayerViewState extends State<LivePlayerView> {
                           fit: StackFit.expand,
                           children: [
                             if (!_exhausted)
-                              _media.buildVideo(onShowLines: _showLines),
+                              _media.buildVideo(
+                                onShowLines: _showLines,
+                                onPlaybackRequested: () =>
+                                    unawaited(_togglePlayback()),
+                              ),
                             if (_loading)
                               const Center(child: CircularProgressIndicator()),
                             if (_exhausted) _UnavailableState(onRetry: _retry),
@@ -295,7 +309,7 @@ class _UnavailableState extends StatelessWidget {
       );
 }
 
-class LiveVideoControls extends StatelessWidget {
+class LiveVideoControls extends StatefulWidget {
   const LiveVideoControls({
     super.key,
     required this.fullscreen,
@@ -318,11 +332,54 @@ class LiveVideoControls extends StatelessWidget {
   final VoidCallback? onDoubleTap;
 
   @override
+  State<LiveVideoControls> createState() => _LiveVideoControlsState();
+}
+
+class _LiveVideoControlsState extends State<LiveVideoControls> {
+  static const _hideAfter = Duration(seconds: 3);
+
+  Timer? _hideTimer;
+  bool _controlsVisible = false;
+
+  @override
+  void didUpdateWidget(covariant LiveVideoControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fullscreen != widget.fullscreen) {
+      _hideTimer?.cancel();
+      _controlsVisible = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _showControls() {
+    if (!widget.fullscreen) return;
+    setState(() => _controlsVisible = true);
+    _hideTimer?.cancel();
+    _hideTimer = Timer(_hideAfter, () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _toggleControls() {
+    if (_controlsVisible) {
+      _hideTimer?.cancel();
+      setState(() => _controlsVisible = false);
+    } else {
+      _showControls();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
-          if (fullscreen)
+          if (widget.fullscreen)
             const SingleActivator(LogicalKeyboardKey.escape):
-                onToggleFullscreen,
+                widget.onToggleFullscreen,
         },
         child: Focus(
           autofocus: true,
@@ -330,60 +387,65 @@ class LiveVideoControls extends StatelessWidget {
             children: [
               Positioned.fill(
                 child: GestureDetector(
+                  key: const ValueKey('live-video-controls-surface'),
                   behavior: HitTestBehavior.translucent,
-                  onDoubleTap: onDoubleTap,
+                  onTap: _toggleControls,
+                  onDoubleTap: widget.onDoubleTap,
                 ),
               ),
-              if (fullscreen)
+              if (widget.fullscreen && _controlsVisible) ...[
                 Positioned(
-                  right: 16,
-                  bottom: 16,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      borderRadius: BorderRadius.circular(8),
+                  top: 16,
+                  left: 16,
+                  child: _ControlButton(
+                    key: const ValueKey(
+                      'live-video-overlay-fullscreen-button',
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          key: const ValueKey('live-video-route-button'),
-                          tooltip: '切换线路',
-                          color: Colors.white,
-                          onPressed: onShowLines,
-                          icon: const Icon(Icons.route),
-                        ),
-                        IconButton(
-                          key: const ValueKey('live-video-mute-button'),
-                          tooltip: isMuted ? '取消静音' : '静音',
-                          color: Colors.white,
-                          onPressed: onToggleMuted,
-                          icon: Icon(
-                              isMuted ? Icons.volume_off : Icons.volume_up),
-                        ),
-                        IconButton(
-                          key: const ValueKey('live-video-playback-button'),
-                          tooltip: isPlaying ? '暂停' : '播放',
-                          color: Colors.white,
-                          onPressed: onTogglePlayback,
-                          icon:
-                              Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                        ),
-                        IconButton(
-                          key: const ValueKey(
-                            'live-video-overlay-fullscreen-button',
-                          ),
-                          tooltip: '退出全屏',
-                          color: Colors.white,
-                          onPressed: onToggleFullscreen,
-                          icon: const Icon(Icons.fullscreen_exit),
-                        ),
-                      ],
-                    ),
+                    tooltip: '退出全屏',
+                    onPressed: widget.onToggleFullscreen,
+                    icon: Icons.arrow_back,
                   ),
                 ),
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: _ControlButton(
+                    key: const ValueKey('live-video-route-button'),
+                    tooltip: '切换线路',
+                    onPressed: widget.onShowLines,
+                    icon: Icons.route,
+                  ),
+                ),
+              ],
             ],
           ),
+        ),
+      );
+}
+
+class _ControlButton extends StatelessWidget {
+  const _ControlButton({
+    super.key,
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  final String tooltip;
+  final VoidCallback onPressed;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.62),
+          shape: BoxShape.circle,
+        ),
+        child: IconButton(
+          tooltip: tooltip,
+          color: Colors.white,
+          onPressed: onPressed,
+          icon: Icon(icon),
         ),
       );
 }
@@ -438,7 +500,11 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
   bool get isPlaying => _player.state.playing;
 
   @override
-  Widget buildVideo({VoidCallback? onShowLines}) => Video(
+  Widget buildVideo({
+    VoidCallback? onShowLines,
+    VoidCallback? onPlaybackRequested,
+  }) =>
+      Video(
         key: _videoKey,
         controller: _videoController,
         fit: BoxFit.contain,
@@ -456,9 +522,8 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
                 isMuted: (volumeSnapshot.data ?? _player.state.volume) == 0,
                 onShowLines: onShowLines ?? () {},
                 onToggleMuted: () => unawaited(setMuted(!isMuted)),
-                onTogglePlayback: () => unawaited(
-                  isPlaying ? pause() : play(),
-                ),
+                onTogglePlayback: onPlaybackRequested ??
+                    () => unawaited(isPlaying ? pause() : play()),
                 onToggleFullscreen: () => unawaited(
                   video_controls.toggleFullscreen(context),
                 ),

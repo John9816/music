@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -174,6 +176,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final windowWidth = MediaQuery.sizeOf(context).width;
+    final scheme = Theme.of(context).colorScheme;
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= GBreakpoints.sidebar;
     final sidebarWidth = windowWidth >= 1180 ? 264.0 : 236.0;
@@ -203,93 +206,117 @@ class _HomeShellState extends State<HomeShell> {
         );
       },
       child: Scaffold(
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        if (wide)
-                          _Sidebar(
-                            width: sidebarWidth,
-                            topInset: macOS ? 48 : 18,
-                            selected: _index,
-                            onSelect: _selectPage,
-                            onOpenPlaylist: _openUserPlaylist,
-                            onSearch: (query) {
-                              setState(() => _pendingSearchQuery = query);
-                              _selectPage(1);
-                            },
-                            searchQuery: _pendingSearchQuery,
-                          ),
-                        Expanded(
-                          child: GWindowControlsSafeRegion(
-                            child: SafeArea(
-                              top: !macOS,
-                              bottom: false,
-                              child: Padding(
-                                padding: EdgeInsets.zero,
-                                child: _AnimatedTabStack(
-                                  index: _index,
-                                  children: [
-                                    for (var i = 0; i < pages.length; i++)
-                                      _TabNavigator(
-                                        key: _tabKeys[i],
-                                        active: _index == i,
-                                        canPopListenable: _tabCanPop[i],
-                                        child: pages[i],
-                                      ),
-                                  ],
-                                ),
+        key: const ValueKey('home-shell-scaffold'),
+        backgroundColor: scheme.surfaceContainerLowest,
+        body: ColoredBox(
+          color: scheme.surfaceContainerLowest,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          if (wide)
+                            _Sidebar(
+                              width: sidebarWidth,
+                              topInset: macOS ? 48 : 18,
+                              selected: _index,
+                              onSelect: _selectPage,
+                              onOpenPlaylist: _openUserPlaylist,
+                              onSearch: (query) {
+                                setState(() => _pendingSearchQuery = query);
+                                _selectPage(1);
+                              },
+                              searchQuery: _pendingSearchQuery,
+                            ),
+                          Expanded(
+                            child: GWindowControlsSafeRegion(
+                              child: _AnimatedTabStack(
+                                index: _index,
+                                children: [
+                                  for (var i = 0; i < pages.length; i++)
+                                    _TabNavigator(
+                                      key: _tabKeys[i],
+                                      active: _index == i,
+                                      canPopListenable: _tabCanPop[i],
+                                      child: pages[i],
+                                    ),
+                                ],
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  MiniPlayer(
-                    sidebarWidth: wide ? sidebarWidth : null,
-                    panel: dockedPlayerPanel ? _miniPlayerPanel : null,
-                    onPanelChanged: dockedPlayerPanel
-                        ? (panel) => setState(() => _miniPlayerPanel = panel)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-            if (dockedPlayerPanel)
-              AnimatedPositioned(
-                duration: Motion.normal,
-                curve: Curves.easeOutCubic,
-                top: 0,
-                bottom: 80,
-                right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
-                width: playerPanelWidth,
-                child: IgnorePointer(
-                  ignoring: _miniPlayerPanel == null,
-                  child: DesktopPlayerPanel(
-                    panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
-                    onClose: () => setState(() => _miniPlayerPanel = null),
-                  ),
+                    if (wide)
+                      MiniPlayer(
+                        sidebarWidth: sidebarWidth,
+                        panel: dockedPlayerPanel ? _miniPlayerPanel : null,
+                        onPanelChanged: dockedPlayerPanel
+                            ? (panel) =>
+                                setState(() => _miniPlayerPanel = panel)
+                            : null,
+                      ),
+                  ],
                 ),
               ),
-            if (macOS && wide)
-              Positioned(
-                left: 0,
-                width: sidebarWidth,
-                top: 0,
-                child: const _WindowDragBar(),
-              ),
-          ],
+              if (!wide)
+                ValueListenableBuilder<bool>(
+                  valueListenable: canPopTab,
+                  builder: (context, tabCanPop, child) {
+                    return Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: tabCanPop
+                          ? max(
+                              MediaQuery.viewPaddingOf(context).bottom,
+                              30,
+                            )
+                          : 8,
+                      child: child!,
+                    );
+                  },
+                  child: const MiniPlayer(),
+                ),
+              if (dockedPlayerPanel)
+                AnimatedPositioned(
+                  duration: Motion.normal,
+                  curve: Curves.easeOutCubic,
+                  top: 0,
+                  bottom: 80,
+                  right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
+                  width: playerPanelWidth,
+                  child: IgnorePointer(
+                    ignoring: _miniPlayerPanel == null,
+                    child: DesktopPlayerPanel(
+                      panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
+                      onClose: () => setState(() => _miniPlayerPanel = null),
+                    ),
+                  ),
+                ),
+              if (macOS && wide)
+                Positioned(
+                  left: 0,
+                  width: sidebarWidth,
+                  top: 0,
+                  child: const _WindowDragBar(),
+                ),
+            ],
+          ),
         ),
         bottomNavigationBar: wide
             ? null
-            : _BottomNav(
-                selected: _index,
-                onSelect: _selectPage,
+            : ValueListenableBuilder<bool>(
+                valueListenable: canPopTab,
+                builder: (context, tabCanPop, child) {
+                  if (tabCanPop) return const SizedBox.shrink();
+                  return _BottomNav(
+                    selected: _index,
+                    onSelect: _selectPage,
+                  );
+                },
               ),
       ),
     );
@@ -570,7 +597,10 @@ class _TabNavigatorState extends State<_TabNavigator> {
         onGenerateRoute: (_) => MaterialPageRoute<void>(
           builder: (_) => ValueListenableBuilder<Widget>(
             valueListenable: _rootPage,
-            builder: (_, page, __) => page,
+            builder: (_, page, __) => SafeArea(
+              bottom: false,
+              child: page,
+            ),
           ),
         ),
       ),
@@ -1163,9 +1193,9 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
+      key: const ValueKey('mobile-bottom-nav-surface'),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainer.withValues(alpha: 0.95),
-        border: Border(top: BorderSide(color: glassHairline(context))),
+        color: scheme.surfaceContainerLowest,
       ),
       child: SafeArea(
         top: false,

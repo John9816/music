@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -40,10 +42,13 @@ class _BookReaderViewState extends State<BookReaderView> {
   double _position = 0;
   double _fontSize = 18;
   double _lineHeight = 1.9;
-  String _mode = 'scroll';
+  String _mode = 'page';
   String _readerTheme = 'system';
   bool _loading = true;
+  bool _controlsVisible = false;
   String? _error;
+  Timer? _controlsHideTimer;
+  Offset? _pointerDownPosition;
 
   BookChapter get _chapter => widget.chapters.isEmpty
       ? const BookChapter(title: '', chapterUrl: '', index: 0)
@@ -58,7 +63,19 @@ class _BookReaderViewState extends State<BookReaderView> {
     _position = widget.initialPosition.clamp(0.0, 1.0);
     _pageController = PageController();
     _scrollController = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _enterImmersiveMode();
+    });
     _initialize();
+  }
+
+  void _enterImmersiveMode() {
+    unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+  }
+
+  void _restoreSystemUi() {
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
 
   Future<void> _initialize() async {
@@ -125,8 +142,13 @@ class _BookReaderViewState extends State<BookReaderView> {
 
   List<String> _paginate(String text) {
     if (text.isEmpty) return const ['正文为空'];
+    final viewport = MediaQuery.sizeOf(context);
+    final contentWidth = (viewport.width - 44).clamp(280.0, 760.0);
+    final contentHeight = (viewport.height - 70).clamp(400.0, 1200.0);
+    final charactersPerLine = contentWidth / _fontSize * 0.78;
+    final linesPerPage = contentHeight / (_fontSize * _lineHeight);
     final maxCharacters =
-        (850 * (18 / _fontSize) * (1.9 / _lineHeight)).round().clamp(360, 1300);
+        (charactersPerLine * linesPerPage).floor().clamp(120, 1300);
     final chunks = <String>[];
     var start = 0;
     while (start < text.length) {
@@ -162,6 +184,85 @@ class _BookReaderViewState extends State<BookReaderView> {
     if (_pages.length <= 1) return;
     _position = page / (_pages.length - 1);
     _saveProgress(_position);
+  }
+
+  void _onVerticalSwipe(DragEndDetails details) {
+    if (_mode != 'page' || _loading) return;
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 260) return;
+    _movePage(velocity < 0 ? 1 : -1);
+  }
+
+  void _movePage(int delta) {
+    if (_mode != 'page' || _loading || _pages.isEmpty) return;
+    final current = _pageController.hasClients
+        ? (_pageController.page?.round() ?? 0)
+        : ((_pages.length - 1) * _position).round();
+    final target = current + delta;
+    if (target >= 0 && target < _pages.length) {
+      _pageController.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+    if (target >= _pages.length && _chapterIndex < widget.chapters.length - 1) {
+      _loadChapter(_chapterIndex + 1);
+    } else if (target < 0 && _chapterIndex > 0) {
+      _loadChapter(_chapterIndex - 1, position: 1);
+    }
+  }
+
+  bool _onPageOverscroll(OverscrollNotification notification) {
+    if (_mode != 'page' ||
+        _loading ||
+        notification.metrics.axis != Axis.horizontal) {
+      return false;
+    }
+    if (notification.overscroll > 0 &&
+        _chapterIndex < widget.chapters.length - 1) {
+      _loadChapter(_chapterIndex + 1);
+    } else if (notification.overscroll < 0 && _chapterIndex > 0) {
+      _loadChapter(_chapterIndex - 1, position: 1);
+    }
+    return false;
+  }
+
+  void _toggleControls() {
+    if (_controlsVisible) {
+      _hideControls();
+    } else {
+      _showControls();
+    }
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    _pointerDownPosition = event.position;
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    final downPosition = _pointerDownPosition;
+    _pointerDownPosition = null;
+    if (downPosition == null || (event.position - downPosition).distance > 12) {
+      return;
+    }
+    _toggleControls();
+  }
+
+  void _showControls() {
+    _controlsHideTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _controlsVisible = true);
+    if (widget.chapters.isNotEmpty) {
+      _controlsHideTimer = Timer(const Duration(seconds: 5), _hideControls);
+    }
+  }
+
+  void _hideControls() {
+    _controlsHideTimer?.cancel();
+    _controlsHideTimer = null;
+    if (mounted) setState(() => _controlsVisible = false);
   }
 
   void _onScrollChanged(ScrollNotification notification) {
@@ -219,6 +320,7 @@ class _BookReaderViewState extends State<BookReaderView> {
   }
 
   void _showSettings() {
+    _controlsHideTimer?.cancel();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -311,9 +413,11 @@ class _BookReaderViewState extends State<BookReaderView> {
   @override
   void dispose() {
     _saveProgress(_position);
+    _controlsHideTimer?.cancel();
     _pageController.dispose();
     _scrollController.dispose();
     _readerFocusNode.dispose();
+    _restoreSystemUi();
     super.dispose();
   }
 
@@ -327,53 +431,161 @@ class _BookReaderViewState extends State<BookReaderView> {
     };
     final chapterTitle =
         _content?.title.isNotEmpty == true ? _content!.title : _chapter.title;
-    return Scaffold(
-      backgroundColor: readerBackground,
-      appBar: GAppBar(
-        titleWidget: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness:
+            _readerTheme == 'night' ? Brightness.light : Brightness.dark,
+        statusBarBrightness:
+            _readerTheme == 'night' ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness:
+            _readerTheme == 'night' ? Brightness.light : Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: Scaffold(
+        backgroundColor: readerBackground,
+        resizeToAvoidBottomInset: false,
+        body: Stack(
+          fit: StackFit.expand,
           children: [
-            Text(widget.book.name),
-            Text(
-              chapterTitle,
-              style: TextStyle(
-                fontSize: TypeScale.caption,
-                fontWeight: TypeScale.regular,
-                color: scheme.onSurfaceVariant,
+            Focus(
+              focusNode: _readerFocusNode,
+              autofocus: true,
+              onKeyEvent: (_, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+                    event.logicalKey == LogicalKeyboardKey.pageDown) {
+                  _movePage(1);
+                  return KeyEventResult.handled;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+                    event.logicalKey == LogicalKeyboardKey.pageUp) {
+                  _movePage(-1);
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: _onPointerDown,
+                onPointerUp: _onPointerUp,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragEnd: _mode == 'page' ? _onVerticalSwipe : null,
+                  child: _buildBody(),
+                ),
               ),
             ),
+            _buildTopControls(chapterTitle, readerBackground),
           ],
         ),
-        onBack: () => Navigator.of(context).maybePop(),
-        actions: [
-          GIconButton(
-            icon: Icons.tune_rounded,
-            tooltip: '阅读设置',
-            onTap: _showSettings,
+      ),
+    );
+  }
+
+  Widget _buildTopControls(String chapterTitle, Color readerBackground) {
+    final visible = _controlsVisible || widget.chapters.isEmpty;
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: SafeArea(
+            bottom: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+              decoration: BoxDecoration(
+                color: readerBackground.withValues(alpha: 0.94),
+                border: Border(
+                  bottom: BorderSide(color: glassHairline(context)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  GIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    tooltip: '返回',
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.book.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: TypeScale.body,
+                            fontWeight: TypeScale.semibold,
+                          ),
+                        ),
+                        Text(
+                          chapterTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: TypeScale.caption,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.chapters.isNotEmpty)
+                    GIconButton(
+                      icon: Icons.list_alt_rounded,
+                      tooltip: '章节目录',
+                      onTap: _showChapterList,
+                    ),
+                  GIconButton(
+                    icon: Icons.tune_rounded,
+                    tooltip: '阅读设置',
+                    onTap: _showSettings,
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
-      body: Focus(
-        focusNode: _readerFocusNode,
-        autofocus: true,
-        onKeyEvent: (_, event) {
-          if (event is! KeyDownEvent) return KeyEventResult.ignored;
-          if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
-              event.logicalKey == LogicalKeyboardKey.pageDown) {
-            _loadChapter(_chapterIndex + 1);
-            return KeyEventResult.handled;
-          }
-          if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-              event.logicalKey == LogicalKeyboardKey.pageUp) {
-            _loadChapter(_chapterIndex - 1);
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: _buildBody(),
+    );
+  }
+
+  void _showChapterList() {
+    _controlsHideTimer?.cancel();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+          child: ListView.builder(
+            itemCount: widget.chapters.length,
+            itemBuilder: (context, index) => ListTile(
+              selected: index == _chapterIndex,
+              title: Text(widget.chapters[index].title),
+              leading: SizedBox(
+                width: 32,
+                child: Text('${index + 1}', textAlign: TextAlign.right),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                if (index != _chapterIndex) _loadChapter(index);
+              },
+            ),
+          ),
+        ),
       ),
-      bottomNavigationBar: _buildNavigation(),
     );
   }
 
@@ -395,17 +607,20 @@ class _BookReaderViewState extends State<BookReaderView> {
       );
     }
     if (_mode == 'page') {
-      return PageView.builder(
-        controller: _pageController,
-        itemCount: _pages.length,
-        onPageChanged: _onPageChanged,
-        itemBuilder: (context, index) => _PageText(
-          text: _pages[index],
-          fontSize: _fontSize,
-          lineHeight: _lineHeight,
-          foreground: _readerForeground(context),
-          page: index + 1,
-          total: _pages.length,
+      return NotificationListener<OverscrollNotification>(
+        onNotification: _onPageOverscroll,
+        child: PageView.builder(
+          controller: _pageController,
+          itemCount: _pages.length,
+          onPageChanged: _onPageChanged,
+          itemBuilder: (context, index) => _PageText(
+            text: _pages[index],
+            fontSize: _fontSize,
+            lineHeight: _lineHeight,
+            foreground: _readerForeground(context),
+            page: index + 1,
+            total: _pages.length,
+          ),
         ),
       );
     }
@@ -439,47 +654,6 @@ class _BookReaderViewState extends State<BookReaderView> {
         'night' => const Color(0xFFE4E4E4),
         _ => Theme.of(context).colorScheme.onSurface,
       };
-
-  Widget _buildNavigation() {
-    if (widget.chapters.isEmpty) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 7),
-        decoration: BoxDecoration(
-          color: glassFill(context, alpha: 0.1),
-          border: Border(top: BorderSide(color: glassHairline(context))),
-        ),
-        child: Row(
-          children: [
-            GIconButton(
-              icon: Icons.chevron_left_rounded,
-              tooltip: '上一章',
-              disabled: _chapterIndex == 0 || _loading,
-              onTap: () => _loadChapter(_chapterIndex - 1),
-            ),
-            Expanded(
-              child: Text(
-                '${_chapterIndex + 1} / ${widget.chapters.length}',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: TypeScale.small,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            GIconButton(
-              icon: Icons.chevron_right_rounded,
-              tooltip: '下一章',
-              disabled: _chapterIndex >= widget.chapters.length - 1 || _loading,
-              onTap: () => _loadChapter(_chapterIndex + 1),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _PageText extends StatelessWidget {
@@ -511,14 +685,12 @@ class _PageText extends StatelessWidget {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 760),
-                child: SingleChildScrollView(
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: fontSize,
-                      height: lineHeight,
-                      color: foreground,
-                    ),
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    height: lineHeight,
+                    color: foreground,
                   ),
                 ),
               ),
