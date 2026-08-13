@@ -5,7 +5,7 @@
 当前发布方式：
 
 - Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
-- 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、macOS DMG 和 Windows EXE；Android 同时更新 ECS。
+- 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、未签名且未公证的 macOS DMG 和 Windows EXE；Android 同时更新 ECS。
 - iOS Action 产物用于后续侧载签名或人工签名，不是 App Store 正式包；App Store 发布仍需使用分发证书重新导出并上传审核。
 - `.github/workflows/flutter-release.yml` 是自动发布流程的实现，`pubspec.yaml` 是版本号的唯一来源。
 
@@ -182,7 +182,9 @@ keyPassword=<key password>
 
 ### 3.2 macOS 签名与公证
 
-正式标签要求：
+当前 GitHub Actions 发布未签名且未公证的 macOS DMG，不要求 Apple Developer Program 凭据。普通用户可以安装，但首次启动会收到 Gatekeeper 安全提示，需要在 Finder 中右键应用选择“打开”，或前往“系统设置 > 隐私与安全性”允许打开。
+
+如后续加入 Apple Developer Program 并恢复正式签名与公证流程，需要配置：
 
 ```text
 MACOS_CERTIFICATE_BASE64
@@ -198,7 +200,7 @@ APPLE_TEAM_ID
 - `MACOS_NOTARIZATION_PASSWORD` 应使用 Apple ID 的 app-specific password，不要使用 Apple ID 登录密码。
 - `APPLE_TEAM_ID` 是 Apple Developer Team ID。
 
-CI 会依次完成 app 签名、DMG 制作、Apple 公证和 staple 校验。缺少其中任意正式发布凭据时，标签构建会失败。
+恢复正式流程后，CI 应依次完成 app 签名、DMG 制作、Apple 公证和 staple 校验。不要只签名而跳过公证。
 
 ### 3.3 Windows 签名
 
@@ -239,7 +241,7 @@ git status --short
 - 版本变更和功能代码已经提交，准备打标签的 commit 是预期 commit。
 - 更新说明不包含密钥、用户数据或内部地址。
 - Android 使用历史版本相同的签名密钥。
-- iOS/macOS 的证书、描述文件和协议状态有效。
+- 如本次发布正式签名的 macOS 包，确认 Developer ID 证书和 Apple Developer 协议状态有效。
 - 至少在本次涉及的平台上完成一次 release 模式冒烟测试。
 
 ## 5. GitHub Actions 自动发布
@@ -247,7 +249,7 @@ git status --short
 工作流有三种触发方式：
 
 1. 推送 `android-ecs-v*` 标签：只构建并验证正式签名 Android APK，然后更新 ECS 升级通道，并创建 `flutter-v<version>` GitHub Release 兼容旧 Flutter 客户端。
-2. 推送 `flutter-v*` 标签：四端正式发布。CI 校验、构建、签名、公证，并创建 GitHub Release；Android 同时更新 ECS。
+2. 推送 `flutter-v*` 标签：四端联合发布。CI 校验并构建四端产物，macOS 当前生成未签名、未公证的 DMG；Android 同时更新 ECS。
 3. 在 Actions 页面手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。没有配置凭据时，Android 可能使用 debug key，macOS/Windows 可能未签名，因此这些 artifacts 只能用于内部测试。
 
 正式发布时，`validate` job 会从 `pubspec.yaml` 读取版本，并要求：
@@ -322,7 +324,7 @@ flutter build macos --release \
   --dart-define="IOS_APP_STORE_ID=$IOS_APP_STORE_ID"
 ```
 
-产物：`build/macos/Build/Products/Release/7511.app`。对外分发还必须进行 Developer ID 签名、公证并制作 DMG，优先使用 CI 完成，不要直接发布未公证的 `.app`。
+产物：`build/macos/Build/Products/Release/7511.app`。当前 CI 会制作未签名、未公证的 DMG，并在 Release 中提示 Gatekeeper 打开方式；加入 Apple Developer Program 后应恢复 Developer ID 签名、公证和 staple 校验。
 
 ### 6.3 Windows EXE 安装器
 
@@ -410,7 +412,7 @@ macOS/Windows 桌面端的“iOS 安装中心”不是 App Store 的替代品。
 
 桌面发布构建会把 `tool/duckmusic_ios_helper.dart` 编译为 `duckmusic-ios-helper` 并放入 DMG/EXE。macOS Helper 使用本机 `security`、`codesign`、`plutil` 和 `xcrun devicectl` 完成描述文件匹配、IPA 重签名与设备安装；它不会向 ECS 发送 Apple 凭据。Windows Helper 当前只提供 Apple Devices/Bonjour 诊断，安装/刷新仍返回明确的 `helperMissing`，直到接入经过许可证审核的 Windows 本地签名后端。
 
-macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问用户 Xcode 描述文件、钥匙串签名身份和 CoreDevice 服务的必要条件。对外发布必须继续使用 Developer ID 签名、公证和 staple 校验；不要把未签名或未公证的调试 `.app` 当作普通用户安装包。
+macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问用户 Xcode 描述文件、钥匙串签名身份和 CoreDevice 服务的必要条件。当前未签名 DMG 只适合可接受首次 Gatekeeper 手动授权的用户；面向大规模普通用户分发前应恢复 Developer ID 签名、公证和 staple 校验。
 
 ## 8. 发布后验收
 
@@ -418,7 +420,7 @@ macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问�
 - GitHub Releases API 返回的第一条非 draft、非 prerelease `flutter-v*` 必须是本次 Android 版本；只检查 Release 页面存在还不够。
 - ECS `latest.json` 的 `version`、`buildNumber`、`downloadUrl` 与本次版本完全一致，APK 范围 GET 返回 HTTP 206 和 APK MIME 类型。
 - Android APK 可覆盖安装旧版，且签名证书 SHA-256 与历史版本一致。
-- Apple Silicon 和 Intel macOS 分别下载匹配的 DMG，Gatekeeper 不提示包已损坏或身份不明。
+- Apple Silicon 和 Intel macOS 分别下载匹配的 DMG，确认右键“打开”或“隐私与安全性 > 仍要打开”后可以正常启动。
 - Windows 安装器显示预期发布者，可安装、启动、覆盖升级和卸载。
 - iOS App Store 页面展示新版本，旧版应用能跳转更新。
 - 四个平台“关于/设置”中的版本正确，应用内更新不会重复提示当前版本。

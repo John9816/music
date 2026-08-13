@@ -233,36 +233,8 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Import macOS signing certificate
+      - name: Build unsigned macOS app
         shell: bash
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${CERTIFICATE_BASE64}" || -z "${CERTIFICATE_PASSWORD}" || -z "${SIGNING_IDENTITY}" ]]; then
-            if [[ "${IS_RELEASE}" == "true" ]]; then
-              echo "macOS Developer ID signing secrets are required for release tags." >&2
-              exit 1
-            fi
-            exit 0
-          fi
-          certificate="${RUNNER_TEMP}/developer-id.p12"
-          keychain="${RUNNER_TEMP}/duckmusic.keychain-db"
-          printf '%s' "${CERTIFICATE_BASE64}" | base64 --decode > "${certificate}"
-          security create-keychain -p actions "${keychain}"
-          security set-keychain-settings -lut 21600 "${keychain}"
-          security unlock-keychain -p actions "${keychain}"
-          security import "${certificate}" -P "${CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain}"
-          security list-keychains -d user -s "${keychain}" login.keychain-db
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions "${keychain}"
-
-      - name: Build and sign macOS app
-        shell: bash
-        env:
-          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
           flutter pub get
@@ -281,20 +253,9 @@ jobs:
             exit 1
           }
           bash scripts/build_ios_helper.sh "${app}/Contents/Resources/duckmusic-ios-helper"
-          if [[ -n "${SIGNING_IDENTITY}" ]]; then
-            codesign --force --deep --options runtime --timestamp \
-              --entitlements macos/Runner/Release.entitlements \
-              --sign "${SIGNING_IDENTITY}" "${app}"
-            codesign --verify --deep --strict --verbose=2 "${app}"
-          fi
 
-      - name: Create, notarize, and staple DMG
+      - name: Create unsigned macOS DMG
         shell: bash
-        env:
-          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
-          APP_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
         run: |
           set -euo pipefail
           app_count="$(find build/macos/Build/Products/Release \
@@ -310,20 +271,7 @@ jobs:
           ln -s /Applications dmg-root/Applications
           dmg="dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-macOS-${{ matrix.arch }}.dmg"
           hdiutil create -volname "DuckMusic" -srcfolder dmg-root -ov -format UDZO "${dmg}"
-          if [[ -z "${APPLE_ID}" || -z "${APP_PASSWORD}" || -z "${TEAM_ID}" ]]; then
-            if [[ "${IS_RELEASE}" == "true" ]]; then
-              echo "macOS notarization secrets are required for release tags." >&2
-              exit 1
-            fi
-            exit 0
-          fi
-          xcrun notarytool submit "${dmg}" \
-            --apple-id "${APPLE_ID}" \
-            --password "${APP_PASSWORD}" \
-            --team-id "${TEAM_ID}" \
-            --wait
-          xcrun stapler staple "${dmg}"
-          xcrun stapler validate "${dmg}"
+          hdiutil verify "${dmg}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -503,6 +451,8 @@ jobs:
         with:
           name: DuckMusic Flutter v${{ needs.validate.outputs.version }}
           generate_release_notes: true
+          body: |
+            macOS DMG 未使用 Apple Developer ID 签名或公证。首次启动时，请在 Finder 中右键应用并选择“打开”，或在“系统设置 > 隐私与安全性”中允许打开。
           fail_on_unmatched_files: true
           files: dist/*
 
