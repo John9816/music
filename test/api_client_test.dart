@@ -6,6 +6,22 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('GET can disable automatic network retries for interactive requests',
+      () async {
+    var requestCount = 0;
+    final client = ApiClient.forTesting(MockClient((request) async {
+      requestCount++;
+      throw http.ClientException('offline', request.url);
+    }));
+
+    await expectLater(
+      client.getJson('api/v1/music/url', retry: false),
+      throwsA(isA<ApiException>()),
+    );
+
+    expect(requestCount, 1);
+  });
+
   test('unauthorized request refreshes and retries with the new token',
       () async {
     var requestCount = 0;

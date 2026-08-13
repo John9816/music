@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/config/audio_quality_policy.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
@@ -41,8 +42,8 @@ class SettingsView extends StatelessWidget {
                 icon: Icons.language_rounded,
                 title: '音乐源',
                 subtitle: '推荐、歌单详情与播放使用的数据源；搜索会合并三源结果',
-                value: AppConfig.musicSources[settings.source] ??
-                    settings.source,
+                value:
+                    AppConfig.musicSources[settings.source] ?? settings.source,
                 onTap: () => _pickSource(context, settings),
               ),
             ],
@@ -98,9 +99,12 @@ class SettingsView extends StatelessWidget {
               SettingsRow(
                 icon: Icons.graphic_eq_rounded,
                 title: '默认播放音质',
-                subtitle: '为音乐播放选择合适的音质',
-                value: AppConfig.qualityLabels[settings.quality] ??
-                    settings.quality,
+                subtitle:
+                    '${sourceDisplayName(settings.source)}${qualitySupportSummary(settings.source)}',
+                value: qualityLabelForSource(
+                  settings.source,
+                  settings.qualityForSource(settings.source),
+                ),
                 onTap: () => _pickQuality(context, settings),
               ),
               SettingsRow(
@@ -231,13 +235,15 @@ class SettingsView extends StatelessWidget {
   ) async {
     final value = await showSettingsPicker<String>(
       context,
-      title: '默认播放音质',
-      current: settings.quality,
-      options: AppConfig.qualityLabels.entries
-          .map((entry) => (value: entry.key, label: entry.value))
+      title: '${sourceDisplayName(settings.source)}播放音质',
+      current: settings.qualityForSource(settings.source),
+      options: qualityOptionsForSource(settings.source)
+          .map((option) => (value: option.id, label: option.label))
           .toList(),
     );
-    if (value != null) await settings.setQuality(value);
+    if (value != null) {
+      await settings.setQualityForSource(settings.source, value);
+    }
   }
 
   Future<void> _showSleepTimerPicker(BuildContext context) async {

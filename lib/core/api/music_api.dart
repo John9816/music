@@ -388,11 +388,15 @@ class MusicApi {
     String source = _defaultSource,
     String quality = 'exhigh',
   }) async {
-    final data = await _client.getJson('api/v1/music/play', params: {
-      'source': source,
-      'id': id,
-      'quality': AppConfig.qualityValues[quality] ?? '320k',
-    });
+    final data = await _client.getJson(
+      'api/v1/music/play',
+      params: {
+        'source': source,
+        'id': id,
+        'quality': AppConfig.qualityValues[quality] ?? '320k',
+      },
+      retry: false,
+    );
     return _textOrNull(data['playUrl']);
   }
 

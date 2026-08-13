@@ -60,6 +60,7 @@ class ApiClient {
     String path, {
     Map<String, String>? params,
     Map<String, String>? headers,
+    bool retry = true,
   }) {
     return _request(
       () {
@@ -67,7 +68,7 @@ class ApiClient {
             .replace(queryParameters: params);
         return _client.get(uri, headers: _requestHeaders(headers));
       },
-      retry: true,
+      retry: retry,
     );
   }
 

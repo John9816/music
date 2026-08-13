@@ -93,6 +93,102 @@ class AiDrawTask {
   }
 }
 
+class AiDrawTaskRecord {
+  const AiDrawTaskRecord({
+    required this.id,
+    required this.prompt,
+    required this.status,
+    this.size,
+    this.count = 1,
+    this.model,
+    this.errorMessage,
+    this.createdAt,
+  });
+
+  final int id;
+  final String prompt;
+  final String status;
+  final String? size;
+  final int count;
+  final String? model;
+  final String? errorMessage;
+  final String? createdAt;
+
+  bool get isFailed => status == 'FAILED';
+  bool get isProcessing => status == 'PENDING' || status == 'PROCESSING';
+
+  factory AiDrawTaskRecord.fromJson(Map<String, dynamic> json) {
+    return AiDrawTaskRecord(
+      id: AiDrawTask._intValue(json['id']) ?? 0,
+      prompt: json['prompt']?.toString() ?? '',
+      status: json['status']?.toString().toUpperCase() ?? '',
+      size: json['size']?.toString(),
+      count: AiDrawTask._intValue(json['n']) ?? 1,
+      model: json['model']?.toString(),
+      errorMessage: json['errorMessage']?.toString(),
+      createdAt: json['createdAt']?.toString(),
+    );
+  }
+}
+
+class AiDrawHistoryItem {
+  const AiDrawHistoryItem({
+    required this.id,
+    required this.prompt,
+    required this.imageUrl,
+    this.model,
+    this.size,
+    this.isShared = false,
+    this.createdAt,
+  });
+
+  final int id;
+  final String prompt;
+  final String imageUrl;
+  final String? model;
+  final String? size;
+  final bool isShared;
+  final String? createdAt;
+
+  AiDrawHistoryItem copyWith({bool? isShared}) => AiDrawHistoryItem(
+        id: id,
+        prompt: prompt,
+        imageUrl: imageUrl,
+        model: model,
+        size: size,
+        isShared: isShared ?? this.isShared,
+        createdAt: createdAt,
+      );
+
+  factory AiDrawHistoryItem.fromJson(Map<String, dynamic> json) {
+    return AiDrawHistoryItem(
+      id: AiDrawTask._intValue(json['id']) ?? 0,
+      prompt: json['prompt']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      model: json['model']?.toString(),
+      size: json['size']?.toString(),
+      isShared: json['isShared'] == true,
+      createdAt: json['createdAt']?.toString(),
+    );
+  }
+}
+
+class AiDrawPage<T> {
+  const AiDrawPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.size,
+  });
+
+  final List<T> items;
+  final int total;
+  final int page;
+  final int size;
+
+  bool get hasMore => (page + 1) * size < total;
+}
+
 /// Client for the backend's authenticated asynchronous image APIs.
 class AiDrawApi {
   AiDrawApi({
@@ -114,6 +210,60 @@ class AiDrawApi {
         .map((item) => AiDrawModel.fromJson(Map<String, dynamic>.from(item)))
         .where((model) => model.id.isNotEmpty)
         .toList(growable: false);
+  }
+
+  Future<AiDrawPage<AiDrawTaskRecord>> tasks({
+    int page = 0,
+    int size = 20,
+  }) async {
+    final data = await _client.getJson(
+      'api/user/image/tasks',
+      params: {'page': '$page', 'size': '$size'},
+    );
+    return _page(
+      data,
+      (json) => AiDrawTaskRecord.fromJson(json),
+      fallbackPage: page,
+      fallbackSize: size,
+    );
+  }
+
+  Future<AiDrawTask> task(int taskId) async {
+    final data = await _client.getJson('api/user/image/generate/$taskId');
+    return AiDrawTask.fromJson(data);
+  }
+
+  Future<AiDrawPage<AiDrawHistoryItem>> history({
+    int page = 0,
+    int size = 20,
+  }) async {
+    final data = await _client.getJson(
+      'api/user/image/history',
+      params: {'page': '$page', 'size': '$size'},
+    );
+    return _page(
+      data,
+      (json) => AiDrawHistoryItem.fromJson(json),
+      fallbackPage: page,
+      fallbackSize: size,
+    );
+  }
+
+  Future<void> setShared(int id, bool shared) async {
+    await _client.patchJson(
+      'api/user/image/history/$id/share?shared=$shared',
+    );
+  }
+
+  Future<void> deleteHistory(int id) async {
+    await _client.deleteJson('api/user/image/history/$id');
+  }
+
+  Future<AiDrawTask> retry(int taskId) async {
+    final data = await _client.postJson(
+      'api/user/image/history/$taskId/retry',
+    );
+    return AiDrawTask.fromJson(data);
   }
 
   Future<String> generate(
@@ -202,8 +352,7 @@ class AiDrawApi {
       }
 
       await Future<void>.delayed(pollInterval);
-      final data = await _client.getJson('api/user/image/generate/$taskId');
-      task = AiDrawTask.fromJson(data);
+      task = await this.task(taskId);
     }
   }
 
@@ -221,5 +370,26 @@ class AiDrawApi {
       default:
         return null;
     }
+  }
+
+  AiDrawPage<T> _page<T>(
+    Map<String, dynamic> data,
+    T Function(Map<String, dynamic>) parse, {
+    required int fallbackPage,
+    required int fallbackSize,
+  }) {
+    final rawItems = data['items'];
+    final items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((item) => parse(Map<String, dynamic>.from(item)))
+            .toList(growable: false)
+        : <T>[];
+    return AiDrawPage<T>(
+      items: items,
+      total: AiDrawTask._intValue(data['total']) ?? items.length,
+      page: AiDrawTask._intValue(data['page']) ?? fallbackPage,
+      size: AiDrawTask._intValue(data['size']) ?? fallbackSize,
+    );
   }
 }

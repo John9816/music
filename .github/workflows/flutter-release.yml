@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           flutter pub get
-          flutter build apk --release \
+          flutter build apk --release --split-per-abi \
             --build-name="${{ needs.validate.outputs.version }}" \
             --build-number="${{ needs.validate.outputs.build_number }}" \
             --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
@@ -138,25 +138,74 @@ jobs:
           IS_RELEASE: ${{ needs.validate.outputs.is_release }}
         run: |
           set -euo pipefail
-          apk="build/app/outputs/flutter-apk/app-release.apk"
           build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
-          "${build_tools}/apksigner" verify "${apk}"
-          badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
-          echo "${badging}"
-          grep -q "name='com.music.player'" <<<"${badging}"
-          grep -q "versionCode='${{ needs.validate.outputs.build_number }}'" <<<"${badging}"
-          grep -q "versionName='${{ needs.validate.outputs.version }}'" <<<"${badging}"
-          if [[ "${IS_RELEASE}" == "true" ]]; then
-            expected="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-            actual="$("${build_tools}/apksigner" verify --print-certs "${apk}" 2>&1 | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*//Ip' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
-            [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Android signing certificate mismatch." >&2; exit 1; }
-          fi
           mkdir -p dist
-          cp "${apk}" "dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            [[ -f "${apk}" ]] || { echo "Missing Android ${abi} APK: ${apk}" >&2; exit 1; }
+            "${build_tools}/apksigner" verify "${apk}"
+            badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
+            echo "${abi}: ${badging}"
+            grep -q "name='com.music.player'" <<<"${badging}"
+            grep -q "versionCode='${{ needs.validate.outputs.build_number }}'" <<<"${badging}"
+            grep -q "versionName='${{ needs.validate.outputs.version }}'" <<<"${badging}"
+            if [[ "${IS_RELEASE}" == "true" ]]; then
+              expected="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+              actual="$("${build_tools}/apksigner" verify --print-certs "${apk}" 2>&1 | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*//Ip' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+              [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Android signing certificate mismatch for ${abi}." >&2; exit 1; }
+            fi
+            cp "${apk}" "dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-${abi}.apk"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-release
+          path: dist/*
+
+  ios:
+    needs: validate
+    if: needs.validate.outputs.android_only != 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build unsigned iOS IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ios --release --no-codesign \
+            --build-name="${{ needs.validate.outputs.version }}" \
+            --build-number="${{ needs.validate.outputs.build_number }}" \
+            --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
+
+          app="build/ios/iphoneos/Runner.app"
+          [[ -d "${app}" ]] || { echo "Missing iOS app bundle: ${app}" >&2; exit 1; }
+          mkdir -p dist Payload
+          cp -R "${app}" Payload/
+          ipa="dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-iOS-unsigned.ipa"
+          ditto -c -k --sequesterRsrc --keepParent Payload "${ipa}"
+
+          plist="Payload/Runner.app/Info.plist"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}")"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")"
+          build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")"
+          [[ "${bundle_id}" == "com.751152.duckMusic" ]]
+          [[ "${version}" == "${{ needs.validate.outputs.version }}" ]]
+          [[ "${build_number}" == "${{ needs.validate.outputs.build_number }}" ]]
+          unzip -t "${ipa}" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
           path: dist/*
 
   macos:
@@ -218,7 +267,14 @@ jobs:
             --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
             --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
             --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
-          app="build/macos/Build/Products/Release/duck_music.app"
+          app_count="$(find build/macos/Build/Products/Release \
+            -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d '[:space:]')"
+          app="$(find build/macos/Build/Products/Release \
+            -maxdepth 1 -type d -name '*.app' -print | head -n1)"
+          [[ "${app_count}" == "1" && -n "${app}" ]] || {
+            echo "Expected one macOS app bundle, found ${app_count}." >&2
+            exit 1
+          }
           bash scripts/build_ios_helper.sh "${app}/Contents/Resources/duckmusic-ios-helper"
           if [[ -n "${SIGNING_IDENTITY}" ]]; then
             codesign --force --deep --options runtime --timestamp \
@@ -236,8 +292,16 @@ jobs:
           IS_RELEASE: ${{ needs.validate.outputs.is_release }}
         run: |
           set -euo pipefail
+          app_count="$(find build/macos/Build/Products/Release \
+            -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d '[:space:]')"
+          app="$(find build/macos/Build/Products/Release \
+            -maxdepth 1 -type d -name '*.app' -print | head -n1)"
+          [[ "${app_count}" == "1" && -n "${app}" ]] || {
+            echo "Expected one macOS app bundle, found ${app_count}." >&2
+            exit 1
+          }
           mkdir -p dist dmg-root
-          cp -R build/macos/Build/Products/Release/duck_music.app dmg-root/
+          cp -R "${app}" dmg-root/
           ln -s /Applications dmg-root/Applications
           dmg="dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-macOS-${{ matrix.arch }}.dmg"
           hdiutil create -volname "DuckMusic" -srcfolder dmg-root -ov -format UDZO "${dmg}"
@@ -322,8 +386,20 @@ jobs:
           path: windows/dist/*
 
   publish-android-ecs:
-    if: needs.validate.outputs.is_release == 'true'
-    needs: [validate, android]
+    if: >-
+      always() &&
+      needs.validate.outputs.is_release == 'true' &&
+      needs.validate.result == 'success' &&
+      needs.android.result == 'success' &&
+      (
+        needs.validate.outputs.android_only == 'true' ||
+        (
+          needs.ios.result == 'success' &&
+          needs.macos.result == 'success' &&
+          needs.windows.result == 'success'
+        )
+      )
+    needs: [validate, android, ios, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -348,9 +424,13 @@ jobs:
           user="root"
           update_dir="/opt/website/updates"
           base_url="https://api.751152.xyz/updates"
-          apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
-          apk_path="dist/${apk_name}"
-          [[ -f "${apk_path}" ]] || { echo "Missing Android update asset: ${apk_path}" >&2; exit 1; }
+          arm64_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-arm64-v8a.apk"
+          arm32_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-armeabi-v7a.apk"
+          x64_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-x86_64.apk"
+          apk_names=("${arm64_apk_name}" "${arm32_apk_name}" "${x64_apk_name}")
+          for apk_name in "${apk_names[@]}"; do
+            [[ -f "dist/${apk_name}" ]] || { echo "Missing Android update asset: dist/${apk_name}" >&2; exit 1; }
+          done
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -377,11 +457,11 @@ jobs:
           {
             "version": "${{ needs.validate.outputs.version }}",
             "buildNumber": ${{ needs.validate.outputs.build_number }},
-            "downloadUrl": "${base_url}/${apk_name}",
+            "downloadUrl": "${base_url}/${arm64_apk_name}",
             "downloads": {
-              "arm64-v8a": "${base_url}/${apk_name}",
-              "armeabi-v7a": "${base_url}/${apk_name}",
-              "x86_64": "${base_url}/${apk_name}"
+              "arm64-v8a": "${base_url}/${arm64_apk_name}",
+              "armeabi-v7a": "${base_url}/${arm32_apk_name}",
+              "x86_64": "${base_url}/${x64_apk_name}"
             },
             "description": "DuckMusic Flutter ${{ needs.validate.outputs.version }}",
             "forceUpdate": false,
@@ -392,16 +472,16 @@ jobs:
           "${ssh_runner[@]}" -p "${port}" \
             "${user}@${host}" "mkdir -p '${update_dir}'"
           "${scp_runner[@]}" -P "${port}" \
-            "${apk_path}" "${manifest}" \
+            "${apk_names[@]/#/dist/}" "${manifest}" \
             "${user}@${host}:${update_dir}/"
           curl -fsSL "${base_url}/latest.json" | jq -e \
             --arg version "${{ needs.validate.outputs.version }}" \
-            --arg url "${base_url}/${apk_name}" \
-            '.version == $version and .downloadUrl == $url' >/dev/null
+            --arg url "${base_url}/${arm64_apk_name}" \
+            '.version == $version and .downloadUrl == $url and (.downloads | has("arm64-v8a"))' >/dev/null
 
   publish:
     if: needs.validate.outputs.is_release == 'true' && needs.validate.outputs.android_only != 'true'
-    needs: [validate, android, macos, windows]
+    needs: [validate, android, ios, macos, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

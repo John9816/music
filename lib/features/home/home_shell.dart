@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
@@ -43,6 +44,7 @@ class _HomeShellState extends State<HomeShell> {
   int _sourceVersion = 0;
   MiniPlayerPanel? _miniPlayerPanel;
   final Set<int> _visitedPages = {0};
+  final List<Widget?> _pageCache = List<Widget?>.filled(_pageCount, null);
   final List<GlobalKey<_TabNavigatorState>> _tabKeys = List.generate(
     _pageCount,
     (_) => GlobalKey<_TabNavigatorState>(),
@@ -91,7 +93,20 @@ class _HomeShellState extends State<HomeShell> {
     _player.onSongPlayed = _recordPlayedSong;
     _player.onSongChanged = _syncFavoriteState;
     _player.onMembershipRequired = _openMembershipCenter;
+    unawaited(_restoreLastPlayback());
     _settings.addListener(_onSettingsChanged);
+  }
+
+  Future<void> _restoreLastPlayback() {
+    final token = _auth.token;
+    return _player.restoreLastPlayback(
+      preferredLoader: token == null
+          ? null
+          : () async {
+              final latest = await UserApi().getLatestHistory(token);
+              return latest == null ? null : Song.fromUserLibraryItem(latest);
+            },
+    );
   }
 
   void _recordPlayedSong(Song song) {
@@ -157,7 +172,12 @@ class _HomeShellState extends State<HomeShell> {
     final source = _settings.source;
     if (source != _lastSource) {
       _lastSource = source;
-      setState(() => _sourceVersion++);
+      setState(() {
+        _sourceVersion++;
+        _pageCache[0] = null;
+        _pageCache[2] = null;
+        _pageCache[3] = null;
+      });
     }
   }
 
@@ -186,7 +206,7 @@ class _HomeShellState extends State<HomeShell> {
     final pages = List<Widget>.generate(
       _pageCount,
       (pageIndex) => _visitedPages.contains(pageIndex)
-          ? _buildPage(pageIndex)
+          ? _pageCache[pageIndex] ??= _buildPage(pageIndex)
           : const SizedBox.shrink(),
     );
 
@@ -226,7 +246,10 @@ class _HomeShellState extends State<HomeShell> {
                               onSelect: _selectPage,
                               onOpenPlaylist: _openUserPlaylist,
                               onSearch: (query) {
-                                setState(() => _pendingSearchQuery = query);
+                                setState(() {
+                                  _pendingSearchQuery = query;
+                                  _pageCache[1] = null;
+                                });
                                 _selectPage(1);
                               },
                               searchQuery: _pendingSearchQuery,
@@ -271,10 +294,10 @@ class _HomeShellState extends State<HomeShell> {
                       right: 16,
                       bottom: tabCanPop
                           ? max(
-                              MediaQuery.viewPaddingOf(context).bottom,
-                              30,
+                              MediaQuery.viewPaddingOf(context).bottom - 8,
+                              26,
                             )
-                          : 8,
+                          : 0,
                       child: child!,
                     );
                   },
@@ -505,7 +528,7 @@ class _TabNavigator extends StatefulWidget {
   State<_TabNavigator> createState() => _TabNavigatorState();
 }
 
-/// Fades between tabs while keeping every navigator mounted.
+/// Switches tabs while keeping every navigator mounted.
 ///
 /// Keeping the stacks alive is important for mobile: switching tabs must not
 /// reset scroll position or a nested detail page. IgnorePointer and
@@ -518,8 +541,6 @@ class _AnimatedTabStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = PlatformMotion.tabDuration(context);
-    final curve = PlatformMotion.curve(context);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -533,12 +554,7 @@ class _AnimatedTabStack extends StatelessWidget {
                   ignoring: i != index,
                   child: TickerMode(
                     enabled: i == index,
-                    child: AnimatedOpacity(
-                      opacity: i == index ? 1 : 0,
-                      duration: duration,
-                      curve: curve,
-                      child: children[i],
-                    ),
+                    child: RepaintBoundary(child: children[i]),
                   ),
                 ),
               ),
@@ -570,7 +586,9 @@ class _TabNavigatorState extends State<_TabNavigator> {
   @override
   void didUpdateWidget(covariant _TabNavigator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _rootPage.value = widget.child;
+    if (!identical(oldWidget.child, widget.child)) {
+      _rootPage.value = widget.child;
+    }
   }
 
   @override

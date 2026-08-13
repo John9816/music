@@ -31,14 +31,26 @@ class DiscoverView extends StatefulWidget {
 
 class _DiscoverViewState extends State<DiscoverView> {
   late final MusicApi _api;
+  final ScrollController _albumController = ScrollController();
   late Future<(List<Song>, List<Album>)> _future;
   Future<(List<Song>, List<Album>)>? _loadingFuture;
+  bool _albumAtStart = true;
+  bool _albumAtEnd = false;
 
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? MusicApi();
+    _albumController.addListener(_syncAlbumScrollState);
     _future = _startLoad();
+  }
+
+  @override
+  void dispose() {
+    _albumController
+      ..removeListener(_syncAlbumScrollState)
+      ..dispose();
+    super.dispose();
   }
 
   Future<(List<Song>, List<Album>)> _load() async {
@@ -84,6 +96,38 @@ class _DiscoverViewState extends State<DiscoverView> {
     return '晚上好';
   }
 
+  void _syncAlbumScrollState() {
+    if (!_albumController.hasClients) return;
+    final position = _albumController.position;
+    final atStart = position.pixels <= position.minScrollExtent + 0.5;
+    final atEnd = position.pixels >= position.maxScrollExtent - 0.5;
+    if (atStart == _albumAtStart && atEnd == _albumAtEnd) return;
+    if (!mounted) return;
+    setState(() {
+      _albumAtStart = atStart;
+      _albumAtEnd = atEnd;
+    });
+  }
+
+  void _scrollAlbums(BuildContext context, int direction) {
+    if (!_albumController.hasClients) return;
+    final position = _albumController.position;
+    final target =
+        (position.pixels + position.viewportDimension * 0.82 * direction)
+            .clamp(position.minScrollExtent, position.maxScrollExtent)
+            .toDouble();
+    final duration = PlatformMotion.duration(context, Motion.slow);
+    if (duration == Duration.zero) {
+      _albumController.jumpTo(target);
+      return;
+    }
+    _albumController.animateTo(
+      target,
+      duration: duration,
+      curve: PlatformMotion.curve(context),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,6 +145,9 @@ class _DiscoverViewState extends State<DiscoverView> {
             );
           }
           final (daily, albums) = snapshot.data!;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _syncAlbumScrollState();
+          });
           return CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
@@ -113,19 +160,14 @@ class _DiscoverViewState extends State<DiscoverView> {
               SliverToBoxAdapter(
                 child: SectionHeader(
                   '最新专辑',
-                  action: Text(
-                    '${albums.length} 张',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
+                  action: _buildAlbumHeaderAction(context, albums.length),
                 ),
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: 172,
                   child: ListView.separated(
+                    controller: _albumController,
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     itemCount: albums.length,
@@ -173,6 +215,49 @@ class _DiscoverViewState extends State<DiscoverView> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildAlbumHeaderAction(BuildContext context, int albumCount) {
+    final count = Text(
+      '$albumCount 张',
+      style: TextStyle(
+        fontSize: 12,
+        color: Theme.of(context).colorScheme.outline,
+      ),
+    );
+    final platform = Theme.of(context).platform;
+    final desktop = platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
+    if (!desktop) {
+      return count;
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        count,
+        const SizedBox(width: 8),
+        GIconButton(
+          icon: Icons.arrow_back_rounded,
+          tooltip: '上一组专辑',
+          size: 18,
+          padding: 7,
+          disabled: _albumAtStart,
+          backgroundColor: Colors.transparent,
+          onTap: () => _scrollAlbums(context, -1),
+        ),
+        const SizedBox(width: 2),
+        GIconButton(
+          icon: Icons.arrow_forward_rounded,
+          tooltip: '下一组专辑',
+          size: 18,
+          padding: 7,
+          disabled: _albumAtEnd || albumCount == 0,
+          backgroundColor: Colors.transparent,
+          onTap: () => _scrollAlbums(context, 1),
+        ),
+      ],
     );
   }
 

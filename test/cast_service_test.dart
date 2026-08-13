@@ -40,6 +40,29 @@ void main() {
     expect(service.message, '请选择投屏设备');
   });
 
+  test('opens the native audio route picker without a media URL', () async {
+    const channel = MethodChannel('test.duckmusic/audio-route-picker');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'showRoutePicker');
+      expect(call.arguments, const {'audioOnly': true});
+      return <String, Object?>{
+        'supported': true,
+        'connected': false,
+        'message': '请选择投屏设备',
+      };
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final service = CastService(channel: channel);
+    final opened = await service.showDevicePicker();
+
+    expect(opened, isTrue);
+    expect(service.status, CastStatus.idle);
+    expect(service.message, '请选择投屏设备');
+  });
+
   test('only a native route callback marks casting connected', () async {
     const channel = MethodChannel('test.duckmusic/cast-callback');
     final messenger =

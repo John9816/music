@@ -194,6 +194,130 @@ void main() {
     expect(requests, hasLength(2));
     expect(requests.last.url.path, '/api/user/image/generate/12');
   });
+
+  test('loads resumable tasks with paging and failure details', () async {
+    final client = ApiClient.forTesting(MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/user/image/tasks');
+      expect(request.url.queryParameters, {'page': '0', 'size': '20'});
+      return _response({
+        'code': 0,
+        'data': {
+          'items': [
+            {
+              'id': 42,
+              'prompt': 'a futuristic city skyline',
+              'size': '1792x1024',
+              'n': 2,
+              'model': 'gpt-image-2',
+              'status': 'FAILED',
+              'errorMessage': 'Upstream returned no image URL',
+              'createdAt': '2026-05-17 10:00:00',
+            },
+          ],
+          'total': 1,
+          'page': 0,
+          'size': 20,
+        },
+      });
+    }));
+
+    final page = await AiDrawApi(client: client).tasks();
+
+    expect(page.total, 1);
+    expect(page.items.single.id, 42);
+    expect(page.items.single.prompt, 'a futuristic city skyline');
+    expect(page.items.single.count, 2);
+    expect(page.items.single.isFailed, isTrue);
+  });
+
+  test('queries one resumable task by id', () async {
+    final client = ApiClient.forTesting(MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/user/image/generate/42');
+      return _response({
+        'code': 0,
+        'data': {
+          'id': 42,
+          'status': 'COMPLETED',
+          'result': {
+            'data': [
+              {'url': 'https://images.example.test/restored.png'},
+            ],
+          },
+        },
+      });
+    }));
+
+    final task = await AiDrawApi(client: client).task(42);
+
+    expect(task.status, 'COMPLETED');
+    expect(task.imageSource, 'https://images.example.test/restored.png');
+  });
+
+  test('loads image history and parses sharing state', () async {
+    final client = ApiClient.forTesting(MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/user/image/history');
+      expect(request.url.queryParameters, {'page': '1', 'size': '12'});
+      return _response({
+        'code': 0,
+        'data': {
+          'items': [
+            {
+              'id': 1001,
+              'prompt': 'a futuristic city skyline',
+              'imageUrl': 'https://images.example.test/city.png',
+              'model': 'gpt-image-2',
+              'size': '1792x1024',
+              'isShared': true,
+              'createdAt': '2026-05-17 10:00:25',
+            },
+          ],
+          'total': 21,
+          'page': 1,
+          'size': 12,
+        },
+      });
+    }));
+
+    final page = await AiDrawApi(client: client).history(page: 1, size: 12);
+
+    expect(page.total, 21);
+    expect(page.hasMore, isFalse);
+    expect(page.items.single.id, 1001);
+    expect(page.items.single.imageUrl, 'https://images.example.test/city.png');
+    expect(page.items.single.isShared, isTrue);
+  });
+
+  test('shares, deletes, and retries image records using documented paths',
+      () async {
+    final requests = <http.Request>[];
+    final client = ApiClient.forTesting(MockClient((request) async {
+      requests.add(request);
+      if (request.method == 'POST') {
+        return _response({
+          'code': 0,
+          'data': {'id': 42, 'status': 'PENDING'},
+        });
+      }
+      return _response({'code': 0, 'data': {}});
+    }));
+    final api = AiDrawApi(client: client);
+
+    await api.setShared(1001, true);
+    await api.deleteHistory(1001);
+    final task = await api.retry(42);
+
+    expect(requests[0].method, 'PATCH');
+    expect(requests[0].url.path, '/api/user/image/history/1001/share');
+    expect(requests[0].url.queryParameters, {'shared': 'true'});
+    expect(requests[1].method, 'DELETE');
+    expect(requests[1].url.path, '/api/user/image/history/1001');
+    expect(requests[2].method, 'POST');
+    expect(requests[2].url.path, '/api/user/image/history/42/retry');
+    expect(task.id, 42);
+  });
 }
 
 http.Response _response(Map<String, dynamic> body) {

@@ -29,8 +29,7 @@ void main() {
 
     final theme = AppTheme.forAccent('skyBlue', dark: true).data;
     final background = theme.colorScheme.surfaceContainerLowest;
-    final miniPlayerBackground =
-        theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.97);
+    final miniPlayerBackground = theme.colorScheme.surfaceContainerHigh;
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -65,7 +64,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('mobile-mini-player-surface')),
       ),
-      const Size(358, 52),
+      const Size(358, 56),
     );
     expect(
       tester
@@ -134,7 +133,7 @@ void main() {
             find.byKey(const ValueKey('mobile-mini-player-surface')),
           )
           .dy,
-      814,
+      818,
     );
 
     await tester.tap(find.byTooltip('返回'));

@@ -137,7 +137,8 @@ class AppUpdateService {
     }
   }
 
-  Future<UpdateCheckResult?> _checkAndroidManifest(String currentVersion) async {
+  Future<UpdateCheckResult?> _checkAndroidManifest(
+      String currentVersion) async {
     try {
       final response = await _client.get(
         Uri.parse('https://api.751152.xyz/updates/latest.json'),
@@ -157,7 +158,7 @@ class AppUpdateService {
       final downloads = manifest['downloads'];
       String? assetUrl;
       if (downloads is Map) {
-        assetUrl = downloads[Abi.current().toString()]?.toString().trim();
+        assetUrl = downloads[androidAbiName(Abi.current())]?.toString().trim();
       }
       assetUrl ??= manifest['downloadUrl']?.toString().trim();
       if (assetUrl?.isEmpty == true) assetUrl = null;
@@ -311,6 +312,16 @@ class AppUpdateService {
 
   static String get currentArchitecture =>
       Abi.current().toString().toLowerCase();
+
+  @visibleForTesting
+  static String androidAbiName(Abi abi) {
+    return switch (abi) {
+      Abi.androidArm64 => 'arm64-v8a',
+      Abi.androidArm => 'armeabi-v7a',
+      Abi.androidX64 => 'x86_64',
+      _ => abi.toString().toLowerCase(),
+    };
+  }
 
   static Map<String, dynamic>? _selectRelease(Object? rawReleases) {
     if (rawReleases is! List) return null;

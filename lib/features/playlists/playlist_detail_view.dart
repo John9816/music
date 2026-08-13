@@ -385,7 +385,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          _PlaylistAmbientBackground(coverUrl: widget.playlist.coverUrl),
+          const _PlaylistAmbientBackground(),
           SafeArea(
             bottom: false,
             child: FutureBuilder<List<Song>>(
@@ -420,21 +420,18 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                         right: 0,
                         top: 64,
                         child: Container(
+                          key: const ValueKey(
+                            'mobile-play-panel-pinned-surface',
+                          ),
                           height: 64,
                           alignment: Alignment.topCenter,
-                          color: Color.alphaBlend(
-                            mobileScheme.onSurface.withValues(alpha: 0.105),
-                            mobileScheme.surfaceContainerLowest,
-                          ),
+                          color: mobileScheme.surfaceContainerLowest,
                           child: _MobilePlayAllPanel(
                             key: const ValueKey('mobile-play-panel-pinned'),
                             songs: loadedSongs,
                             trackCount: widget.playlist.trackCount ??
                                 loadedSongs.length,
-                            color: Color.alphaBlend(
-                              mobileScheme.onSurface.withValues(alpha: 0.105),
-                              mobileScheme.surfaceContainerLowest,
-                            ),
+                            color: mobileScheme.surfaceContainerLowest,
                             loading: snapshot.connectionState !=
                                 ConnectionState.done,
                             downloadBusy: _downloadAllBusy,
@@ -637,39 +634,14 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 }
 
 class _PlaylistAmbientBackground extends StatelessWidget {
-  const _PlaylistAmbientBackground({required this.coverUrl});
-
-  final String? coverUrl;
+  const _PlaylistAmbientBackground();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRect(
+    return ColoredBox(
       key: const ValueKey('mobile-playlist-ambient-background'),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(color: scheme.surfaceContainerLowest),
-          if (coverUrl != null && coverUrl!.isNotEmpty)
-            Transform.scale(
-              scale: 1.28,
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 54, sigmaY: 54),
-                child: AsyncCover(
-                  url: coverUrl,
-                  size: double.infinity,
-                  radius: 0,
-                ),
-              ),
-            ),
-          ColoredBox(
-            color: scheme.surfaceContainerLowest.withValues(
-              alpha: dark ? 0.69 : 0.76,
-            ),
-          ),
-        ],
-      ),
+      color: scheme.surfaceContainerLowest,
     );
   }
 }
@@ -697,11 +669,10 @@ class _MobilePlaylistTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final bar = AnimatedContainer(
+      key: const ValueKey('mobile-playlist-top-bar-surface'),
       duration: Motion.fast,
       height: 64,
-      color: titleVisible
-          ? scheme.surfaceContainerLowest.withValues(alpha: 0.82)
-          : Colors.transparent,
+      color: titleVisible ? scheme.surfaceContainerLowest : Colors.transparent,
       alignment: Alignment.topCenter,
       child: SizedBox(
         height: 56,

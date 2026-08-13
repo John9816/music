@@ -74,6 +74,51 @@ class CastService extends ChangeNotifier {
     }
   }
 
+  Future<bool> showDevicePicker() async {
+    status = CastStatus.connecting;
+    message = '正在打开投屏设备';
+    notifyListeners();
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'showRoutePicker',
+        const {'audioOnly': true},
+      );
+      if (result?['supported'] != true) {
+        markUnsupported(
+          result?['message']?.toString() ?? '当前设备暂不支持原生投屏',
+        );
+        return false;
+      }
+      if (result?['connected'] == true) {
+        _setConnected(
+          result?['message']?.toString(),
+          pauseLocal: result?['pauseLocal'] == true,
+        );
+      } else {
+        status = CastStatus.idle;
+        shouldPauseLocalPlayback = false;
+        message = result?['message']?.toString() ?? '请选择投屏设备';
+        notifyListeners();
+      }
+      return true;
+    } on MissingPluginException {
+      markUnsupported('当前设备暂不支持原生投屏');
+      return false;
+    } on PlatformException catch (error) {
+      status = error.code == 'unsupported'
+          ? CastStatus.unsupported
+          : CastStatus.failed;
+      message = error.message ?? '投屏连接失败';
+      notifyListeners();
+      return false;
+    } catch (_) {
+      status = CastStatus.failed;
+      message = '投屏服务响应异常';
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> openFallback(String playbackPage) async {
     final uri = Uri.tryParse(playbackPage);
     if (!_isAllowedFallback(uri)) return false;

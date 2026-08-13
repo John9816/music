@@ -54,8 +54,7 @@ class Song {
           name: names[index],
         ),
     ];
-    final durationMs = (json['durationMs'] as num?)?.toInt() ??
-        ((json['durationSec'] as num?)?.toInt() ?? 0) * 1000;
+    final durationMs = songDurationMillisecondsFromJson(json);
     final albumSourceId = _stringValue(json['albumId']);
     return Song(
       id: id,
@@ -77,6 +76,31 @@ class Song {
           .toList(growable: false),
     );
   }
+
+  /// Parses songs stored by the user favorites, history, and playlist APIs.
+  factory Song.fromUserLibraryItem(Map<String, dynamic> json) {
+    final artistNames = _stringValue(json['artistName'] ?? json['artist']);
+    final artists = artistNames
+        .split(RegExp(r'[,/]'))
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .map((name) => Artist(id: 0, name: name))
+        .toList(growable: false);
+    return Song(
+      id: _stringValue(json['songId'] ?? json['id']),
+      name: _stringValue(json['name'] ?? json['songName']),
+      source: _stringValue(json['source'], fallback: 'netease'),
+      artists: artists.isEmpty ? const [Artist(id: 0, name: '未知歌手')] : artists,
+      album: Album(
+        id: 0,
+        name: _stringValue(json['album']),
+        picUrl: _nullableString(json['coverUrl'] ?? json['albumCover']),
+      ),
+      durationMs: songDurationMillisecondsFromJson(json),
+      libraryId: _nullableString(json['id']),
+      playedAt: DateTime.tryParse(_stringValue(json['playedAt'])),
+    );
+  }
 }
 
 String _stringValue(Object? value, {String fallback = ''}) {
@@ -93,6 +117,35 @@ String? _nullableString(Object? value) {
 int _intValue(Object? value) {
   if (value is num) return value.toInt();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int songDurationMillisecondsFromJson(Map<String, dynamic> json) {
+  final milliseconds = _numericValue(json['durationMs']);
+  if (milliseconds != null && milliseconds > 0) return milliseconds.round();
+
+  final seconds = _numericValue(json['durationSec']);
+  if (seconds != null && seconds > 0) return (seconds * 1000).round();
+
+  final netEaseMilliseconds = _numericValue(json['dt']);
+  if (netEaseMilliseconds != null && netEaseMilliseconds > 0) {
+    return netEaseMilliseconds.round();
+  }
+
+  final sourceSeconds = _numericValue(json['interval']);
+  if (sourceSeconds != null && sourceSeconds > 0) {
+    return (sourceSeconds * 1000).round();
+  }
+
+  final generic = _numericValue(json['duration']);
+  if (generic == null || generic <= 0) return 0;
+  // Aggregated source APIs commonly expose `duration` in either seconds or
+  // milliseconds. Normal songs are well below 10,000 seconds.
+  return generic >= 10000 ? generic.round() : (generic * 1000).round();
+}
+
+double? _numericValue(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString().trim() ?? '');
 }
 
 class Artist {

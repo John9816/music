@@ -58,6 +58,24 @@ void main() {
     expect(restored.shortcutBindings, contains('playPause'));
   });
 
+  test('playback quality is saved independently for each music source',
+      () async {
+    SharedPreferences.setMockInitialValues(const {'quality': 'hires'});
+    final settings = SettingsController();
+    await settings.load();
+
+    expect(settings.qualityForSource('netease'), 'hires');
+    expect(settings.qualityForSource('qq'), 'exhigh');
+
+    await settings.setQualityForSource('qq', 'lossless');
+    await settings.setQualityForSource('netease', 'hires');
+
+    final restored = SettingsController();
+    await restored.load();
+    expect(restored.qualityForSource('qq'), 'lossless');
+    expect(restored.qualityForSource('netease'), 'hires');
+  });
+
   test('all seven accent colors build in light and dark', () {
     expect(AppAccent.all, hasLength(7));
     expect(
@@ -86,9 +104,9 @@ void main() {
 
     final red = AppTheme.forAccent('rhythmRed', dark: true).scheme;
     final blue = AppTheme.forAccent('skyBlue', dark: true).scheme;
-    expect(red.surfaceContainerLowest, isNot(blue.surfaceContainerLowest));
-    expect(red.surfaceContainer, isNot(blue.surfaceContainer));
-    expect(red.surfaceContainerHighest, isNot(blue.surfaceContainerHighest));
+    expect(red.surfaceContainerLowest, blue.surfaceContainerLowest);
+    expect(red.surfaceContainer, blue.surfaceContainer);
+    expect(red.surfaceContainerHighest, blue.surfaceContainerHighest);
   });
 
   test('cache categories clear only DuckMusic cache files', () async {

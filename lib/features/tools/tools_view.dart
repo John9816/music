@@ -49,14 +49,6 @@ class ToolsView extends StatelessWidget {
                   page: LiveTvView(onBeforeOpenChannel: player.pause)),
             ]),
           ),
-          const SectionHeader('即将上线'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: _buildCards(context, const [
-              _ToolSpec(
-                  icon: Icons.radio, label: '电台', desc: '全国电台直播', coming: true),
-            ]),
-          ),
         ],
       ),
     );
@@ -80,12 +72,7 @@ class ToolsView extends StatelessWidget {
                   icon: spec.icon,
                   label: spec.label,
                   desc: spec.desc,
-                  coming: spec.coming,
-                  onTap: spec.coming
-                      ? null
-                      : spec.page == null
-                          ? null
-                          : () => _push(context, spec.page!),
+                  onTap: () => _push(context, spec.page),
                 ),
               ),
           ],
@@ -104,15 +91,13 @@ class _ToolSpec {
     required this.icon,
     required this.label,
     required this.desc,
-    this.coming = false,
-    this.page,
+    required this.page,
   });
 
   final IconData icon;
   final String label;
   final String desc;
-  final bool coming;
-  final Widget? page;
+  final Widget page;
 }
 
 class _ToolCard extends StatelessWidget {
@@ -120,29 +105,25 @@ class _ToolCard extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.desc,
-    this.coming = false,
-    this.onTap,
+    required this.onTap,
   });
 
   final IconData icon;
   final String label;
   final String desc;
-  final bool coming;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final muted = coming || onTap == null;
-    final semanticLabel = '$label，$desc${coming ? '，即将上线' : ''}';
+    final semanticLabel = '$label，$desc';
     return Semantics(
-      button: onTap != null,
-      enabled: onTap != null,
+      button: true,
+      enabled: true,
       label: semanticLabel,
       child: ExcludeSemantics(
         child: GPressScale(
           onTap: onTap,
-          disabled: onTap == null,
           child: Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -158,14 +139,12 @@ class _ToolCard extends StatelessWidget {
                   height: 44,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(kRadiusMd),
-                    color: muted
-                        ? glassFill(context, alpha: 0.04)
-                        : scheme.primary.withValues(alpha: 0.14),
+                    color: scheme.primary.withValues(alpha: 0.14),
                   ),
                   child: Icon(
                     icon,
                     size: 24,
-                    color: muted ? scheme.outline : scheme.primary,
+                    color: scheme.primary,
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -174,7 +153,7 @@ class _ToolCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: muted ? scheme.outline : scheme.onSurface,
+                    color: scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -184,17 +163,6 @@ class _ToolCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: scheme.outline),
                 ),
-                if (coming) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '即将上线',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.tertiary,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

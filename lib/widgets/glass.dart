@@ -32,6 +32,7 @@ class GBreakpoints {
   GBreakpoints._();
 
   static const double compact = 600;
+  static const double contentSplit = 720;
   static const double sidebar = 840;
   static const double desktopPlayer = 1080;
   static const double contentMax = 1320;
@@ -178,14 +179,18 @@ class GPressScale extends StatefulWidget {
 class _GPressScaleState extends State<GPressScale> {
   bool _pressed = false;
   bool _focused = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final enabled = !widget.disabled && widget.onTap != null;
     final ios = PlatformMotion.isIOS(context);
+    final platform = Theme.of(context).platform;
+    final desktopPointer =
+        platform == TargetPlatform.windows || platform == TargetPlatform.linux;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final duration = PlatformMotion.duration(context, Motion.fast);
-    return Semantics(
+    Widget result = Semantics(
       button: enabled,
       enabled: enabled,
       child: Focus(
@@ -221,6 +226,15 @@ class _GPressScaleState extends State<GPressScale> {
                     )
                   : null,
             ),
+            foregroundDecoration: _hovered
+                ? BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.055),
+                    borderRadius: BorderRadius.circular(RadiusToken.sm),
+                  )
+                : null,
             child: AnimatedOpacity(
               opacity: ios && _pressed ? 0.72 : 1,
               duration: duration,
@@ -235,6 +249,15 @@ class _GPressScaleState extends State<GPressScale> {
         ),
       ),
     );
+    if (desktopPointer) {
+      result = MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+        onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
+        onExit: enabled ? (_) => setState(() => _hovered = false) : null,
+        child: result,
+      );
+    }
+    return result;
   }
 }
 
@@ -752,6 +775,13 @@ class GProgressBar extends StatefulWidget {
   State<GProgressBar> createState() => _GProgressBarState();
 }
 
+/// Shared progress calculation for full-size and compact playback controls.
+double playbackProgressFraction(Duration position, Duration duration) {
+  final totalMs = duration.inMilliseconds;
+  if (totalMs <= 0) return 0.0;
+  return (position.inMilliseconds / totalMs).clamp(0.0, 1.0).toDouble();
+}
+
 class _GProgressBarState extends State<GProgressBar> {
   double? _dragFraction;
 
@@ -760,29 +790,50 @@ class _GProgressBarState extends State<GProgressBar> {
     final scheme = Theme.of(context).colorScheme;
     final active = widget.activeColor ?? scheme.primary;
     final total = widget.duration.inMilliseconds.toDouble();
-    final pos =
-        widget.position.inMilliseconds.clamp(0, total.toInt()).toDouble();
-    final fraction = total <= 0 ? 0.0 : (pos / total).clamp(0.0, 1.0);
+    final fraction = playbackProgressFraction(widget.position, widget.duration);
     final displayedFraction = _dragFraction ?? fraction;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        void seekAt(double dx, {bool preview = false}) {
-          if (constraints.maxWidth <= 0) return;
-          final ratio = (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
-          if (preview) setState(() => _dragFraction = ratio);
+        double? fractionAt(double dx) {
+          if (total <= 0 || constraints.maxWidth <= 0) return null;
+          return (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
+        }
+
+        void commitAt(double dx) {
+          final ratio = fractionAt(dx);
+          if (ratio == null) return;
           widget.onSeek(Duration(milliseconds: (total * ratio).round()));
+        }
+
+        void previewAt(double dx) {
+          final ratio = fractionAt(dx);
+          if (ratio == null) return;
+          setState(() => _dragFraction = ratio);
+        }
+
+        void commitDrag() {
+          final ratio = _dragFraction;
+          if (ratio == null || total <= 0) return;
+          widget.onSeek(Duration(milliseconds: (total * ratio).round()));
+          setState(() => _dragFraction = null);
+        }
+
+        void cancelDrag() {
+          if (_dragFraction != null) setState(() => _dragFraction = null);
         }
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => seekAt(d.localPosition.dx),
-          onHorizontalDragStart: (_) =>
-              setState(() => _dragFraction = fraction),
-          onHorizontalDragUpdate: (d) =>
-              seekAt(d.localPosition.dx, preview: true),
-          onHorizontalDragEnd: (_) => setState(() => _dragFraction = null),
-          onHorizontalDragCancel: () => setState(() => _dragFraction = null),
+          onTapUp: (details) => commitAt(details.localPosition.dx),
+          onHorizontalDragStart: total <= 0
+              ? null
+              : (_) => setState(() => _dragFraction = fraction),
+          onHorizontalDragUpdate: total <= 0
+              ? null
+              : (details) => previewAt(details.localPosition.dx),
+          onHorizontalDragEnd: total <= 0 ? null : (_) => commitDrag(),
+          onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
           child: SizedBox(
             height: 22,
             child: Center(

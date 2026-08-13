@@ -1,18 +1,21 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/widgets.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../api/api_client.dart';
 import '../api/music_api.dart';
 import '../models/song.dart';
+import '../network/image_request_policy.dart';
 import '../services/cache_service.dart';
 import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
 import 'audio_source_policy.dart';
+import 'last_playback_store.dart';
 import 'playback_coordinator.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
@@ -20,43 +23,91 @@ enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 /// 播放控制，对应 macOS 版 PlaybackCoordinator。
 /// 底层使用 just_audio：Android → ExoPlayer、iOS/macOS → AVPlayer、
 /// Windows → Media Foundation，一套 API 四平台通用。
-class PlayerController extends ChangeNotifier {
-  PlayerController({required SettingsController settings})
-      : _settings = settings {
+class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
+  PlayerController({
+    required SettingsController settings,
+    AudioPlayer? audioPlayer,
+    MusicApi? musicApi,
+    Future<File?> Function(Song song)? localFileFor,
+    Future<void> Function(SettingsController settings)? maintainAudioCache,
+    LastPlaybackStore? lastPlaybackStore,
+  })  : _settings = settings,
+        _player = audioPlayer ??
+            AudioPlayer(
+              useProxyForRequestHeaders:
+                  !usesNativeAudioHeaders(defaultTargetPlatform),
+            ),
+        _api = musicApi ?? MusicApi(),
+        _localFileFor =
+            localFileFor ?? SongDownloadService.instance.localFileFor,
+        _maintainAudioCache = maintainAudioCache ??
+            ((settings) => CacheService.instance.maintainAudioCache(settings)),
+        _lastPlaybackStore =
+            lastPlaybackStore ?? SharedPreferencesLastPlaybackStore() {
     PlaybackCoordinator.instance.register(this, pause);
-    _positionStream = _player.positionStream;
+    _positionController = StreamController<Duration>.broadcast(
+      sync: true,
+    );
+    _positionStream = _positionController.stream;
+    WidgetsBinding.instance.addObserver(this);
     _playbackSub = _player.playbackEventStream.listen(
       _onPlaybackEvent,
       onError: _onPlaybackError,
     );
-    _playingSub = _player.playingStream.distinct().listen((_) {
+    // Forward just_audio's source-aware clock. The sampler below is retained
+    // as a watchdog because mobile platforms may temporarily pause Dart stream
+    // delivery around background/foreground transitions.
+    _nativePositionSub = _player.positionStream.listen(
+      _onNativePosition,
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    _playingSub = _player.playingStream.distinct().listen((playing) {
+      if (playing) {
+        if (_lastEmittedPosition != null) {
+          _lastPositionEmissionTime = DateTime.now();
+        }
+        _startPositionSampling();
+      } else {
+        _stopPositionSampling();
+        _emitNativePosition(force: true);
+      }
       notifyListeners();
     });
     // Some streams expose their duration after playback has already started.
     // Notify consumers so progress bars recalculate their denominator.
-    _durationSub = _player.durationStream.distinct().listen((_) {
+    _durationSub = _player.durationStream.distinct().listen((duration) {
       notifyListeners();
     });
   }
 
   final SettingsController _settings;
-  final AudioPlayer _player = AudioPlayer(
-    useProxyForRequestHeaders: !usesNativeAudioHeaders(defaultTargetPlatform),
-  );
-  final MusicApi _api = MusicApi();
+  final AudioPlayer _player;
+  final MusicApi _api;
+  final Future<File?> Function(Song song) _localFileFor;
+  final Future<void> Function(SettingsController settings) _maintainAudioCache;
+  final LastPlaybackStore _lastPlaybackStore;
+  late final StreamController<Duration> _positionController;
   late final Stream<Duration> _positionStream;
 
   StreamSubscription<PlaybackEvent>? _playbackSub;
+  StreamSubscription<Duration>? _nativePositionSub;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<Duration?>? _durationSub;
+  Timer? _positionSampler;
+  Duration? _lastEmittedPosition;
+  DateTime? _lastPositionEmissionTime;
   Timer? _seekTimer;
   Duration? _pendingSeek;
+  Duration? _deferredSeek;
   Completer<void>? _seekCompleter;
   bool _seekInFlight = false;
+  Future<void>? _activeSeek;
   Timer? _volumeTimer;
   double? _pendingVolume;
   Completer<void>? _volumeCompleter;
   bool _volumeInFlight = false;
+  bool _positionSourceReady = false;
+  Future<void>? _restoreLastPlaybackFuture;
 
   List<Song> _queue = [];
   List<Song>? _queueSnapshot;
@@ -103,16 +154,88 @@ class PlayerController extends ChangeNotifier {
   List<Song> get queue => _queueSnapshot ??= List.unmodifiable(_queue);
   Song? get current => _current;
   bool get playing => _player.playing;
-  Duration get position => _player.position;
+  Duration get position {
+    if (!_positionSourceReady) return Duration.zero;
+    return _guardPosition(_player.position);
+  }
 
   /// Shared for the controller lifetime so widget rebuilds cannot restart the
   /// progress clock before it emits its next value.
   Stream<Duration> get positionStream => _positionStream;
-  Duration? get duration {
-    final loaded = _player.duration;
+  Duration? get duration =>
+      _effectiveDuration(_positionSourceReady ? _player.duration : null);
+
+  Duration? _effectiveDuration(Duration? loaded) {
     if (loaded != null && loaded > Duration.zero) return loaded;
     final fallbackMs = _current?.durationMs ?? 0;
     return fallbackMs > 0 ? Duration(milliseconds: fallbackMs) : loaded;
+  }
+
+  void _emitNativePosition({bool force = false}) {
+    if (_positionController.isClosed) return;
+    final nativePosition = position;
+    _emitPosition(nativePosition, force: force);
+  }
+
+  void _onNativePosition(Duration nativePosition) {
+    if (!_positionSourceReady) return;
+    _emitPosition(_guardPosition(nativePosition));
+  }
+
+  Duration _guardPosition(Duration nativePosition) {
+    final previous = _lastEmittedPosition;
+    if (previous == null || nativePosition >= previous) return nativePosition;
+    if (!_player.playing) return previous;
+
+    // Some native players restart their reported clock at zero after resume.
+    // Keep a monotonic UI clock until the native value catches up, so progress
+    // and lyrics continue moving instead of freezing at the paused position.
+    final emittedAt = _lastPositionEmissionTime;
+    final elapsed = emittedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(emittedAt);
+    final projected = previous + elapsed;
+    final total = duration;
+    return total != null && projected > total ? total : projected;
+  }
+
+  void _emitPosition(Duration nativePosition, {bool force = false}) {
+    if (_positionController.isClosed) return;
+    if (!force && nativePosition == _lastEmittedPosition) return;
+    _lastEmittedPosition = nativePosition;
+    _lastPositionEmissionTime = DateTime.now();
+    _positionController.add(nativePosition);
+  }
+
+  void _startPositionSampling() {
+    _emitNativePosition(force: true);
+    _positionSampler ??= Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => _emitNativePosition(),
+    );
+  }
+
+  void _stopPositionSampling() {
+    _positionSampler?.cancel();
+    _positionSampler = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _stopPositionSampling();
+    if (_player.playing) _startPositionSampling();
+    _emitNativePosition(force: true);
+  }
+
+  Future<void>? _resetSeekSession() {
+    final activeSeek = _activeSeek;
+    _seekTimer?.cancel();
+    _seekTimer = null;
+    _pendingSeek = null;
+    _deferredSeek = null;
+    _completeSeek();
+    return activeSeek;
   }
 
   String get lyric => _lyric;
@@ -134,6 +257,54 @@ class PlayerController extends ChangeNotifier {
   int get queueIndex => _index;
 
   // --- actions ---
+
+  Future<void> restoreLastPlayback({
+    Future<Song?> Function()? preferredLoader,
+  }) {
+    return _restoreLastPlaybackFuture ??=
+        _restoreLastPlayback(preferredLoader: preferredLoader);
+  }
+
+  Future<void> _restoreLastPlayback({
+    Future<Song?> Function()? preferredLoader,
+  }) async {
+    final restoreSeq = _playSeq;
+    Song? song;
+    var loadedFromHistory = false;
+    if (preferredLoader != null) {
+      try {
+        song = await preferredLoader();
+        loadedFromHistory = true;
+      } catch (_) {
+        song = await _lastPlaybackStore.load();
+      }
+    } else {
+      song = await _lastPlaybackStore.load();
+    }
+    if (song == null) {
+      if (loadedFromHistory && _current == null && restoreSeq == _playSeq) {
+        try {
+          await _lastPlaybackStore.clear();
+        } catch (_) {}
+      }
+      return;
+    }
+    if (_current != null || restoreSeq != _playSeq) return;
+    _queue = [song];
+    _queueSnapshot = null;
+    _index = 0;
+    _current = song;
+    _loading = false;
+    _positionSourceReady = false;
+    _lastEmittedPosition = null;
+    _lastPositionEmissionTime = null;
+    _emitNativePosition(force: true);
+    notifyListeners();
+    onSongChanged?.call(song);
+    if (loadedFromHistory) {
+      unawaited(_lastPlaybackStore.save(song).catchError((_) {}));
+    }
+  }
 
   Future<void> playQueue(List<Song> songs, {int index = 0}) async {
     if (songs.isEmpty) return;
@@ -184,6 +355,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
     final seq = ++_playSeq;
+    final previousSeek = _resetSeekSession();
     _index = index;
     _current = _queue[index];
     _liked = false;
@@ -192,24 +364,37 @@ class PlayerController extends ChangeNotifier {
     _errorKind = PlaybackErrorKind.none;
     _lyric = '';
     _effectiveQuality = null;
+    _positionSourceReady = false;
+    _lastEmittedPosition = null;
+    _lastPositionEmissionTime = null;
+    _emitNativePosition(force: true);
     notifyListeners();
     onSongChanged?.call(_current!);
     try {
       await PlaybackCoordinator.instance.activate(this);
       if (seq != _playSeq) return;
+      // Do not let a seek issued for the previous source overlap stop/load for
+      // this source. A late native seek can otherwise target the new song.
+      if (previousSeek != null) {
+        try {
+          await previousSeek;
+        } catch (_) {}
+        if (seq != _playSeq) return;
+      }
       await _player.stop();
       if (seq != _playSeq) return;
       final song = _current!;
-      final downloadedFile =
-          await SongDownloadService.instance.localFileFor(song);
+      final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
+      final artworkHeaders = imageRequestHeaders(artworkUrl);
+      final downloadedFile = await _localFileFor(song);
       if (seq != _playSeq) return; // 已被更新的操作取代
       final mediaItem = MediaItem(
         id: song.id,
         title: song.name,
         artist: song.artistNames,
         album: song.album.name,
-        artUri:
-            song.album.picUrl != null ? Uri.tryParse(song.album.picUrl!) : null,
+        artUri: artworkUrl == null ? null : Uri.tryParse(artworkUrl),
+        artHeaders: artworkHeaders.isEmpty ? null : artworkHeaders,
         duration: song.durationMs > 0
             ? Duration(milliseconds: song.durationMs)
             : null,
@@ -219,7 +404,7 @@ class PlayerController extends ChangeNotifier {
       if (downloadedFile != null) {
         source = AudioSource.uri(downloadedFile.uri, tag: mediaItem);
       } else {
-        final resolved = await _resolveAudioUrl(song, audioHeaders);
+        final resolved = await _resolveAudioUrl(song);
         if (seq != _playSeq) return;
         final url = resolved.url;
         _effectiveQuality = resolved.quality;
@@ -227,7 +412,7 @@ class PlayerController extends ChangeNotifier {
             CacheService.supportsAutomaticAudioCache(song.source)) {
           final cacheFile = await CacheService.instance.audioFileFor(
             song,
-            _settings.quality,
+            resolved.quality,
           );
           // just_audio still marks its disk-backed cache source experimental,
           // but it is the package's supported API for progressive audio caching.
@@ -249,15 +434,24 @@ class PlayerController extends ChangeNotifier {
       // 带 MediaItem 标签：系统通知栏/锁屏显示歌名、歌手、封面。
       await _player.setAudioSource(source).timeout(const Duration(seconds: 20));
       if (seq != _playSeq) return;
+      _positionSourceReady = true;
+      while (seq == _playSeq && _deferredSeek != null) {
+        final deferredSeek = _deferredSeek!;
+        _deferredSeek = null;
+        await _seekNative(deferredSeek, seq);
+      }
+      if (seq != _playSeq) return;
       _loadLyric(seq);
       _loading = false;
+      _emitNativePosition(force: true);
       notifyListeners();
 
       // just_audio 的 play Future 在暂停或播放结束后才完成，不能在这里
       // await，否则整首歌期间都会被误判为“正在加载”。
       final playback = _player.play();
       notifyListeners();
-      unawaited(CacheService.instance.maintainAudioCache(_settings));
+      unawaited(_lastPlaybackStore.save(song).catchError((_) {}));
+      unawaited(_maintainAudioCache(_settings));
       if (seq == _playSeq) onSongPlayed?.call(song);
       unawaited(playback.catchError((Object error, StackTrace stackTrace) {
         _setPlaybackError(seq, error);
@@ -286,64 +480,29 @@ class PlayerController extends ChangeNotifier {
     };
   }
 
-  Future<_ResolvedAudioUrl> _resolveAudioUrl(
-    Song song,
-    Map<String, String> headers,
-  ) async {
+  Future<ResolvedPlaybackUrl> _resolveAudioUrl(Song song) async {
     Object? lastError;
-    final requestedQuality = _settings.quality;
-    final qualities = playbackQualityCandidates(song.source, requestedQuality);
-    for (final quality in qualities) {
-      try {
-        final url = await _api
+    final requestedQuality = _settings.qualityForSource(song.source);
+    try {
+      final resolved = await resolvePlaybackUrl(
+        source: song.source,
+        requestedQuality: requestedQuality,
+        loadUrl: (quality) => _api
             .getSongUrl(song.id, source: song.source, quality: quality)
-            .timeout(const Duration(seconds: 22));
-        if (url == null || url.isEmpty) continue;
-        if (song.source.trim().toLowerCase() != 'qq') {
-          return _ResolvedAudioUrl(url: url, quality: quality);
-        }
-        final playableUrl = await _validatedQqAudioUrl(url, headers);
-        if (playableUrl != null) {
-          return _ResolvedAudioUrl(url: playableUrl, quality: quality);
-        }
-      } on ApiException catch (error) {
-        if (error.unauthorized || error.statusCode == 403) rethrow;
-        lastError = error;
-      } catch (error) {
-        lastError = error;
-      }
+            .timeout(const Duration(seconds: 12)),
+      );
+      if (resolved != null) return resolved;
+    } on ApiException catch (error) {
+      if (error.unauthorized || error.statusCode == 403) rethrow;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
     }
     if (lastError is ApiException) throw lastError;
     if (song.source.trim().toLowerCase() == 'qq') {
       throw Exception('当前 QQ 音乐播放地址不可用，请稍后重试');
     }
     throw Exception('未获取到播放地址，请切换音乐源后重试');
-  }
-
-  Future<String?> _validatedQqAudioUrl(
-    String url,
-    Map<String, String> headers,
-  ) async {
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(url))
-        ..headers.addAll(headers)
-        ..headers['Range'] = 'bytes=0-1';
-      final response =
-          await client.send(request).timeout(const Duration(seconds: 12));
-      if (!isPlayableAudioResponse(
-        response.statusCode,
-        response.headers['content-type'],
-      )) {
-        return null;
-      }
-      await response.stream.first;
-      return response.request?.url.toString() ?? url;
-    } catch (_) {
-      return null;
-    } finally {
-      client.close();
-    }
   }
 
   void _loadLyric(int seq) {
@@ -359,8 +518,20 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _onPlaybackEvent(PlaybackEvent event) {
+    if (_positionSourceReady) _emitNativePosition();
+    if (_positionSourceReady &&
+        !_loading &&
+        event.processingState != ProcessingState.loading &&
+        _deferredSeek != null &&
+        !_seekInFlight) {
+      final deferredSeek = _deferredSeek!;
+      _deferredSeek = null;
+      _enqueueSeek(deferredSeek);
+    }
     // 播放完毕自动切下一首
-    if (event.processingState == ProcessingState.completed &&
+    if (_positionSourceReady &&
+        !_loading &&
+        event.processingState == ProcessingState.completed &&
         _queue.isNotEmpty) {
       unawaited(next());
       return;
@@ -369,6 +540,10 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _onPlaybackError(Object error, StackTrace stackTrace) {
+    // setAudioSource/play futures report errors with their own play sequence.
+    // A shared stream error arriving during replacement may belong to the old
+    // source and must not poison the newly selected song.
+    if (_loading || !_positionSourceReady) return;
     _setPlaybackError(_playSeq, error);
   }
 
@@ -433,8 +608,19 @@ class PlayerController extends ChangeNotifier {
     if (_index >= 0) await playAt(_index);
   }
 
-  Future<void> stopAndClear() async {
+  Future<void> stopAndClear({bool clearSavedPlayback = false}) async {
     ++_playSeq;
+    _restoreLastPlaybackFuture = null;
+    final previousSeek = _resetSeekSession();
+    _positionSourceReady = false;
+    _lastEmittedPosition = null;
+    _lastPositionEmissionTime = null;
+    _emitNativePosition(force: true);
+    if (previousSeek != null) {
+      try {
+        await previousSeek;
+      } catch (_) {}
+    }
     await _player.stop();
     _queue = [];
     _queueSnapshot = null;
@@ -446,6 +632,11 @@ class PlayerController extends ChangeNotifier {
     _error = null;
     _errorKind = PlaybackErrorKind.none;
     notifyListeners();
+    if (clearSavedPlayback) {
+      try {
+        await _lastPlaybackStore.clear();
+      } catch (_) {}
+    }
   }
 
   Future<void> next() async {
@@ -484,7 +675,24 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> seek(Duration position) {
-    _pendingSeek = position;
+    if (_current == null) return Future.value();
+    final total = duration;
+    final target = position < Duration.zero
+        ? Duration.zero
+        : total != null && position > total
+            ? total
+            : position;
+    if (_loading ||
+        !_positionSourceReady ||
+        _player.processingState == ProcessingState.loading) {
+      _deferredSeek = target;
+      return Future.value();
+    }
+    return _enqueueSeek(target);
+  }
+
+  Future<void> _enqueueSeek(Duration target) {
+    _pendingSeek = target;
     final completer = _seekCompleter ??= Completer<void>();
     _scheduleSeekFlush();
     return completer.future;
@@ -500,26 +708,40 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> _flushSeek() async {
     if (_seekInFlight) return;
+    final seq = _playSeq;
     final target = _pendingSeek;
     _pendingSeek = null;
     if (target == null) {
       _completeSeek();
       return;
     }
-    _seekInFlight = true;
     try {
-      await _player.seek(target);
-      _seekInFlight = false;
+      await _seekNative(target, seq);
+      if (seq != _playSeq) return;
       if (_pendingSeek != null) {
         _scheduleSeekFlush();
       } else {
         _completeSeek();
       }
     } catch (error, stackTrace) {
-      _seekInFlight = false;
+      if (seq != _playSeq) return;
       _pendingSeek = null;
       _seekCompleter?.completeError(error, stackTrace);
       _seekCompleter = null;
+    }
+  }
+
+  Future<void> _seekNative(Duration target, int seq) async {
+    if (seq != _playSeq || !_positionSourceReady) return;
+    _seekInFlight = true;
+    final operation = _player.seek(target);
+    _activeSeek = operation;
+    try {
+      await operation;
+      if (seq == _playSeq) _emitPosition(target, force: true);
+    } finally {
+      if (identical(_activeSeek, operation)) _activeSeek = null;
+      _seekInFlight = false;
     }
   }
 
@@ -573,22 +795,19 @@ class PlayerController extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PlaybackCoordinator.instance.unregister(this);
     _playbackSub?.cancel();
+    _nativePositionSub?.cancel();
     _playingSub?.cancel();
     _durationSub?.cancel();
+    _positionSampler?.cancel();
     _seekTimer?.cancel();
     _volumeTimer?.cancel();
     _seekCompleter?.complete();
     _volumeCompleter?.complete();
+    _positionController.close();
     _player.dispose();
     super.dispose();
   }
-}
-
-class _ResolvedAudioUrl {
-  const _ResolvedAudioUrl({required this.url, required this.quality});
-
-  final String url;
-  final String quality;
 }

@@ -58,6 +58,7 @@ void main() {
               playlist: Playlist(
                 id: 7511,
                 name: '我喜欢的音乐',
+                coverUrl: 'https://example.com/playlist-cover.jpg',
                 creatorName: 'Smile 大虎',
                 trackCount: 176,
                 playCount: 3488,
@@ -80,6 +81,10 @@ void main() {
         find.byKey(const ValueKey('mobile-playlist-ambient-background'));
     expect(tester.getTopLeft(ambient), Offset.zero);
     expect(tester.getSize(ambient), const Size(390, 844));
+    expect(
+      find.descendant(of: ambient, matching: find.byType(ImageFiltered)),
+      findsNothing,
+    );
     expect(tester.getSize(heroCover), const Size.square(112));
     expect(tester.getSize(songCovers.first), const Size.square(44));
     expect(find.byType(BackdropFilter), findsNothing);
@@ -127,6 +132,16 @@ void main() {
     expect(find.byType(BackdropFilter), findsOneWidget);
     expect(tester.getTopLeft(pinnedPlayPanel).dy, 111);
     expect(tester.getSize(pinnedPlayPanel).height, 56);
+    final pageColor =
+        AppTheme.byId('light').data.colorScheme.surfaceContainerLowest;
+    final topBarSurface = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('mobile-playlist-top-bar-surface')),
+    );
+    final pinnedSurface = tester.widget<Container>(
+      find.byKey(const ValueKey('mobile-play-panel-pinned-surface')),
+    );
+    expect((topBarSurface.decoration! as BoxDecoration).color, pageColor);
+    expect(pinnedSurface.color, pageColor);
     expect(tester.takeException(), isNull);
   });
 }

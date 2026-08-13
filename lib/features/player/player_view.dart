@@ -1,4 +1,3 @@
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -9,16 +8,19 @@ import 'package:provider/provider.dart';
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/config/audio_quality_policy.dart';
 import '../../core/models/song.dart';
 import '../../core/player/lrc_parser.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/services/sleep_timer.dart';
+import '../../core/services/cast_service.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../profile/login_view.dart';
 import '../profile/profile_view.dart';
 import '../search/artist_names_link.dart';
+import '../../widgets/song_action_menu.dart';
 import 'queue_view.dart';
 
 enum _PlayerPane { lyrics, queue }
@@ -36,12 +38,12 @@ class _PlayerViewState extends State<PlayerView> {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    final current = player.current;
+    final current =
+        context.select<PlayerController, Song?>((player) => player.current);
     if (current == null) {
       return const Scaffold(body: Center(child: Text('暂无播放')));
     }
-    final wide = MediaQuery.sizeOf(context).width >= 820;
+    final wide = MediaQuery.sizeOf(context).width >= GBreakpoints.sidebar;
 
     final content = Scaffold(
       backgroundColor: wide ? null : Colors.black,
@@ -53,7 +55,7 @@ class _PlayerViewState extends State<PlayerView> {
             immersive: !wide,
           ),
           SafeArea(
-            top: !Platform.isMacOS,
+            top: Theme.of(context).platform != TargetPlatform.macOS,
             child: wide
                 ? Column(
                     children: [
@@ -79,9 +81,8 @@ class _PlayerViewState extends State<PlayerView> {
                                 child: AnimatedSwitcher(
                                   duration: Motion.normal,
                                   child: _pane == _PlayerPane.lyrics
-                                      ? _LyricView(
-                                          key: const ValueKey('lyrics'),
-                                          lrc: player.lyric,
+                                      ? const _SelectedLyricView(
+                                          key: ValueKey('lyrics'),
                                         )
                                       : const _InlineQueueView(
                                           key: ValueKey('queue'),
@@ -117,6 +118,17 @@ class _PlayerViewState extends State<PlayerView> {
   }
 }
 
+class _SelectedLyricView extends StatelessWidget {
+  const _SelectedLyricView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final lyric =
+        context.select<PlayerController, String>((player) => player.lyric);
+    return _LyricView(lrc: lyric);
+  }
+}
+
 /// 氛围背景：模糊封面 + 深色/浅色蒙层 + 顶部品牌渐变
 class _AmbientBackground extends StatelessWidget {
   const _AmbientBackground({
@@ -131,48 +143,55 @@ class _AmbientBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 模糊封面铺底
-        ClipRect(
-          child: Transform.scale(
-            scale: immersive ? 1.22 : 1.08,
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(
-                sigmaX: immersive ? 54 : 70,
-                sigmaY: immersive ? 54 : 70,
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 模糊封面铺底
+          ClipRect(
+            child: Transform.scale(
+              scale: immersive ? 1.22 : 1.08,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(
+                  sigmaX: immersive ? 54 : 70,
+                  sigmaY: immersive ? 54 : 70,
+                ),
+                child: AsyncCover(
+                  url: coverUrl,
+                  size: double.infinity,
+                  radius: 0,
+                  memCacheWidth: 256,
+                  memCacheHeight: 256,
+                ),
               ),
-              child:
-                  AsyncCover(url: coverUrl, size: double.infinity, radius: 0),
             ),
           ),
-        ),
-        // 蒙层：保证文字可读
-        ColoredBox(
-          color: immersive
-              ? const Color(0x70191718)
-              : dark
-                  ? Colors.black.withValues(alpha: 0.68)
-                  : Colors.white.withValues(alpha: 0.82),
-        ),
-        // 顶部品牌渐变氛围
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                immersive
-                    ? Colors.black.withValues(alpha: 0.18)
-                    : scheme.primary.withValues(alpha: dark ? 0.20 : 0.10),
-                immersive ? const Color(0x1A000000) : Colors.transparent,
-                if (immersive) Colors.black.withValues(alpha: 0.58),
-              ],
+          // 蒙层：保证文字可读
+          ColoredBox(
+            color: immersive
+                ? const Color(0x70191718)
+                : dark
+                    ? Colors.black.withValues(alpha: 0.68)
+                    : Colors.white.withValues(alpha: 0.82),
+          ),
+          // 顶部品牌渐变氛围
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  immersive
+                      ? Colors.black.withValues(alpha: 0.18)
+                      : scheme.primary.withValues(alpha: dark ? 0.20 : 0.10),
+                  immersive ? const Color(0x1A000000) : Colors.transparent,
+                  if (immersive) Colors.black.withValues(alpha: 0.58),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -184,7 +203,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: Platform.isMacOS ? 42 : 58,
+      height: Theme.of(context).platform == TargetPlatform.macOS ? 42 : 58,
       child: Row(
         children: [
           const Spacer(),
@@ -216,12 +235,14 @@ class _MobilePlayer extends StatefulWidget {
 
 class _MobilePlayerState extends State<_MobilePlayer> {
   late final PageController _pageController;
+  late final CastService _castService;
   int _page = 0;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    _castService = CastService();
   }
 
   @override
@@ -236,6 +257,7 @@ class _MobilePlayerState extends State<_MobilePlayer> {
   @override
   void dispose() {
     _pageController.dispose();
+    _castService.dispose();
     super.dispose();
   }
 
@@ -250,7 +272,9 @@ class _MobilePlayerState extends State<_MobilePlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
+    final state = context.select<PlayerController, (String, String?)>(
+      (player) => (player.lyric, player.error),
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxHeight < 620;
@@ -275,7 +299,7 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                   ),
                   _LyricView(
                     key: ValueKey('mobile-lyrics-${widget.song.id}'),
-                    lrc: player.lyric,
+                    lrc: state.$1,
                     immersive: true,
                     compact: compact,
                     onBackgroundTap: () => _showPage(0),
@@ -285,15 +309,23 @@ class _MobilePlayerState extends State<_MobilePlayer> {
             ),
             _MobileControls(
               song: widget.song,
-              error: player.error,
+              error: state.$2,
               showingLyrics: _page == 1,
               compact: compact,
-              onTogglePage: () => _showPage(_page == 0 ? 1 : 0),
+              onOpenDevicePicker: _openDevicePicker,
             ),
           ],
         );
       },
     );
+  }
+
+  Future<void> _openDevicePicker() async {
+    await _castService.showDevicePicker();
+    if (!mounted || _castService.message.isEmpty) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(_castService.message)));
   }
 }
 
@@ -348,37 +380,29 @@ class _MobilePlayerTopBar extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 3),
-                          Text(
-                            '${song.artistNames}  关注',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.62),
-                              fontSize: compact ? 11 : 13,
+                          Semantics(
+                            container: true,
+                            button: true,
+                            excludeSemantics: true,
+                            label: '查看${song.artistNames}的歌手信息',
+                            child: ArtistNamesLink(
+                              artists: song.artists,
+                              source: song.source,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.62),
+                                fontSize: compact ? 11 : 13,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     )
-                  : Text(
-                      '心动',
-                      key: const ValueKey('cover-title'),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: compact ? 16 : 18,
-                        fontWeight: TypeScale.semibold,
-                      ),
+                  : const SizedBox.shrink(
+                      key: ValueKey('cover-title'),
                     ),
-            ),
-            Positioned(
-              right: 10,
-              child: _ImmersiveIconButton(
-                icon: Icons.replay_rounded,
-                tooltip: '重新播放',
-                size: compact ? 25 : 28,
-                onTap: () =>
-                    context.read<PlayerController>().seek(Duration.zero),
-              ),
             ),
           ],
         ),
@@ -404,13 +428,13 @@ class _MobileCoverStage extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxDiscWidth = MediaQuery.sizeOf(context).width - 38;
-        final composerHeight = compact ? 25.0 : 44.0;
-        final topInset = compact ? 0.0 : 18.0;
+        final lyricHeight = compact ? 58.0 : 82.0;
+        final topInset = compact ? 0.0 : 8.0;
         final discSize = math
             .min(
               maxDiscWidth,
-              (constraints.maxHeight - composerHeight - topInset)
-                  .clamp(150.0, 350.0),
+              (constraints.maxHeight - lyricHeight - topInset - 4)
+                  .clamp(140.0, 350.0),
             )
             .toDouble();
         return Semantics(
@@ -433,15 +457,12 @@ class _MobileCoverStage extends StatelessWidget {
                     height: discSize,
                     child: _VinylStage(song: song),
                   ),
-                  SizedBox(height: compact ? 2 : 7),
-                  Text(
-                    '作曲：${song.artistNames}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: compact ? 12 : 15,
-                      fontWeight: TypeScale.medium,
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    height: lyricHeight,
+                    child: _VinylRollingLyrics(
+                      key: const ValueKey('vinyl-rolling-lyrics'),
+                      compact: compact,
                     ),
                   ),
                 ],
@@ -483,8 +504,178 @@ class _VinylStage extends StatelessWidget {
             ),
           ),
         ),
-        const Positioned.fill(child: CustomPaint(painter: _TonearmPainter())),
+        const Positioned.fill(child: _AnimatedTonearm()),
       ],
+    );
+  }
+}
+
+class _AnimatedTonearm extends StatefulWidget {
+  const _AnimatedTonearm();
+
+  @override
+  State<_AnimatedTonearm> createState() => _AnimatedTonearmState();
+}
+
+class _AnimatedTonearmState extends State<_AnimatedTonearm>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool? _lastPlaying;
+  bool? _lastReduceMotion;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+      value: context.read<PlayerController>().playing ? 1 : 0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playing = context.select<PlayerController, bool>((p) => p.playing);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_lastPlaying != playing || _lastReduceMotion != reduceMotion) {
+      _lastPlaying = playing;
+      _lastReduceMotion = reduceMotion;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final target = playing ? 1.0 : 0.0;
+        if (reduceMotion) {
+          _controller.value = target;
+        } else if (_controller.value != target) {
+          _controller.animateTo(
+            target,
+            duration: const Duration(milliseconds: 680),
+            curve: Curves.easeInOutCubic,
+          );
+        }
+      });
+    }
+    return RepaintBoundary(
+      child: CustomPaint(
+        key: const ValueKey('vinyl-tonearm'),
+        painter: _TonearmPainter(progress: _controller),
+      ),
+    );
+  }
+}
+
+class _VinylRollingLyrics extends StatelessWidget {
+  const _VinylRollingLyrics({super.key, required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final lrc = context.select<PlayerController, String>((p) => p.lyric);
+    final player = context.read<PlayerController>();
+    final lines = parseLrc(lrc);
+    if (lines.isEmpty) {
+      final loading = context.select<PlayerController, bool>((p) => p.loading);
+      return Center(
+        child: Text(
+          loading && lrc.isEmpty ? '歌词加载中' : '暂无歌词',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.48),
+            fontSize: compact ? 12 : 14,
+          ),
+        ),
+      );
+    }
+    int currentLine(Duration position) {
+      var low = 0;
+      var high = lines.length - 1;
+      var current = 0;
+      while (low <= high) {
+        final middle = low + ((high - low) >> 1);
+        if (lines[middle].time <= position) {
+          current = middle;
+          low = middle + 1;
+        } else {
+          high = middle - 1;
+        }
+      }
+      return current;
+    }
+
+    return StreamBuilder<int>(
+      stream: player.positionStream.map(currentLine).distinct(),
+      initialData: currentLine(player.position),
+      builder: (context, snapshot) {
+        final current = snapshot.data ?? 0;
+        final previous = current > 0 ? lines[current - 1].text : '';
+        final active = lines[current].text;
+        final next = current + 1 < lines.length ? lines[current + 1].text : '';
+        return ClipRect(
+          child: AnimatedSwitcher(
+            duration: Motion.normal,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.28),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Column(
+              key: ValueKey(current),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (!compact)
+                  _VinylLyricLine(
+                      text: previous, active: false, compact: false),
+                _VinylLyricLine(text: active, active: true, compact: compact),
+                _VinylLyricLine(text: next, active: false, compact: compact),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _VinylLyricLine extends StatelessWidget {
+  const _VinylLyricLine({
+    required this.text,
+    required this.active,
+    required this.compact,
+  });
+
+  final String text;
+  final bool active;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: compact ? 26 : 25,
+      child: Center(
+        child: Text(
+          text.isEmpty ? ' ' : text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: active ? 0.94 : 0.36),
+            fontSize: active ? (compact ? 14 : 16) : (compact ? 11 : 12),
+            fontWeight: active ? TypeScale.semibold : TypeScale.medium,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -540,36 +731,38 @@ class _SpinningVinylState extends State<_SpinningVinyl>
     });
     return RotationTransition(
       turns: _rotation,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: _VinylPainter()),
-          ),
-          FractionallySizedBox(
-            widthFactor: 0.59,
-            heightFactor: 0.59,
-            child: LayoutBuilder(
-              builder: (context, constraints) => ClipOval(
-                child: AsyncCover(
-                  url: widget.song.album.picUrl,
-                  size: constraints.maxWidth,
-                  radius: constraints.maxWidth / 2,
+      child: RepaintBoundary(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Positioned.fill(
+              child: CustomPaint(painter: _VinylPainter()),
+            ),
+            FractionallySizedBox(
+              widthFactor: 0.59,
+              heightFactor: 0.59,
+              child: LayoutBuilder(
+                builder: (context, constraints) => ClipOval(
+                  child: AsyncCover(
+                    url: widget.song.album.picUrl,
+                    size: constraints.maxWidth,
+                    radius: constraints.maxWidth / 2,
+                  ),
                 ),
               ),
             ),
-          ),
-          FractionallySizedBox(
-            widthFactor: 0.035,
-            heightFactor: 0.035,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.72),
+            FractionallySizedBox(
+              widthFactor: 0.035,
+              heightFactor: 0.035,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -614,63 +807,96 @@ class _VinylPainter extends CustomPainter {
 }
 
 class _TonearmPainter extends CustomPainter {
-  const _TonearmPainter();
+  const _TonearmPainter({required this.progress}) : super(repaint: progress);
+
+  final Animation<double> progress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pivot = Offset(size.width * 0.58, size.height * 0.08);
+    final t = Curves.easeInOutCubic.transform(progress.value);
+    final scale = math.min(size.width, size.height);
+    final pivot = Offset(size.width * 0.82, size.height * 0.16);
+    final restingTip = Offset(size.width * 0.89, size.height * 0.34);
+    final playingTip = Offset(size.width * 0.69, size.height * 0.39);
+    final tip = Offset.lerp(restingTip, playingTip, t)!;
+    final elbow = Offset.lerp(
+      Offset(size.width * 0.84, size.height * 0.24),
+      Offset(size.width * 0.76, size.height * 0.27),
+      t,
+    )!;
     final path = Path()
-      ..moveTo(pivot.dx, pivot.dy + size.height * 0.025)
+      ..moveTo(pivot.dx, pivot.dy + scale * 0.025)
       ..cubicTo(
-        size.width * 0.59,
-        size.height * 0.24,
-        size.width * 0.62,
-        size.height * 0.37,
-        size.width * 0.72,
-        size.height * 0.45,
+        pivot.dx + scale * 0.015,
+        pivot.dy + scale * 0.06,
+        elbow.dx + scale * 0.025,
+        elbow.dy - scale * 0.025,
+        elbow.dx,
+        elbow.dy,
       )
-      ..lineTo(size.width * 0.79, size.height * 0.51);
+      ..lineTo(tip.dx, tip.dy);
     final shadow = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.035
+      ..strokeWidth = scale * 0.026
       ..strokeCap = StrokeCap.round
-      ..color = Colors.black.withValues(alpha: 0.22);
+      ..color = Colors.black.withValues(alpha: 0.30);
     final arm = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.025
+      ..strokeWidth = scale * 0.015
       ..strokeCap = StrokeCap.round
-      ..color = const Color(0xFFF4F3F1);
+      ..color = const Color(0xFFD8D5CE);
     canvas.drawPath(path, shadow);
     canvas.drawPath(path, arm);
     canvas.drawCircle(
       pivot,
-      size.width * 0.059,
-      Paint()..color = Colors.black.withValues(alpha: 0.18),
+      scale * 0.070,
+      Paint()..color = Colors.black.withValues(alpha: 0.30),
     );
     canvas.drawCircle(
       pivot,
-      size.width * 0.034,
-      Paint()..color = const Color(0xFFF1F0EE),
+      scale * 0.052,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [Color(0xFFF3F1EC), Color(0xFFAAA69E)],
+        ).createShader(
+          Rect.fromCircle(center: pivot, radius: scale * 0.052),
+        ),
     );
+    canvas.drawCircle(
+      pivot,
+      scale * 0.018,
+      Paint()..color = const Color(0xFF55524D),
+    );
+    final direction = tip - elbow;
+    final angle = math.atan2(direction.dy, direction.dx);
     canvas.save();
-    canvas.translate(size.width * 0.79, size.height * 0.51);
-    canvas.rotate(-0.78);
+    canvas.translate(tip.dx, tip.dy);
+    canvas.rotate(angle);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
           center: Offset.zero,
-          width: size.width * 0.12,
-          height: size.width * 0.065,
+          width: scale * 0.085,
+          height: scale * 0.045,
         ),
-        Radius.circular(size.width * 0.012),
+        Radius.circular(scale * 0.010),
       ),
-      Paint()..color = const Color(0xFFF4F3F1),
+      Paint()..color = const Color(0xFFBBB7AF),
+    );
+    canvas.drawLine(
+      Offset(scale * 0.038, 0),
+      Offset(scale * 0.055, scale * 0.018),
+      Paint()
+        ..strokeWidth = scale * 0.006
+        ..strokeCap = StrokeCap.round
+        ..color = const Color(0xFFE7E4DD),
     );
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _TonearmPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }
 
 class _MobileControls extends StatelessWidget {
@@ -679,21 +905,32 @@ class _MobileControls extends StatelessWidget {
     required this.error,
     required this.showingLyrics,
     required this.compact,
-    required this.onTogglePage,
+    required this.onOpenDevicePicker,
   });
 
   final Song song;
   final String? error;
   final bool showingLyrics;
   final bool compact;
-  final VoidCallback onTogglePage;
+  final VoidCallback onOpenDevicePicker;
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
-    final requestedQuality =
-        context.select<SettingsController, String>((s) => s.quality);
-    final quality = player.effectiveQuality ?? requestedQuality;
+    final player = context.read<PlayerController>();
+    final state =
+        context.select<PlayerController, (bool, bool, String, String?, int)>(
+      (player) => (
+        player.playing,
+        player.loading,
+        player.loopMode.name,
+        player.effectiveQuality,
+        player.queueIndex,
+      ),
+    );
+    final requestedQuality = context.select<SettingsController, String>(
+      (settings) => settings.qualityForSource(song.source),
+    );
+    final quality = state.$4 ?? requestedQuality;
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 1 : 7),
       child: Column(
@@ -708,7 +945,7 @@ class _MobileControls extends StatelessWidget {
                     onAction: () => _handlePlaybackError(context, player),
                   )
                 : showingLyrics
-                    ? _LyricUtilityRow(compact: compact)
+                    ? _LyricUtilityRow(song: song, compact: compact)
                     : _MobileSongSummary(song: song, compact: compact),
           ),
           _MobileProgressRow(
@@ -721,11 +958,11 @@ class _MobileControls extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _ImmersiveIconButton(
-                icon: player.loopMode.name == 'one'
+                icon: state.$3 == 'one'
                     ? Icons.repeat_one_rounded
                     : Icons.repeat_rounded,
                 tooltip: '循环模式',
-                selected: player.loopMode.name != 'off',
+                selected: state.$3 != 'off',
                 size: compact ? 22 : 25,
                 buttonSize: compact ? 40 : 48,
                 onTap: player.cycleLoopMode,
@@ -738,8 +975,8 @@ class _MobileControls extends StatelessWidget {
                 onTap: player.previous,
               ),
               _PlayPauseButton(
-                playing: player.playing,
-                loading: player.loading,
+                playing: state.$1,
+                loading: state.$2,
                 onTap: player.togglePlay,
                 large: true,
                 immersive: true,
@@ -766,13 +1003,11 @@ class _MobileControls extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _ImmersiveIconButton(
-                icon: showingLyrics
-                    ? Icons.album_outlined
-                    : Icons.phone_iphone_rounded,
-                tooltip: showingLyrics ? '返回封面' : '歌词',
+                icon: Icons.airplay_rounded,
+                tooltip: 'AirPlay 或蓝牙',
                 size: compact ? 20 : 22,
                 buttonSize: compact ? 40 : 46,
-                onTap: onTogglePage,
+                onTap: onOpenDevicePicker,
               ),
               _ImmersiveIconButton(
                 icon: Icons.lightbulb_outline_rounded,
@@ -786,16 +1021,18 @@ class _MobileControls extends StatelessWidget {
                 tooltip: '歌曲百科',
                 size: compact ? 21 : 24,
                 buttonSize: compact ? 40 : 46,
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('暂无歌曲百科')),
-                ),
+                onTap: () => _showSongInfoSheet(context, song, quality),
               ),
               _ImmersiveIconButton(
                 icon: Icons.more_horiz_rounded,
                 tooltip: '更多',
                 size: compact ? 23 : 26,
                 buttonSize: compact ? 40 : 46,
-                onTap: () => showQueueSheet(context),
+                onTap: () => showSongActions(
+                  context,
+                  song: song,
+                  queueIndex: state.$5,
+                ),
               ),
             ],
           ),
@@ -831,13 +1068,20 @@ class _MobileSongSummary extends StatelessWidget {
                 ),
               ),
               SizedBox(height: compact ? 1 : 4),
-              Text(
-                '${song.artistNames}  关注',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.58),
-                  fontSize: compact ? 11 : 13,
+              Semantics(
+                container: true,
+                button: true,
+                excludeSemantics: true,
+                label: '查看${song.artistNames}的歌手信息',
+                child: ArtistNamesLink(
+                  artists: song.artists,
+                  source: song.source,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.58),
+                    fontSize: compact ? 11 : 13,
+                  ),
                 ),
               ),
             ],
@@ -854,29 +1098,180 @@ class _MobileSongSummary extends StatelessWidget {
 }
 
 class _LyricUtilityRow extends StatelessWidget {
-  const _LyricUtilityRow({required this.compact});
+  const _LyricUtilityRow({required this.song, required this.compact});
 
+  final Song song;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final color = Colors.white.withValues(alpha: 0.62);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Icon(Icons.more_horiz_rounded, size: compact ? 22 : 25, color: color),
+        _ImmersiveIconButton(
+          icon: Icons.more_horiz_rounded,
+          tooltip: '更多',
+          size: compact ? 22 : 25,
+          buttonSize: compact ? 40 : 44,
+          onTap: () => showSongActions(context, song: song),
+        ),
         Row(
           children: [
-            Icon(Icons.favorite_border_rounded,
-                size: compact ? 25 : 29, color: color),
-            SizedBox(width: compact ? 24 : 34),
-            Icon(Icons.mic_none_rounded, size: compact ? 24 : 27, color: color),
+            SizedBox(
+              width: compact ? 40 : 44,
+              height: compact ? 40 : 44,
+              child: _FavoriteBtn(song: song, immersive: true),
+            ),
+            SizedBox(width: compact ? 16 : 24),
+            _ImmersiveIconButton(
+              icon: Icons.mic_none_rounded,
+              tooltip: '逐字歌词',
+              size: compact ? 24 : 27,
+              buttonSize: compact ? 40 : 44,
+              onTap: () {
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    const SnackBar(content: Text('当前歌曲暂无逐字歌词')),
+                  );
+              },
+            ),
           ],
         ),
       ],
     );
   }
 }
+
+Future<void> _showSongInfoSheet(
+  BuildContext context,
+  Song song,
+  String quality,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (sheetContext) => _SongInfoSheet(song: song, quality: quality),
+  );
+}
+
+class _SongInfoSheet extends StatelessWidget {
+  const _SongInfoSheet({required this.song, required this.quality});
+
+  final Song song;
+  final String quality;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '歌曲百科',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: TypeScale.bold,
+                  ),
+                ),
+              ),
+              GIconButton(
+                icon: Icons.close_rounded,
+                tooltip: '关闭歌曲信息',
+                backgroundColor: Colors.transparent,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              AsyncCover(url: song.album.picUrl, size: 64, radius: 8),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: TypeScale.semibold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      song.artistNames,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _SongInfoRow(label: '专辑', value: song.album.name),
+          _SongInfoRow(label: '音乐源', value: _sourceLabel(song.source)),
+          _SongInfoRow(
+            label: '时长',
+            value: _ProgressRow._fmt(
+              Duration(milliseconds: song.durationMs),
+            ),
+          ),
+          _SongInfoRow(label: '当前音质', value: _mobileQualityLabel(quality)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SongInfoRow extends StatelessWidget {
+  const _SongInfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(child: Text(value.isEmpty ? '未知' : value)),
+        ],
+      ),
+    );
+  }
+}
+
+String _sourceLabel(String source) => switch (source.toLowerCase()) {
+      'netease' => '网易云音乐',
+      'qq' => 'QQ 音乐',
+      'kugou' => '酷狗音乐',
+      'kuwo' => '酷我音乐',
+      _ => source,
+    };
 
 class _MobileProgressRow extends StatelessWidget {
   const _MobileProgressRow({
@@ -974,22 +1369,30 @@ String _mobileQualityLabel(String quality) => switch (quality) {
 Future<void> _showPlaybackQualitySheet(BuildContext context) async {
   final settings = context.read<SettingsController>();
   final player = context.read<PlayerController>();
+  final song = player.current;
+  if (song == null) return;
+  final source = song.source;
+  final currentQuality = settings.qualityForSource(source);
   final selected = await showModalBottomSheet<String>(
     context: context,
     useRootNavigator: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.44),
     builder: (sheetContext) => _PlaybackQualitySheet(
-      selected: player.effectiveQuality ?? settings.quality,
+      source: source,
+      selected: normalizeQualityForSource(
+        source,
+        player.effectiveQuality ?? currentQuality,
+      ),
     ),
   );
-  if (selected == null || selected == settings.quality || !context.mounted) {
+  if (selected == null || selected == currentQuality || !context.mounted) {
     return;
   }
 
   final position = player.position;
   final wasPlaying = player.playing;
-  await settings.setQuality(selected);
+  await settings.setQualityForSource(source, selected);
   if (!context.mounted || player.current == null) return;
 
   await player.retry();
@@ -998,16 +1401,12 @@ Future<void> _showPlaybackQualitySheet(BuildContext context) async {
     if (!wasPlaying) await player.pause();
   }
   if (!context.mounted) return;
-  final effectiveQuality = player.effectiveQuality ?? selected;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
         content: Text(
-          effectiveQuality == selected
-              ? '已切换为 ${_mobileQualityLabel(selected)}'
-              : '${_mobileQualityLabel(selected)} 暂不可用，'
-                  '已自动使用 ${_mobileQualityLabel(effectiveQuality)}',
+          '已切换为 ${qualityLabelForSource(source, selected)}',
         ),
         duration: const Duration(milliseconds: 1400),
       ),
@@ -1015,17 +1414,10 @@ Future<void> _showPlaybackQualitySheet(BuildContext context) async {
 }
 
 class _PlaybackQualitySheet extends StatelessWidget {
-  const _PlaybackQualitySheet({required this.selected});
+  const _PlaybackQualitySheet({required this.source, required this.selected});
 
+  final String source;
   final String selected;
-
-  static const _options = [
-    (id: 'auto', label: '智能选择', detail: '根据网络状况自动选择'),
-    (id: 'standard', label: '标准音质', detail: '128Kbps'),
-    (id: 'exhigh', label: '高清臻音', detail: '320Kbps'),
-    (id: 'lossless', label: '无损 SQ', detail: 'FLAC 48kHz/16bit'),
-    (id: 'hires', label: 'Hi-Res', detail: '最高 192kHz/24bit'),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1048,13 +1440,13 @@ class _PlaybackQualitySheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 22),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '当前歌曲音质',
-                  style: TextStyle(
+                  '${sourceDisplayName(source)} · 当前歌曲音质',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: TypeScale.bold,
@@ -1063,7 +1455,7 @@ class _PlaybackQualitySheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            for (final option in _options)
+            for (final option in qualityOptionsForSource(source))
               GPressScale(
                 onTap: () => Navigator.of(context).pop(option.id),
                 scale: 0.99,
@@ -1199,7 +1591,10 @@ class _CoverAndControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerController>();
+    final player = context.read<PlayerController>();
+    final state = context.select<PlayerController, (bool, bool, String?)>(
+      (player) => (player.playing, player.loading, player.error),
+    );
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1257,10 +1652,10 @@ class _CoverAndControls extends StatelessWidget {
                       _FavoriteBtn(song: song),
                     ],
                   ),
-                  if (player.error != null) ...[
+                  if (state.$3 != null) ...[
                     const SizedBox(height: 14),
                     _PlaybackErrorBanner(
-                      message: player.error!,
+                      message: state.$3!,
                       actionLabel: _playbackActionLabel(player),
                       onAction: () => _handlePlaybackError(context, player),
                     ),
@@ -1279,8 +1674,8 @@ class _CoverAndControls extends StatelessWidget {
                         onTap: player.previous,
                       ),
                       _PlayPauseButton(
-                        playing: player.playing,
-                        loading: player.loading,
+                        playing: state.$1,
+                        loading: state.$2,
                         onTap: player.togglePlay,
                         large: true,
                       ),
@@ -1710,27 +2105,42 @@ class _PlayPauseButton extends StatelessWidget {
                   ),
                 ],
         ),
-        child: loading
-            ? Padding(
-                padding: EdgeInsets.all(immersive ? 18 : 20),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 260),
+          reverseDuration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.72, end: 1).animate(animation),
+              child: child,
+            ),
+          ),
+          child: loading
+              ? Padding(
+                  key: const ValueKey('playback-loading'),
+                  padding: EdgeInsets.all(immersive ? 18 : 20),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: immersive
+                        ? Colors.white
+                        : dark
+                            ? Colors.black
+                            : Colors.white,
+                  ),
+                )
+              : Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  key: ValueKey(playing ? 'pause' : 'play'),
+                  size: size * (immersive ? 0.78 : 0.52),
                   color: immersive
-                      ? Colors.white
+                      ? Colors.white.withValues(alpha: 0.82)
                       : dark
                           ? Colors.black
                           : Colors.white,
                 ),
-              )
-            : Icon(
-                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: size * (immersive ? 0.78 : 0.52),
-                color: immersive
-                    ? Colors.white.withValues(alpha: 0.82)
-                    : dark
-                        ? Colors.black
-                        : Colors.white,
-              ),
+        ),
       ),
     );
   }
@@ -2012,12 +2422,11 @@ class _LyricViewState extends State<_LyricView> {
       );
     }
     final player = context.read<PlayerController>();
-    return StreamBuilder<Duration>(
-      stream: player.positionStream,
-      initialData: player.position,
+    return StreamBuilder<int>(
+      stream: player.positionStream.map(_currentLineFor).distinct(),
+      initialData: _currentLineFor(player.position),
       builder: (context, snapshot) {
-        final position = snapshot.data ?? player.position;
-        final current = _currentLineFor(position);
+        final current = snapshot.data ?? _currentLineFor(player.position);
         _scheduleScroll(current);
         final lineHeight = widget.immersive
             ? widget.compact
@@ -2097,20 +2506,22 @@ class _LyricViewState extends State<_LyricView> {
               },
             );
             if (widget.immersive) {
-              list = ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.white,
-                    Colors.white,
-                    Colors.transparent,
-                  ],
-                  stops: [0, 0.14, 0.82, 1],
-                ).createShader(bounds),
-                blendMode: BlendMode.dstIn,
-                child: list,
+              list = RepaintBoundary(
+                child: ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.white,
+                      Colors.white,
+                      Colors.transparent,
+                    ],
+                    stops: [0, 0.14, 0.82, 1],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.dstIn,
+                  child: list,
+                ),
               );
             }
             if (widget.onBackgroundTap != null) {

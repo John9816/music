@@ -9,6 +9,7 @@ import 'package:duck_music/core/models/playlist.dart';
 import 'package:duck_music/core/models/book.dart';
 import 'package:duck_music/app.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
+import 'package:duck_music/core/auth/legacy_auth_session.dart';
 import 'package:duck_music/core/player/player_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +45,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'dart:ffi' as ffi;
 
 void _noop() {}
 
@@ -57,6 +59,18 @@ Future<void> _sendSystemBack(WidgetTester tester) async {
 }
 
 void main() {
+  test('Android update manifest uses canonical ABI names', () {
+    expect(
+      AppUpdateService.androidAbiName(ffi.Abi.androidArm64),
+      'arm64-v8a',
+    );
+    expect(
+      AppUpdateService.androidAbiName(ffi.Abi.androidArm),
+      'armeabi-v7a',
+    );
+    expect(AppUpdateService.androidAbiName(ffi.Abi.androidX64), 'x86_64');
+  });
+
   test('update service selects only the current platform asset', () {
     final assets = [
       {
@@ -111,6 +125,24 @@ void main() {
         requiredNamePrefix: 'DuckMusic-Flutter-',
       ),
       isNull,
+    );
+    expect(
+      AppUpdateService.selectAssetUrl(
+        [
+          {
+            'name': 'DuckMusic-Flutter-v1.2.0-Android-arm64-v8a.apk',
+            'browser_download_url': 'https://example.com/arm64.apk',
+          },
+          {
+            'name': 'DuckMusic-Flutter-v1.2.0-Android-x86_64.apk',
+            'browser_download_url': 'https://example.com/x86_64.apk',
+          },
+        ],
+        UpdateTarget.android,
+        requiredNamePrefix: 'DuckMusic-Flutter-',
+        architecture: 'androidArm64',
+      ),
+      'https://example.com/arm64.apk',
     );
     expect(
       AppUpdateService.selectAssetUrl(
@@ -297,12 +329,93 @@ void main() {
     expect(song.id, '123456');
     expect(song.name, '2026');
     expect(song.album.id, 98);
+    expect(song.durationMs, 180000);
     expect(song.artists.map((artist) => artist.id), [11, 22]);
     expect(song.availableQualities, ['128k', 'flac']);
     expect(playlist.id, 654321);
     expect(playlist.name, '2026');
     expect(userSong.id, '42');
     expect(userSong.name, '2026');
+  });
+
+  test('song duration accepts source-specific and string fields', () {
+    Map<String, dynamic> songJson(Map<String, dynamic> duration) => {
+          'id': 'duration-test',
+          'name': '时长测试',
+          'artist': '测试歌手',
+          'album': '测试专辑',
+          ...duration,
+        };
+
+    expect(Song.fromV1(songJson({'durationMs': '187000'})).durationMs, 187000);
+    expect(Song.fromV1(songJson({'durationSec': '187'})).durationMs, 187000);
+    expect(Song.fromV1(songJson({'dt': 187000})).durationMs, 187000);
+    expect(Song.fromV1(songJson({'interval': 187})).durationMs, 187000);
+    expect(Song.fromV1(songJson({'duration': 187})).durationMs, 187000);
+    expect(Song.fromV1(songJson({'duration': 187000})).durationMs, 187000);
+    expect(
+      Song.fromV1(songJson({'durationMs': 0, 'durationSec': 187})).durationMs,
+      187000,
+    );
+  });
+
+  testWidgets('progress bar seeks by tap and commits drag only once',
+      (tester) async {
+    final seeks = <Duration>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 200,
+            child: GProgressBar(
+              position: const Duration(seconds: 20),
+              duration: const Duration(seconds: 100),
+              onSeek: seeks.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final progress = find.byType(GProgressBar);
+    final rect = tester.getRect(progress);
+    await tester.tapAt(Offset(rect.left + rect.width * 0.75, rect.center.dy));
+    await tester.pump();
+    expect(seeks, [const Duration(seconds: 75)]);
+
+    seeks.clear();
+    await tester.dragFrom(
+      Offset(rect.left + rect.width * 0.2, rect.center.dy),
+      Offset(rect.width * 0.6, 0),
+    );
+    await tester.pump();
+    expect(seeks, hasLength(1));
+    expect(seeks.single.inMilliseconds, closeTo(80000, 1000));
+  });
+
+  testWidgets('progress bar with unknown duration never seeks to zero',
+      (tester) async {
+    final seeks = <Duration>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 200,
+            child: GProgressBar(
+              position: const Duration(seconds: 20),
+              duration: Duration.zero,
+              onSeek: seeks.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final rect = tester.getRect(find.byType(GProgressBar));
+    await tester.tapAt(Offset(rect.left + rect.width * 0.75, rect.center.dy));
+    await tester.dragFrom(rect.center, const Offset(60, 0));
+    await tester.pump();
+    expect(seeks, isEmpty);
   });
 
   test('library songs split multiple artists for individual profiles', () {
@@ -524,7 +637,9 @@ void main() {
 
   testWidgets('first launch waits for auth and opens login', (tester) async {
     SharedPreferences.setMockInitialValues(const {});
-    final auth = AuthController();
+    final auth = AuthController(
+      legacySessionSource: const _EmptyLegacyAuthSessionSource(),
+    );
     addTearDown(auth.dispose);
     await auth.load();
 
@@ -571,7 +686,9 @@ void main() {
   testWidgets('login legal and password recovery routes are functional',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {});
-    final auth = AuthController();
+    final auth = AuthController(
+      legacySessionSource: const _EmptyLegacyAuthSessionSource(),
+    );
     addTearDown(auth.dispose);
     final resetApi = _FakePasswordResetApi();
 
@@ -657,6 +774,55 @@ void main() {
     await pumpAt(const Size(900, 700), sidebarWidth: 236);
     await pumpAt(const Size(768, 1024));
     await pumpAt(const Size(390, 844));
+  });
+
+  testWidgets('mobile mini player exposes the red navigation-edge progress',
+      (tester) async {
+    final player = _PreviewPlayerController();
+    addTearDown(player.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PlayerController>.value(
+        value: player,
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data.copyWith(
+                platform: TargetPlatform.iOS,
+              ),
+          home: const Scaffold(body: MiniPlayer()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final progress = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
+    );
+    final surface = tester.widget<Container>(
+      find.byKey(const ValueKey('mobile-mini-player-surface')),
+    );
+    final contentClip = tester.widget<ClipRRect>(
+      find.byKey(const ValueKey('mobile-mini-player-content-clip')),
+    );
+    final decoration = surface.decoration! as BoxDecoration;
+    expect(progress.color, const Color(0xFFE53935));
+    final progressSize = tester.getSize(
+      find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
+    );
+    expect(progressSize.height, 3);
+    final surfaceWidth = tester
+        .getSize(
+          find.byKey(const ValueKey('mobile-mini-player-surface')),
+        )
+        .width;
+    expect(progressSize.width, closeTo(surfaceWidth * (170 / 207), 0.1));
+    expect(decoration.borderRadius, BorderRadius.circular(28));
+    expect(contentClip.borderRadius, BorderRadius.circular(28));
+    expect(surface.clipBehavior, Clip.none);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('mini player takes no space before the first song is played',
@@ -1611,19 +1777,67 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('穿过人海只为与你相见'), findsNothing);
-    expect(find.text('心动'), findsOneWidget);
+    expect(find.text('穿过人海只为与你相见'), findsOneWidget);
+    expect(find.text('心动'), findsNothing);
+    expect(find.byKey(const ValueKey('vinyl-tonearm')), findsOneWidget);
     expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
-    expect(find.byTooltip('歌词'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
     expect(find.byTooltip('播放队列'), findsOneWidget);
     expect(find.byTooltip('切换音质'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsNothing);
+    expect(find.textContaining('关注'), findsNothing);
+    expect(find.textContaining('作曲：'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('vinyl-rolling-lyrics')),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('查看弹壳Danko / Vinz-T的歌手信息'),
+      findsOneWidget,
+    );
+    expect(tester.getCenter(find.byTooltip('收起播放器')).dy, 64);
     expect(tester.takeException(), isNull);
+
+    player.setPlaying(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 340));
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.takeException(), isNull);
+
+    player.setPlaying(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 740));
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final progressBar = find.byType(GProgressBar);
+    final progressRect = tester.getRect(progressBar);
+    await tester.tapAt(
+      Offset(
+          progressRect.left + progressRect.width * 0.5, progressRect.center.dy),
+    );
+    await tester.pump();
+    expect(player.soughtTo, const Duration(milliseconds: 103500));
+
+    await tester.tap(find.byTooltip('歌曲百科'));
+    await tester.pumpAndSettle();
+    expect(find.text('歌曲百科'), findsOneWidget);
+    expect(find.text('The Gentlemen (Live)'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('关闭歌曲信息'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    expect(find.text('播放'), findsOneWidget);
+    expect(find.text('收藏到歌单'), findsOneWidget);
+    await tester.tapAt(const Offset(8, 80));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('切换音质'));
     await tester.pumpAndSettle();
-    expect(find.text('当前歌曲音质'), findsOneWidget);
+    expect(find.text('红源 · 当前歌曲音质'), findsOneWidget);
     await tester.tap(find.text('无损 SQ'));
     await tester.pumpAndSettle();
     expect(settings.quality, 'lossless');
@@ -1633,22 +1847,25 @@ void main() {
     final playCenter = tester.getCenter(find.byIcon(Icons.play_arrow_rounded));
     await tester.drag(find.byType(PageView), const Offset(-340, 0));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('穿过人海只为与你相见'), findsOneWidget);
+    final fullLyricLine = find.descendant(
+      of: find.byType(ListView),
+      matching: find.text('穿过人海只为与你相见'),
+    );
+    expect(fullLyricLine, findsOneWidget);
     expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
-    expect(find.byTooltip('返回封面'), findsOneWidget);
     expect(tester.getCenter(find.byTooltip('播放队列')), queueCenter);
     expect(tester.getCenter(find.byIcon(Icons.play_arrow_rounded)), playCenter);
 
-    await tester.ensureVisible(find.text('穿过人海只为与你相见'));
+    await tester.ensureVisible(fullLyricLine);
     await tester.pump();
-    await tester.tap(find.text('穿过人海只为与你相见'));
+    await tester.tap(fullLyricLine);
     await tester.pump();
     expect(player.soughtTo, const Duration(minutes: 2, seconds: 49));
-    expect(find.byTooltip('返回封面'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
 
     await tester.drag(find.byType(ListView), const Offset(0, -80));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byTooltip('返回封面'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
 
     await tester.tapAt(const Offset(8, 330));
     await tester.pump();
@@ -1659,7 +1876,64 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('穿过人海只为与你相见'), findsOneWidget);
-    expect(find.byTooltip('返回封面'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('QQ songs only show supported playback qualities',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    player.replaceCurrent(
+      Song(
+        id: 'qq-preview',
+        name: '绿源测试歌曲',
+        source: 'qq',
+        artists: const [Artist(id: 1, name: '测试歌手')],
+        album: const Album(id: 1, name: '测试专辑'),
+        durationMs: 180000,
+      ),
+    );
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('light').data.copyWith(
+                platform: TargetPlatform.iOS,
+              ),
+          home: const MediaQuery(
+            data: MediaQueryData(size: Size(390, 844)),
+            child: PlayerView(),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('切换音质'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('绿源 · 当前歌曲音质'), findsOneWidget);
+    expect(find.text('标准音质'), findsOneWidget);
+    expect(find.text('高品质'), findsOneWidget);
+    expect(find.text('无损音质'), findsOneWidget);
+    expect(find.text('智能选择'), findsNothing);
+    expect(find.text('Hi-Res'), findsNothing);
+    expect(find.text('128 Kbps'), findsOneWidget);
+    expect(find.text('320 Kbps'), findsOneWidget);
+    expect(find.text('FLAC'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1717,9 +1991,10 @@ void main() {
       ]) {
         await pumpPlayer(size, platform);
 
-        expect(find.text('心动'), findsOneWidget);
+        expect(find.text('心动'), findsNothing);
+        expect(find.byKey(const ValueKey('vinyl-tonearm')), findsOneWidget);
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
-        expect(find.byTooltip('歌词'), findsOneWidget);
+        expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
         expect(find.byTooltip('睡眠定时'), findsOneWidget);
         expect(find.byTooltip('播放队列'), findsOneWidget);
         expect(find.byTooltip('循环模式'), findsOneWidget);
@@ -1729,7 +2004,7 @@ void main() {
         final viewport = Offset.zero & size;
         for (final finder in [
           find.byIcon(Icons.play_arrow_rounded),
-          find.byTooltip('歌词'),
+          find.byTooltip('AirPlay 或蓝牙'),
           find.byTooltip('睡眠定时'),
           find.byTooltip('播放队列'),
         ]) {
@@ -1773,7 +2048,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byTooltip('歌词'));
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
     await tester.pump(const Duration(milliseconds: 400));
     player.replaceCurrent(
       _song(
@@ -2168,6 +2443,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('电视直播'), findsOneWidget);
     expect(find.text('导入歌单'), findsNothing);
+    expect(find.text('即将上线'), findsNothing);
+    expect(find.text('电台'), findsNothing);
   });
 
   testWidgets('Android system back unwinds the active tab before the app',
@@ -2365,6 +2642,16 @@ void main() {
   });
 }
 
+class _EmptyLegacyAuthSessionSource implements LegacyAuthSessionSource {
+  const _EmptyLegacyAuthSessionSource();
+
+  @override
+  Future<LegacyAuthSession?> read() async => null;
+
+  @override
+  Future<void> clear() async {}
+}
+
 Song _song(
   String id,
   String name, {
@@ -2496,6 +2783,7 @@ class _PreviewPlayerController extends PlayerController {
   int? movedToNextIndex;
   Song? playedNext;
   Duration? soughtTo;
+  bool _playing = false;
 
   Song _song = Song(
     id: 'preview',
@@ -2559,7 +2847,12 @@ class _PreviewPlayerController extends PlayerController {
   bool get loading => false;
 
   @override
-  bool get playing => false;
+  bool get playing => _playing;
+
+  void setPlaying(bool value) {
+    _playing = value;
+    notifyListeners();
+  }
 
   @override
   bool get liked => false;

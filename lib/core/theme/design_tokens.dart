@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// 参考 Apple Music / Spotify / 原 Android 项目的设计语言：
 /// - 暗色主题：纯黑背景 + 分层灰面 + 高对比文字
 /// - 明亮主题：iOS 分组灰底 + 白色表面
-/// - 强调色：品牌红 #FF2D55（与 Android 版 brand_primary 一致）
+/// - 品牌色：7511 绿 + 提示黄；用户强调色由主题单独提供
 /// - 文字层级：Apple 语义（#F5F5F7 / #A1A1A6 / #6E6E73）
 /// ============================================================
 
@@ -13,24 +13,30 @@ import 'package:flutter/material.dart';
 class AppBrand {
   AppBrand._();
 
-  /// 品牌红：Apple Music 红
-  static const Color red = Color(0xFF2FD365);
+  /// 7511 固定品牌绿，与应用图标一致。
+  static const Color green = Color(0xFF2FD365);
 
-  /// 品牌红渐变终点
+  /// 7511 固定提示黄，用于品牌细节而不是大面积表面。
+  static const Color cueYellow = Color(0xFFFFD25A);
+
+  /// 兼容旧调用方；新代码应使用 [green]。
+  static const Color red = green;
+
+  /// 兼容旧调用方；新代码应使用主题色或 [green]。
   static const Color redDeep = Color(0xFF20B950);
 
-  /// 收藏红心
-  static const Color favoriteRed = Color(0xFF2FD365);
+  /// 收藏状态跟随主题强调色时的品牌回退色。
+  static const Color favoriteRed = green;
 
   /// iOS 系统绿（语音/在线状态）
   static const Color systemGreen = Color(0xFF34C759);
 
-  /// 品牌渐变（按钮、进度、高亮）
+  /// 轻微提亮的强调色渐变，保持端点不透明以稳定文字对比度。
   static LinearGradient gradient(Color seed,
       {AlignmentGeometry begin = Alignment.topLeft,
       AlignmentGeometry end = Alignment.bottomRight}) {
     return LinearGradient(
-      colors: [seed, seed.withValues(alpha: 0.72)],
+      colors: [seed, Color.lerp(seed, Colors.white, 0.08)!],
       begin: begin,
       end: end,
     );

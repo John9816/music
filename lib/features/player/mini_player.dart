@@ -45,7 +45,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final desktop =
         MediaQuery.sizeOf(context).width >= GBreakpoints.desktopPlayer &&
             widget.sidebarWidth != null;
-    final height = desktop ? 80.0 : 52.0;
+    final height = desktop ? 80.0 : 56.0;
     final duration = PlatformMotion.duration(context, Motion.normal);
     final content = current == null
         ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
@@ -90,10 +90,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
       ),
       height: height,
       decoration: BoxDecoration(
-        color: desktop
-            ? scheme.surfaceContainer.withValues(alpha: dark ? 0.98 : 0.96)
-            : scheme.surfaceContainerHigh.withValues(alpha: dark ? 0.97 : 0.94),
-        borderRadius: desktop ? null : BorderRadius.circular(26),
+        color: desktop ? scheme.surfaceContainer : scheme.surfaceContainerHigh,
+        borderRadius: desktop ? null : BorderRadius.circular(28),
         border: desktop
             ? Border(top: BorderSide(color: glassHairline(context)))
             : null,
@@ -115,7 +113,11 @@ class _MiniPlayerState extends State<MiniPlayer> {
       ),
       child: desktop
           ? _desktopBar(context, current)
-          : _compactBar(context, current),
+          : ClipRRect(
+              key: const ValueKey('mobile-mini-player-content-clip'),
+              borderRadius: BorderRadius.circular(28),
+              child: _compactBar(context, current),
+            ),
     );
   }
 
@@ -337,25 +339,33 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   Widget _compactBar(BuildContext context, Song current) {
     final player = context.read<PlayerController>();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: _CompactTrackIdentity(song: current, onTap: _openPlayer),
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child:
+                      _CompactTrackIdentity(song: current, onTap: _openPlayer),
+                ),
+                _PlayButton(player: player, size: 36, outlined: true),
+                const SizedBox(width: 12),
+                GIconButton(
+                  icon: CupertinoIcons.list_bullet,
+                  tooltip: '播放队列',
+                  size: 27,
+                  padding: 6,
+                  backgroundColor: Colors.transparent,
+                  onTap: () => showQueueSheet(context),
+                ),
+              ],
+            ),
           ),
-          _PlayButton(player: player, size: 36, outlined: true),
-          const SizedBox(width: 12),
-          GIconButton(
-            icon: CupertinoIcons.list_bullet,
-            tooltip: '播放队列',
-            size: 27,
-            padding: 6,
-            backgroundColor: Colors.transparent,
-            onTap: () => showQueueSheet(context),
-          ),
-        ],
-      ),
+        ),
+        const _MobileMiniPlayerProgress(),
+      ],
     );
   }
 
@@ -489,6 +499,54 @@ class _MiniPlayerState extends State<MiniPlayer> {
       return;
     }
     onChanged(widget.panel == panel ? null : panel);
+  }
+}
+
+class _MobileMiniPlayerProgress extends StatelessWidget {
+  const _MobileMiniPlayerProgress();
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.read<PlayerController>();
+    final duration =
+        context.select<PlayerController, Duration?>((value) => value.duration);
+    return SizedBox(
+      height: 3,
+      width: double.infinity,
+      child: StreamBuilder<Duration>(
+        stream: player.positionStream,
+        initialData: player.position,
+        builder: (context, snapshot) {
+          final position = snapshot.data ?? player.position;
+          final progress = playbackProgressFraction(
+            position,
+            duration ?? Duration.zero,
+          );
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: constraints.maxWidth * progress,
+                    child: const ColoredBox(
+                      key: ValueKey('mobile-mini-player-progress-fill'),
+                      color: Color(0xFFE53935),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -797,24 +855,43 @@ class _PlaybackTimelineState extends State<_PlaybackTimeline> {
         final displayedFraction = _dragFraction ?? fraction;
         final bar = LayoutBuilder(
           builder: (context, constraints) {
-            void seek(double dx, {bool preview = false}) {
-              if (totalMs <= 0 || constraints.maxWidth <= 0) return;
-              final value =
-                  (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
-              if (preview) setState(() => _dragFraction = value);
+            double? fractionAt(double dx) {
+              if (totalMs <= 0 || constraints.maxWidth <= 0) return null;
+              return (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
+            }
+
+            void commitAt(double dx) {
+              final value = fractionAt(dx);
+              if (value == null) return;
               player.seek(Duration(milliseconds: (totalMs * value).round()));
+            }
+
+            void previewAt(double dx) {
+              final value = fractionAt(dx);
+              if (value == null) return;
+              setState(() => _dragFraction = value);
+            }
+
+            void commitDrag() {
+              final value = _dragFraction;
+              if (value == null || totalMs <= 0) return;
+              player.seek(Duration(milliseconds: (totalMs * value).round()));
+              setState(() => _dragFraction = null);
             }
 
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => seek(details.localPosition.dx),
-              onHorizontalDragStart: (_) =>
-                  setState(() => _dragFraction = fraction),
-              onHorizontalDragUpdate: (details) =>
-                  seek(details.localPosition.dx, preview: true),
-              onHorizontalDragEnd: (_) => setState(() => _dragFraction = null),
-              onHorizontalDragCancel: () =>
-                  setState(() => _dragFraction = null),
+              onTapUp: (details) => commitAt(details.localPosition.dx),
+              onHorizontalDragStart: totalMs <= 0
+                  ? null
+                  : (_) => setState(() => _dragFraction = fraction),
+              onHorizontalDragUpdate: totalMs <= 0
+                  ? null
+                  : (details) => previewAt(details.localPosition.dx),
+              onHorizontalDragEnd: totalMs <= 0 ? null : (_) => commitDrag(),
+              onHorizontalDragCancel: totalMs <= 0
+                  ? null
+                  : () => setState(() => _dragFraction = null),
               child: SizedBox(
                 height: widget.showTimes ? 14 : 12,
                 child: Center(

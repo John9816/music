@@ -67,16 +67,16 @@ class AppTheme {
   static AppTheme forAccent(String accentId, {required bool dark}) {
     final accent = AppAccent.byId(accentId);
     final base = dark ? _darkScheme : _lightScheme;
-    final surfaces = _accentSurfaces(accent.color, dark: dark);
+    final surfaces = _neutralSurfaces(dark: dark);
+    final primaryContainer = Color.alphaBlend(
+      accent.color.withValues(alpha: dark ? 0.24 : 0.16),
+      surfaces.container,
+    );
     final scheme = base.copyWith(
       primary: accent.color,
-      primaryContainer: dark
-          ? Color.alphaBlend(
-              accent.color.withValues(alpha: 0.30),
-              surfaces.container,
-            )
-          : accent.color.withValues(alpha: 0.14),
-      onPrimaryContainer: dark ? Colors.white : const Color(0xFF1C1C1E),
+      onPrimary: _contrastingText(accent.color),
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: _contrastingText(primaryContainer),
       inversePrimary: accent.color,
       surface: surfaces.surface,
       surfaceContainerLowest: surfaces.lowest,
@@ -108,28 +108,32 @@ class AppTheme {
     Color container,
     Color high,
     Color highest,
-  }) _accentSurfaces(Color accent, {required bool dark}) {
-    Color blend(double alpha, Color base) =>
-        Color.alphaBlend(accent.withValues(alpha: alpha), base);
-
+  }) _neutralSurfaces({required bool dark}) {
     if (dark) {
-      return (
-        lowest: blend(0.08, const Color(0xFF080A0B)),
-        surface: blend(0.10, const Color(0xFF0D1011)),
-        low: blend(0.12, const Color(0xFF111416)),
-        container: blend(0.15, const Color(0xFF171A1C)),
-        high: blend(0.18, const Color(0xFF202428)),
-        highest: blend(0.22, const Color(0xFF2A2F33)),
+      return const (
+        lowest: Color(0xFF0D1114),
+        surface: Color(0xFF111518),
+        low: Color(0xFF15191C),
+        container: Color(0xFF1A1F22),
+        high: Color(0xFF23292D),
+        highest: Color(0xFF2E363B),
       );
     }
-    return (
-      lowest: blend(0.035, const Color(0xFFF3F3F7)),
-      surface: blend(0.025, Colors.white),
-      low: blend(0.04, const Color(0xFFF8F8FA)),
-      container: blend(0.055, const Color(0xFFF4F4F7)),
-      high: blend(0.08, const Color(0xFFECECF0)),
-      highest: blend(0.11, const Color(0xFFE2E2E7)),
+    return const (
+      lowest: Color(0xFFF2F4F5),
+      surface: Colors.white,
+      low: Color(0xFFF8F9FA),
+      container: Color(0xFFF4F6F7),
+      high: Color(0xFFE9EDEF),
+      highest: Color(0xFFDEE4E7),
     );
+  }
+
+  static Color _contrastingText(Color background) {
+    final luminance = background.computeLuminance();
+    final contrastWithBlack = (luminance + 0.05) / 0.05;
+    final contrastWithWhite = 1.05 / (luminance + 0.05);
+    return contrastWithBlack >= contrastWithWhite ? Colors.black : Colors.white;
   }
 
   // ---------------------------------------------------------------

@@ -15,6 +15,7 @@ import UIKit
   private var remoteCommandTargets: [Any] = []
   private var remoteCommandsConfigured = false
   private var currentArtworkURL: String?
+  private var currentArtwork: MPMediaItemArtwork?
 
   override func application(
     _ application: UIApplication,
@@ -156,19 +157,43 @@ import UIKit
     }
 
     let artworkURL = arguments["artworkUrl"] as? String
-    guard artworkURL != currentArtworkURL else { return }
+    if artworkURL == currentArtworkURL, let currentArtwork {
+      info[MPMediaItemPropertyArtwork] = currentArtwork
+      MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+      return
+    }
     currentArtworkURL = artworkURL
+    currentArtwork = nil
     guard let artworkURL, let url = URL(string: artworkURL) else { return }
-    URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+    var artworkRequest = URLRequest(url: url)
+    let artworkHost = url.host?.lowercased()
+    if artworkHost == "music.126.net" || artworkHost?.hasSuffix(".music.126.net") == true {
+      artworkRequest.setValue("https://music.163.com/", forHTTPHeaderField: "Referer")
+      artworkRequest.setValue(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
+        forHTTPHeaderField: "User-Agent"
+      )
+    }
+    URLSession.shared.dataTask(with: artworkRequest) { [weak self] data, response, _ in
       guard
         let self,
         self.currentArtworkURL == artworkURL,
+        let httpResponse = response as? HTTPURLResponse,
+        (200...299).contains(httpResponse.statusCode),
         let data,
         let image = UIImage(data: data)
-      else { return }
+      else {
+        DispatchQueue.main.async {
+          if self?.currentArtworkURL == artworkURL {
+            self?.currentArtworkURL = nil
+          }
+        }
+        return
+      }
       let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
       DispatchQueue.main.async {
         guard self.currentArtworkURL == artworkURL else { return }
+        self.currentArtwork = artwork
         var latestInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? info
         latestInfo[MPMediaItemPropertyArtwork] = artwork
         MPNowPlayingInfoCenter.default().nowPlayingInfo = latestInfo
@@ -178,6 +203,7 @@ import UIKit
 
   private func clearSystemMedia() {
     currentArtworkURL = nil
+    currentArtwork = nil
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     if #available(iOS 13.0, *) {
       MPNowPlayingInfoCenter.default().playbackState = .stopped
@@ -216,7 +242,13 @@ import UIKit
         return
       }
       DispatchQueue.main.async { [weak self] in
-        self?.presentRoutePicker(result: result)
+        self?.presentRoutePicker(prioritizesVideoDevices: true, result: result)
+      }
+    case "showRoutePicker":
+      let arguments = call.arguments as? [String: Any]
+      let audioOnly = arguments?["audioOnly"] as? Bool ?? false
+      DispatchQueue.main.async { [weak self] in
+        self?.presentRoutePicker(prioritizesVideoDevices: !audioOnly, result: result)
       }
     case "stopCast":
       result(nil)
@@ -225,7 +257,10 @@ import UIKit
     }
   }
 
-  private func presentRoutePicker(result: @escaping FlutterResult) {
+  private func presentRoutePicker(
+    prioritizesVideoDevices: Bool,
+    result: @escaping FlutterResult
+  ) {
     guard let viewController = activeViewController() else {
       result(FlutterError(code: "unavailable", message: "无法显示投屏设备列表", details: nil))
       return
@@ -233,7 +268,7 @@ import UIKit
 
     routePickerView?.removeFromSuperview()
     let picker = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 2, height: 2))
-    picker.prioritizesVideoDevices = true
+    picker.prioritizesVideoDevices = prioritizesVideoDevices
     picker.delegate = self
     picker.alpha = 0.01
     viewController.view.addSubview(picker)

@@ -5,8 +5,8 @@
 当前发布方式：
 
 - Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
-- Android、macOS、Windows 联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建并上传到同一条 GitHub Release；Android 同时更新 ECS。
-- iOS：在 macOS 上构建 IPA，再通过 App Store Connect 上传和审核。
+- 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、macOS DMG 和 Windows EXE；Android 同时更新 ECS。
+- iOS Action 产物用于后续侧载签名或人工签名，不是 App Store 正式包；App Store 发布仍需使用分发证书重新导出并上传审核。
 - `.github/workflows/flutter-release.yml` 是自动发布流程的实现，`pubspec.yaml` 是版本号的唯一来源。
 
 ## 1. 发布速查
@@ -83,13 +83,16 @@ git push origin flutter-v1.2.0
 随后在 GitHub 的 `Actions` 页面观察 **Flutter multi-platform release**。所有任务成功后，同一条 GitHub Release 应包含：
 
 ```text
-DuckMusic-Flutter-v1.2.0-Android-universal.apk
+DuckMusic-Flutter-v1.2.0-Android-arm64-v8a.apk
+DuckMusic-Flutter-v1.2.0-Android-armeabi-v7a.apk
+DuckMusic-Flutter-v1.2.0-Android-x86_64.apk
+DuckMusic-Flutter-v1.2.0-iOS-unsigned.ipa
 DuckMusic-Flutter-v1.2.0-macOS-arm64.dmg
 DuckMusic-Flutter-v1.2.0-macOS-x64.dmg
 DuckMusic-Flutter-v1.2.0-Windows-x64-setup.exe
 ```
 
-iOS 不会由该标签自动上传，参见“iOS 上架”章节。
+iOS unsigned IPA 会随 GitHub Release 发布，但不会自动上传 App Store Connect，参见“iOS 上架”章节。
 
 ## 2. 版本规则
 
@@ -278,10 +281,10 @@ IOS_APP_STORE_ID=1234567890
 
 ### 6.1 Android APK 与 AAB
 
-GitHub Release 使用 universal APK：
+GitHub Release 使用按 ABI 拆分的 APK，更新器会根据设备架构选择对应文件：
 
 ```bash
-flutter build apk --release \
+flutter build apk --release --split-per-abi \
   --build-name="$VERSION" \
   --build-number="$BUILD_NUMBER" \
   --dart-define="APP_VERSION=$VERSION" \
@@ -289,7 +292,9 @@ flutter build apk --release \
   --dart-define="IOS_APP_STORE_ID=$IOS_APP_STORE_ID"
 ```
 
-产物：`build/app/outputs/flutter-apk/app-release.apk`。
+产物：`build/app/outputs/flutter-apk/app-{arm64-v8a,armeabi-v7a,x86_64}-release.apk`。
+
+不要把多个 ABI 合并成 universal APK；它会重复打包 Flutter、mpv 和应用原生库，安装体积会明显增加。旧客户端会从 GitHub Release 中按当前设备架构选择对应 APK，新客户端优先使用 ECS `downloads` 映射。
 
 如需上传 Google Play，构建 AAB：
 
@@ -317,7 +322,7 @@ flutter build macos --release \
   --dart-define="IOS_APP_STORE_ID=$IOS_APP_STORE_ID"
 ```
 
-产物：`build/macos/Build/Products/Release/duck_music.app`。对外分发还必须进行 Developer ID 签名、公证并制作 DMG，优先使用 CI 完成，不要直接发布未公证的 `.app`。
+产物：`build/macos/Build/Products/Release/7511.app`。对外分发还必须进行 Developer ID 签名、公证并制作 DMG，优先使用 CI 完成，不要直接发布未公证的 `.app`。
 
 ### 6.3 Windows EXE 安装器
 
@@ -346,6 +351,8 @@ flutter build windows --release `
 ## 7. iOS 上架
 
 iOS 不允许应用自行下载 IPA 更新，发布必须经过 App Store Connect。
+
+`flutter-v*` Action 会额外生成 `DuckMusic-Flutter-v<version>-iOS-unsigned.ipa`。该文件没有 Apple 分发签名，只用于后续侧载签名、设备测试或人工导出准备，不能直接提交 App Store，也不能当作普通用户可直接安装的正式 IPA。
 
 首次准备：
 
@@ -423,7 +430,7 @@ Android 发布完成后，用下面的命令快速验收两条更新通道：
 VERSION=1.2.0
 REPO=John9816/music
 ECS_BASE=https://api.751152.xyz/updates
-APK_URL="${ECS_BASE}/DuckMusic-Flutter-v${VERSION}-Android-universal.apk"
+APK_URL="${ECS_BASE}/DuckMusic-Flutter-v${VERSION}-Android-arm64-v8a.apk"
 
 curl -fsSL "${ECS_BASE}/latest.json" | jq -e \
   --arg version "${VERSION}" \
@@ -437,10 +444,10 @@ curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | jq -e 
   '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("flutter-v")))][0] as $release
    | select($release.tag_name == ("flutter-v" + $version))
    | $release
-   | {tag_name, draft, prerelease, asset: (.assets[] | select(.name == ("DuckMusic-Flutter-v" + $version + "-Android-universal.apk")) | {name, size, digest})}'
+   | {tag_name, draft, prerelease, assets: [.assets[] | select(.name | startswith("DuckMusic-Flutter-v" + $version + "-Android-")) | {name, size, digest}]}'
 ```
 
-预期结果：ECS 的 `version`、`buildNumber` 和 `downloadUrl` 对应本次发布；APK Range 请求返回 `206`；GitHub 第一条符合条件的 Release 是本次 `flutter-v${VERSION}`，且包含 universal APK。
+预期结果：ECS 的 `version`、`buildNumber` 和 `downloadUrl` 对应本次发布；APK Range 请求返回 `206`；GitHub 第一条符合条件的 Release 是本次 `flutter-v${VERSION}`，且包含三个 ABI APK。
 
 发现严重问题时不要覆盖旧标签或替换同名资产。停止分发后修复代码，提升 patch 版本和构建号，再按完整流程发布。
 

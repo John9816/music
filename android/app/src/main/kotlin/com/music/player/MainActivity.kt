@@ -16,6 +16,18 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val legacyAuthStore = LegacyAuthSessionStore.fromContext(applicationContext)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LEGACY_AUTH_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "readLegacyAuthSession" -> result.success(legacyAuthStore.read()?.toMap())
+                    "clearLegacyAuthSession" -> {
+                        legacyAuthStore.clear()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
             .setMethodCallHandler { call, result ->
                 if (call.method != "installApk") {
@@ -93,5 +105,6 @@ class MainActivity : AudioServiceActivity() {
     companion object {
         private const val UPDATE_CHANNEL = "duckmusic/update"
         private const val CAST_CHANNEL = "com.751152.duckmusic/cast"
+        private const val LEGACY_AUTH_CHANNEL = "duckmusic/legacy_auth_session"
     }
 }

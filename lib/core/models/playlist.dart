@@ -29,7 +29,9 @@ class Playlist {
       id: id,
       name: name,
       source: _optionalText(json['source']),
-      coverUrl: _optionalText(json['coverUrl']),
+      coverUrl: _optionalText(json['coverUrl']) ??
+          _optionalText(json['picUrl']) ??
+          _optionalText(json['coverImgUrl']),
       description: _optionalText(json['description']),
       creatorName: _optionalText(json['creatorName']),
       trackCount: (json['trackCount'] as num?)?.toInt(),

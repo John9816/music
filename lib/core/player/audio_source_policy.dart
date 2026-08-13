@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../config/audio_quality_policy.dart';
+
 bool usesNativeAudioHeaders(TargetPlatform platform) {
   return platform == TargetPlatform.android ||
       platform == TargetPlatform.iOS ||
@@ -7,21 +9,28 @@ bool usesNativeAudioHeaders(TargetPlatform platform) {
 }
 
 List<String> playbackQualityCandidates(String source, String requested) {
-  final normalizedSource = source.trim().toLowerCase();
-  final normalizedQuality = requested.trim().toLowerCase();
-  if (normalizedSource != 'qq') return [normalizedQuality];
-
-  return switch (normalizedQuality) {
-    'hires' => const ['hires', 'lossless', 'exhigh', 'standard'],
-    'lossless' => const ['lossless', 'exhigh', 'standard'],
-    'standard' => const ['standard'],
-    _ => const ['exhigh', 'standard'],
-  };
+  return [normalizeQualityForSource(source, requested)];
 }
 
-bool isPlayableAudioResponse(int statusCode, String? contentType) {
-  if (statusCode < 200 || statusCode >= 300) return false;
-  final normalizedType = contentType?.toLowerCase() ?? '';
-  return !normalizedType.startsWith('text/') &&
-      !normalizedType.contains('application/json');
+typedef PlaybackUrlLoader = Future<String?> Function(String quality);
+
+class ResolvedPlaybackUrl {
+  const ResolvedPlaybackUrl({required this.url, required this.quality});
+
+  final String url;
+  final String quality;
+}
+
+Future<ResolvedPlaybackUrl?> resolvePlaybackUrl({
+  required String source,
+  required String requestedQuality,
+  required PlaybackUrlLoader loadUrl,
+}) async {
+  for (final quality in playbackQualityCandidates(source, requestedQuality)) {
+    final url = (await loadUrl(quality))?.trim();
+    if (url != null && url.isNotEmpty) {
+      return ResolvedPlaybackUrl(url: url, quality: quality);
+    }
+  }
+  return null;
 }

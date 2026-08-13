@@ -1035,34 +1035,5 @@ String userPlaylistName(Map<String, dynamic> json) {
 }
 
 Song itemToSong(Map<String, dynamic> json) {
-  final rawId = json['songId'] ?? json['id'];
-  final id = rawId?.toString() ?? '';
-  final name = (json['name'] ?? json['songName'])?.toString() ?? '';
-  final artistNames = (json['artistName'] ?? json['artist'])?.toString() ?? '';
-  final artists = artistNames
-      .split(RegExp(r'[,/]'))
-      .map((name) => name.trim())
-      .where((name) => name.isNotEmpty)
-      .map((name) => Artist(id: 0, name: name))
-      .toList();
-  final rawCover = json['coverUrl'] ?? json['albumCover'];
-  final coverUrl = rawCover == null || rawCover.toString().trim().isEmpty
-      ? null
-      : rawCover.toString();
-  final durationMs = (json['durationMs'] as num?)?.toInt() ??
-      ((json['durationSec'] as num?)?.toInt() ?? 0) * 1000;
-  return Song(
-    id: id,
-    name: name,
-    source: json['source']?.toString() ?? 'netease',
-    artists: artists.isEmpty ? const [Artist(id: 0, name: '未知')] : artists,
-    album: Album(
-      id: 0,
-      name: json['album']?.toString() ?? '',
-      picUrl: coverUrl,
-    ),
-    durationMs: durationMs,
-    libraryId: json['id']?.toString(),
-    playedAt: DateTime.tryParse(json['playedAt']?.toString() ?? ''),
-  );
+  return Song.fromUserLibraryItem(json);
 }

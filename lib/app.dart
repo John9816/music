@@ -44,7 +44,10 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     if (Platform.isAndroid || Platform.isIOS) {
       SystemMediaController.instance.attach(_player);
     }
-    _auth = AuthController(onSessionCleared: _player.stopAndClear)..load();
+    _auth = AuthController(
+      onSessionCleared: () => _player.stopAndClear(clearSavedPlayback: true),
+    );
+    unawaited(_auth.load());
     _iosSideload = IosSideloadService(stateStore: FileIosSideloadStateStore());
     unawaited(SongDownloadService.instance.initialize());
     _desktopIntegration = DesktopIntegrationService(
@@ -141,7 +144,7 @@ class _ThemeBridgeState extends State<_ThemeBridge> {
       theme: settings.lightTheme.data,
       darkTheme: settings.darkTheme.data,
       themeMode: settings.themeMode,
-      scrollBehavior: const _NoScrollbarBehavior(),
+      scrollBehavior: const DuckMusicScrollBehavior(),
       builder: (context, child) {
         final dark = Theme.of(context).brightness == Brightness.dark;
         final mobile = Platform.isAndroid || Platform.isIOS;
@@ -199,15 +202,20 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-/// 移除 macOS 上 RawScrollbar（内含 MouseRegion）以规避鼠标断言卡死。
-/// macOS 用户主要使用触控板滚动，不需要覆盖滚动条。
-class _NoScrollbarBehavior extends ScrollBehavior {
-  const _NoScrollbarBehavior();
+/// Windows/Linux 保留桌面滚动位置反馈；macOS 避免 RawScrollbar 内部的
+/// MouseRegion 触发已知 MouseTracker 断言，移动端也不显示常驻滚动条。
+class DuckMusicScrollBehavior extends ScrollBehavior {
+  const DuckMusicScrollBehavior();
 
   @override
   Widget buildScrollbar(
       BuildContext context, Widget child, ScrollableDetails details) {
-    return child; // 不包裹 Scrollbar → 无 RawScrollbar → 无 MouseRegion
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux) {
+      return Scrollbar(controller: details.controller, child: child);
+    }
+    return child;
   }
 
   @override

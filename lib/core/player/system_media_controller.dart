@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/services.dart';
 
 import '../models/song.dart';
+import '../network/image_request_policy.dart';
 import 'player_controller.dart';
 
 class SystemMediaController extends BaseAudioHandler {
@@ -159,13 +160,15 @@ class SystemMediaController extends BaseAudioHandler {
   }
 
   MediaItem _mediaItem(Song song, int index) {
+    final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
+    final artworkHeaders = imageRequestHeaders(artworkUrl);
     return MediaItem(
       id: '${song.source}:${song.id}:$index',
       title: song.name,
       artist: song.artistNames,
       album: song.album.name,
-      artUri:
-          song.album.picUrl == null ? null : Uri.tryParse(song.album.picUrl!),
+      artUri: artworkUrl == null ? null : Uri.tryParse(artworkUrl),
+      artHeaders: artworkHeaders.isEmpty ? null : artworkHeaders,
       duration:
           song.durationMs > 0 ? Duration(milliseconds: song.durationMs) : null,
     );

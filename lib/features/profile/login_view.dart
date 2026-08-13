@@ -87,6 +87,7 @@ class _LoginViewState extends State<LoginView> {
         ),
         const SizedBox(height: 12),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Checkbox(
               value: _agreed,
@@ -100,10 +101,9 @@ class _LoginViewState extends State<LoginView> {
                 onTap: () => setState(() => _agreed = !_agreed),
                 child: Text(
                   '已阅读并同意用户协议与隐私政策',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12.5,
+                    height: 1.45,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -117,7 +117,9 @@ class _LoginViewState extends State<LoginView> {
         ),
         Padding(
           padding: const EdgeInsets.only(left: 36),
-          child: Row(
+          child: Wrap(
+            spacing: 20,
+            runSpacing: 0,
             children: [
               _AuthLink(
                 label: '查看用户协议',
@@ -125,7 +127,6 @@ class _LoginViewState extends State<LoginView> {
                   const LegalDocumentView(type: LegalDocumentType.agreement),
                 ),
               ),
-              const SizedBox(width: 20),
               _AuthLink(
                 label: '查看隐私政策',
                 onTap: () => _open(
@@ -523,56 +524,76 @@ class _AuthPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 600;
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < GBreakpoints.compact;
     final back = onBack;
+    final topPadding = compact ? 28.0 : 34.0;
+    const bottomPadding = 36.0;
     return Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
             child: SafeArea(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  compact ? 28 : 34,
-                  24,
-                  36,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 424),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (showBrand) ...[
-                          const _AuthBrand(),
-                          SizedBox(height: compact ? 38 : 32),
-                        ],
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: compact ? 30 : 32,
-                            fontWeight: TypeScale.heavy,
-                            height: 1.08,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final availableHeight =
+                      constraints.maxHeight - topPadding - bottomPadding;
+                  final centerVertically = !compact && size.height >= 700;
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      topPadding,
+                      24,
+                      bottomPadding,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: availableHeight > 0 ? availableHeight : 0,
+                      ),
+                      child: Align(
+                        alignment: centerVertically
+                            ? Alignment.center
+                            : Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 424),
+                          child: Column(
+                            key: const ValueKey('auth-content'),
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (showBrand) ...[
+                                const _AuthBrand(),
+                                SizedBox(height: compact ? 38 : 32),
+                              ],
+                              Text(
+                                title,
+                                style: TextStyle(
+                                  fontSize: compact ? 30 : 32,
+                                  fontWeight: TypeScale.heavy,
+                                  height: 1.08,
+                                ),
+                              ),
+                              if (subtitle != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  subtitle!,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: compact ? 30 : 34),
+                              ...children,
+                            ],
                           ),
                         ),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            subtitle!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                        SizedBox(height: compact ? 30 : 34),
-                        ...children,
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),
@@ -657,7 +678,8 @@ class _AuthField extends StatelessWidget {
         onChanged: onChanged,
         style: TextStyle(fontSize: 15, color: scheme.onSurface),
         decoration: InputDecoration(
-          hintText: hintText,
+          labelText: hintText,
+          floatingLabelBehavior: FloatingLabelBehavior.always,
           filled: true,
           fillColor: dark ? scheme.surfaceContainer : Colors.white,
           contentPadding: const EdgeInsets.symmetric(horizontal: 20),

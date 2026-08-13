@@ -11,7 +11,9 @@ class PasswordResetCodeInfo {
 }
 
 class AuthApi {
-  final ApiClient _client = ApiClient.instance;
+  AuthApi({ApiClient? client}) : _client = client ?? ApiClient.instance;
+
+  final ApiClient _client;
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     final data = await _client.postJson('api/auth/login', body: {
@@ -34,16 +36,30 @@ class AuthApi {
   Future<Map<String, dynamic>> refreshToken(String refresh) async {
     final data = await _client.postJson(
       'api/auth/refresh',
-      body: {'refresh_token': refresh},
+      body: {
+        'refresh_token': refresh,
+        'refreshToken': refresh,
+      },
       retryUnauthorized: false,
     );
     return data;
   }
 
-  Future<void> logout(String token) async {
-    await _client.postJson('api/auth/logout', body: null, headers: {
-      'Authorization': 'Bearer $token',
-    });
+  Future<void> logout(
+    String refreshToken, {
+    String? accessToken,
+  }) async {
+    await _client.postJson(
+      'api/auth/logout',
+      body: {
+        'refresh_token': refreshToken,
+        'refreshToken': refreshToken,
+      },
+      headers: {
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      },
+      retryUnauthorized: false,
+    );
   }
 
   Future<Map<String, dynamic>> getMe(String token) async {

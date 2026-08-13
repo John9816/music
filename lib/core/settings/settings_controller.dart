@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/app_config.dart';
+import '../config/audio_quality_policy.dart';
 import '../theme/app_theme.dart';
 
 /// 柒伍壹壹音乐的统一设置模型。
@@ -28,7 +30,7 @@ class SettingsController extends ChangeNotifier {
   String _source = 'netease';
   String _themeModeId = 'system';
   String _accentId = 'forestGreen';
-  String _quality = 'auto';
+  final Map<String, String> _qualityBySource = {};
   String _glassQuality = 'smooth';
   bool _reduceMotion = false;
   bool _automaticAudioCache = true;
@@ -53,7 +55,7 @@ class SettingsController extends ChangeNotifier {
 
   /// 兼容旧调用方；需要精确当前明暗时应使用 [lightTheme]/[darkTheme]。
   AppTheme get theme => _themeModeId == 'light' ? lightTheme : darkTheme;
-  String get quality => _quality;
+  String get quality => qualityForSource(_source);
   String get glassQuality => _glassQuality;
   bool get reduceMotion => _reduceMotion;
   bool get automaticAudioCache => _automaticAudioCache;
@@ -70,7 +72,15 @@ class SettingsController extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _source = prefs.getString(_sourceKey) ?? 'netease';
-      _quality = prefs.getString(_qualityKey) ?? 'auto';
+      final legacyQuality = prefs.getString(_qualityKey);
+      for (final source in AppConfig.musicSources.keys) {
+        _qualityBySource[source] = normalizeQualityForSource(
+          source,
+          prefs.getString(_qualityKeyForSource(source)) ??
+              legacyQuality ??
+              defaultQualityForSource(source),
+        );
+      }
       _themeModeId = prefs.getString(_themeModeKey) ?? 'system';
       _accentId = prefs.getString(_accentKey) ?? 'forestGreen';
       _glassQuality = prefs.getString(_glassQualityKey) ?? 'smooth';
@@ -124,8 +134,35 @@ class SettingsController extends ChangeNotifier {
         (v) => _accentId = v,
       );
 
-  Future<void> setQuality(String value) =>
-      _setString(_qualityKey, value, () => _quality, (v) => _quality = v);
+  String qualityForSource(String source) {
+    final normalizedSource = source.trim().toLowerCase();
+    return _qualityBySource[normalizedSource] ??
+        defaultQualityForSource(normalizedSource);
+  }
+
+  Future<void> setQuality(String value) => setQualityForSource(_source, value);
+
+  Future<void> setQualityForSource(String source, String value) async {
+    final normalizedSource = source.trim().toLowerCase();
+    final normalizedQuality = normalizeQualityForSource(
+      normalizedSource,
+      value,
+    );
+    if (qualityForSource(normalizedSource) == normalizedQuality &&
+        _qualityBySource.containsKey(normalizedSource)) {
+      return;
+    }
+    _qualityBySource[normalizedSource] = normalizedQuality;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _qualityKeyForSource(normalizedSource),
+      normalizedQuality,
+    );
+    if (normalizedSource == _source) {
+      await prefs.setString(_qualityKey, normalizedQuality);
+    }
+  }
 
   Future<void> setGlassQuality(String value) => _setString(
         _glassQualityKey,
@@ -256,4 +293,6 @@ class SettingsController extends ChangeNotifier {
       return const {};
     }
   }
+
+  static String _qualityKeyForSource(String source) => 'quality_$source';
 }

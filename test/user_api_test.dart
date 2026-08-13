@@ -7,6 +7,39 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('loads only the latest playback history item for startup restore',
+      () async {
+    late http.Request captured;
+    final client = ApiClient.forTesting(
+      MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'code': 0,
+            'data': {
+              'items': [
+                {
+                  'id': 'history-1',
+                  'songId': 'song-1',
+                  'name': '最后播放',
+                },
+              ],
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final latest = await UserApi(client: client).getLatestHistory('token');
+
+    expect(latest?['songId'], 'song-1');
+    expect(captured.url.path, '/api/user/music/history');
+    expect(captured.url.queryParameters, {'page': '0', 'size': '1'});
+    expect(captured.headers['authorization'], 'Bearer token');
+  });
+
   test('deletes a playlist and a playlist item through the user API', () async {
     final requests = <http.Request>[];
     final client = ApiClient.forTesting(

@@ -77,6 +77,16 @@ class UserApi {
     return _getAllPages('api/user/music/history', token);
   }
 
+  Future<Map<String, dynamic>?> getLatestHistory(String token) async {
+    final data = await _client.getJson(
+      'api/user/music/history',
+      params: const {'page': '0', 'size': '1'},
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final items = _items(data);
+    return items.isEmpty ? null : items.first;
+  }
+
   Future<void> addHistory(Song song, String token) async {
     await _client.postJson('api/user/music/history',
         body: _songBody(song), headers: {'Authorization': 'Bearer $token'});
