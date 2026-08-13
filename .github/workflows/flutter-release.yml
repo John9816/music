@@ -146,8 +146,13 @@ jobs:
             "${build_tools}/apksigner" verify "${apk}"
             badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
             echo "${abi}: ${badging}"
+            case "${abi}" in
+              armeabi-v7a) expected_version_code="$(( ${{ needs.validate.outputs.build_number }} + 1000 ))" ;;
+              arm64-v8a) expected_version_code="$(( ${{ needs.validate.outputs.build_number }} + 2000 ))" ;;
+              x86_64) expected_version_code="$(( ${{ needs.validate.outputs.build_number }} + 4000 ))" ;;
+            esac
             grep -q "name='com.music.player'" <<<"${badging}"
-            grep -q "versionCode='${{ needs.validate.outputs.build_number }}'" <<<"${badging}"
+            grep -q "versionCode='${expected_version_code}'" <<<"${badging}"
             grep -q "versionName='${{ needs.validate.outputs.version }}'" <<<"${badging}"
             if [[ "${IS_RELEASE}" == "true" ]]; then
               expected="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
@@ -367,7 +372,9 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc "/DMyAppVersion=${{ needs.validate.outputs.version }}" "windows\installer.iss"
+          $languageFile = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6" -Recurse -Filter "ChineseSimplified.isl" | Select-Object -First 1
+          if (-not $languageFile) { throw "ChineseSimplified.isl was not installed with Inno Setup." }
+          & $iscc "/DMyAppVersion=${{ needs.validate.outputs.version }}" "/DChineseSimplifiedLanguageFile=$($languageFile.FullName)" "windows\installer.iss"
 
       - name: Sign Windows installer when configured
         shell: pwsh

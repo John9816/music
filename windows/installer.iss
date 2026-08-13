@@ -2,6 +2,10 @@
   #define MyAppVersion "1.0.0"
 #endif
 
+#ifndef ChineseSimplifiedLanguageFile
+  #define ChineseSimplifiedLanguageFile "compiler:Languages\ChineseSimplified.isl"
+#endif
+
 [Setup]
 AppId={{A8B76B8C-0924-4C2B-9428-5C0D9C980751}
 AppName=柒伍壹壹音乐
@@ -22,7 +26,7 @@ UninstallDisplayIcon={app}\duck_music.exe
 SetupIconFile=runner\resources\app_icon.ico
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimp"; MessagesFile: "{#ChineseSimplifiedLanguageFile}"
 
 [Files]
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
