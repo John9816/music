@@ -320,9 +320,7 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          $languageFile = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6" -Recurse -Filter "ChineseSimplified.isl" | Select-Object -First 1
-          if (-not $languageFile) { throw "ChineseSimplified.isl was not installed with Inno Setup." }
-          & $iscc "/DMyAppVersion=${{ needs.validate.outputs.version }}" "/DChineseSimplifiedLanguageFile=$($languageFile.FullName)" "windows\installer.iss"
+          & $iscc "/DMyAppVersion=${{ needs.validate.outputs.version }}" "windows\installer.iss"
 
       - name: Sign Windows installer when configured
         shell: pwsh
