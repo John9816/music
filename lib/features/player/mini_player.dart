@@ -35,7 +35,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   void _openPlayer() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PlayerView()),
+      buildPlayerRoute(
+        reducedMotion: MediaQuery.disableAnimationsOf(context),
+      ),
     );
   }
 

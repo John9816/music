@@ -249,6 +249,22 @@ class AiDrawApi {
     );
   }
 
+  Future<AiDrawPage<AiDrawHistoryItem>> shared({
+    int page = 0,
+    int size = 20,
+  }) async {
+    final data = await _client.getJson(
+      'api/public/image/shared',
+      params: {'page': '$page', 'size': '$size'},
+    );
+    return _page(
+      data,
+      (json) => AiDrawHistoryItem.fromJson(json),
+      fallbackPage: page,
+      fallbackSize: size,
+    );
+  }
+
   Future<void> setShared(int id, bool shared) async {
     await _client.patchJson(
       'api/user/image/history/$id/share?shared=$shared',

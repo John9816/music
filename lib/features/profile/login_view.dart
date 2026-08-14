@@ -35,7 +35,7 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _submit() async {
     final account = _account.text.trim();
     if (account.isEmpty || _password.text.isEmpty) {
-      _message('请输入邮箱或账号和密码');
+      _message('请输入用户名或邮箱和密码');
       return;
     }
     if (!_agreed) {
@@ -62,7 +62,7 @@ class _LoginViewState extends State<LoginView> {
       children: [
         _AuthField(
           controller: _account,
-          hintText: '邮箱',
+          hintText: '用户名或邮箱',
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.username, AutofillHints.email],
@@ -172,35 +172,77 @@ class RegisterView extends StatefulWidget {
 class _RegisterViewState extends State<RegisterView> {
   final _nickname = TextEditingController();
   final _email = TextEditingController();
+  final _verificationCode = TextEditingController();
   final _password = TextEditingController();
+  bool _sending = false;
   bool _obscurePassword = true;
+  int _resendSeconds = 0;
+  Timer? _resendTimer;
+  String? _codeEmail;
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _nickname.dispose();
     _email.dispose();
+    _verificationCode.dispose();
     _password.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    final email = _email.text.trim();
+    if (!_looksLikeSupportedEmail(email)) {
+      _message('请输入有效的 QQ 邮箱或 751152.xyz 邮箱');
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      final info =
+          await context.read<AuthController>().requestRegistrationCode(email);
+      if (!mounted) return;
+      _codeEmail = email;
+      _startResendTimer(info.resendAfterSeconds);
+      final minutes = (info.expiresInSeconds / 60).ceil();
+      _message('验证码已发送，$minutes 分钟内有效');
+    } catch (error) {
+      if (mounted) _message(error.toString());
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   Future<void> _submit() async {
     final nickname = _nickname.text.trim();
     final email = _email.text.trim();
+    final code = _verificationCode.text.trim();
     final password = _password.text;
-    if (nickname.isEmpty || email.isEmpty || password.isEmpty) {
-      _message('请完整填写昵称、邮箱和密码');
+    if (nickname.isEmpty || email.isEmpty || code.isEmpty || password.isEmpty) {
+      _message('请完整填写昵称、邮箱、验证码和密码');
       return;
     }
-    if (!_looksLikeEmail(email)) {
-      _message('请输入有效的邮箱地址');
+    if (nickname.length < 3 || nickname.length > 50) {
+      _message('昵称长度需要为 3 到 50 位');
       return;
     }
-    if (password.length < 6) {
-      _message('密码至少需要 6 位');
+    if (!_looksLikeSupportedEmail(email)) {
+      _message('请输入有效的 QQ 邮箱或 751152.xyz 邮箱');
+      return;
+    }
+    if (_codeEmail != email) {
+      _message('请先获取当前邮箱的验证码');
+      return;
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      _message('请输入 6 位数字验证码');
+      return;
+    }
+    if (password.length < 6 || password.length > 64) {
+      _message('密码长度需要为 6 到 64 位');
       return;
     }
     final auth = context.read<AuthController>();
-    final ok = await auth.register(nickname, email, password);
+    final ok = await auth.register(nickname, email, password, code);
     if (!mounted) return;
     if (!ok) {
       _message(auth.error ?? '创建账号失败，请稍后重试');
@@ -215,7 +257,7 @@ class _RegisterViewState extends State<RegisterView> {
     return _AuthPage(
       onBack: () => Navigator.of(context).maybePop(),
       title: '创建账号',
-      subtitle: '注册后前往邮箱完成验证，即可开始体验会员',
+      subtitle: '使用邮箱验证码完成注册，即可开始体验会员',
       children: [
         _AuthField(
           controller: _nickname,
@@ -230,6 +272,43 @@ class _RegisterViewState extends State<RegisterView> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.email],
+          onChanged: _onEmailChanged,
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _AuthField(
+                controller: _verificationCode,
+                hintText: '6 位验证码',
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.oneTimeCode],
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 124,
+              height: 56,
+              child: OutlinedButton(
+                onPressed: _sending || _resendSeconds > 0 ? null : _sendCode,
+                child: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _resendSeconds > 0
+                            ? '$_resendSeconds 秒后重发'
+                            : _codeEmail == null
+                                ? '获取验证码'
+                                : '重新发送',
+                        maxLines: 1,
+                      ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         _AuthField(
@@ -263,7 +342,7 @@ class _RegisterViewState extends State<RegisterView> {
         _AuthPrimaryButton(
           label: '创建账号',
           loading: auth.loading,
-          onTap: auth.loading ? null : _submit,
+          onTap: auth.loading || _sending ? null : _submit,
         ),
         const SizedBox(height: 16),
         Row(
@@ -288,6 +367,30 @@ class _RegisterViewState extends State<RegisterView> {
 
   void _message(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  void _startResendTimer(int seconds) {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = seconds < 0 ? 0 : seconds);
+    if (_resendSeconds == 0) return;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _resendSeconds <= 1) {
+        timer.cancel();
+        if (mounted) setState(() => _resendSeconds = 0);
+        return;
+      }
+      setState(() => _resendSeconds--);
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    if (_codeEmail == null || value.trim() == _codeEmail) return;
+    _resendTimer?.cancel();
+    setState(() {
+      _codeEmail = null;
+      _resendSeconds = 0;
+      _verificationCode.clear();
+    });
   }
 }
 
@@ -325,7 +428,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
 
   Future<void> _sendCode() async {
     final email = _email.text.trim();
-    if (!_looksLikePasswordResetEmail(email)) {
+    if (!_looksLikeSupportedEmail(email)) {
       _message('请输入已注册的 QQ 邮箱或 751152.xyz 邮箱');
       return;
     }
@@ -348,7 +451,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
     final email = _email.text.trim();
     final code = _verificationCode.text.trim();
     final password = _password.text;
-    if (!_looksLikePasswordResetEmail(email)) {
+    if (!_looksLikeSupportedEmail(email)) {
       _message('请输入已注册的 QQ 邮箱或 751152.xyz 邮箱');
       return;
     }
@@ -793,12 +896,7 @@ class _AuthLink extends StatelessWidget {
   }
 }
 
-bool _looksLikeEmail(String value) {
-  final at = value.indexOf('@');
-  return at > 0 && value.indexOf('.', at) > at + 1;
-}
-
-bool _looksLikePasswordResetEmail(String value) {
+bool _looksLikeSupportedEmail(String value) {
   return RegExp(
     r'^(?:[1-9]\d{4,10}@qq\.com|[a-z0-9][a-z0-9._-]{0,63}@751152\.xyz)$',
     caseSensitive: false,

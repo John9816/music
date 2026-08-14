@@ -1,6 +1,9 @@
 package com.music.player
 
+import android.Manifest
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -68,6 +71,35 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestPermission" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            requestPermissions(
+                                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                                NOTIFICATION_PERMISSION_REQUEST_CODE,
+                            )
+                            result.success(false)
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "areNotificationsEnabled" -> {
+                        val enabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            getSystemService(NotificationManager::class.java)
+                                .areNotificationsEnabled()
+                        } else {
+                            true
+                        }
+                        result.success(enabled)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun onResume() {
@@ -105,6 +137,9 @@ class MainActivity : AudioServiceActivity() {
     companion object {
         private const val UPDATE_CHANNEL = "duckmusic/update"
         private const val CAST_CHANNEL = "com.751152.duckmusic/cast"
+        private const val NOTIFICATION_CHANNEL =
+            "com.751152.duckmusic/notifications"
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 7511
         private const val LEGACY_AUTH_CHANNEL = "duckmusic/legacy_auth_session"
     }
 }

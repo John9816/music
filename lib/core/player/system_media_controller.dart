@@ -9,13 +9,26 @@ import '../network/image_request_policy.dart';
 import 'player_controller.dart';
 
 class SystemMediaController extends BaseAudioHandler {
-  SystemMediaController();
+  SystemMediaController({
+    Future<void> Function()? androidNotificationPermissionRequester,
+    bool Function()? isAndroid,
+  })  : _androidNotificationPermissionRequester =
+            androidNotificationPermissionRequester ??
+                _requestAndroidNotificationPermission,
+        _isAndroid = isAndroid ?? _platformIsAndroid;
 
   static final SystemMediaController instance = SystemMediaController();
   static bool _initialized = false;
   static const MethodChannel _iosChannel = MethodChannel(
     'com.751152.duckmusic/system_media',
   );
+  static const MethodChannel _androidNotificationChannel = MethodChannel(
+    'com.751152.duckmusic/notifications',
+  );
+
+  final Future<void> Function() _androidNotificationPermissionRequester;
+  final bool Function() _isAndroid;
+  bool _androidNotificationPermissionRequested = false;
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -62,6 +75,7 @@ class SystemMediaController extends BaseAudioHandler {
   void _sync() {
     final player = _player;
     if (player == null) return;
+    _ensureAndroidNotificationPermission(player.playing);
     final songs = player.queue;
     final items = <MediaItem>[
       for (var index = 0; index < songs.length; index++)
@@ -77,11 +91,14 @@ class SystemMediaController extends BaseAudioHandler {
             : _mediaItem(player.current!, 0);
     mediaItem.add(currentItem);
 
-    final hasQueueNavigation = songs.length > 1;
+    // Keep transport controls stable even for a one-song queue. Both Android
+    // SystemUI and iOS hide previous/next when those actions are omitted; the
+    // player deliberately wraps a one-song queue back to the current track.
+    final hasTransportControls = currentItem != null;
     final controls = <MediaControl>[
-      if (hasQueueNavigation) MediaControl.skipToPrevious,
+      if (hasTransportControls) MediaControl.skipToPrevious,
       if (player.playing) MediaControl.pause else MediaControl.play,
-      if (hasQueueNavigation) MediaControl.skipToNext,
+      if (hasTransportControls) MediaControl.skipToNext,
     ];
     final processingState = player.current == null
         ? AudioProcessingState.idle
@@ -130,11 +147,29 @@ class SystemMediaController extends BaseAudioHandler {
           'durationMs': currentItem.duration?.inMilliseconds ?? 0,
           'positionMs': player.position.inMilliseconds,
           'playing': player.playing,
-          'hasPrevious': hasQueueNavigation,
-          'hasNext': hasQueueNavigation,
+          'hasPrevious': hasTransportControls,
+          'hasNext': hasTransportControls,
         }),
       );
     }
+  }
+
+  void _ensureAndroidNotificationPermission(bool playing) {
+    if (!_isAndroid() || !playing || _androidNotificationPermissionRequested) {
+      return;
+    }
+    _androidNotificationPermissionRequested = true;
+    unawaited(
+      _androidNotificationPermissionRequester().catchError((Object _) {
+        _androidNotificationPermissionRequested = false;
+      }),
+    );
+  }
+
+  static bool _platformIsAndroid() => Platform.isAndroid;
+
+  static Future<void> _requestAndroidNotificationPermission() async {
+    await _androidNotificationChannel.invokeMethod<bool>('requestPermission');
   }
 
   Future<dynamic> _handleIosCommand(MethodCall call) async {

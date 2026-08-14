@@ -25,6 +25,39 @@ import 'queue_view.dart';
 
 enum _PlayerPane { lyrics, queue }
 
+/// Full-screen player route with the same bottom-sheet-like motion used by
+/// the mobile player. Popping this route automatically runs the reverse
+/// transition, so the player returns along the path it entered.
+Route<void> buildPlayerRoute({required bool reducedMotion}) {
+  return PageRouteBuilder<void>(
+    opaque: false,
+    barrierColor: Colors.transparent,
+    transitionDuration:
+        reducedMotion ? Duration.zero : const Duration(milliseconds: 420),
+    reverseTransitionDuration:
+        reducedMotion ? Duration.zero : const Duration(milliseconds: 320),
+    pageBuilder: (context, animation, secondaryAnimation) => const PlayerView(),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      final slide = Tween<Offset>(
+        begin: const Offset(0, 1),
+        end: Offset.zero,
+      ).animate(curved);
+      final opacity = Tween<double>(begin: 0.92, end: 1).animate(curved);
+
+      if (reducedMotion) return child;
+      return FadeTransition(
+        opacity: opacity,
+        child: SlideTransition(position: slide, child: child),
+      );
+    },
+  );
+}
+
 /// 全屏播放页：左侧封面与播放控制，右侧歌词/队列原位切换。
 class PlayerView extends StatefulWidget {
   const PlayerView({super.key});

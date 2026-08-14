@@ -290,6 +290,38 @@ void main() {
     expect(page.items.single.isShared, isTrue);
   });
 
+  test('loads the public shared image plaza', () async {
+    final client = ApiClient.forTesting(MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/public/image/shared');
+      expect(request.url.queryParameters, {'page': '2', 'size': '16'});
+      return _response({
+        'code': 0,
+        'data': {
+          'items': [
+            {
+              'id': 88,
+              'prompt': 'album cover in the rain',
+              'imageUrl': 'https://images.example.test/shared.png',
+              'model': 'gpt-image-2',
+              'size': '1024x1024',
+              'isShared': true,
+            },
+          ],
+          'total': 33,
+          'page': 2,
+          'size': 16,
+        },
+      });
+    }));
+
+    final page = await AiDrawApi(client: client).shared(page: 2, size: 16);
+
+    expect(page.total, 33);
+    expect(page.items.single.id, 88);
+    expect(page.items.single.isShared, isTrue);
+  });
+
   test('shares, deletes, and retries image records using documented paths',
       () async {
     final requests = <http.Request>[];

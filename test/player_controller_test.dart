@@ -396,6 +396,64 @@ void main() {
     expect(player.queueIndex, 1);
     expect(handler.mediaItem.value?.title, '第二首');
   });
+
+  test('single-song system media keeps previous and next controls', () async {
+    final settings = SettingsController();
+    final player = _SystemMediaPlayer(settings)..keepOnlyCurrentSong();
+    final handler = SystemMediaController()..attach(player);
+    addTearDown(() {
+      handler.detach(player);
+      player.dispose();
+      settings.dispose();
+    });
+
+    expect(
+      handler.playbackState.value.controls
+          .map((control) => control.action)
+          .toList(),
+      [
+        MediaAction.skipToPrevious,
+        MediaAction.pause,
+        MediaAction.skipToNext,
+      ],
+    );
+    expect(
+      handler.playbackState.value.androidCompactActionIndices,
+      [0, 1, 2],
+    );
+
+    await handler.skipToPrevious();
+    expect(player.queueIndex, 0);
+    expect(handler.mediaItem.value?.title, '第二首');
+
+    await handler.skipToNext();
+    expect(player.queueIndex, 0);
+    expect(handler.mediaItem.value?.title, '第二首');
+  });
+
+  test('system media requests Android notification permission once', () async {
+    final settings = SettingsController();
+    final player = _SystemMediaPlayer(settings);
+    var requestCount = 0;
+    final handler = SystemMediaController(
+      isAndroid: () => true,
+      androidNotificationPermissionRequester: () async {
+        requestCount++;
+      },
+    )..attach(player);
+    addTearDown(() {
+      handler.detach(player);
+      player.dispose();
+      settings.dispose();
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    expect(requestCount, 1);
+
+    player.notifyListeners();
+    await Future<void>.delayed(Duration.zero);
+    expect(requestCount, 1);
+  });
 }
 
 Song _playbackSong(String id, Duration duration) => Song(
@@ -658,6 +716,14 @@ class _SystemMediaPlayer extends PlayerController {
   int _currentIndex = 1;
   bool _isPlaying = true;
   Duration _position = const Duration(seconds: 12);
+
+  void keepOnlyCurrentSong() {
+    final song = _songs[_currentIndex];
+    _songs
+      ..clear()
+      ..add(song);
+    _currentIndex = 0;
+  }
 
   @override
   List<Song> get queue => _songs;

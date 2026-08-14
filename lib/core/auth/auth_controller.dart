@@ -102,12 +102,13 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> login(String username, String password) async {
+  Future<bool> login(String account, String password) async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final d = await _api.login(username, password);
+      final normalizedAccount = account.trim();
+      final d = await _api.login(normalizedAccount, password);
       final accessToken = _pickAny(
         d,
         const ['accessToken', 'access_token', 'token'],
@@ -117,7 +118,11 @@ class AuthController extends ChangeNotifier {
       _refresh = _pickRefreshToken(d);
       _expiresAtMs = _resolveExpiresAtMs(d, accessToken);
       _applyProfile(d, clearMissing: true);
-      _username ??= username;
+      if (normalizedAccount.contains('@')) {
+        _email ??= normalizedAccount;
+      } else {
+        _username ??= normalizedAccount;
+      }
       ApiClient.instance.bearerToken = _token;
       await _persist();
       if (_email == null || _avatarUrl == null) await _restoreProfile();
@@ -133,12 +138,26 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> register(String username, String email, String password) async {
+  Future<RegistrationCodeInfo> requestRegistrationCode(String email) {
+    return _api.requestRegistrationCode(email);
+  }
+
+  Future<bool> register(
+    String username,
+    String email,
+    String password,
+    String verificationCode,
+  ) async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final d = await _api.register(username, email, password);
+      final d = await _api.register(
+        username,
+        email,
+        password,
+        verificationCode,
+      );
       final accessToken = _pickAny(
         d,
         const ['accessToken', 'access_token', 'token'],

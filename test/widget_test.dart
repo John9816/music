@@ -673,7 +673,7 @@ void main() {
       isFalse,
     );
 
-    await tester.tap(find.text('创建账号'));
+    await tester.tap(find.text('创建账号').last);
     await tester.pumpAndSettle();
     expect(find.byType(RegisterView), findsOneWidget);
     expect(find.text('昵称'), findsOneWidget);
@@ -681,6 +681,45 @@ void main() {
     expect(find.text('创建账号'), findsWidgets);
     expect(find.text('已经有账号？'), findsOneWidget);
     expect(find.text('去登录'), findsOneWidget);
+  });
+
+  testWidgets('registration sends and submits the current email code',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final api = _FakeRegistrationApi();
+    final auth = AuthController(api: api);
+    addTearDown(auth.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthController>.value(
+        value: auth,
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data,
+          home: const RegisterView(),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField).at(0), 'listener');
+    await tester.enterText(find.byType(TextField).at(1), '12345@qq.com');
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+
+    expect(api.codeEmail, '12345@qq.com');
+    expect(find.text('2 秒后重发'), findsOneWidget);
+    expect(find.text('验证码已发送，10 分钟内有效'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(2), '123456');
+    await tester.enterText(find.byType(TextField).at(3), 'secret12');
+    await tester.tap(find.text('创建账号').last);
+    await tester.pump();
+    await tester.pump();
+
+    expect(api.registeredUsername, 'listener');
+    expect(api.registeredEmail, '12345@qq.com');
+    expect(api.registeredPassword, 'secret12');
+    expect(api.registeredCode, '123456');
+    expect(auth.isLoggedIn, isTrue);
   });
 
   testWidgets('login legal and password recovery routes are functional',
@@ -2970,5 +3009,42 @@ class _FakePasswordResetApi extends AuthApi {
     confirmedEmail = email;
     this.verificationCode = verificationCode;
     this.newPassword = newPassword;
+  }
+}
+
+class _FakeRegistrationApi extends AuthApi {
+  String? codeEmail;
+  String? registeredUsername;
+  String? registeredEmail;
+  String? registeredPassword;
+  String? registeredCode;
+
+  @override
+  Future<RegistrationCodeInfo> requestRegistrationCode(String email) async {
+    codeEmail = email;
+    return const RegistrationCodeInfo(
+      resendAfterSeconds: 2,
+      expiresInSeconds: 600,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> register(
+    String username,
+    String email,
+    String password,
+    String verificationCode,
+  ) async {
+    registeredUsername = username;
+    registeredEmail = email;
+    registeredPassword = password;
+    registeredCode = verificationCode;
+    return {
+      'accessToken': 'registration-access',
+      'refreshToken': 'registration-refresh',
+      'username': username,
+      'email': email,
+      'avatarUrl': 'https://example.com/avatar.png',
+    };
   }
 }

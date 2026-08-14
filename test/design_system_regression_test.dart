@@ -194,7 +194,10 @@ void main() {
 
     final fields =
         tester.widgetList<TextField>(find.byType(TextField)).toList();
-    expect(fields.map((field) => field.decoration?.labelText), ['邮箱', '密码']);
+    expect(
+      fields.map((field) => field.decoration?.labelText),
+      ['用户名或邮箱', '密码'],
+    );
     expect(
       fields.map((field) => field.decoration?.floatingLabelBehavior),
       everyElement(FloatingLabelBehavior.always),
