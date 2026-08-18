@@ -25,6 +25,17 @@ class SystemMediaController extends BaseAudioHandler {
   static const MethodChannel _androidNotificationChannel = MethodChannel(
     'com.751152.duckmusic/notifications',
   );
+  static const AudioServiceConfig androidConfig = AudioServiceConfig(
+    androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
+    androidNotificationChannelName: '音频播放',
+    androidNotificationChannelDescription: '显示当前歌曲和播放控制',
+    androidNotificationIcon: 'drawable/ic_notification_music',
+    notificationColor: Color(0xFF2FD365),
+    androidNotificationOngoing: false,
+    androidStopForegroundOnPause: false,
+    artDownscaleWidth: 512,
+    artDownscaleHeight: 512,
+  );
 
   final Future<void> Function() _androidNotificationPermissionRequester;
   final bool Function() _isAndroid;
@@ -40,12 +51,7 @@ class SystemMediaController extends BaseAudioHandler {
     }
     await AudioService.init(
       builder: () => instance,
-      config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
-        androidNotificationChannelName: '音频播放',
-        androidNotificationOngoing: false,
-        androidStopForegroundOnPause: false,
-      ),
+      config: androidConfig,
     );
     _initialized = true;
   }

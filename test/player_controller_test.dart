@@ -454,6 +454,15 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(requestCount, 1);
   });
+
+  test('Android media notification uses vendor-compatible visuals', () {
+    const config = SystemMediaController.androidConfig;
+
+    expect(config.androidNotificationIcon, 'drawable/ic_notification_music');
+    expect(config.notificationColor, const Color(0xFF2FD365));
+    expect(config.artDownscaleWidth, 512);
+    expect(config.artDownscaleHeight, 512);
+  });
 }
 
 Song _playbackSong(String id, Duration duration) => Song(
