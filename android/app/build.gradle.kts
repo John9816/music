@@ -8,6 +8,9 @@ plugins {
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
+val releaseBuildRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.contains("Release", ignoreCase = true)
+}
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use(keystoreProperties::load)
 }
@@ -46,11 +49,14 @@ android {
 
     buildTypes {
         release {
-            // Local release builds remain runnable; CI tags require a permanent key.
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (releaseBuildRequested && !keystorePropertiesFile.exists()) {
+                throw GradleException(
+                    "Missing android/key.properties. Release APKs must use the production signing key. " +
+                        "Use flutter build apk --debug for local testing or configure the release keystore."
+                )
+            }
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }

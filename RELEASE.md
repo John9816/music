@@ -86,6 +86,7 @@ git push origin flutter-v1.2.0
 DuckMusic-Flutter-v1.2.0-Android-arm64-v8a.apk
 DuckMusic-Flutter-v1.2.0-Android-armeabi-v7a.apk
 DuckMusic-Flutter-v1.2.0-Android-x86_64.apk
+DuckMusic-Flutter-v1.2.0-Android-universal.apk
 DuckMusic-Flutter-v1.2.0-iOS-unsigned.ipa
 DuckMusic-Flutter-v1.2.0-macOS-arm64.dmg
 DuckMusic-Flutter-v1.2.0-macOS-x64.dmg
@@ -283,7 +284,7 @@ IOS_APP_STORE_ID=1234567890
 
 ### 6.1 Android APK 与 AAB
 
-GitHub Release 使用按 ABI 拆分的 APK，更新器会根据设备架构选择对应文件：
+Android 发布同时生成 universal 兼容包和按 ABI 拆分的 APK。ECS 的 downloadUrl 必须指向 universal，兼容尚未支持 downloads 映射的老客户端；新客户端从 downloads 按设备架构选择拆分包。
 
 ```bash
 flutter build apk --release --split-per-abi \
@@ -296,7 +297,7 @@ flutter build apk --release --split-per-abi \
 
 产物：`build/app/outputs/flutter-apk/app-{arm64-v8a,armeabi-v7a,x86_64}-release.apk`。
 
-不要把多个 ABI 合并成 universal APK；它会重复打包 Flutter、mpv 和应用原生库，安装体积会明显增加。旧客户端会从 GitHub Release 中按当前设备架构选择对应 APK，新客户端优先使用 ECS `downloads` 映射。
+Universal APK 只作为老客户端兼容兜底，不替代新客户端的 ABI 拆分 APK。发布时必须同时提供 universal 和三个 ABI APK，并让 ECS 的 downloadUrl 指向 universal。
 
 如需上传 Google Play，构建 AAB：
 
@@ -309,7 +310,7 @@ flutter build appbundle --release \
   --dart-define="IOS_APP_STORE_ID=$IOS_APP_STORE_ID"
 ```
 
-产物：`build/app/outputs/bundle/release/app-release.aab`。本地不存在 `android/key.properties` 时，当前工程会退回 debug key；这种包可以安装测试，但不能作为正式更新发布。
+产物：`build/app/outputs/bundle/release/app-release.aab`。本地不存在 `android/key.properties` 时，release 构建会直接失败，不再退回 debug key。Debug APK 只能使用 `flutter build apk --debug` 生成，不能覆盖正式安装包；正式 release APK 必须通过 GitHub Actions 使用历史生产证书构建。
 
 ### 6.2 macOS APP
 
@@ -432,7 +433,7 @@ Android 发布完成后，用下面的命令快速验收两条更新通道：
 VERSION=1.2.0
 REPO=John9816/music
 ECS_BASE=https://api.751152.xyz/updates
-APK_URL="${ECS_BASE}/DuckMusic-Flutter-v${VERSION}-Android-arm64-v8a.apk"
+APK_URL="${ECS_BASE}/DuckMusic-Flutter-v${VERSION}-Android-universal.apk"
 
 curl -fsSL "${ECS_BASE}/latest.json" | jq -e \
   --arg version "${VERSION}" \
@@ -449,7 +450,7 @@ curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | jq -e 
    | {tag_name, draft, prerelease, assets: [.assets[] | select(.name | startswith("DuckMusic-Flutter-v" + $version + "-Android-")) | {name, size, digest}]}'
 ```
 
-预期结果：ECS 的 `version`、`buildNumber` 和 `downloadUrl` 对应本次发布；APK Range 请求返回 `206`；GitHub 第一条符合条件的 Release 是本次 `flutter-v${VERSION}`，且包含三个 ABI APK。
+预期结果：ECS 的 `version`、`buildNumber` 和 `downloadUrl` 对应本次发布；默认 APK 是 universal 包；universal 和三个 ABI APK 的 Range 请求均返回 `206`；GitHub 第一条符合条件的 Release 是本次 `flutter-v${VERSION}`，且包含 universal 与三个 ABI APK。
 
 发现严重问题时不要覆盖旧标签或替换同名资产。停止分发后修复代码，提升 patch 版本和构建号，再按完整流程发布。
 

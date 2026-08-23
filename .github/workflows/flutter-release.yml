@@ -124,6 +124,12 @@ jobs:
         shell: bash
         run: |
           flutter pub get
+          flutter build apk --release \
+            --build-name="${{ needs.validate.outputs.version }}" \
+            --build-number="${{ needs.validate.outputs.build_number }}" \
+            --dart-define="APP_VERSION=${{ needs.validate.outputs.version }}" \
+            --dart-define="UPDATE_REPOSITORY=${{ github.repository }}" \
+            --dart-define="IOS_APP_STORE_ID=${{ vars.IOS_APP_STORE_ID }}"
           flutter build apk --release --split-per-abi \
             --build-name="${{ needs.validate.outputs.version }}" \
             --build-number="${{ needs.validate.outputs.build_number }}" \
@@ -140,6 +146,20 @@ jobs:
           set -euo pipefail
           build_tools="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
           mkdir -p dist
+          universal_apk="build/app/outputs/flutter-apk/app-release.apk"
+          [[ -f "${universal_apk}" ]] || { echo "Missing Android universal APK: ${universal_apk}" >&2; exit 1; }
+          "${build_tools}/apksigner" verify "${universal_apk}"
+          universal_badging="$("${build_tools}/aapt" dump badging "${universal_apk}" | head -n1)"
+          echo "universal: ${universal_badging}"
+          grep -q "name='com.music.player'" <<<"${universal_badging}"
+          grep -q "versionCode='${{ needs.validate.outputs.build_number }}'" <<<"${universal_badging}"
+          grep -q "versionName='${{ needs.validate.outputs.version }}'" <<<"${universal_badging}"
+          if [[ "${IS_RELEASE}" == "true" ]]; then
+            expected="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+            actual="$("${build_tools}/apksigner" verify --print-certs "${universal_apk}" 2>&1 | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*//Ip' | head -n1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+            [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Android universal APK signing certificate mismatch." >&2; exit 1; }
+          fi
+          cp "${universal_apk}" "dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
           for abi in arm64-v8a armeabi-v7a x86_64; do
             apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
             [[ -f "${apk}" ]] || { echo "Missing Android ${abi} APK: ${apk}" >&2; exit 1; }
@@ -377,10 +397,11 @@ jobs:
           user="root"
           update_dir="/opt/website/updates"
           base_url="https://api.751152.xyz/updates"
+          universal_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-universal.apk"
           arm64_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-arm64-v8a.apk"
           arm32_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-armeabi-v7a.apk"
           x64_apk_name="DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-Android-x86_64.apk"
-          apk_names=("${arm64_apk_name}" "${arm32_apk_name}" "${x64_apk_name}")
+          apk_names=("${universal_apk_name}" "${arm64_apk_name}" "${arm32_apk_name}" "${x64_apk_name}")
           for apk_name in "${apk_names[@]}"; do
             [[ -f "dist/${apk_name}" ]] || { echo "Missing Android update asset: dist/${apk_name}" >&2; exit 1; }
           done
@@ -410,7 +431,7 @@ jobs:
           {
             "version": "${{ needs.validate.outputs.version }}",
             "buildNumber": ${{ needs.validate.outputs.build_number }},
-            "downloadUrl": "${base_url}/${arm64_apk_name}",
+            "downloadUrl": "${base_url}/${universal_apk_name}",
             "downloads": {
               "arm64-v8a": "${base_url}/${arm64_apk_name}",
               "armeabi-v7a": "${base_url}/${arm32_apk_name}",
@@ -429,8 +450,16 @@ jobs:
             "${user}@${host}:${update_dir}/"
           curl -fsSL "${base_url}/latest.json" | jq -e \
             --arg version "${{ needs.validate.outputs.version }}" \
-            --arg url "${base_url}/${arm64_apk_name}" \
+            --arg url "${base_url}/${universal_apk_name}" \
             '.version == $version and .downloadUrl == $url and (.downloads | has("arm64-v8a"))' >/dev/null
+
+          for apk_name in "${apk_names[@]}"; do
+            headers="$(mktemp)"
+            curl -fsSL --range 0-0 -D "${headers}" -o /dev/null "${base_url}/${apk_name}"
+            grep -Eiq '^HTTP/[0-9.]+ 206|^HTTP/2 206' "${headers}"
+            grep -Eiq '^content-type:[[:space:]]*application/vnd\.android\.package-archive' "${headers}"
+            rm -f "${headers}"
+          done
 
   publish:
     if: needs.validate.outputs.is_release == 'true' && needs.validate.outputs.android_only != 'true'
