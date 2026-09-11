@@ -300,12 +300,12 @@ class _UserLibraryViewState extends State<UserLibraryView> {
               ),
               SliverToBoxAdapter(
                 child: _LibraryPlayBar(
-                  songs: songs,
-                  count: songs.length,
-                  onPlay: songs.isEmpty
+                  songs: visible,
+                  count: visible.length,
+                  onPlay: visible.isEmpty
                       ? null
-                      : () => context.read<PlayerController>().playQueue(songs),
-                  onDownload: songs.isEmpty ? null : () => _downloadAll(songs),
+                      : () => context.read<PlayerController>().playQueue(visible),
+                  onDownload: visible.isEmpty ? null : () => _downloadAll(visible),
                   onClear: history && songs.isNotEmpty && widget.onClear != null
                       ? () => _clearHistory(songs)
                       : null,
@@ -326,6 +326,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   child: _SongSelectionToolbar(
                     selectedCount: _selected.length,
                     totalCount: visible.length,
+                    mutating: _mutating,
                     onSelectAll: () => _selectAll(visible),
                     onDelete: _selected.isEmpty
                         ? null
@@ -823,31 +824,49 @@ class _SongSelectionToolbar extends StatelessWidget {
     required this.totalCount,
     required this.onSelectAll,
     required this.onDelete,
+    this.mutating = false,
   });
 
   final int selectedCount;
   final int totalCount;
   final VoidCallback onSelectAll;
   final VoidCallback? onDelete;
+  final bool mutating;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-      child: Row(
-        children: [
-          Text('$selectedCount/$totalCount 已选'),
-          const Spacer(),
-          TextButton(onPressed: onSelectAll, child: const Text('全选')),
-          GIconButton(
-            icon: Icons.delete_outline_rounded,
-            tooltip: '删除所选歌曲',
-            size: 18,
-            padding: 9,
-            onTap: onDelete,
-          ),
-        ],
-      ),
+      child: mutating
+          ? Row(
+              children: [
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '正在处理...',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Text('$selectedCount/$totalCount 已选'),
+                const Spacer(),
+                TextButton(onPressed: onSelectAll, child: const Text('全选')),
+                GIconButton(
+                  icon: Icons.delete_outline_rounded,
+                  tooltip: '删除所选歌曲',
+                  size: 18,
+                  padding: 9,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
     );
   }
 }

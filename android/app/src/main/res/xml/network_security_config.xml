@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局放行明文（HTTP）流量。
+
+  原因：直播 M3U 源、用户自定义书源与部分第三方图片/音频 CDN 只提供 HTTP 地址，
+  且这些地址由用户在运行时自行添加，域名不可枚举，无法用白名单覆盖。
+
+  代价：所有请求都可被中间人窥探/篡改。自有后端（api.751152.xyz）已强制 HTTPS，
+  明文只影响用户自行添加的第三方源。
+
+  若将来源站范围收敛到可枚举，应改为 <base-config cleartextTrafficPermitted="false">
+  加若干 <domain-config cleartextTrafficPermitted="true"> 例外。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

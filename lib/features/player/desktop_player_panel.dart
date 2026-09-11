@@ -1,8 +1,9 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show unawaited, Timer;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode;
 import 'package:provider/provider.dart';
 
@@ -121,9 +122,12 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
   String _source = '';
   List<LrcLine> _lines = const [];
   int _lastLine = -1;
+  bool _userScrolling = false;
+  Timer? _scrollResumeTimer;
 
   @override
   void dispose() {
+    _scrollResumeTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -136,6 +140,8 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
       _source = lyric;
       _lines = parseLrc(lyric);
       _lastLine = -1;
+      _userScrolling = false;
+      _scrollResumeTimer?.cancel();
     }
     final song = player.current;
     final scheme = Theme.of(context).colorScheme;
@@ -164,9 +170,24 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
                     final position = snapshot.data ?? player.position;
                     final current = _currentLine(position);
                     _scrollToCurrent(current);
-                    return ListView.builder(
-                      controller: _scrollController,
-                      physics: const BouncingScrollPhysics(),
+                    return Stack(
+                      children: [
+                        NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification is UserScrollNotification) {
+                              if (notification.direction != ScrollDirection.idle) {
+                                setState(() => _userScrolling = true);
+                                _scrollResumeTimer?.cancel();
+                                _scrollResumeTimer = Timer(const Duration(seconds: 5), () {
+                                  if (mounted) setState(() => _userScrolling = false);
+                                });
+                              }
+                            }
+                            return false;
+                          },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(24, 70, 24, 110),
                       itemCount: _lines.length,
                       itemBuilder: (context, index) {
@@ -201,9 +222,27 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
                           ),
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                  if (_userScrolling)
+                    Positioned(
+                      right: 16,
+                      bottom: 16,
+                      child: GButton(
+                        label: '回到当前',
+                        filled: false,
+                        small: true,
+                        onTap: () {
+                          setState(() => _userScrolling = false);
+                          _scrollResumeTimer?.cancel();
+                          _scrollToCurrent(current);
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
@@ -220,9 +259,11 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
 
   void _scrollToCurrent(int index) {
     if (index == _lastLine || !_scrollController.hasClients) return;
+    if (_userScrolling) return; // Don't auto-scroll when user is scrolling
     _lastLine = index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
+      if (_userScrolling) return;
       final target = (index * 58.0 - 70).clamp(
         0.0,
         _scrollController.position.maxScrollExtent,

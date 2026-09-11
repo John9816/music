@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/media_kit_video_controls/media_kit_video_controls.dart'
     as video_controls;
+import 'package:video_player/video_player.dart' as video_player;
 
 import '../../core/models/live_tv.dart';
 import '../../core/player/playback_coordinator.dart';
@@ -14,6 +15,10 @@ import 'live_line_failover.dart';
 import 'live_open_queue.dart';
 
 typedef LiveMediaSessionFactory = LiveMediaSession Function();
+
+LiveMediaSession _createDefaultLiveMediaSession() => Platform.isAndroid
+    ? _AndroidVideoPlayerLiveMediaSession()
+    : _MediaKitLiveMediaSession();
 
 abstract class LiveMediaSession {
   Stream<String> get errors;
@@ -49,7 +54,7 @@ class LivePlayerView extends StatefulWidget {
 
 class _LivePlayerViewState extends State<LivePlayerView> {
   late final LiveMediaSession _media =
-      (widget.mediaSessionFactory ?? _MediaKitLiveMediaSession.new)();
+      (widget.mediaSessionFactory ?? _createDefaultLiveMediaSession)();
   final LiveOpenQueue _openQueue = LiveOpenQueue();
   late final LiveLineFailover _failover =
       LiveLineFailover(widget.channel.lines.map((line) => line.id));
@@ -189,6 +194,11 @@ class _LivePlayerViewState extends State<LivePlayerView> {
         : widget.channel.lines.indexWhere(
             (line) => line.id == _currentLine!.id,
           );
+    final statusLabel = _exhausted
+        ? '线路不可用'
+        : _loading
+            ? '连接中'
+            : '直播中';
     return Scaffold(
       key: const ValueKey('live-player-view'),
       appBar: AppBar(
@@ -202,80 +212,211 @@ class _LivePlayerViewState extends State<LivePlayerView> {
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1080),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: ColoredBox(
-                        color: Colors.black,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (!_exhausted)
-                              _media.buildVideo(
-                                onShowLines: _showLines,
-                                onPlaybackRequested: () =>
-                                    unawaited(_togglePlayback()),
-                              ),
-                            if (_loading)
-                              const Center(child: CircularProgressIndicator()),
-                            if (_exhausted) _UnavailableState(onRetry: _retry),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final landscape = constraints.maxWidth > constraints.maxHeight;
+            final contentWidth = constraints.maxWidth - 32;
+            final maxWidth = contentWidth.clamp(0.0, 1080.0).toDouble();
+            final maxVideoHeight =
+                (constraints.maxHeight - 152).clamp(160.0, double.infinity);
+            final landscapeVideoWidth = maxVideoHeight * 16 / 9;
+            final boundedVideoWidth = landscape
+                ? landscapeVideoWidth < maxWidth
+                    ? landscapeVideoWidth
+                    : maxWidth
+                : maxWidth;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: Text(
-                          currentIndex < 0
-                              ? widget.channel.name
-                              : '线路 ${currentIndex + 1} / '
-                                  '${widget.channel.lines.length}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: boundedVideoWidth,
+                          child: AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: ColoredBox(
+                                color: Colors.black,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (!_exhausted)
+                                      _media.buildVideo(
+                                        onShowLines: _showLines,
+                                        onPlaybackRequested: () =>
+                                            unawaited(_togglePlayback()),
+                                      ),
+                                    if (_loading) const _LiveLoadingOverlay(),
+                                    if (_exhausted)
+                                      _UnavailableState(onRetry: _retry),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      IconButton(
-                        key: const ValueKey('live-fullscreen-button'),
-                        tooltip: '全屏',
-                        onPressed: _media.toggleFullscreen,
-                        icon: const Icon(Icons.fullscreen),
-                      ),
-                      IconButton(
-                        tooltip: _media.isMuted ? '取消静音' : '静音',
-                        onPressed: _toggleMuted,
-                        icon: Icon(
-                          _media.isMuted ? Icons.volume_off : Icons.volume_up,
-                        ),
-                      ),
-                      IconButton.filled(
-                        tooltip: _media.isPlaying ? '暂停' : '播放',
-                        onPressed: _exhausted ? null : _togglePlayback,
-                        icon: Icon(
-                          _media.isPlaying ? Icons.pause : Icons.play_arrow,
+                      const SizedBox(height: 18),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const _LiveStatusDot(),
+                                      const SizedBox(width: 7),
+                                      Flexible(
+                                        child: Text(
+                                          widget.channel.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        statusLabel,
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          widget.channel.groupName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      const Text(' · '),
+                                      Text(
+                                        currentIndex < 0
+                                            ? '暂无可用线路'
+                                            : '线路 ${currentIndex + 1} / '
+                                                '${widget.channel.lines.length}',
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              key: const ValueKey('live-fullscreen-button'),
+                              tooltip: '全屏',
+                              onPressed: _media.toggleFullscreen,
+                              icon: const Icon(Icons.fullscreen),
+                            ),
+                            IconButton(
+                              tooltip: _media.isMuted ? '取消静音' : '静音',
+                              onPressed: _toggleMuted,
+                              icon: Icon(
+                                _media.isMuted
+                                    ? Icons.volume_off
+                                    : Icons.volume_up,
+                              ),
+                            ),
+                            IconButton.filled(
+                              tooltip: _media.isPlaying ? '暂停' : '播放',
+                              onPressed: _exhausted ? null : _togglePlayback,
+                              icon: Icon(
+                                _media.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
+}
+
+class _LiveLoadingOverlay extends StatelessWidget {
+  const _LiveLoadingOverlay();
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+        color: Colors.black.withValues(alpha: 0.42),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '正在连接直播源',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _LiveStatusDot extends StatelessWidget {
+  const _LiveStatusDot();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE45757),
+          shape: BoxShape.circle,
+        ),
+      );
 }
 
 class _UnavailableState extends StatelessWidget {
@@ -416,6 +557,63 @@ class _LiveVideoControlsState extends State<LiveVideoControls> {
                     icon: Icons.route,
                   ),
                 ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        children: [
+                          _ControlButton(
+                            key: const ValueKey(
+                              'live-video-playback-button',
+                            ),
+                            tooltip: widget.isPlaying ? '暂停' : '播放',
+                            onPressed: widget.onTogglePlayback,
+                            icon: widget.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                          ),
+                          _ControlButton(
+                            key: const ValueKey('live-video-mute-button'),
+                            tooltip: widget.isMuted ? '取消静音' : '静音',
+                            onPressed: widget.onToggleMuted,
+                            icon: widget.isMuted
+                                ? Icons.volume_off
+                                : Icons.volume_up,
+                          ),
+                          const Spacer(),
+                          Text(
+                            '直播',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.78),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _ControlButton(
+                            tooltip: '退出全屏',
+                            onPressed: widget.onToggleFullscreen,
+                            icon: Icons.fullscreen_exit,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -450,6 +648,283 @@ class _ControlButton extends StatelessWidget {
       );
 }
 
+class _AndroidVideoPlayerLiveMediaSession implements LiveMediaSession {
+  final StreamController<String> _errors = StreamController<String>.broadcast();
+  final ValueNotifier<video_player.VideoPlayerController?> _controller =
+      ValueNotifier<video_player.VideoPlayerController?>(null);
+  final GlobalKey<_AndroidLiveVideoSurfaceState> _videoKey =
+      GlobalKey<_AndroidLiveVideoSurfaceState>();
+
+  video_player.VideoPlayerController? _activeController;
+  bool _reportedError = false;
+  double _audibleVolume = 1;
+
+  @override
+  Stream<String> get errors => _errors.stream;
+
+  @override
+  bool get isMuted => (_activeController?.value.volume ?? 1) == 0;
+
+  @override
+  bool get isPlaying => _activeController?.value.isPlaying ?? false;
+
+  @override
+  Widget buildVideo({
+    VoidCallback? onShowLines,
+    VoidCallback? onPlaybackRequested,
+  }) =>
+      ValueListenableBuilder<video_player.VideoPlayerController?>(
+        valueListenable: _controller,
+        builder: (context, controller, _) {
+          if (controller == null || !controller.value.isInitialized) {
+            return const SizedBox.expand();
+          }
+          return _AndroidLiveVideoSurface(
+            key: _videoKey,
+            controller: controller,
+            onShowLines: onShowLines ?? () {},
+            onToggleMuted: () => unawaited(setMuted(!isMuted)),
+            onTogglePlayback: onPlaybackRequested ??
+                () => unawaited(isPlaying ? pause() : play()),
+          );
+        },
+      );
+
+  @override
+  Future<void> dispose() async {
+    final controller = _activeController;
+    _activeController = null;
+    _controller.value = null;
+    if (controller != null) {
+      controller.removeListener(_handleControllerValue);
+      await controller.dispose();
+    }
+    _controller.dispose();
+    await _errors.close();
+  }
+
+  @override
+  Future<void> open(Uri uri) async {
+    final previous = _activeController;
+    _activeController = null;
+    _controller.value = null;
+    if (previous != null) {
+      previous.removeListener(_handleControllerValue);
+      await previous.dispose();
+    }
+
+    _reportedError = false;
+    final controller = video_player.VideoPlayerController.networkUrl(
+      uri,
+      viewType: video_player.VideoViewType.platformView,
+      formatHint: uri.path.toLowerCase().endsWith('.m3u8')
+          ? video_player.VideoFormat.hls
+          : null,
+    );
+    _activeController = controller;
+    controller.addListener(_handleControllerValue);
+    _controller.value = controller;
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 12));
+      await controller.play();
+    } catch (_) {
+      if (identical(_activeController, controller)) {
+        _activeController = null;
+        _controller.value = null;
+      }
+      controller.removeListener(_handleControllerValue);
+      await controller.dispose();
+      rethrow;
+    }
+  }
+
+  void _handleControllerValue() {
+    final controller = _activeController;
+    if (controller == null || !controller.value.hasError || _reportedError) {
+      return;
+    }
+    _reportedError = true;
+    if (!_errors.isClosed) {
+      _errors.add(controller.value.errorDescription ?? '直播播放失败');
+    }
+  }
+
+  @override
+  Future<void> pause() async {
+    final controller = _activeController;
+    if (controller != null) await controller.pause();
+  }
+
+  @override
+  Future<void> play() async {
+    final controller = _activeController;
+    if (controller != null) await controller.play();
+  }
+
+  @override
+  Future<void> setMuted(bool value) async {
+    final controller = _activeController;
+    if (controller == null) return;
+    if (value) {
+      if (controller.value.volume > 0) {
+        _audibleVolume = controller.value.volume;
+      }
+      await controller.setVolume(0);
+    } else {
+      await controller.setVolume(_audibleVolume <= 0 ? 1 : _audibleVolume);
+    }
+  }
+
+  @override
+  Future<void> toggleFullscreen() async {
+    await _videoKey.currentState?.toggleFullscreen();
+  }
+}
+
+class _AndroidLiveVideoSurface extends StatefulWidget {
+  const _AndroidLiveVideoSurface({
+    super.key,
+    required this.controller,
+    required this.onShowLines,
+    required this.onToggleMuted,
+    required this.onTogglePlayback,
+  });
+
+  final video_player.VideoPlayerController controller;
+  final VoidCallback onShowLines;
+  final VoidCallback onToggleMuted;
+  final VoidCallback onTogglePlayback;
+
+  @override
+  State<_AndroidLiveVideoSurface> createState() =>
+      _AndroidLiveVideoSurfaceState();
+}
+
+class _AndroidLiveVideoSurfaceState extends State<_AndroidLiveVideoSurface> {
+  Future<void> toggleFullscreen() async {
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _AndroidFullscreenLiveVideo(
+          controller: widget.controller,
+          onShowLines: widget.onShowLines,
+          onToggleMuted: widget.onToggleMuted,
+          onTogglePlayback: widget.onTogglePlayback,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: widget.controller,
+        builder: (context, _) => Stack(
+          fit: StackFit.expand,
+          children: [
+            _AndroidVideoFrame(controller: widget.controller),
+            LiveVideoControls(
+              fullscreen: false,
+              isPlaying: widget.controller.value.isPlaying,
+              isMuted: widget.controller.value.volume == 0,
+              onShowLines: widget.onShowLines,
+              onToggleMuted: widget.onToggleMuted,
+              onTogglePlayback: widget.onTogglePlayback,
+              onToggleFullscreen: () => unawaited(toggleFullscreen()),
+            ),
+          ],
+        ),
+      );
+}
+
+class _AndroidFullscreenLiveVideo extends StatefulWidget {
+  const _AndroidFullscreenLiveVideo({
+    required this.controller,
+    required this.onShowLines,
+    required this.onToggleMuted,
+    required this.onTogglePlayback,
+  });
+
+  final video_player.VideoPlayerController controller;
+  final VoidCallback onShowLines;
+  final VoidCallback onToggleMuted;
+  final VoidCallback onTogglePlayback;
+
+  @override
+  State<_AndroidFullscreenLiveVideo> createState() =>
+      _AndroidFullscreenLiveVideoState();
+}
+
+class _AndroidFullscreenLiveVideoState
+    extends State<_AndroidFullscreenLiveVideo> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    super.dispose();
+  }
+
+  void _showLines() {
+    Navigator.of(context).pop();
+    widget.onShowLines();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        body: AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) => Stack(
+            fit: StackFit.expand,
+            children: [
+              _AndroidVideoFrame(controller: widget.controller),
+              LiveVideoControls(
+                fullscreen: true,
+                isPlaying: widget.controller.value.isPlaying,
+                isMuted: widget.controller.value.volume == 0,
+                onShowLines: _showLines,
+                onToggleMuted: widget.onToggleMuted,
+                onTogglePlayback: widget.onTogglePlayback,
+                onToggleFullscreen: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _AndroidVideoFrame extends StatelessWidget {
+  const _AndroidVideoFrame({required this.controller});
+
+  final video_player.VideoPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final aspectRatio = controller.value.aspectRatio;
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: aspectRatio > 0 ? aspectRatio : 16 / 9,
+          child: video_player.VideoPlayer(controller),
+        ),
+      ),
+    );
+  }
+}
+
 class _MediaKitLiveMediaSession implements LiveMediaSession {
   static Player? _retainedMacOSPlayer;
   static VideoController? _retainedMacOSVideoController;
@@ -458,7 +933,7 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
     if (Platform.isMacOS) {
       final player = _retainedMacOSPlayer ??= _createPlayer();
       final controller =
-          _retainedMacOSVideoController ??= VideoController(player);
+          _retainedMacOSVideoController ??= _createVideoController(player);
       return _MediaKitLiveMediaSession._(
         player,
         controller,
@@ -468,7 +943,7 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
     final player = _createPlayer();
     return _MediaKitLiveMediaSession._(
       player,
-      VideoController(player),
+      _createVideoController(player),
       disposePlayer: true,
     );
   }
@@ -483,6 +958,20 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
         // Finish each MPV command before another live line can be loaded.
         configuration: const PlayerConfiguration(async: false),
       );
+
+  static VideoController _createVideoController(Player player) {
+    // Render Android video into a native Surface. The default MPV GPU texture
+    // path can fail with EGL_BAD_ATTRIBUTE on emulators and some vendor ROMs,
+    // leaving live streams audible but black.
+    final configuration = Platform.isAndroid
+        ? const VideoControllerConfiguration(
+            vo: 'mediacodec_embed',
+            hwdec: 'mediacodec',
+            androidAttachSurfaceAfterVideoParameters: false,
+          )
+        : const VideoControllerConfiguration();
+    return VideoController(player, configuration: configuration);
+  }
 
   final Player _player;
   final VideoController _videoController;
@@ -542,7 +1031,16 @@ class _MediaKitLiveMediaSession implements LiveMediaSession {
   Future<void> dispose() => _disposePlayer ? _player.dispose() : _player.stop();
 
   @override
-  Future<void> open(Uri uri) => _player.open(Media(uri.toString()), play: true);
+  Future<void> open(Uri uri) async {
+    await _player.open(Media(uri.toString()), play: true);
+    try {
+      await _videoController.waitUntilFirstFrameRendered.timeout(
+        const Duration(seconds: 8),
+      );
+    } on TimeoutException {
+      throw StateError('直播画面加载超时');
+    }
+  }
 
   @override
   Future<void> pause() => _player.pause();

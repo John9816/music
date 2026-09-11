@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:duck_music/core/api/music_api.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
@@ -94,6 +96,171 @@ void main() {
     expect(find.byTooltip('下一组专辑'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('mobile featured music leaves albums visible in the first screen',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    await _pumpDiscover(
+      tester,
+      api,
+      size: const Size(390, 720),
+      platform: TargetPlatform.android,
+    );
+
+    expect(tester.getTopLeft(find.text('最新专辑')).dy, lessThan(320));
+    expect(find.byTooltip('播放每日推荐'), findsOneWidget);
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('refresh keeps content interactive and preserves scroll position',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    api.daily.addAll(List.generate(20, _testSong));
+    await _pumpDiscover(
+      tester,
+      api,
+      size: const Size(390, 720),
+      platform: TargetPlatform.android,
+    );
+    final scrollable = find
+        .byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down,
+        )
+        .first;
+    final position = tester.state<ScrollableState>(scrollable).position;
+    position.jumpTo(150);
+    await tester.pumpAndSettle();
+    final scrollOffset = position.pixels;
+    final albumTop = tester.getTopLeft(find.text('测试新专辑')).dy;
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+
+    final refresh = tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh();
+    await tester.pump();
+
+    expect(find.byType(GSkeleton), findsNothing);
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+    expect(position.pixels, scrollOffset);
+    expect(tester.getTopLeft(find.text('测试新专辑')).dy, albumTop);
+
+    await tester.tap(find.text('测试新专辑'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaylistDetailView), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+
+    daily.complete(api.daily);
+    albums.complete(api.albums);
+    await refresh;
+    await tester.pumpAndSettle();
+
+    expect(position.pixels, scrollOffset);
+    expect(api.dailyRequests, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed refresh retains music and offers a working retry',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    await _pumpDiscover(tester, api);
+    final daily = Completer<List<Song>>();
+    api.loadDaily = () => daily.future;
+    final errors = <Object>[];
+    final refresh = tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh();
+    final handledRefresh = refresh.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) => errors.add(error),
+    );
+    await tester.pump();
+
+    daily.completeError(StateError('offline'));
+    await handledRefresh;
+    await tester.pumpAndSettle();
+
+    expect(errors, isEmpty);
+    expect(find.text('测试新专辑'), findsOneWidget);
+    expect(find.text('刷新失败，请检查网络后重试'), findsOneWidget);
+    expect(find.widgetWithText(SnackBarAction, '重试'), findsOneWidget);
+
+    api.loadDaily = null;
+    await tester.tap(find.widgetWithText(SnackBarAction, '重试'));
+    await tester.pumpAndSettle();
+
+    expect(api.dailyRequests, 3);
+    expect(find.text('测试新专辑'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('first load reserves the same featured and album layout',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final daily = Completer<List<Song>>();
+    api.loadDaily = () => daily.future;
+    await _pumpDiscover(
+      tester,
+      api,
+      size: const Size(390, 720),
+      platform: TargetPlatform.android,
+      settle: false,
+    );
+
+    expect(find.byType(GSkeleton), findsWidgets);
+    expect(find.text('最新专辑'), findsOneWidget);
+    final loadingAlbumTop = tester.getTopLeft(find.text('最新专辑')).dy;
+
+    daily.complete(api.daily);
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(find.text('最新专辑')).dy, loadingAlbumTop);
+    expect(find.byType(GSkeleton), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('short content still responds to pull to refresh',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    api.daily.clear();
+    api.albums.clear();
+    await _pumpDiscover(
+      tester,
+      api,
+      size: const Size(390, 1200),
+      platform: TargetPlatform.android,
+    );
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 350));
+    await tester.pumpAndSettle();
+
+    expect(api.dailyRequests, 2);
+    expect(api.albumRequests, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('small Android screen supports large text without overflowing',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    await _pumpDiscover(
+      tester,
+      api,
+      size: const Size(320, 740),
+      platform: TargetPlatform.android,
+      textScale: 2,
+    );
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -360));
+    await tester.pumpAndSettle();
+
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+  });
 }
 
 Future<void> _pumpDiscover(
@@ -101,6 +268,8 @@ Future<void> _pumpDiscover(
   _FakeDiscoverMusicApi api, {
   Size size = const Size(1000, 1000),
   TargetPlatform platform = TargetPlatform.macOS,
+  double textScale = 1,
+  bool settle = true,
 }) async {
   SharedPreferences.setMockInitialValues(const {});
   final settings = SettingsController();
@@ -124,15 +293,25 @@ Future<void> _pumpDiscover(
       ],
       child: MaterialApp(
         theme: AppTheme.byId('light').data.copyWith(platform: platform),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: child!,
+        ),
         home: DiscoverView(api: api),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
 }
 
 class _FakeDiscoverMusicApi extends MusicApi {
   final albumDetailRequests = <(String, String)>[];
+  Future<List<Song>> Function()? loadDaily;
+  Future<List<Album>> Function()? loadAlbums;
+  int dailyRequests = 0;
+  int albumRequests = 0;
 
   final List<Song> daily = [
     Song(
@@ -145,28 +324,32 @@ class _FakeDiscoverMusicApi extends MusicApi {
     ),
   ];
 
-  final albums = const [
-    Album(
+  final albums = [
+    const Album(
       id: 42,
       sourceId: '0035Y3b01o1BsG',
       name: '测试新专辑',
     ),
-    Album(id: 43, name: '测试新专辑 2'),
-    Album(id: 44, name: '测试新专辑 3'),
-    Album(id: 45, name: '测试新专辑 4'),
-    Album(id: 46, name: '测试新专辑 5'),
-    Album(id: 47, name: '测试新专辑 6'),
-    Album(id: 48, name: '测试新专辑 7'),
-    Album(id: 49, name: '测试新专辑 8'),
+    const Album(id: 43, name: '测试新专辑 2'),
+    const Album(id: 44, name: '测试新专辑 3'),
+    const Album(id: 45, name: '测试新专辑 4'),
+    const Album(id: 46, name: '测试新专辑 5'),
+    const Album(id: 47, name: '测试新专辑 6'),
+    const Album(id: 48, name: '测试新专辑 7'),
+    const Album(id: 49, name: '测试新专辑 8'),
   ];
 
   @override
   Future<List<Song>> getDailyRecommend({String source = 'netease'}) async {
+    dailyRequests++;
+    if (loadDaily != null) return loadDaily!();
     return daily;
   }
 
   @override
   Future<List<Album>> getNewestAlbums({String source = 'netease'}) async {
+    albumRequests++;
+    if (loadAlbums != null) return loadAlbums!();
     return albums;
   }
 
@@ -181,3 +364,12 @@ class _FakeDiscoverMusicApi extends MusicApi {
     return daily;
   }
 }
+
+Song _testSong(int index) => Song(
+      id: 'daily-${index + 2}',
+      name: '推荐歌曲 ${index + 2}',
+      source: 'qq',
+      artists: const [Artist(id: 7, name: '每日歌手')],
+      album: const Album(id: 8, name: '每日专辑'),
+      durationMs: 180000,
+    );

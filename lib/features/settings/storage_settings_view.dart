@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../../core/config/app_config.dart';
+import '../../core/config/audio_quality_policy.dart';
 import '../../core/services/cache_service.dart';
 import '../../core/services/song_download_service.dart';
 import '../../core/settings/settings_controller.dart';
@@ -82,6 +83,7 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
                   value: settings.automaticAudioCache,
                   onChanged: settings.setAutomaticAudioCache,
                 ),
+                onToggle: settings.setAutomaticAudioCache,
               ),
               SettingsRow(
                 icon: Icons.inventory_rounded,
@@ -185,13 +187,13 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
       title: '歌曲缓存上限',
       current: settings.audioCacheLimitBytes,
       options: const [
-        (value: 0, label: '自动管理'),
-        (value: 512 * mb, label: '512 MB'),
-        (value: 1024 * mb, label: '1 GB'),
-        (value: 2 * 1024 * mb, label: '2 GB'),
-        (value: 5 * 1024 * mb, label: '5 GB'),
-        (value: 10 * 1024 * mb, label: '10 GB'),
-        (value: 20 * 1024 * mb, label: '20 GB'),
+        (value: 0, label: '自动管理', detail: null),
+        (value: 512 * mb, label: '512 MB', detail: null),
+        (value: 1024 * mb, label: '1 GB', detail: null),
+        (value: 2 * 1024 * mb, label: '2 GB', detail: null),
+        (value: 5 * 1024 * mb, label: '5 GB', detail: null),
+        (value: 10 * 1024 * mb, label: '10 GB', detail: null),
+        (value: 20 * 1024 * mb, label: '20 GB', detail: null),
       ],
     );
     if (value == null) return;
@@ -206,9 +208,9 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
       title: '歌曲缓存有效期',
       current: settings.audioCacheValidityDays,
       options: const [
-        (value: 7, label: '7 天'),
-        (value: 30, label: '30 天'),
-        (value: 90, label: '90 天'),
+        (value: 7, label: '7 天', detail: null),
+        (value: 30, label: '30 天', detail: null),
+        (value: 90, label: '90 天', detail: null),
       ],
     );
     if (value == null) return;
@@ -223,10 +225,9 @@ class _StorageSettingsViewState extends State<StorageSettingsView> {
       title: '下载音质',
       current: settings.downloadQuality,
       options: [
-        const (value: 'follow', label: '跟随播放音质'),
-        ...AppConfig.qualityLabels.entries
-            .where((entry) => entry.key != 'auto')
-            .map((entry) => (value: entry.key, label: entry.value)),
+        const (value: 'follow', label: '跟随播放音质', detail: null),
+        ...qualityOptionsForSource(settings.source)
+            .map((option) => (value: option.id, label: option.label, detail: option.detail)),
       ],
     );
     if (value != null) await settings.setDownloadQuality(value);

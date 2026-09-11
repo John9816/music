@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../core/models/song.dart';
+import '../core/player/player_controller.dart';
 import '../features/search/artist_names_link.dart';
 import 'async_cover.dart';
 import 'glass.dart';
@@ -24,30 +26,56 @@ class SongRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 检查是否是当前播放的歌曲
+    final isPlaying = context.select<PlayerController, bool>(
+      (p) => p.current?.id == song.id && p.current?.source == song.source,
+    );
+
     return GListTile(
       onTap: onTap,
+      selected: isPlaying,
       leading: leading ??
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
+          Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: AsyncCover(url: song.album.picUrl, size: 48, radius: 10),
+                child: AsyncCover(url: song.album.picUrl, size: 48, radius: 10),
+              ),
+              // 正在播放时显示音波图标覆盖
+              if (isPlaying)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.black.withValues(alpha: 0.6),
+                    ),
+                    child: Icon(
+                      Icons.graphic_eq_rounded,
+                      color: scheme.primary,
+                      size: 24,
+                    ),
+                  ),
+                ),
+            ],
           ),
       title: Text(
         song.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontSize: 14.5,
+        style: TextStyle(
+          fontSize: TypeScale.bodyLarge,
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
+          color: isPlaying ? scheme.primary : null,
         ),
       ),
       subtitle: ArtistNamesLink(
@@ -55,17 +83,18 @@ class SongRow extends StatelessWidget {
         source: song.source,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
+        style: const TextStyle(fontSize: TypeScale.small),
       ),
       trailing: trailing ??
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (song.durationMs > 0)
+              if (song.durationMs > 0 &&
+                  MediaQuery.sizeOf(context).width >= GBreakpoints.compact)
                 Text(
                   _formatDuration(song.durationMs),
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: TypeScale.caption,
                     color: scheme.outline,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),

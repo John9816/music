@@ -9,6 +9,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'app.dart';
 import 'core/player/system_media_controller.dart';
+import 'core/utils/performance_monitor.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,20 +51,35 @@ Future<void> main() async {
     } catch (_) {}
   }
 
-  // Android / iOS：后台播放 + 系统媒体通知（锁屏控制）
+  // Android / iOS：沉浸式边到边；桌面端不适用。
   if (Platform.isAndroid || Platform.isIOS) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  // 系统媒体卡（锁屏 / 控制中心 / 媒体键）：
+  // Android 走 audio_service，iOS 与 macOS 走 MPNowPlayingInfoCenter 通道。
+  // Windows 尚未实现 SMTC，只能依赖 App 内注册的全局快捷键。
+  if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
     try {
       await SystemMediaController.initialize();
     } catch (error, stack) {
       debugPrint('=== 系统媒体卡初始化失败 ===\n$error\n$stack');
     }
+  }
+
+  // 音频会话仅移动端需要配置。
+  if (Platform.isAndroid || Platform.isIOS) {
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
     } catch (error, stack) {
       debugPrint('=== 音频会话初始化失败 ===\n$error\n$stack');
     }
+  }
+
+  // 性能监控（仅调试模式）
+  if (kDebugMode) {
+    PerformanceMonitor.enable();
   }
 
   runApp(const DuckMusicApp());

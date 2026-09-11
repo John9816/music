@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -70,12 +72,14 @@ class GPageHeader extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.padding,
+    this.actions,
   });
 
   final String title;
   final String? subtitle;
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
+  final List<Widget>? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -108,13 +112,25 @@ class GPageHeader extends StatelessWidget {
               ],
             ],
           );
-          if (stackActions) {
+          final effectiveTrailing = actions != null && actions!.isNotEmpty
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (int i = 0; i < actions!.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      actions![i],
+                    ],
+                  ],
+                )
+              : trailing;
+          if (stackActions && effectiveTrailing != null) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 heading,
                 const SizedBox(height: 12),
-                Align(alignment: Alignment.centerRight, child: trailing!),
+                Align(
+                    alignment: Alignment.centerRight, child: effectiveTrailing),
               ],
             );
           }
@@ -122,9 +138,9 @@ class GPageHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(child: heading),
-              if (trailing != null) ...[
+              if (effectiveTrailing != null) ...[
                 const SizedBox(width: 16),
-                trailing!,
+                effectiveTrailing,
               ],
             ],
           );
@@ -182,6 +198,24 @@ class _GPressScaleState extends State<GPressScale> {
   bool _hovered = false;
 
   @override
+  void didUpdateWidget(GPressScale oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.disabled || widget.onTap == null) {
+      _pressed = false;
+      _hovered = false;
+    }
+  }
+
+  /// 统一的激活入口：点按与键盘 Enter/Space 都经过这里，
+  /// 保证整个设计系统的触觉反馈一致（按下后取消不会触发）。
+  void _activate() {
+    final onTap = widget.onTap;
+    if (widget.disabled || onTap == null) return;
+    PlatformMotion.selectionFeedback(context);
+    onTap();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final enabled = !widget.disabled && widget.onTap != null;
     final ios = PlatformMotion.isIOS(context);
@@ -204,21 +238,27 @@ class _GPressScaleState extends State<GPressScale> {
           }
           if (event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space) {
-            widget.onTap?.call();
+            _activate();
             return KeyEventResult.handled;
           }
           return KeyEventResult.ignored;
         },
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: enabled ? widget.onTap : null,
+          onTap: enabled ? _activate : null,
           onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
           onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
           onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
           child: AnimatedContainer(
             duration: duration,
-            decoration: BoxDecoration(
+            foregroundDecoration: BoxDecoration(
               borderRadius: BorderRadius.circular(RadiusToken.sm),
+              color: _hovered
+                  ? Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.055)
+                  : null,
               border: _focused
                   ? Border.all(
                       color: Theme.of(context).colorScheme.primary,
@@ -226,15 +266,6 @@ class _GPressScaleState extends State<GPressScale> {
                     )
                   : null,
             ),
-            foregroundDecoration: _hovered
-                ? BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.055),
-                    borderRadius: BorderRadius.circular(RadiusToken.sm),
-                  )
-                : null,
             child: AnimatedOpacity(
               opacity: ios && _pressed ? 0.72 : 1,
               duration: duration,
@@ -289,15 +320,23 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     final seamlessMobile =
         MediaQuery.sizeOf(context).width < GBreakpoints.sidebar;
     final windowControlsInset = macOSWindowControlsInset(context);
-    final titleContent = DefaultTextStyle(
-      style: TextStyle(
-        fontSize: 17,
-        fontWeight: TypeScale.semibold,
-        color: scheme.onSurface,
+    // preferredSize 无法感知 context，顶栏高度必须固定为 56。
+    // 因此在栏内限制字号放大倍数，让大字号仍能放大但不撑破固定高度。
+    final titleScaler = MediaQuery.textScalerOf(context).clamp(
+      minScaleFactor: 1.0,
+      maxScaleFactor: 1.3,
+    );
+    final titleContent = MediaQuery.withNoTextScaling(
+      child: DefaultTextStyle(
+        style: TextStyle(
+          fontSize: titleScaler.scale(TypeScale.subhead),
+          fontWeight: TypeScale.semibold,
+          color: scheme.onSurface,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        child: titleWidget ?? Text(title ?? ''),
       ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      child: titleWidget ?? Text(title ?? ''),
     );
     final toolbar = SizedBox(
       height: 56,
@@ -456,39 +495,50 @@ class SectionHeader extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 26, 18, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: TypeScale.section,
-                fontWeight: TypeScale.bold,
-                letterSpacing: 0,
-                height: 1.1,
-              ),
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(width: 10),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                subtitle!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-          const Spacer(),
-          if (action != null) action!,
-        ],
-      ),
+      child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: TypeScale.section,
+                            fontWeight: TypeScale.bold,
+                            letterSpacing: 0,
+                            height: 1.1,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            subtitle!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: TypeScale.small,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (action != null) ...[
+                    const SizedBox(width: 12),
+                    ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
+                      child: action!,
+                    ),
+                  ],
+                ],
+              )),
     );
   }
 }
@@ -518,56 +568,74 @@ class GButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = onTap != null && !loading;
-    final Widget child;
-    if (loading) {
-      child = SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: filled ? scheme.onPrimary : scheme.primary,
+    final foreground = filled ? scheme.onPrimary : scheme.primary;
+    // Keep the label in layout while loading so surrounding controls do not move.
+    final child = Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(
+          opacity: loading ? 0 : 1,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon!,
+                  size: small ? 15 : 18,
+                  color: filled ? scheme.onPrimary : scheme.primary,
+                ),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                  child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: small ? TypeScale.body : TypeScale.bodyLarge,
+                  fontWeight: TypeScale.semibold,
+                  color: filled ? scheme.onPrimary : scheme.primary,
+                ),
+              )),
+            ],
+          ),
         ),
-      );
-    } else {
-      child = Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (icon != null) ...[
-            Icon(
-              icon!,
-              size: small ? 15 : 18,
-              color: filled ? scheme.onPrimary : scheme.primary,
-            ),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: small ? 13 : 14,
-              fontWeight: TypeScale.semibold,
-              color: filled ? scheme.onPrimary : scheme.primary,
+        if (loading)
+          Positioned.fill(
+            child: Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: foreground),
+              ),
             ),
           ),
-        ],
-      );
-    }
+      ],
+    );
     return Semantics(
       button: true,
       enabled: enabled,
       label: label,
+      value: loading ? '正在加载' : null,
+      liveRegion: loading,
+      onTap: enabled
+          ? () {
+              PlatformMotion.selectionFeedback(context);
+              onTap!();
+            }
+          : null,
       child: ExcludeSemantics(
         child: GPressScale(
           onTap: enabled ? onTap : null,
           disabled: !enabled,
           child: AnimatedContainer(
-            duration: Motion.fast,
+            duration: PlatformMotion.duration(context, Motion.fast),
             width: expand ? double.infinity : null,
             constraints: BoxConstraints(
               minHeight: switch (Theme.of(context).platform) {
-                TargetPlatform.android || TargetPlatform.iOS => 44,
+                TargetPlatform.android => 48,
+                TargetPlatform.iOS => 44,
                 _ => 36,
               },
             ),
@@ -589,7 +657,7 @@ class GButton extends StatelessWidget {
                     ]
                   : null,
             ),
-            child: Center(child: child),
+            child: Center(widthFactor: 1, heightFactor: 1, child: child),
           ),
         ),
       ),
@@ -627,7 +695,8 @@ class GIconButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final platform = Theme.of(context).platform;
     final minimumTargetSize = switch (platform) {
-      TargetPlatform.android || TargetPlatform.iOS => 44.0,
+      TargetPlatform.android => 48.0,
+      TargetPlatform.iOS => 44.0,
       _ => 36.0,
     };
     final visualSize = size + padding * 2;
@@ -664,6 +733,12 @@ class GIconButton extends StatelessWidget {
       button: true,
       enabled: enabled,
       label: tooltip,
+      onTap: enabled
+          ? () {
+              PlatformMotion.selectionFeedback(context);
+              onTap!();
+            }
+          : null,
       child: tooltip == null ? button : ExcludeSemantics(child: button),
     );
     return tooltip == null
@@ -700,7 +775,7 @@ class GListTile extends StatelessWidget {
     return GPressScale(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: Motion.fast,
+        duration: PlatformMotion.duration(context, Motion.fast),
         constraints: BoxConstraints(minHeight: ios ? 56 : 0),
         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         padding: padding,
@@ -720,7 +795,7 @@ class GListTile extends StatelessWidget {
                   if (title != null)
                     DefaultTextStyle(
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: TypeScale.bodyLarge,
                         fontWeight:
                             selected ? TypeScale.semibold : TypeScale.medium,
                         color: selected ? scheme.primary : scheme.onSurface,
@@ -733,7 +808,7 @@ class GListTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     DefaultTextStyle(
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: TypeScale.small,
                         color: scheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
@@ -759,6 +834,7 @@ class GProgressBar extends StatefulWidget {
     required this.position,
     required this.duration,
     required this.onSeek,
+    this.bufferedPosition,
     this.height = 4,
     this.showThumb = true,
     this.activeColor,
@@ -767,6 +843,9 @@ class GProgressBar extends StatefulWidget {
   final Duration position;
   final Duration duration;
   final ValueChanged<Duration> onSeek;
+
+  /// 已缓冲进度，绘制为轨道上的二级进度。为空则不显示。
+  final Duration? bufferedPosition;
   final double height;
   final bool showThumb;
   final Color? activeColor;
@@ -792,6 +871,14 @@ class _GProgressBarState extends State<GProgressBar> {
     final total = widget.duration.inMilliseconds.toDouble();
     final fraction = playbackProgressFraction(widget.position, widget.duration);
     final displayedFraction = _dragFraction ?? fraction;
+    final buffered = widget.bufferedPosition == null
+        ? 0.0
+        : playbackProgressFraction(widget.bufferedPosition!, widget.duration);
+    // 拖动中加粗轨道、放大滑块，给出「已抓住」的手感。
+    final dragging = _dragFraction != null;
+    final motion = PlatformMotion.duration(context, Motion.fast);
+    final trackHeight = dragging ? widget.height + 2 : widget.height;
+    final thumbSize = dragging ? 15.0 : 11.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -803,6 +890,7 @@ class _GProgressBarState extends State<GProgressBar> {
         void commitAt(double dx) {
           final ratio = fractionAt(dx);
           if (ratio == null) return;
+          PlatformMotion.selectionFeedback(context);
           widget.onSeek(Duration(milliseconds: (total * ratio).round()));
         }
 
@@ -815,6 +903,7 @@ class _GProgressBarState extends State<GProgressBar> {
         void commitDrag() {
           final ratio = _dragFraction;
           if (ratio == null || total <= 0) return;
+          PlatformMotion.selectionFeedback(context);
           widget.onSeek(Duration(milliseconds: (total * ratio).round()));
           setState(() => _dragFraction = null);
         }
@@ -837,46 +926,65 @@ class _GProgressBarState extends State<GProgressBar> {
           child: SizedBox(
             height: 22,
             child: Center(
-              child: SizedBox(
-                height: widget.height,
+              child: AnimatedContainer(
+                duration: motion,
+                curve: Motion.standard,
+                height: trackHeight,
                 child: Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.centerLeft,
                   children: [
                     // 轨道
                     Container(
-                      height: widget.height,
+                      height: trackHeight,
                       decoration: BoxDecoration(
                         color: scheme.surfaceContainerHighest
                             .withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(widget.height / 2),
+                        borderRadius: BorderRadius.circular(trackHeight / 2),
                       ),
                     ),
+                    // 已缓冲（二级进度）
+                    if (buffered > displayedFraction)
+                      FractionallySizedBox(
+                        widthFactor: buffered,
+                        heightFactor: 1,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: scheme.onSurface.withValues(alpha: 0.22),
+                            borderRadius:
+                                BorderRadius.circular(trackHeight / 2),
+                          ),
+                        ),
+                      ),
                     // 已播放
                     FractionallySizedBox(
                       widthFactor: displayedFraction,
+                      heightFactor: 1,
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: AppBrand.gradient(active),
-                          borderRadius:
-                              BorderRadius.circular(widget.height / 2),
+                          borderRadius: BorderRadius.circular(trackHeight / 2),
                         ),
                       ),
                     ),
                     if (widget.showThumb)
                       Positioned(
-                        left: (constraints.maxWidth * displayedFraction) - 5,
-                        top: (widget.height - 11) / 2,
-                        child: Container(
-                          width: 11,
-                          height: 11,
+                        left: (constraints.maxWidth * displayedFraction) -
+                            thumbSize / 2,
+                        top: (trackHeight - thumbSize) / 2,
+                        child: AnimatedContainer(
+                          duration: motion,
+                          curve: Motion.standard,
+                          width: thumbSize,
+                          height: thumbSize,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: scheme.onPrimary,
                             boxShadow: [
                               BoxShadow(
-                                color: scheme.shadow.withValues(alpha: 0.28),
-                                blurRadius: 4,
+                                color: scheme.shadow
+                                    .withValues(alpha: dragging ? 0.36 : 0.28),
+                                blurRadius: dragging ? 6 : 4,
                                 offset: const Offset(0, 1),
                               ),
                             ],
@@ -915,7 +1023,7 @@ class GChoiceChip extends StatelessWidget {
     return GPressScale(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: Motion.fast,
+        duration: PlatformMotion.duration(context, Motion.fast),
         margin: const EdgeInsets.only(right: 8),
         padding: EdgeInsets.symmetric(
           horizontal: mini ? 12 : 15,
@@ -932,7 +1040,7 @@ class GChoiceChip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: mini ? 12 : 13,
+            fontSize: mini ? TypeScale.small : TypeScale.body,
             fontWeight: selected ? TypeScale.semibold : TypeScale.medium,
             color: selected ? scheme.onPrimary : scheme.onSurface,
           ),
@@ -958,6 +1066,7 @@ class GSegmented extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final duration = PlatformMotion.duration(context, Motion.normal);
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -965,45 +1074,113 @@ class GSegmented extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: glassHairline(context)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < items.length; i++)
-            GPressScale(
-              onTap: () => onSelected(i),
-              child: AnimatedContainer(
-                duration: Motion.fast,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(9),
-                  color: i == selected
-                      ? scheme.surfaceContainerHigh
-                      : Colors.transparent,
-                  boxShadow: i == selected
-                      ? [
+      // 选中滑块在轨道上滑动（对齐 Apple 分段控件），而不是逐项跳变底色。
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final count = items.length;
+          if (count == 0) return const SizedBox.shrink();
+          final hasBoundedWidth = constraints.hasBoundedWidth &&
+              constraints.maxWidth.isFinite &&
+              constraints.maxWidth > 0;
+
+          final labels = <Widget>[
+            for (var i = 0; i < count; i++)
+              _GSegmentedLabel(
+                label: items[i],
+                selected: i == selected,
+                duration: duration,
+                onTap: () => onSelected(i),
+                expand: hasBoundedWidth,
+              ),
+          ];
+
+          // 宽度不确定时（如被 Row 包裹）退回无滑块的紧凑排列，
+          // 避免用 FractionallySizedBox 触发无界宽度断言。
+          if (!hasBoundedWidth) {
+            return Row(mainAxisSize: MainAxisSize.min, children: labels);
+          }
+
+          final index = selected.clamp(0, count - 1);
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: AnimatedAlign(
+                  duration: duration,
+                  curve: Motion.standard,
+                  // -1 → 最左，1 → 最右；单项时居中。
+                  alignment: Alignment(
+                    count == 1 ? 0 : (index / (count - 1)) * 2 - 1,
+                    0,
+                  ),
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / count,
+                    // 必须显式撑满高度，否则 Align 下的子级高度会塌成 0。
+                    heightFactor: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(9),
+                        color: scheme.surfaceContainerHigh,
+                        boxShadow: [
                           BoxShadow(
                             color: scheme.shadow.withValues(alpha: 0.16),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  items[i],
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight:
-                        i == selected ? TypeScale.semibold : TypeScale.medium,
-                    color: i == selected
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+              Row(
+                children: [for (final label in labels) Expanded(child: label)],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 分段控件的单个标签。滑块由父级统一绘制，这里只负责文字与点击。
+class _GSegmentedLabel extends StatelessWidget {
+  const _GSegmentedLabel({
+    required this.label,
+    required this.selected,
+    required this.duration,
+    required this.onTap,
+    required this.expand,
+  });
+
+  final String label;
+  final bool selected;
+  final Duration duration;
+  final VoidCallback onTap;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GPressScale(
+      onTap: onTap,
+      child: AnimatedDefaultTextStyle(
+        duration: duration,
+        curve: Motion.standard,
+        style: TextStyle(
+          fontSize: TypeScale.body,
+          fontWeight: selected ? TypeScale.semibold : TypeScale.medium,
+          color: selected ? scheme.primary : scheme.onSurfaceVariant,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ),
     );
   }
@@ -1034,6 +1211,355 @@ class GLoading extends StatelessWidget {
   }
 }
 
+/// 骨架屏占位块：内容加载期间代替转圈，保持版式稳定、感知更快。
+/// 开启「减弱动态效果」时退化为静态色块，不做流光。
+class GSkeleton extends StatefulWidget {
+  const GSkeleton({
+    super.key,
+    this.width,
+    this.height = 14,
+    this.radius = RadiusToken.sm,
+    this.shape = BoxShape.rectangle,
+  });
+
+  /// 圆形骨架（头像等），尺寸取 [height]。
+  const GSkeleton.circle({super.key, required double size})
+      : width = size,
+        height = size,
+        radius = 0,
+        shape = BoxShape.circle;
+
+  final double? width;
+  final double height;
+  final double radius;
+  final BoxShape shape;
+
+  @override
+  State<GSkeleton> createState() => _GSkeletonState();
+}
+
+class _GSkeletonState extends State<GSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 无障碍设置变化时同步启停，避免在减弱动态效果下空转。
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _shimmer.stop();
+    } else if (!_shimmer.isAnimating) {
+      _shimmer.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = glassFill(context, alpha: 0.07);
+    final highlight = glassFill(context, alpha: 0.13);
+    final borderRadius = widget.shape == BoxShape.circle
+        ? null
+        : BorderRadius.circular(widget.radius);
+
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: base,
+          shape: widget.shape,
+          borderRadius: borderRadius,
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: AnimatedBuilder(
+        animation: _shimmer,
+        builder: (context, _) {
+          // 流光从左到右扫过，两端留白让循环看起来连续。
+          final t = _shimmer.value * 2 - 1;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              shape: widget.shape,
+              borderRadius: borderRadius,
+              gradient: LinearGradient(
+                begin: Alignment(t - 1, 0),
+                end: Alignment(t + 1, 0),
+                colors: [base, highlight, base],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 列表骨架屏：封面方块 + 两行文字，形状对齐 [GListTile] / SongRow。
+class GSkeletonList extends StatelessWidget {
+  const GSkeletonList({
+    super.key,
+    this.itemCount = 6,
+    this.leadingSize = 48,
+    this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+  });
+
+  final int itemCount;
+  final double leadingSize;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < itemCount; i++)
+          Padding(
+            padding: padding,
+            child: Row(
+              children: [
+                GSkeleton(
+                  width: leadingSize,
+                  height: leadingSize,
+                  radius: RadiusToken.md,
+                ),
+                const SizedBox(width: Space.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 宽度递减，避免整列骨架看起来像表格。
+                      GSkeleton(width: 120 + (i % 3) * 46, height: 13),
+                      const SizedBox(height: Space.sm),
+                      GSkeleton(width: 80 + (i % 4) * 28, height: 11),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 状态切换时「弹一下」的图标。用于收藏、下载等开关型操作：
+/// 图标交叉淡入 + 一次轻微过冲缩放，让操作有确定的落点反馈。
+/// 开启「减弱动态效果」时退化为直接切换。
+class GPopIcon extends StatefulWidget {
+  const GPopIcon({
+    super.key,
+    required this.icon,
+    required this.active,
+    this.size = 22,
+    this.color,
+    this.activeColor,
+  });
+
+  final IconData icon;
+
+  /// 激活态。变化时触发弹跳。
+  final bool active;
+  final double size;
+  final Color? color;
+  final Color? activeColor;
+
+  @override
+  State<GPopIcon> createState() => _GPopIconState();
+}
+
+class _GPopIconState extends State<GPopIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _pop = AnimationController(
+      vsync: this,
+      duration: Motion.slow,
+      value: 1,
+    );
+    // 0 → 1 走一段过冲曲线：0.82 弹到 1.12 再回到 1。
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.82, end: 1.12), weight: 45),
+      TweenSequenceItem(tween: Tween(begin: 1.12, end: 1.0), weight: 55),
+    ]).animate(CurvedAnimation(parent: _pop, curve: Motion.standard));
+  }
+
+  @override
+  void didUpdateWidget(GPopIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active == widget.active) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pop.value = 1;
+      return;
+    }
+    _pop.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = widget.active
+        ? (widget.activeColor ?? scheme.primary)
+        : (widget.color ?? scheme.onSurfaceVariant);
+    return ScaleTransition(
+      scale: _scale,
+      child: AnimatedSwitcher(
+        duration: PlatformMotion.duration(context, Motion.fast),
+        child: Icon(
+          widget.icon,
+          // Key 必须区分状态，否则 AnimatedSwitcher 不会触发过渡。
+          key: ValueKey('${widget.icon.codePoint}-${widget.active}'),
+          size: widget.size,
+          color: tint,
+        ),
+      ),
+    );
+  }
+}
+
+/// 列表项入场动画：按索引错峰淡入并轻微上浮。
+/// 仅在首屏出现时播放一次，滚动复用不会重复触发。
+class GListEntrance extends StatefulWidget {
+  const GListEntrance({
+    super.key,
+    required this.index,
+    required this.child,
+    this.stagger = const Duration(milliseconds: 28),
+    this.maxStaggeredItems = 12,
+  });
+
+  final int index;
+  final Widget child;
+
+  /// 相邻两项之间的延迟。
+  final Duration stagger;
+
+  /// 超过该数量后不再累加延迟，避免长列表末尾等待过久。
+  final int maxStaggeredItems;
+
+  @override
+  State<GListEntrance> createState() => _GListEntranceState();
+}
+
+class _GListEntranceState extends State<GListEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Timer? _startTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: Motion.slow);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) ||
+        widget.index >= widget.maxStaggeredItems) {
+      _startTimer?.cancel();
+      _startTimer = null;
+      _controller.value = 1;
+      return;
+    }
+    if (_controller.value > 0 || _startTimer != null) return;
+    final steps = widget.index.clamp(0, widget.maxStaggeredItems);
+    _startTimer = Timer(widget.stagger * steps, () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _startTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(parent: _controller, curve: Motion.standard);
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.08),
+          end: Offset.zero,
+        ).animate(curved),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// 统一的页面转场：淡入 + 轻微上浮。比 MaterialPageRoute 的默认转场更克制，
+/// 且在 macOS / Windows 上不会出现移动端味道过重的整页横移。
+///
+/// iOS 保留系统默认的边缘返回手势体验，因此仍走 [MaterialPageRoute]。
+Route<T> buildAppRoute<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  RouteSettings? settings,
+}) {
+  final platform = Theme.of(context).platform;
+  if (platform == TargetPlatform.iOS) {
+    return MaterialPageRoute<T>(builder: builder, settings: settings);
+  }
+  final reduceMotion = MediaQuery.disableAnimationsOf(context);
+  return PageRouteBuilder<T>(
+    settings: settings,
+    transitionDuration: reduceMotion ? Duration.zero : Motion.slow,
+    reverseTransitionDuration: reduceMotion ? Duration.zero : Motion.normal,
+    pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      if (reduceMotion) return child;
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Motion.standard,
+        reverseCurve: Motion.standard.flipped,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.035),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 /// 通用空状态 / 错误提示（图标 + 文字 + 可选重试按钮）
 class GEmptyState extends StatelessWidget {
   const GEmptyState({
@@ -1042,12 +1568,14 @@ class GEmptyState extends StatelessWidget {
     required this.text,
     this.onRetry,
     this.title,
+    this.actionLabel,
   });
 
   final IconData icon;
   final String text;
   final String? title;
   final VoidCallback? onRetry;
+  final String? actionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1082,7 +1610,7 @@ class GEmptyState extends StatelessWidget {
             Text(
               title!,
               style: const TextStyle(
-                fontSize: 15,
+                fontSize: TypeScale.subhead,
                 fontWeight: TypeScale.semibold,
               ),
             ),
@@ -1091,11 +1619,12 @@ class GEmptyState extends StatelessWidget {
           Text(
             text,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: TypeScale.body, color: scheme.onSurfaceVariant),
           ),
           if (onRetry != null) ...[
             const SizedBox(height: 16),
-            GButton(label: '重试', filled: false, onTap: onRetry),
+            GButton(label: actionLabel ?? '重试', filled: false, onTap: onRetry),
           ],
         ],
       ),

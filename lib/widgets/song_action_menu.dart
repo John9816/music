@@ -211,6 +211,8 @@ class _SongActionSheetState extends State<_SongActionSheet> {
                 ? '已下载'
                 : '下载',
         downloading || downloaded ? null : _download,
+        downloading: downloading,
+        downloaded: downloaded,
       ),
     ];
 
@@ -285,6 +287,8 @@ class _SongActionSheetState extends State<_SongActionSheet> {
     String title,
     VoidCallback? onTap, {
     Color? color,
+    bool downloading = false,
+    bool downloaded = false,
   }) {
     return ListTile(
       minTileHeight: widget.desktop ? 48 : 50,
@@ -299,13 +303,15 @@ class _SongActionSheetState extends State<_SongActionSheet> {
           fontWeight: widget.desktop ? TypeScale.medium : null,
         ),
       ),
-      trailing: onTap == null
+      trailing: downloading
           ? const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : null,
+          : downloaded
+              ? Icon(Icons.check_rounded, size: 18, color: Theme.of(context).colorScheme.primary)
+              : null,
       onTap: onTap,
     );
   }

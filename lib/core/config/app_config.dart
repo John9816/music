@@ -47,8 +47,13 @@ class AppConfig {
   static const String apiBaseUrl = 'https://api.751152.xyz/';
   static const String userContentBaseUrl = 'https://hi.751152.xyz/';
 
+  /// 巡回寺图床：AI 生图结果自动转存后换到的长期外链（落地 ImgBB）。
+  static const String imageHostUploadUrl =
+      'https://api.xunhuisi.store/API/Tuchuang/Tc.php';
+
   static const String liveTvM3uUrl =
-      'https://develop202.github.io/migu_video/interface.txt';
+      // 与本机 Danbo 电视当前使用的直播源保持一致。
+      'https://danboxingqiu.cn/iptv.m3u';
 
   /// source 参数 -> 显示名（与 Android/macOS 版一致）
   static const Map<String, String> musicSources = {

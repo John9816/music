@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -223,8 +225,13 @@ class _LibraryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: desktop ? 77 : 72,
+    final textScaler = MediaQuery.textScalerOf(context);
+    final titleSize = desktop ? 28.0 : 27.0;
+    final scaledHeight = textScaler.scale(titleSize);
+    final minHeight = math.max(desktop ? 77.0 : 72.0, scaledHeight + 40);
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding:
             EdgeInsets.fromLTRB(desktop ? 20 : 18, 0, desktop ? 20 : 18, 0),
@@ -233,7 +240,7 @@ class _LibraryHeader extends StatelessWidget {
             Text(
               '资料库',
               style:
-                  pageTitleStyle(context).copyWith(fontSize: desktop ? 28 : 27),
+                  pageTitleStyle(context).copyWith(fontSize: titleSize),
             ),
             const Spacer(),
             _HeaderButton(
@@ -349,37 +356,42 @@ class _LibraryGrid extends StatelessWidget {
       return Column(
         children: [
           for (var index = 0; index < items.length; index++) ...[
-            SizedBox(height: 92, child: items[index]),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 92),
+              child: items[index],
+            ),
             if (index != items.length - 1) const SizedBox(height: 8),
           ],
         ],
       );
     }
 
-    return Column(
-      children: [
-        SizedBox(
-          height: 114,
-          child: Row(
-            children: [
-              Expanded(child: items[0]),
-              const SizedBox(width: 10),
-              Expanded(child: items[1]),
-            ],
+    return IntrinsicHeight(
+      child: Column(
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: items[0]),
+                const SizedBox(width: 10),
+                Expanded(child: items[1]),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 114,
-          child: Row(
-            children: [
-              Expanded(child: items[2]),
-              const SizedBox(width: 10),
-              Expanded(child: items[3]),
-            ],
+          const SizedBox(height: 10),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: items[2]),
+                const SizedBox(width: 10),
+                Expanded(child: items[3]),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -483,8 +495,8 @@ class _PlaylistCallout extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 74,
-      padding: const EdgeInsets.symmetric(horizontal: 15),
+      constraints: const BoxConstraints(minHeight: 74),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainer.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(18),

@@ -29,7 +29,8 @@ class DuckMusicApp extends StatefulWidget {
   State<DuckMusicApp> createState() => _DuckMusicAppState();
 }
 
-class _DuckMusicAppState extends State<DuckMusicApp> {
+class _DuckMusicAppState extends State<DuckMusicApp>
+    with WidgetsBindingObserver {
   late final SettingsController _settings;
   late final PlayerController _player;
   late final AuthController _auth;
@@ -39,9 +40,17 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _settings = SettingsController();
-    _player = PlayerController(settings: _settings);
-    if (Platform.isAndroid || Platform.isIOS) {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    // macOS 同样有系统媒体卡（「正在播放」与媒体键），需要一并同步播放状态。
+    final hasSystemMedia = isMobile || Platform.isMacOS;
+    _player = PlayerController(
+      settings: _settings,
+      beforePlayback:
+          isMobile ? SystemMediaController.instance.prepareForPlayback : null,
+    );
+    if (hasSystemMedia) {
       SystemMediaController.instance.attach(_player);
     }
     _auth = AuthController(
@@ -68,6 +77,7 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _desktopIntegration.dispose();
     _auth.dispose();
     _iosSideload.dispose();
@@ -75,6 +85,15 @@ class _DuckMusicAppState extends State<DuckMusicApp> {
     _player.dispose();
     _settings.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && Platform.isAndroid) {
+      unawaited(
+        SystemMediaController.instance.refreshAndroidNotificationPermission(),
+      );
+    }
   }
 
   @override
@@ -180,13 +199,116 @@ class _ThemeBridgeState extends State<_ThemeBridge> {
 }
 
 /// 等待本地会话恢复后再创建首页，避免音乐请求早于 Token 注入。
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
+class AuthGate extends StatefulWidget {
+  const AuthGate(
+      {super.key, this.restoreTimeout = const Duration(seconds: 10)});
+
+  final Duration restoreTimeout;
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  Timer? _timeoutTimer;
+  bool _timedOut = false;
+  bool _skipRestore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimeout();
+  }
+
+  @override
+  void dispose() {
+    _timeoutTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimeout() {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(widget.restoreTimeout, () {
+      if (mounted && !context.read<AuthController>().initialized) {
+        setState(() => _timedOut = true);
+      }
+    });
+  }
+
+  void _retry() {
+    setState(() {
+      _timedOut = false;
+      _skipRestore = false;
+    });
+    _startTimeout();
+    unawaited(context.read<AuthController>().load());
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
-    if (!auth.initialized) {
+    if (auth.isLoggedIn) {
+      _timeoutTimer?.cancel();
+      return const HomeShell();
+    }
+    if (!auth.initialized && !_skipRestore) {
+      if (_timedOut) {
+        return Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.cloud_off_rounded,
+                        size: 38,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '登录状态恢复超时',
+                        style: Theme.of(context).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '网络连接可能不稳定。你可以重新加载，或直接进入登录页。',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: FilledButton.icon(
+                          key: const ValueKey('auth-restore-retry'),
+                          onPressed: _retry,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('重新加载'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        key: const ValueKey('auth-restore-skip'),
+                        onPressed: () => setState(() => _skipRestore = true),
+                        child: const Text('直接登录'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
       return const Scaffold(
         body: Center(
           child: SizedBox(
@@ -197,6 +319,7 @@ class AuthGate extends StatelessWidget {
         ),
       );
     }
+    _timeoutTimer?.cancel();
     if (!auth.isLoggedIn) return const LoginView(allowBack: false);
     return const HomeShell();
   }

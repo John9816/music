@@ -22,20 +22,35 @@ class LoginView extends StatefulWidget {
 class _LoginViewState extends State<LoginView> {
   final _account = TextEditingController();
   final _password = TextEditingController();
+  final _accountFocus = FocusNode();
+  final _passwordFocus = FocusNode();
   bool _obscurePassword = true;
   bool _agreed = false;
+  String? _accountError;
+  String? _passwordError;
 
   @override
   void dispose() {
     _account.dispose();
     _password.dispose();
+    _accountFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final account = _account.text.trim();
-    if (account.isEmpty || _password.text.isEmpty) {
-      _message('请输入用户名或邮箱和密码');
+    final password = _password.text;
+    setState(() {
+      _accountError = account.isEmpty ? '请输入用户名或邮箱' : null;
+      _passwordError = password.isEmpty ? '请输入密码' : null;
+    });
+    if (_accountError != null) {
+      _accountFocus.requestFocus();
+      return;
+    }
+    if (_passwordError != null) {
+      _passwordFocus.requestFocus();
       return;
     }
     if (!_agreed) {
@@ -43,12 +58,18 @@ class _LoginViewState extends State<LoginView> {
       return;
     }
     final auth = context.read<AuthController>();
-    final ok = await auth.login(account, _password.text);
+    final ok = await auth.login(account, password);
     if (!mounted) return;
     if (ok) {
       if (widget.allowBack) Navigator.of(context).maybePop();
     } else {
-      _message(auth.error ?? '登录失败，请稍后重试');
+      final error = auth.error ?? '登录失败，请稍后重试';
+      if (_isNetworkLoginError(error)) {
+        _message(error);
+      } else {
+        setState(() => _passwordError = error);
+        _passwordFocus.requestFocus();
+      }
     }
   }
 
@@ -62,18 +83,33 @@ class _LoginViewState extends State<LoginView> {
       children: [
         _AuthField(
           controller: _account,
+          focusNode: _accountFocus,
           hintText: '用户名或邮箱',
+          errorText: _accountError,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.username, AutofillHints.email],
+          onChanged: (_) {
+            if (_accountError != null) {
+              setState(() => _accountError = null);
+            }
+          },
         ),
         const SizedBox(height: 14),
         _AuthField(
           controller: _password,
+          focusNode: _passwordFocus,
           hintText: '密码',
+          errorText: _passwordError,
           obscureText: _obscurePassword,
+          textInputAction: TextInputAction.done,
           autofillHints: const [AutofillHints.password],
           onSubmitted: (_) => _submit(),
+          onChanged: (_) {
+            if (_passwordError != null) {
+              setState(() => _passwordError = null);
+            }
+          },
           suffix: GIconButton(
             icon: _obscurePassword
                 ? Icons.visibility_off_rounded
@@ -92,51 +128,60 @@ class _LoginViewState extends State<LoginView> {
             Checkbox(
               value: _agreed,
               onChanged: (value) => setState(() => _agreed = value ?? false),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
             ),
-            const SizedBox(width: 4),
             Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _agreed = !_agreed),
-                child: Text(
-                  '已阅读并同意用户协议与隐私政策',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.45,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () => setState(() => _agreed = !_agreed),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          '我已阅读并同意',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _InlineAuthLink(
+                      label: '《用户协议》',
+                      onTap: () => _open(const LegalDocumentView(
+                        type: LegalDocumentType.agreement,
+                      )),
+                    ),
+                    Text(
+                      '和',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    _InlineAuthLink(
+                      label: '《隐私政策》',
+                      onTap: () => _open(const LegalDocumentView(
+                        type: LegalDocumentType.privacy,
+                      )),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            _AuthTextButton(
-              label: '忘记密码',
-              onTap: () => _open(const ForgotPasswordView()),
             ),
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.only(left: 36),
-          child: Wrap(
-            spacing: 20,
-            runSpacing: 0,
-            children: [
-              _AuthLink(
-                label: '查看用户协议',
-                onTap: () => _open(
-                  const LegalDocumentView(type: LegalDocumentType.agreement),
-                ),
-              ),
-              _AuthLink(
-                label: '查看隐私政策',
-                onTap: () => _open(
-                  const LegalDocumentView(type: LegalDocumentType.privacy),
-                ),
-              ),
-            ],
+        Align(
+          alignment: Alignment.centerRight,
+          child: _AuthTextButton(
+            label: '忘记密码',
+            onTap: () => _open(const ForgotPasswordView()),
           ),
         ),
-        const SizedBox(height: 26),
+        const SizedBox(height: 18),
         _AuthPrimaryButton(
           label: '登录',
           loading: auth.loading,
@@ -158,7 +203,10 @@ class _LoginViewState extends State<LoginView> {
   }
 
   void _message(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(text)));
   }
 }
 
@@ -179,6 +227,11 @@ class _RegisterViewState extends State<RegisterView> {
   int _resendSeconds = 0;
   Timer? _resendTimer;
   String? _codeEmail;
+  bool _agreedToTerms = false;
+  String? _nicknameError;
+  String? _emailError;
+  String? _codeError;
+  String? _passwordError;
 
   @override
   void dispose() {
@@ -213,38 +266,66 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   Future<void> _submit() async {
+    // 清除之前的错误
+    setState(() {
+      _nicknameError = null;
+      _emailError = null;
+      _codeError = null;
+      _passwordError = null;
+    });
+
+    if (!_agreedToTerms) {
+      _message('请先阅读并同意用户协议与隐私政策');
+      return;
+    }
     final nickname = _nickname.text.trim();
     final email = _email.text.trim();
     final code = _verificationCode.text.trim();
     final password = _password.text;
-    if (nickname.isEmpty || email.isEmpty || code.isEmpty || password.isEmpty) {
-      _message('请完整填写昵称、邮箱、验证码和密码');
+
+    // 表单校验改为 inline 错误
+    if (nickname.isEmpty) {
+      setState(() => _nicknameError = '请输入昵称');
       return;
     }
     if (nickname.length < 3 || nickname.length > 50) {
-      _message('昵称长度需要为 3 到 50 位');
+      setState(() => _nicknameError = '昵称长度需要为 3 到 50 位');
+      return;
+    }
+    if (email.isEmpty) {
+      setState(() => _emailError = '请输入邮箱');
       return;
     }
     if (!_looksLikeSupportedEmail(email)) {
-      _message('请输入有效的 QQ 邮箱或 751152.xyz 邮箱');
+      setState(() => _emailError = '请输入有效的 QQ 邮箱或 751152.xyz 邮箱');
       return;
     }
     if (_codeEmail != email) {
-      _message('请先获取当前邮箱的验证码');
+      setState(() => _emailError = '请先获取当前邮箱的验证码');
+      return;
+    }
+    if (code.isEmpty) {
+      setState(() => _codeError = '请输入验证码');
       return;
     }
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('请输入 6 位数字验证码');
+      setState(() => _codeError = '请输入 6 位数字验证码');
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _passwordError = '请输入密码');
       return;
     }
     if (password.length < 6 || password.length > 64) {
-      _message('密码长度需要为 6 到 64 位');
+      setState(() => _passwordError = '密码长度需要为 6 到 64 位');
       return;
     }
+
     final auth = context.read<AuthController>();
     final ok = await auth.register(nickname, email, password, code);
     if (!mounted) return;
     if (!ok) {
+      // 服务端错误仍用 SnackBar
       _message(auth.error ?? '创建账号失败，请稍后重试');
       return;
     }
@@ -264,6 +345,12 @@ class _RegisterViewState extends State<RegisterView> {
           hintText: '昵称',
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.newUsername],
+          errorText: _nicknameError,
+          onChanged: (_) {
+            if (_nicknameError != null) {
+              setState(() => _nicknameError = null);
+            }
+          },
         ),
         const SizedBox(height: 14),
         _AuthField(
@@ -272,7 +359,13 @@ class _RegisterViewState extends State<RegisterView> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.email],
-          onChanged: _onEmailChanged,
+          errorText: _emailError,
+          onChanged: (value) {
+            if (_emailError != null) {
+              setState(() => _emailError = null);
+            }
+            _onEmailChanged(value);
+          },
         ),
         const SizedBox(height: 14),
         Row(
@@ -284,6 +377,12 @@ class _RegisterViewState extends State<RegisterView> {
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
                 autofillHints: const [AutofillHints.oneTimeCode],
+                errorText: _codeError,
+                onChanged: (_) {
+                  if (_codeError != null) {
+                    setState(() => _codeError = null);
+                  }
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -316,6 +415,12 @@ class _RegisterViewState extends State<RegisterView> {
           hintText: '密码',
           obscureText: _obscurePassword,
           autofillHints: const [AutofillHints.newPassword],
+          errorText: _passwordError,
+          onChanged: (_) {
+            if (_passwordError != null) {
+              setState(() => _passwordError = null);
+            }
+          },
           onSubmitted: (_) => _submit(),
           suffix: GIconButton(
             icon: _obscurePassword
@@ -338,7 +443,59 @@ class _RegisterViewState extends State<RegisterView> {
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: _agreedToTerms,
+                onChanged: (value) => setState(() => _agreedToTerms = value ?? false),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '我已阅读并同意',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      _InlineAuthLink(
+                        label: '《用户协议》',
+                        onTap: () => _open(const LegalDocumentView(
+                          type: LegalDocumentType.agreement,
+                        )),
+                      ),
+                      Text(
+                        '与',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      _InlineAuthLink(
+                        label: '《隐私政策》',
+                        onTap: () => _open(const LegalDocumentView(
+                          type: LegalDocumentType.privacy,
+                        )),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         _AuthPrimaryButton(
           label: '创建账号',
           loading: auth.loading,
@@ -366,7 +523,10 @@ class _RegisterViewState extends State<RegisterView> {
   }
 
   void _message(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(text)));
   }
 
   void _startResendTimer(int seconds) {
@@ -390,7 +550,12 @@ class _RegisterViewState extends State<RegisterView> {
       _codeEmail = null;
       _resendSeconds = 0;
       _verificationCode.clear();
+      _codeError = null;
     });
+  }
+
+  void _open(Widget page) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 }
 
@@ -415,6 +580,10 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   int _resendSeconds = 0;
   Timer? _resendTimer;
   String? _codeEmail;
+  String? _emailError;
+  String? _codeError;
+  String? _passwordError;
+  String? _confirmError;
 
   @override
   void dispose() {
@@ -448,29 +617,57 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
   }
 
   Future<void> _submit() async {
+    // 清除之前的错误
+    setState(() {
+      _emailError = null;
+      _codeError = null;
+      _passwordError = null;
+      _confirmError = null;
+    });
+
     final email = _email.text.trim();
     final code = _verificationCode.text.trim();
     final password = _password.text;
+    final confirmPassword = _confirmPassword.text;
+
+    // 表单校验改为 inline 错误
+    if (email.isEmpty) {
+      setState(() => _emailError = '请输入邮箱');
+      return;
+    }
     if (!_looksLikeSupportedEmail(email)) {
-      _message('请输入已注册的 QQ 邮箱或 751152.xyz 邮箱');
+      setState(() => _emailError = '请输入已注册的 QQ 邮箱或 751152.xyz 邮箱');
       return;
     }
     if (_codeEmail != email) {
-      _message('请先获取当前邮箱的验证码');
+      setState(() => _emailError = '请先获取当前邮箱的验证码');
+      return;
+    }
+    if (code.isEmpty) {
+      setState(() => _codeError = '请输入验证码');
       return;
     }
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _message('请输入 6 位数字验证码');
+      setState(() => _codeError = '请输入 6 位数字验证码');
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _passwordError = '请输入新密码');
       return;
     }
     if (password.length < 6 || password.length > 64) {
-      _message('新密码长度需要为 6 到 64 位');
+      setState(() => _passwordError = '新密码长度需要为 6 到 64 位');
       return;
     }
-    if (_confirmPassword.text != password) {
-      _message('两次输入的新密码不一致');
+    if (confirmPassword.isEmpty) {
+      setState(() => _confirmError = '请确认新密码');
       return;
     }
+    if (confirmPassword != password) {
+      setState(() => _confirmError = '两次输入的新密码不一致');
+      return;
+    }
+
     setState(() => _resetting = true);
     try {
       await _api.confirmPasswordReset(email, code, password);
@@ -485,6 +682,7 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
         const SnackBar(content: Text('密码已重置，请使用新密码登录')),
       );
     } catch (error) {
+      // 服务端错误仍用 SnackBar
       _message(error.toString());
     } finally {
       if (mounted) setState(() => _resetting = false);
@@ -527,7 +725,13 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.email],
-          onChanged: _onEmailChanged,
+          errorText: _emailError,
+          onChanged: (value) {
+            _onEmailChanged(value);
+            if (_emailError != null) {
+              setState(() => _emailError = null);
+            }
+          },
         ),
         const SizedBox(height: 14),
         Row(
@@ -539,6 +743,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
                 autofillHints: const [AutofillHints.oneTimeCode],
+                errorText: _codeError,
+                onChanged: (_) {
+                  if (_codeError != null) {
+                    setState(() => _codeError = null);
+                  }
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -572,6 +782,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.next,
           autofillHints: const [AutofillHints.newPassword],
+          errorText: _passwordError,
+          onChanged: (_) {
+            if (_passwordError != null) {
+              setState(() => _passwordError = null);
+            }
+          },
           suffix: GIconButton(
             icon: _obscurePassword
                 ? Icons.visibility_off_rounded
@@ -590,6 +806,12 @@ class _ForgotPasswordViewState extends State<ForgotPasswordView> {
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
           autofillHints: const [AutofillHints.newPassword],
+          errorText: _confirmError,
+          onChanged: (_) {
+            if (_confirmError != null) {
+              setState(() => _confirmError = null);
+            }
+          },
           onSubmitted: (_) => _submit(),
         ),
         const SizedBox(height: 24),
@@ -743,23 +965,27 @@ class _AuthField extends StatelessWidget {
     required this.controller,
     required this.hintText,
     this.keyboardType,
+    this.focusNode,
     this.textInputAction,
     this.autofillHints,
     this.obscureText = false,
     this.suffix,
     this.onSubmitted,
     this.onChanged,
+    this.errorText,
   });
 
   final TextEditingController controller;
   final String hintText;
   final TextInputType? keyboardType;
+  final FocusNode? focusNode;
   final TextInputAction? textInputAction;
   final Iterable<String>? autofillHints;
   final bool obscureText;
   final Widget? suffix;
   final ValueChanged<String>? onSubmitted;
   final ValueChanged<String>? onChanged;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -769,32 +995,38 @@ class _AuthField extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       borderSide: BorderSide.none,
     );
-    return SizedBox(
-      height: 56,
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        textInputAction: textInputAction,
-        autofillHints: autofillHints,
-        obscureText: obscureText,
-        onSubmitted: onSubmitted,
-        onChanged: onChanged,
-        style: TextStyle(fontSize: 15, color: scheme.onSurface),
-        decoration: InputDecoration(
-          labelText: hintText,
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-          filled: true,
-          fillColor: dark ? scheme.surfaceContainer : Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-          suffixIcon: suffix,
-          suffixIconConstraints: suffix == null
-              ? null
-              : const BoxConstraints.tightFor(width: 48, height: 56),
-          border: border,
-          enabledBorder: border,
-          focusedBorder: border.copyWith(
-            borderSide: BorderSide(color: scheme.primary, width: 1.2),
-          ),
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      autofillHints: autofillHints,
+      obscureText: obscureText,
+      onSubmitted: onSubmitted,
+      onChanged: onChanged,
+      style: TextStyle(fontSize: 15, color: scheme.onSurface),
+      decoration: InputDecoration(
+        labelText: hintText,
+        errorText: errorText,
+        errorMaxLines: 2,
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        filled: true,
+        fillColor: dark ? scheme.surfaceContainer : Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        suffixIcon: suffix,
+        suffixIconConstraints: suffix == null
+            ? null
+            : const BoxConstraints.tightFor(width: 48, height: 56),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: BorderSide(color: scheme.primary, width: 1.2),
+        ),
+        errorBorder: border.copyWith(
+          borderSide: BorderSide(color: scheme.error, width: 1),
+        ),
+        focusedErrorBorder: border.copyWith(
+          borderSide: BorderSide(color: scheme.error, width: 1.2),
         ),
       ),
     );
@@ -823,7 +1055,9 @@ class _AuthPrimaryButton extends StatelessWidget {
         width: double.infinity,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: enabled ? scheme.primary : scheme.surfaceContainerHighest,
+          color: enabled || loading
+              ? scheme.primary
+              : scheme.primary.withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(12),
         ),
         child: loading
@@ -840,7 +1074,7 @@ class _AuthPrimaryButton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: TypeScale.bold,
-                  color: enabled ? scheme.onPrimary : scheme.onSurfaceVariant,
+                  color: scheme.onPrimary,
                 ),
               ),
       ),
@@ -870,30 +1104,43 @@ class _AuthTextButton extends StatelessWidget {
   }
 }
 
-class _AuthLink extends StatelessWidget {
-  const _AuthLink({required this.label, required this.onTap});
+class _InlineAuthLink extends StatelessWidget {
+  const _InlineAuthLink({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.5,
-            color: Theme.of(context).colorScheme.primary,
-            decoration: TextDecoration.underline,
-            decorationColor: Theme.of(context).colorScheme.primary,
+    final primary = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      label: label.replaceAll(RegExp('[《》]'), ''),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: TypeScale.semibold,
+              color: primary,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+bool _isNetworkLoginError(String error) {
+  return error.contains('网络') ||
+      error.contains('超时') ||
+      error.contains('SocketException') ||
+      error.contains('HTTP 5') ||
+      error.contains('服务响应');
 }
 
 bool _looksLikeSupportedEmail(String value) {

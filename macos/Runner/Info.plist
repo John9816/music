@@ -26,9 +26,19 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<!-- 直播源与部分书源仅提供 HTTP 地址，需允许明文加载。 -->
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册，以便你选择图片作为头像或 AI 绘画的参考图。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>需要访问本地网络，以便发现同一网络下的 AirPlay 设备并投屏播放。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

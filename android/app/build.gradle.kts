@@ -48,6 +48,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             if (releaseBuildRequested && !keystorePropertiesFile.exists()) {
                 throw GradleException(

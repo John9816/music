@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+  刻意未声明 com.apple.security.app-sandbox：
+  iOS 侧载功能（lib/core/services/ios_sideload_service.dart）需要调用外部工具链
+  并读写用户指定的任意路径，沙盒会直接阻断该流程。
+  代价：本 App 无法上架 Mac App Store，只能走直接分发 + 公证（notarization）。
+-->
 <dict>
 	<key>com.apple.security.network.client</key>
 	<true/>

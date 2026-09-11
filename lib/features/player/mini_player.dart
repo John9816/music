@@ -32,13 +32,20 @@ class MiniPlayer extends StatefulWidget {
 
 class _MiniPlayerState extends State<MiniPlayer> {
   bool _favoriteBusy = false;
+  bool _playerOpen = false;
 
-  void _openPlayer() {
-    Navigator.of(context).push(
-      buildPlayerRoute(
-        reducedMotion: MediaQuery.disableAnimationsOf(context),
-      ),
-    );
+  Future<void> _openPlayer() async {
+    if (_playerOpen) return;
+    _playerOpen = true;
+    try {
+      await Navigator.of(context).push(
+        buildPlayerRoute(
+          reducedMotion: MediaQuery.disableAnimationsOf(context),
+        ),
+      );
+    } finally {
+      _playerOpen = false;
+    }
   }
 
   @override
@@ -293,7 +300,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
         ),
         const Spacer(),
         SizedBox(
-          width: 238,
+          width: 360,
           child: Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _rightTools(context, player),
@@ -320,10 +327,10 @@ class _MiniPlayerState extends State<MiniPlayer> {
       } else {
         await UserApi().addFavorite(song, token);
       }
+      if (!mounted || context.read<AuthController>().token != token) return;
       final current = player.current;
-      if (current?.id == song.id && current?.source == song.source) {
-        player.setLiked(!wasLiked);
-      }
+      if (current?.id != song.id || current?.source != song.source) return;
+      player.setLiked(!wasLiked);
       _message(wasLiked ? '已取消收藏' : '已收藏');
     } catch (_) {
       _message('操作失败，请稍后重试');
@@ -344,25 +351,45 @@ class _MiniPlayerState extends State<MiniPlayer> {
     return Column(
       children: [
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child:
-                      _CompactTrackIdentity(song: current, onTap: _openPlayer),
-                ),
-                _PlayButton(player: player, size: 36, outlined: true),
-                const SizedBox(width: 12),
-                GIconButton(
-                  icon: CupertinoIcons.list_bullet,
-                  tooltip: '播放队列',
-                  size: 27,
-                  padding: 6,
-                  backgroundColor: Colors.transparent,
-                  onTap: () => showQueueSheet(context),
-                ),
-              ],
+          child: LayoutBuilder(
+            builder: (context, constraints) => Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _CompactTrackIdentity(
+                      song: current,
+                      onTap: _openPlayer,
+                    ),
+                  ),
+                  if (constraints.maxWidth >= 500)
+                    _PlayerIconButton(
+                      icon: CupertinoIcons.backward_end_fill,
+                      size: 16,
+                      padding: 7,
+                      tooltip: '上一首',
+                      onTap: player.previous,
+                    ),
+                  _PlayButton(player: player, size: 36, outlined: true),
+                  if (constraints.maxWidth >= 320)
+                    _PlayerIconButton(
+                      icon: CupertinoIcons.forward_end_fill,
+                      size: 16,
+                      padding: 7,
+                      tooltip: '下一首',
+                      onTap: player.next,
+                    ),
+                  const SizedBox(width: 2),
+                  GIconButton(
+                    icon: CupertinoIcons.list_bullet,
+                    tooltip: '播放队列',
+                    size: 27,
+                    padding: 6,
+                    backgroundColor: Colors.transparent,
+                    onTap: () => showQueueSheet(context),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -439,7 +466,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final dense = constraints.maxWidth < 260;
+        final dense = constraints.maxWidth < 200;
         return Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
@@ -537,9 +564,9 @@ class _MobileMiniPlayerProgress extends StatelessWidget {
                     top: 0,
                     bottom: 0,
                     width: constraints.maxWidth * progress,
-                    child: const ColoredBox(
-                      key: ValueKey('mobile-mini-player-progress-fill'),
-                      color: Color(0xFFE53935),
+                    child: ColoredBox(
+                      key: const ValueKey('mobile-mini-player-progress-fill'),
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ],
@@ -574,24 +601,33 @@ class _PlayerIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final targetSize = switch (Theme.of(context).platform) {
+      TargetPlatform.android => 48.0,
+      TargetPlatform.iOS => 44.0,
+      _ => 36.0,
+    };
     Widget button = GPressScale(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: Motion.fast,
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: selected
-              ? scheme.onSurface.withValues(alpha: 0.11)
-              : Colors.transparent,
-        ),
-        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      child: SizedBox.square(
+        dimension: targetSize,
         child: Center(
-          child: Icon(
-            icon,
-            size: size,
-            color: tint ?? scheme.onSurface.withValues(alpha: 0.78),
+          child: AnimatedContainer(
+            duration: PlatformMotion.duration(context, Motion.fast),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected
+                  ? scheme.onSurface.withValues(alpha: 0.11)
+                  : Colors.transparent,
+            ),
+            child: Center(
+              child: Icon(
+                icon,
+                size: size,
+                color: tint ?? scheme.onSurface.withValues(alpha: 0.78),
+              ),
+            ),
           ),
         ),
       ),
@@ -653,7 +689,7 @@ class _TrackIdentity extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14.5,
+                          fontSize: TypeScale.bodyLarge,
                           fontWeight: TypeScale.semibold,
                         ),
                       ),
@@ -716,9 +752,9 @@ class _CompactTrackIdentity extends StatelessWidget {
             width: 54,
             height: 54,
             padding: const EdgeInsets.all(6),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xE6121212),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
             ),
             child: AsyncCover(
               url: song.album.picUrl,
@@ -731,31 +767,49 @@ class _CompactTrackIdentity extends StatelessWidget {
             child: Row(
               children: [
                 Flexible(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: song.name,
-                          style: TextStyle(color: scheme.onSurface),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 36,
+                    child: ClipRect(
+                      child: AnimatedSwitcher(
+                        duration:
+                            PlatformMotion.duration(context, Motion.normal),
+                        switchInCurve: Motion.standard,
+                        switchOutCurve: Curves.easeInCubic,
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [...previous, if (current != null) current],
                         ),
-                        TextSpan(
-                          text: error == null
-                              ? ' - ${song.artistNames}'
-                              : ' - $error',
-                          style: TextStyle(
-                            color: error == null
-                                ? scheme.onSurfaceVariant
-                                : scheme.error,
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: song.name,
+                                style: TextStyle(color: scheme.onSurface),
+                              ),
+                              TextSpan(
+                                text: error == null
+                                    ? ' - ${song.artistNames}'
+                                    : ' - $error',
+                                style: TextStyle(
+                                  color: error == null
+                                      ? scheme.onSurfaceVariant
+                                      : scheme.error,
+                                ),
+                              ),
+                            ],
+                          ),
+                          key: ValueKey(
+                              (song.source, song.id, song.name, error)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: TypeScale.medium,
+                            height: 1.1,
                           ),
                         ),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: TypeScale.medium,
-                      height: 1.1,
+                      ),
                     ),
                   ),
                 ),
@@ -791,33 +845,76 @@ class _PlayButton extends StatelessWidget {
     final playing = context.select<PlayerController, bool>((p) => p.playing);
     final loading = context.select<PlayerController, bool>((p) => p.loading);
     final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
-      onTap: loading ? null : player.togglePlay,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: outlined
-            ? BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: scheme.onSurface.withValues(alpha: 0.72),
-                  width: 2,
+    final minimumTargetSize = switch (Theme.of(context).platform) {
+      TargetPlatform.android => 48.0,
+      TargetPlatform.iOS => 44.0,
+      _ => size,
+    };
+    final targetSize = size > minimumTargetSize ? size : minimumTargetSize;
+    final label = loading
+        ? '正在加载'
+        : playing
+            ? '暂停'
+            : '播放';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        label: label,
+        button: true,
+        enabled: !loading,
+        child: GPressScale(
+          onTap: loading ? null : player.togglePlay,
+          child: SizedBox.square(
+            dimension: targetSize,
+            child: Center(
+              child: Container(
+                width: size,
+                height: size,
+                decoration: outlined
+                    ? BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: scheme.onSurface.withValues(alpha: 0.72),
+                          width: 2,
+                        ),
+                      )
+                    : null,
+                child: AnimatedSwitcher(
+                  duration: PlatformMotion.duration(context, Motion.normal),
+                  switchInCurve: Motion.standard,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale:
+                          Tween<double>(begin: 0.86, end: 1).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: loading
+                      ? Padding(
+                          key: const ValueKey('mini-player-loading'),
+                          padding: EdgeInsets.all(size * 0.28),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.onSurface,
+                          ),
+                        )
+                      : Icon(
+                          playing
+                              ? CupertinoIcons.pause_fill
+                              : CupertinoIcons.play_fill,
+                          key: ValueKey(playing
+                              ? 'mini-player-pause'
+                              : 'mini-player-play'),
+                          size: outlined ? size * 0.52 : size * 0.82,
+                          color: scheme.onSurface,
+                        ),
                 ),
-              )
-            : null,
-        child: loading
-            ? Padding(
-                padding: EdgeInsets.all(size * 0.28),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: scheme.onSurface,
-                ),
-              )
-            : Icon(
-                playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-                size: outlined ? size * 0.52 : size * 0.82,
-                color: scheme.onSurface,
               ),
+            ),
+          ),
+        ),
       ),
     );
   }

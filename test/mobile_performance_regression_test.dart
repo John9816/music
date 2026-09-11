@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/player/player_controller.dart';
+import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
@@ -154,12 +155,17 @@ Widget _providers({
   required SleepTimer timer,
   required Widget child,
 }) {
+  final desktop = DesktopIntegrationService(
+    settings: settings,
+    player: player,
+  );
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<SettingsController>.value(value: settings),
       ChangeNotifierProvider<PlayerController>.value(value: player),
       ChangeNotifierProvider<AuthController>.value(value: auth),
       ChangeNotifierProvider<SleepTimer>.value(value: timer),
+      ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
     ],
     child: child,
   );

@@ -12,15 +12,17 @@ import 'package:provider/provider.dart';
 
 import '../../core/api/ai_draw_api.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/image_host_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../widgets/glass.dart';
 
 enum _AiDrawMode { generate, edit, history, plaza }
 
 class AiDrawView extends StatefulWidget {
-  const AiDrawView({super.key, this.api});
+  const AiDrawView({super.key, this.api, this.imageHost});
 
   final AiDrawApi? api;
+  final ImageHostApi? imageHost;
 
   @override
   State<AiDrawView> createState() => _AiDrawViewState();
@@ -37,6 +39,7 @@ class _AiDrawViewState extends State<AiDrawView> {
 
   final _prompt = TextEditingController();
   late final AiDrawApi _api = widget.api ?? AiDrawApi();
+  late final ImageHostApi _imageHost = widget.imageHost ?? ImageHostApi();
   _AiDrawMode _mode = _AiDrawMode.generate;
   List<AiDrawModel> _models = const [];
   List<AiDrawTaskRecord> _tasks = const [];
@@ -58,6 +61,11 @@ class _AiDrawViewState extends State<AiDrawView> {
   int _sharedPage = 0;
   int _sharedTotal = 0;
   bool _restoringTasks = false;
+
+  /// 已转存图床的结果：原始地址 -> 图床直链，避免同一张图重复上传。
+  final Map<String, String> _mirrored = {};
+  bool _mirroring = false;
+  String? _mirrorHost;
 
   @override
   void initState() {
@@ -122,6 +130,9 @@ class _AiDrawViewState extends State<AiDrawView> {
         if (!mounted) break;
         if (completedImage != _imageUrl) {
           setState(() => _imageUrl = completedImage);
+          if (completedImage != null) {
+            unawaited(_mirrorToImageHost(completedImage));
+          }
         }
         await Future.wait([_refreshTasks(), _loadHistory()]);
         if (!_tasks.any((task) => task.isProcessing)) break;
@@ -195,6 +206,7 @@ class _AiDrawViewState extends State<AiDrawView> {
       _loading = true;
       _error = null;
       _imageUrl = null;
+      _mirrorHost = null;
     });
     try {
       final url = _mode == _AiDrawMode.edit
@@ -214,6 +226,7 @@ class _AiDrawViewState extends State<AiDrawView> {
             );
       if (!mounted) return;
       setState(() => _imageUrl = url);
+      unawaited(_mirrorToImageHost(url));
       await Future.wait([_loadHistory(), _refreshTasks()]);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -222,6 +235,34 @@ class _AiDrawViewState extends State<AiDrawView> {
       if (mounted) setState(() => _error = '图片任务未完成，请稍后重试');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// 生成结果的直链会过期（base64 结果还得一直留在内存里），任务一完成就自动
+  /// 转存图床，拿到长期外链后替换画布地址，后续查看/下载/复制都走稳定链接。
+  /// 图床挂了不该拖垮生图流程，所以失败时静默保留原始地址。
+  Future<void> _mirrorToImageHost(String source) async {
+    if (_mirrored.containsKey(source)) {
+      final mirrored = _mirrored[source]!;
+      if (mounted && _imageUrl == source) {
+        setState(() => _imageUrl = mirrored);
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _mirroring = true);
+    try {
+      final upload = await _imageHost.upload(source);
+      if (!mounted) return;
+      setState(() {
+        _mirrored[source] = upload.url;
+        _mirrorHost = upload.host;
+        if (_imageUrl == source) _imageUrl = upload.url;
+      });
+    } catch (_) {
+      // 保留原始地址，用户仍然看得到图。
+    } finally {
+      if (mounted) setState(() => _mirroring = false);
     }
   }
 
@@ -615,6 +656,10 @@ class _AiDrawViewState extends State<AiDrawView> {
                       : _buildEmptyCanvas(colors),
             ),
           ),
+          if (_imageUrl != null && (_mirroring || _mirrorHost != null)) ...[
+            const SizedBox(height: 10),
+            _buildImageHostStrip(colors),
+          ],
           if (compact && _mode == _AiDrawMode.edit) ...[
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -691,6 +736,61 @@ class _AiDrawViewState extends State<AiDrawView> {
                       : '生成 $_count 张图片'),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 结果转存图床的状态条：转存中显示进度，完成后给出直链复制入口。
+  Widget _buildImageHostStrip(_LabColors colors) {
+    final host = _mirrorHost;
+    return Container(
+      key: const Key('ai-imagehost-strip'),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: colors.canvas,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.rule),
+      ),
+      child: Row(
+        children: [
+          if (_mirroring)
+            SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colors.accent,
+              ),
+            )
+          else
+            Icon(Icons.cloud_done_outlined, size: 18, color: colors.accent),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              _mirroring
+                  ? '正在转存图床'
+                  : '已转存${host?.isNotEmpty == true ? ' · $host' : '图床'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (!_mirroring)
+            TextButton.icon(
+              key: const Key('ai-imagehost-copy'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: _imageUrl!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('图床直链已复制')),
+                );
+              },
+              icon: const Icon(Icons.link_rounded, size: 17),
+              label: const Text('复制直链'),
+            ),
         ],
       ),
     );

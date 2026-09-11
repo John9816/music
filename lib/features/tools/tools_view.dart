@@ -5,6 +5,7 @@ import '../../core/player/player_controller.dart';
 import '../../widgets/glass.dart';
 import '../books/book_sources_view.dart';
 import '../live_tv/live_tv_view.dart';
+import '../videos/videos_view.dart';
 import 'ai_draw_view.dart';
 import 'video_parse_view.dart';
 
@@ -37,6 +38,11 @@ class ToolsView extends StatelessWidget {
                   label: '视频解析',
                   desc: '无水印下载地址',
                   page: VideoParseView()),
+              const _ToolSpec(
+                  icon: Icons.movie_outlined,
+                  label: '影视',
+                  desc: '在线观看影视剧集',
+                  page: VideosView()),
               const _ToolSpec(
                   icon: Icons.menu_book_rounded,
                   label: '小说阅读',

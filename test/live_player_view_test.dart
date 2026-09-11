@@ -295,9 +295,10 @@ void main() {
 
     expect(
         find.byKey(const ValueKey('live-video-route-button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('live-video-mute-button')), findsNothing);
     expect(
-        find.byKey(const ValueKey('live-video-playback-button')), findsNothing);
+        find.byKey(const ValueKey('live-video-mute-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('live-video-playback-button')),
+        findsOneWidget);
     expect(find.byKey(const ValueKey('live-video-overlay-fullscreen-button')),
         findsOneWidget);
 

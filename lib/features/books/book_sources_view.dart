@@ -269,13 +269,19 @@ class _BookSourcesViewState extends State<BookSourcesView> {
                                   tooltip: '清空',
                                   onPressed: () {
                                     _queryController.clear();
-                                    setState(() {});
+                                    setState(() => _searched = false);
                                   },
                                   icon: const Icon(Icons.close_rounded),
                                 ),
                           border: const OutlineInputBorder(),
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (value) {
+                          if (value.isEmpty) {
+                            setState(() => _searched = false);
+                          } else {
+                            setState(() {});
+                          }
+                        },
                       ),
                     ),
                     const SizedBox(width: 10),

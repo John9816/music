@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/song.dart';
@@ -37,13 +38,22 @@ class SystemMediaController extends BaseAudioHandler {
     artDownscaleHeight: 512,
   );
 
-  final Future<void> Function() _androidNotificationPermissionRequester;
-  final bool Function() _isAndroid;
+  /// 通知权限弹窗需要用户交互，给足时间；仅用于防止原生侧永不回调时状态锁死。
+  static const Duration _androidNotificationPermissionTimeout =
+      Duration(minutes: 2);
+
+  final Future<dynamic> Function() _androidNotificationPermissionRequester;  final bool Function() _isAndroid;
   bool _androidNotificationPermissionRequested = false;
+  Future<dynamic>? _androidNotificationPermissionRequest;
+  List<String> _publishedQueueKeys = const [];
+  String? _publishedMediaKey;
+
+  /// iOS 与 macOS 共用 MPNowPlayingInfoCenter 通道；Android 走 audio_service。
+  static bool get _usesAppleNowPlaying => Platform.isIOS || Platform.isMacOS;
 
   static Future<void> initialize() async {
     if (_initialized) return;
-    if (Platform.isIOS) {
+    if (_usesAppleNowPlaying) {
       _iosChannel.setMethodCallHandler(instance._handleIosCommand);
       await _iosChannel.invokeMethod<void>('initialize');
       _initialized = true;
@@ -54,6 +64,50 @@ class SystemMediaController extends BaseAudioHandler {
       config: androidConfig,
     );
     _initialized = true;
+  }
+
+  /// Waits for the Android notification permission dialog before playback
+  /// starts. The native method resolves only after the user makes a choice.
+  Future<void> prepareForPlayback() async {
+    if (!_isAndroid()) return;
+    final inFlight = _androidNotificationPermissionRequest;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    if (_androidNotificationPermissionRequested) return;
+    _androidNotificationPermissionRequested = true;
+    final request = _androidNotificationPermissionRequest =
+        _androidNotificationPermissionRequester();
+    try {
+      // 兜底超时：若原生侧因 Activity 回收等原因始终不回调，这里必须让出，
+      // 否则 _androidNotificationPermissionRequest 会永远非空，
+      // 后续每次调用都跟着挂起，权限再也不会被请求第二次。
+      await request.timeout(_androidNotificationPermissionTimeout);
+    } catch (_) {
+      _androidNotificationPermissionRequested = false;
+      rethrow;
+    } finally {
+      if (identical(_androidNotificationPermissionRequest, request)) {
+        _androidNotificationPermissionRequest = null;
+      }
+    }
+  }
+
+  /// Re-checks the system switch after returning from Settings. This allows a
+  /// previously denied notification permission to recover without restarting.
+  Future<void> refreshAndroidNotificationPermission() async {
+    if (!_isAndroid()) return;
+    try {
+      final enabled = await _androidNotificationChannel
+          .invokeMethod<bool>('areNotificationsEnabled');
+      if (enabled == true) {
+        _androidNotificationPermissionRequested = true;
+        // Re-publish playback state so a notification suppressed while the
+        // app was in Settings is created immediately after the user returns.
+        if (_player != null) _sync();
+      }
+    } catch (_) {}
   }
 
   PlayerController? _player;
@@ -70,10 +124,12 @@ class SystemMediaController extends BaseAudioHandler {
     if (!identical(_player, player)) return;
     player.removeListener(_sync);
     _player = null;
+    _publishedQueueKeys = const [];
+    _publishedMediaKey = null;
     queue.add(const <MediaItem>[]);
     mediaItem.add(null);
     playbackState.add(PlaybackState());
-    if (Platform.isIOS) {
+    if (_usesAppleNowPlaying) {
       unawaited(_iosChannel.invokeMethod<void>('clear'));
     }
   }
@@ -83,11 +139,21 @@ class SystemMediaController extends BaseAudioHandler {
     if (player == null) return;
     _ensureAndroidNotificationPermission(player.playing);
     final songs = player.queue;
-    final items = <MediaItem>[
+    final queueKeys = <String>[
       for (var index = 0; index < songs.length; index++)
-        _mediaItem(songs[index], index),
+        _songMediaKey(songs[index], index),
     ];
-    queue.add(items);
+    final queueChanged = !listEquals(_publishedQueueKeys, queueKeys);
+    final items = queueChanged
+        ? <MediaItem>[
+            for (var index = 0; index < songs.length; index++)
+              _mediaItem(songs[index], index),
+          ]
+        : queue.value;
+    if (queueChanged) {
+      _publishedQueueKeys = List.unmodifiable(queueKeys);
+      queue.add(items);
+    }
 
     final queueIndex = player.queueIndex;
     final currentItem = queueIndex >= 0 && queueIndex < items.length
@@ -95,7 +161,15 @@ class SystemMediaController extends BaseAudioHandler {
         : player.current == null
             ? null
             : _mediaItem(player.current!, 0);
-    mediaItem.add(currentItem);
+    final mediaKey = currentItem == null
+        ? null
+        : '${currentItem.id}\u001f${currentItem.title}\u001f'
+            '${currentItem.artist}\u001f${currentItem.album}\u001f'
+            '${currentItem.artUri}\u001f${currentItem.duration?.inMilliseconds}';
+    if (_publishedMediaKey != mediaKey) {
+      _publishedMediaKey = mediaKey;
+      mediaItem.add(currentItem);
+    }
 
     // Keep transport controls stable even for a one-song queue. Both Android
     // SystemUI and iOS hide previous/next when those actions are omitted; the
@@ -128,7 +202,7 @@ class SystemMediaController extends BaseAudioHandler {
         processingState: processingState,
         playing: player.playing,
         updatePosition: player.position,
-        bufferedPosition: player.position,
+        bufferedPosition: player.bufferedPosition,
         speed: 1,
         queueIndex: queueIndex >= 0 ? queueIndex : null,
         repeatMode: switch (player.loopMode.name) {
@@ -143,7 +217,7 @@ class SystemMediaController extends BaseAudioHandler {
         errorMessage: player.error,
       ),
     );
-    if (Platform.isIOS && currentItem != null) {
+    if (_usesAppleNowPlaying && currentItem != null) {
       unawaited(
         _iosChannel.invokeMethod<void>('update', {
           'title': currentItem.title,
@@ -161,21 +235,42 @@ class SystemMediaController extends BaseAudioHandler {
   }
 
   void _ensureAndroidNotificationPermission(bool playing) {
-    if (!_isAndroid() || !playing || _androidNotificationPermissionRequested) {
-      return;
-    }
-    _androidNotificationPermissionRequested = true;
+    if (!playing) return;
     unawaited(
-      _androidNotificationPermissionRequester().catchError((Object _) {
-        _androidNotificationPermissionRequested = false;
+      prepareForPlayback().catchError((Object _) {
+        // Permission errors must never interrupt audio playback.
       }),
     );
   }
 
   static bool _platformIsAndroid() => Platform.isAndroid;
 
-  static Future<void> _requestAndroidNotificationPermission() async {
-    await _androidNotificationChannel.invokeMethod<bool>('requestPermission');
+  static Future<dynamic> _requestAndroidNotificationPermission() async {
+    await _androidNotificationChannel
+        .invokeMethod<dynamic>('requestPermission');
+  }
+
+  /// Returns whether Android is currently allowing this app's notifications.
+  /// Used by Settings to explain why lock-screen/media controls may be absent.
+  static Future<bool?> androidNotificationsEnabled() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _androidNotificationChannel
+          .invokeMethod<bool>('areNotificationsEnabled');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> openAndroidNotificationSettings() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _androidNotificationChannel
+              .invokeMethod<bool>('openNotificationSettings') ??
+          false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<dynamic> _handleIosCommand(MethodCall call) async {
@@ -213,6 +308,12 @@ class SystemMediaController extends BaseAudioHandler {
       duration:
           song.durationMs > 0 ? Duration(milliseconds: song.durationMs) : null,
     );
+  }
+
+  String _songMediaKey(Song song, int index) {
+    return '$index\u001f${song.source}\u001f${song.id}\u001f${song.name}\u001f'
+        '${song.artistNames}\u001f${song.album.name}\u001f${song.album.picUrl}\u001f'
+        '${song.durationMs}';
   }
 
   @override

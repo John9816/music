@@ -17,7 +17,7 @@ class DesktopSettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsController>();
     final integration = context.watch<DesktopIntegrationService>();
-    final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    final desktop = Platform.isMacOS || Platform.isWindows;
     return Scaffold(
       appBar: GAppBar(
         title: '桌面与快捷键',
@@ -33,7 +33,7 @@ class DesktopSettingsView extends StatelessWidget {
                 icon: Icons.lyrics_outlined,
                 title: '状态栏歌词',
                 subtitle: Platform.isMacOS
-                    ? '播放时在菜单栏显示当前歌词，点击可唤回主窗口'
+                    ? '播放时在菜单栏显示当前歌词,点击可唤回主窗口'
                     : '该功能当前在 macOS 上可用',
                 trailing: SettingsSwitch(
                   value: settings.statusBarLyrics,
@@ -41,6 +41,9 @@ class DesktopSettingsView extends StatelessWidget {
                       ? settings.setStatusBarLyrics
                       : (_) => _message(context, '状态栏歌词当前仅支持 macOS'),
                 ),
+                onToggle: Platform.isMacOS
+                    ? settings.setStatusBarLyrics
+                    : (_) => _message(context, '状态栏歌词当前仅支持 macOS'),
               ),
             ],
           ),
@@ -57,6 +60,9 @@ class DesktopSettingsView extends StatelessWidget {
                       ? settings.setGlobalShortcutsEnabled
                       : (_) => _message(context, '当前平台不支持全局快捷键'),
                 ),
+                onToggle: desktop
+                    ? settings.setGlobalShortcutsEnabled
+                    : (_) => _message(context, '当前平台不支持全局快捷键'),
               ),
               for (final spec in playbackShortcutSpecs)
                 _shortcutRow(context, spec, settings, integration),

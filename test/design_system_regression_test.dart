@@ -202,9 +202,7 @@ void main() {
       fields.map((field) => field.decoration?.floatingLabelBehavior),
       everyElement(FloatingLabelBehavior.always),
     );
-    final consent = tester.widget<Text>(
-      find.text('已阅读并同意用户协议与隐私政策'),
-    );
+    final consent = tester.widget<Text>(find.text('我已阅读并同意'));
     expect(consent.maxLines, isNull);
     expect(consent.overflow, isNot(TextOverflow.ellipsis));
     expect(tester.takeException(), isNull);

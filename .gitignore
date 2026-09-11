@@ -15,3 +15,10 @@ android/*.keystore
 
 # Flutter macOS 构建产生的临时目录
 flutter_app/
+
+# IDE
+.idea/
+
+# 本地工具与运行日志
+.superpowers/
+flutter_*.log

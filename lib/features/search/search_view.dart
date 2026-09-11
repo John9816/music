@@ -14,6 +14,7 @@ import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/playlist_card.dart';
 import '../../widgets/song_row.dart';
+import '../../core/utils/image_cache_manager.dart';
 import '../playlists/playlist_detail_view.dart';
 import 'artist_names_link.dart';
 
@@ -130,6 +131,10 @@ class _SearchViewState extends State<SearchView> {
     );
     _debounce?.cancel();
     _search(kw, clearResults: true);
+    // 只在显式提交时保存历史
+    if (kw.trim().isNotEmpty) {
+      unawaited(_saveHistory(kw.trim()));
+    }
   }
 
   void _openArtist(SearchArtist artist) {
@@ -148,8 +153,9 @@ class _SearchViewState extends State<SearchView> {
     final source = album.source ?? context.read<SettingsController>().source;
     final numericId = int.tryParse(album.id) ?? album.id.hashCode;
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PlaylistDetailView(
+      buildAppRoute(
+        context,
+        (_) => PlaylistDetailView(
           kind: PlaylistDetailKind.album,
           playlist: Playlist(
             id: numericId,
@@ -189,20 +195,21 @@ class _SearchViewState extends State<SearchView> {
       });
       return;
     }
+    // 保留旧结果，只设置搜索状态
     setState(() {
       _keyword = keyword;
       _searching = true;
-      _results = [];
-      _artists = [];
-      _albums = [];
-      _playlists = [];
       _page = 1;
-      _hasNextPage = false;
       _pageError = null;
     });
     _debounce = Timer(
       const Duration(milliseconds: 400),
-      () => _search(keyword, clearResults: true),
+      () {
+        if (mounted && keyword.isNotEmpty) {
+          _search(keyword, clearResults: true);
+          // 移除这里的自动保存历史
+        }
+      },
     );
   }
 
@@ -260,6 +267,15 @@ class _SearchViewState extends State<SearchView> {
         final songs = values[1] as List<Song>;
         final artists = values[2] as List<SearchArtist>;
         final albums = values[3] as List<SearchAlbum>;
+
+        // 预加载封面
+        final coverUrls = <String?>[
+          ...songs.map((s) => s.album.picUrl),
+          ...albums.map((a) => a.coverUrl),
+          ...playlists.map((p) => p.coverUrl),
+        ];
+        ImageCacheManager.preloadCovers(coverUrls, limit: 15);
+
         setState(() {
           _playlists = playlists;
           _results = songs;
@@ -348,7 +364,7 @@ class _SearchViewState extends State<SearchView> {
             _hasNextPage = list.length >= _pageSize;
           });
       }
-      unawaited(_saveHistory(keyword));
+      // 移除这里的自动保存历史，只在_submit里保存
     } catch (error) {
       if (_isCurrentRequest(requestVersion, keyword, type, source)) {
         setState(() => _pageError = error.toString());
@@ -595,7 +611,7 @@ class _SearchViewState extends State<SearchView> {
               _keyword.isEmpty
                   ? _buildHome()
                   : _searching && _currentResultsEmpty
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const GSkeletonList(itemCount: 8)
                       : _pageError != null && _currentResultsEmpty
                           ? GEmptyState(
                               icon: Icons.error_outline_rounded,
@@ -689,11 +705,13 @@ class _SearchViewState extends State<SearchView> {
                   Expanded(
                     child: ListView.builder(
                       itemCount: _results.length,
-                      itemBuilder: (context, i) => SongRow(
-                        song: _results[i],
-                        onTap: () => context
-                            .read<PlayerController>()
-                            .playQueue(_results, index: i),
+                      itemBuilder: (context, i) => RepaintBoundary(
+                        child: SongRow(
+                          song: _results[i],
+                          onTap: () => context
+                              .read<PlayerController>()
+                              .playQueue(_results, index: i),
+                        ),
                       ),
                     ),
                   ),
@@ -709,9 +727,11 @@ class _SearchViewState extends State<SearchView> {
                   Expanded(
                     child: ListView.builder(
                       itemCount: _artists.length,
-                      itemBuilder: (context, i) => _ArtistRow(
-                        artist: _artists[i],
-                        onTap: () => _openArtist(_artists[i]),
+                      itemBuilder: (context, i) => RepaintBoundary(
+                        child: _ArtistRow(
+                          artist: _artists[i],
+                          onTap: () => _openArtist(_artists[i]),
+                        ),
                       ),
                     ),
                   ),
@@ -729,9 +749,11 @@ class _SearchViewState extends State<SearchView> {
                   Expanded(
                     child: ListView.builder(
                       itemCount: _albums.length,
-                      itemBuilder: (context, i) => _AlbumRow(
-                        album: _albums[i],
-                        onTap: () => _openAlbum(_albums[i]),
+                      itemBuilder: (context, i) => RepaintBoundary(
+                        child: _AlbumRow(
+                          album: _albums[i],
+                          onTap: () => _openAlbum(_albums[i]),
+                        ),
                       ),
                     ),
                   ),
@@ -760,8 +782,9 @@ class _SearchViewState extends State<SearchView> {
                         return PlaylistCard(
                           playlist: p,
                           onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlaylistDetailView(
+                            buildAppRoute(
+                              context,
+                              (_) => PlaylistDetailView(
                                 playlist: p,
                                 loader: () => _api.getPlaylistDetail(
                                   p.id,
@@ -800,8 +823,9 @@ class _SearchViewState extends State<SearchView> {
                 child: PlaylistCard(
                   playlist: playlist,
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PlaylistDetailView(
+                    buildAppRoute(
+                      context,
+                      (_) => PlaylistDetailView(
                         playlist: playlist,
                         loader: () => _api.getPlaylistDetail(
                           playlist.id,

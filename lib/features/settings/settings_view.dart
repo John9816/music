@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/config/app_config.dart';
 import '../../core/config/audio_quality_policy.dart';
 import '../../core/player/player_controller.dart';
+import '../../core/player/system_media_controller.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/theme/app_theme.dart';
@@ -25,7 +26,7 @@ class SettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsController>();
     final sleepTimer = context.watch<SleepTimer>();
-    final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    final desktop = Platform.isMacOS || Platform.isWindows;
 
     return Scaffold(
       appBar: GAppBar(
@@ -90,6 +91,7 @@ class SettingsView extends StatelessWidget {
                   value: settings.reduceMotion,
                   onChanged: settings.setReduceMotion,
                 ),
+                onToggle: settings.setReduceMotion,
               ),
             ],
           ),
@@ -146,6 +148,7 @@ class SettingsView extends StatelessWidget {
           const SettingsSection('通知与支持'),
           SettingsGroup(
             children: [
+              if (Platform.isAndroid) const AndroidMediaStatusRow(),
               SettingsRow(
                 icon: Icons.notifications_rounded,
                 title: '通知',
@@ -174,7 +177,7 @@ class SettingsView extends StatelessWidget {
       title: '选择音乐源',
       current: settings.source,
       options: AppConfig.musicSources.entries
-          .map((entry) => (value: entry.key, label: entry.value))
+          .map((entry) => (value: entry.key, label: entry.value, detail: null))
           .toList(),
     );
     if (value != null) await settings.setSource(value);
@@ -189,9 +192,9 @@ class SettingsView extends StatelessWidget {
       title: '显示模式',
       current: settings.themeModeId,
       options: const [
-        (value: 'system', label: '跟随系统'),
-        (value: 'dark', label: '深色'),
-        (value: 'light', label: '浅色'),
+        (value: 'system', label: '跟随系统', detail: null),
+        (value: 'dark', label: '深色', detail: null),
+        (value: 'light', label: '浅色', detail: null),
       ],
     );
     if (value != null) await settings.setThemeMode(value);
@@ -206,7 +209,7 @@ class SettingsView extends StatelessWidget {
       title: '主题色',
       current: settings.accentId,
       options: AppAccent.all
-          .map((accent) => (value: accent.id, label: accent.name))
+          .map((accent) => (value: accent.id, label: accent.name, detail: null))
           .toList(),
     );
     if (value != null) await settings.setAccentColor(value);
@@ -221,9 +224,9 @@ class SettingsView extends StatelessWidget {
       title: '液态玻璃质量',
       current: settings.glassQuality,
       options: const [
-        (value: 'smooth', label: '流畅'),
-        (value: 'detailed', label: '精细'),
-        (value: 'auto', label: '自动'),
+        (value: 'smooth', label: '流畅', detail: '省电'),
+        (value: 'detailed', label: '精细', detail: null),
+        (value: 'auto', label: '自动', detail: '跟随屏幕'),
       ],
     );
     if (value != null) await settings.setGlassQuality(value);
@@ -238,7 +241,7 @@ class SettingsView extends StatelessWidget {
       title: '${sourceDisplayName(settings.source)}播放音质',
       current: settings.qualityForSource(settings.source),
       options: qualityOptionsForSource(settings.source)
-          .map((option) => (value: option.id, label: option.label))
+          .map((option) => (value: option.id, label: option.label, detail: option.detail))
           .toList(),
     );
     if (value != null) {
@@ -294,6 +297,141 @@ class SettingsView extends StatelessWidget {
   void _open(BuildContext context, Widget page) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => page),
+    );
+  }
+}
+
+class AndroidMediaStatusRow extends StatefulWidget {
+  const AndroidMediaStatusRow({super.key});
+
+  @override
+  State<AndroidMediaStatusRow> createState() => _AndroidMediaStatusRowState();
+}
+
+class _AndroidMediaStatusRowState extends State<AndroidMediaStatusRow>
+    with WidgetsBindingObserver {
+  bool? _enabled;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final enabled = await SystemMediaController.androidNotificationsEnabled();
+    if (!mounted) return;
+    setState(() {
+      _enabled = enabled;
+      _loading = false;
+    });
+  }
+
+  Future<void> _open() async {
+    await SystemMediaController.openAndroidNotificationSettings();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final title = _loading
+        ? '检查媒体控制'
+        : _enabled == true
+            ? '媒体通知已开启'
+            : '媒体通知未开启';
+    final subtitle = _loading
+        ? '正在检查通知权限'
+        : _enabled == true
+            ? '锁屏、通知中心和系统媒体卡可显示播放控制'
+            : '开启后才能显示锁屏与通知中心的上一首、播放和下一首';
+    return GPressScale(
+      onTap: _loading ? null : _open,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                child: Icon(
+                  _enabled == true
+                      ? Icons.multitrack_audio_rounded
+                      : Icons.notifications_paused_outlined,
+                  size: 20,
+                  color: _enabled == true
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: TypeScale.semibold,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else ...[
+                Text(
+                  _enabled == true ? '已开启' : '去开启',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: TypeScale.semibold,
+                    color: _enabled == true
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 19,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

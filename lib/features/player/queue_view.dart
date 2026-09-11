@@ -15,12 +15,29 @@ Future<void> showQueueSheet(BuildContext context) {
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (context) => const _QueueSheet(),
+    enableDrag: false,
+    sheetAnimationStyle: AnimationStyle(
+      duration: PlatformMotion.duration(context, Motion.slow),
+      reverseDuration: PlatformMotion.duration(context, Motion.normal),
+    ),
+    builder: (context) => DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.42,
+      maxChildSize: 0.94,
+      expand: false,
+      snap: !MediaQuery.disableAnimationsOf(context),
+      snapSizes: const [0.72],
+      snapAnimationDuration: Motion.normal,
+      builder: (context, scrollController) =>
+          _QueueSheet(scrollController: scrollController),
+    ),
   );
 }
 
 class _QueueSheet extends StatelessWidget {
-  const _QueueSheet();
+  const _QueueSheet({required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -29,90 +46,144 @@ class _QueueSheet extends StatelessWidget {
     final queueIndex =
         context.select<PlayerController, int>((p) => p.queueIndex);
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      height: MediaQuery.sizeOf(context).height * 0.72,
-      decoration: BoxDecoration(
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      child: ColoredBox(
         color: scheme.surfaceContainerLow,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        border: Border(top: BorderSide(color: glassHairline(context))),
+        child: SafeArea(
+          top: false,
+          child: CustomScrollView(
+            controller: scrollController,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
+            slivers: [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _QueueHeader(count: queue.length),
+              ),
+              if (queue.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text('播放队列为空')),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  sliver: SliverList.builder(
+                    itemCount: queue.length,
+                    itemBuilder: (context, i) {
+                      final song = queue[i];
+                      final isCurrent = i == queueIndex;
+                      return GListTile(
+                        key: ValueKey((song.source, song.id, i)),
+                        selected: isCurrent,
+                        leading: SizedBox.square(
+                          dimension: 24,
+                          child: isCurrent
+                              ? const _NowPlayingEQ()
+                              : Center(
+                                  child: Text(
+                                    '${i + 1}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: scheme.outline,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        title: Text(song.name),
+                        subtitle: ArtistNamesLink(
+                          artists: song.artists,
+                          source: song.source,
+                        ),
+                        trailing: SongActionButton(
+                          song: song,
+                          queueIndex: i,
+                          onPlay: () => player.playAt(i),
+                        ),
+                        onTap: () => player.playAt(i),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+}
+
+class _QueueHeader extends SliverPersistentHeaderDelegate {
+  const _QueueHeader({required this.count});
+
+  final int count;
+
+  @override
+  double get minExtent => 72;
+
+  @override
+  double get maxExtent => 72;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerLow,
       child: Column(
         children: [
-          // 拖拽把手
-          const SizedBox(height: 8),
           Container(
             width: 36,
             height: 4,
+            margin: const EdgeInsets.only(top: 10, bottom: 4),
             decoration: BoxDecoration(
               color: scheme.outlineVariant,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          // 标题栏：标题 + 关闭按钮
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '播放队列 (${queue.length})',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 20, right: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '播放队列 ($count)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
                     ),
                   ),
-                ),
-                GIconButton(
-                  icon: Icons.close,
-                  tooltip: '关闭播放队列',
-                  size: 18,
-                  padding: 2,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-              ],
+                  GIconButton(
+                    icon: Icons.close_rounded,
+                    tooltip: '关闭播放队列',
+                    size: 18,
+                    padding: 2,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                ],
+              ),
             ),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              itemCount: queue.length,
-              itemBuilder: (context, i) {
-                final song = queue[i];
-                final isCurrent = i == queueIndex;
-                return GListTile(
-                  selected: isCurrent,
-                  leading: isCurrent
-                      ? const _NowPlayingEQ()
-                      : Text(
-                          '${i + 1}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: scheme.outline,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                  title: Text(song.name),
-                  subtitle: ArtistNamesLink(
-                    artists: song.artists,
-                    source: song.source,
-                  ),
-                  trailing: SongActionButton(
-                    song: song,
-                    queueIndex: i,
-                    onPlay: () => player.playAt(i),
-                  ),
-                  onTap: () => player.playAt(i),
-                );
-              },
-            ),
-          ),
         ],
       ),
     );
   }
+
+  @override
+  bool shouldRebuild(covariant _QueueHeader oldDelegate) =>
+      count != oldDelegate.count;
 }
 
 /// 当前播放动效均衡器（网易云风格：4 根红色音柱跳动）
@@ -126,6 +197,7 @@ class _NowPlayingEQ extends StatefulWidget {
 class _NowPlayingEQState extends State<_NowPlayingEQ>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
+  bool? _lastAnimating;
   static const _barCount = 4;
   static const _heights = [14, 22, 18, 10];
 
@@ -135,7 +207,7 @@ class _NowPlayingEQState extends State<_NowPlayingEQ>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    );
   }
 
   @override
@@ -147,7 +219,23 @@ class _NowPlayingEQState extends State<_NowPlayingEQ>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final playing = context.select<PlayerController, bool>((p) => p.playing);
+    final animate = playing &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        TickerMode.valuesOf(context).enabled;
+    if (_lastAnimating != animate) {
+      _lastAnimating = animate;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (animate) {
+          _ctrl.repeat(reverse: true);
+        } else {
+          _ctrl.stop();
+        }
+      });
+    }
     return SizedBox(
+      key: const ValueKey('queue-now-playing-eq'),
       width: 24,
       height: 24,
       child: AnimatedBuilder(

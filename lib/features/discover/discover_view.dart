@@ -6,6 +6,7 @@ import '../../core/models/playlist.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/settings/settings_controller.dart';
+import '../../core/utils/toast_helper.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_row.dart';
@@ -34,6 +35,7 @@ class _DiscoverViewState extends State<DiscoverView> {
   final ScrollController _albumController = ScrollController();
   late Future<(List<Song>, List<Album>)> _future;
   Future<(List<Song>, List<Album>)>? _loadingFuture;
+  (List<Song>, List<Album>)? _lastData;
   bool _albumAtStart = true;
   bool _albumAtEnd = false;
 
@@ -66,7 +68,10 @@ class _DiscoverViewState extends State<DiscoverView> {
     final existing = _loadingFuture;
     if (existing != null) return existing;
 
-    final future = _load();
+    final future = _load().then((data) {
+      _lastData = data;
+      return data;
+    });
     _loadingFuture = future;
     future.then<void>(
       (_) {
@@ -79,13 +84,31 @@ class _DiscoverViewState extends State<DiscoverView> {
     return future;
   }
 
-  void _reload() {
+  Future<void> _reload() async {
     if (!mounted) return;
     final future = _startLoad();
     if (identical(_future, future)) return;
     setState(() {
       _future = future;
     });
+    try {
+      await future;
+    } catch (_) {
+      if (!mounted || _lastData == null) return;
+      showAppToast(
+        context,
+        '刷新失败，请检查网络后重试',
+        action: SnackBarAction(label: '重试', onPressed: _reload),
+      );
+    }
+  }
+
+  double _featureHeight(BuildContext context) {
+    final minimum =
+        MediaQuery.sizeOf(context).width < GBreakpoints.compact ? 144.0 : 160.0;
+    return (MediaQuery.textScalerOf(context).scale(20) * 5 + 24)
+        .clamp(minimum, double.infinity)
+        .toDouble();
   }
 
   String _greeting() {
@@ -134,84 +157,224 @@ class _DiscoverViewState extends State<DiscoverView> {
       body: FutureBuilder(
         future: _future,
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const GLoading();
-          }
-          if (snapshot.hasError) {
-            return GEmptyState(
-              icon: Icons.wifi_off,
-              text: '加载失败，请检查网络后重试',
-              onRetry: _reload,
+          if (snapshot.connectionState != ConnectionState.done &&
+              _lastData == null) {
+            // 骨架屏匹配真实布局：页头 + Hero卡 + 专辑横条 + 歌曲列表
+            return CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: GPageHeader(
+                    title: widget.title,
+                    subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: SizedBox(
+                      height: _featureHeight(context),
+                      child: const Row(
+                        children: [
+                          GSkeleton(width: 112, height: 112, radius: 8),
+                          SizedBox(width: 16),
+                          Expanded(
+                              child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              GSkeleton(width: 64, height: 12),
+                              SizedBox(height: 12),
+                              GSkeleton(width: double.infinity, height: 22),
+                              SizedBox(height: 14),
+                              GSkeleton(width: 88, height: 14),
+                            ],
+                          )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SectionHeader('最新专辑')),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height:
+                        164 + MediaQuery.textScalerOf(context).scale(13) * 1.35,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: 5,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (context, _) => const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GSkeleton(
+                            width: 140,
+                            height: 140,
+                            radius: RadiusToken.sm,
+                          ),
+                          SizedBox(height: 8),
+                          GSkeleton(width: 140, height: 13),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                const SliverToBoxAdapter(
+                  child: GSkeletonList(itemCount: 5),
+                ),
+              ],
             );
           }
-          final (daily, albums) = snapshot.data!;
+          if (snapshot.hasError && _lastData == null) {
+            return RefreshIndicator(
+              onRefresh: _reload,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: GPageHeader(
+                      title: widget.title,
+                      subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
+                    ),
+                  ),
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: GEmptyState(
+                      icon: Icons.wifi_off,
+                      text: '加载失败，请检查网络后重试',
+                      onRetry: _reload,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          final (daily, albums) = _lastData ?? snapshot.data!;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _syncAlbumScrollState();
           });
-          return CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: GPageHeader(
-                  title: widget.title,
-                  subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
-                ),
-              ),
-              SliverToBoxAdapter(child: _buildHero(context, daily)),
-              SliverToBoxAdapter(
-                child: SectionHeader(
-                  '最新专辑',
-                  action: _buildAlbumHeaderAction(context, albums.length),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 172,
-                  child: ListView.separated(
-                    controller: _albumController,
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    itemCount: albums.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
-                    itemBuilder: (context, i) => _AlbumCard(
-                      album: albums[i],
-                      onTap: () => _openAlbum(context, albums[i]),
-                    ),
+          final desktop = MediaQuery.sizeOf(context).width >= 600;
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: CustomScrollView(
+              key: const PageStorageKey('discover-scroll'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: GPageHeader(
+                    title: widget.title,
+                    subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
+                    actions: desktop
+                        ? [
+                            GIconButton(
+                              icon: Icons.refresh_rounded,
+                              tooltip: '刷新',
+                              disabled: snapshot.connectionState !=
+                                  ConnectionState.done,
+                              onTap: _reload,
+                            ),
+                          ]
+                        : null,
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: SectionHeader(
-                  '每日推荐',
-                  subtitle: '根据你的口味精选',
-                  action: Text(
-                    '${daily.length} 首',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
+                SliverToBoxAdapter(child: _buildHero(context, daily)),
+                SliverToBoxAdapter(
+                  child: SectionHeader(
+                    '最新专辑',
+                    action: _buildAlbumHeaderAction(context, albums.length),
                   ),
                 ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                sliver: SliverList.builder(
-                  itemCount: daily.length,
-                  itemBuilder: (context, i) {
-                    final song = daily[i];
-                    return SongRow(
-                      song: song,
-                      leading: _RankCover(
-                        index: i,
-                        coverUrl: song.album.picUrl,
-                        scheme: Theme.of(context).colorScheme,
+                SliverToBoxAdapter(
+                  child: albums.isEmpty
+                      ? ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 132),
+                          child: const GEmptyState(
+                            icon: Icons.album_outlined,
+                            text: '暂时没有新专辑',
+                          ),
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final textScaler = MediaQuery.textScalerOf(context);
+                            final scaledTextHeight = textScaler.scale(13.0);
+                            final height =
+                                140 + 8 + scaledTextHeight * 1.35 + 16;
+                            return SizedBox(
+                              height: height,
+                              child: ListView.separated(
+                                controller: _albumController,
+                                scrollDirection: Axis.horizontal,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
+                                itemCount: albums.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 14),
+                                itemBuilder: (context, i) => _AlbumCard(
+                                  album: albums[i],
+                                  key: ValueKey(albums[i].detailId),
+                                  onTap: () => _openAlbum(context, albums[i]),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                SliverToBoxAdapter(
+                  child: SectionHeader(
+                    '每日推荐',
+                    subtitle: daily.isEmpty ? null : '根据你的口味精选',
+                    action: daily.isEmpty
+                        ? null
+                        : Text(
+                            '${daily.length} 首',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                  ),
+                ),
+                if (daily.isEmpty)
+                  SliverToBoxAdapter(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 150),
+                      child: const GEmptyState(
+                        icon: Icons.music_off_rounded,
+                        text: '暂时没有推荐歌曲，稍后再来看看',
                       ),
-                      onTap: () => _play(context, daily, i),
-                    );
-                  },
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            ],
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    sliver: SliverList.builder(
+                      itemCount: daily.length,
+                      itemBuilder: (context, i) {
+                        final song = daily[i];
+                        // 首屏错峰淡入上浮；滚动复用不会重复播放。
+                        return GListEntrance(
+                          key: ValueKey('${song.source}:${song.id}'),
+                          index: i,
+                          child: SongRow(
+                            song: song,
+                            leading: MediaQuery.sizeOf(context).width >=
+                                    GBreakpoints.compact
+                                ? _RankCover(
+                                    index: i,
+                                    coverUrl: song.album.picUrl,
+                                    scheme: Theme.of(context).colorScheme,
+                                  )
+                                : null,
+                            onTap: () => _play(context, daily, i),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              ],
+            ),
           );
         },
       ),
@@ -265,145 +428,70 @@ class _DiscoverViewState extends State<DiscoverView> {
     if (daily.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     final hero = daily.first;
-    final wide = MediaQuery.sizeOf(context).width >= 560;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: GPressScale(
-        onTap: () => _play(context, daily, 0),
-        child: Stack(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: SizedBox(
+        height: _featureHeight(context),
+        child: Row(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(RadiusToken.md),
-                color: scheme.surfaceContainerHigh.withValues(alpha: 0.72),
-                border: Border.all(color: glassHairline(context)),
+            GPressScale(
+              onTap: () => _play(context, daily, 0),
+              child: Semantics(
+                label: '播放 ${hero.name}',
+                child: AsyncCover(url: hero.album.picUrl, size: 112, radius: 8),
               ),
-              height: wide ? 160 : null,
-              padding: wide ? null : const EdgeInsets.all(16),
-              child: wide
-                  ? Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.22),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: AsyncCover(
-                              url: hero.album.picUrl,
-                              size: 132,
-                              radius: RadiusToken.lg,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 18),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '今日主推',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: scheme.outline,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  hero.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: pageTitleStyle(context)
-                                      .copyWith(fontSize: 20),
-                                ),
-                                const SizedBox(height: 4),
-                                ArtistNamesLink(
-                                  artists: hero.artists,
-                                  source: hero.source,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 13, color: scheme.outline),
-                                ),
-                                const SizedBox(height: 14),
-                                GButton(
-                                  label: '立即播放',
-                                  icon: Icons.play_arrow,
-                                  onTap: () => _play(context, daily, 0),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      children: [
-                        AsyncCover(
-                            url: hero.album.picUrl,
-                            size: 118,
-                            radius: RadiusToken.lg),
-                        const SizedBox(height: 12),
-                        Text(
-                          '今日主推',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: scheme.outline,
-                              fontWeight: FontWeight.w500),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          hero.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: pageTitleStyle(context).copyWith(fontSize: 18),
-                        ),
-                        const SizedBox(height: 2),
-                        ArtistNamesLink(
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '今日主推',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: TypeScale.small,
+                      fontWeight: TypeScale.medium,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    hero.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: TypeScale.title,
+                      height: 1.15,
+                      fontWeight: TypeScale.bold,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ArtistNamesLink(
                           artists: hero.artists,
                           source: hero.source,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: scheme.outline),
+                          style: TextStyle(
+                            fontSize: TypeScale.body,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
-                        const SizedBox(height: 10),
-                        GButton(
-                          label: '立即播放',
-                          icon: Icons.play_arrow,
-                          onTap: () => _play(context, daily, 0),
-                        ),
-                      ],
-                    ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '每日推荐',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 6),
+                      GIconButton(
+                        icon: Icons.play_arrow_rounded,
+                        tooltip: '播放每日推荐',
+                        filled: true,
+                        onTap: () => _play(context, daily, 0),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -489,7 +577,7 @@ class _RankCover extends StatelessWidget {
 }
 
 class _AlbumCard extends StatelessWidget {
-  const _AlbumCard({required this.album, required this.onTap});
+  const _AlbumCard({super.key, required this.album, required this.onTap});
 
   final Album album;
   final VoidCallback onTap;
@@ -514,7 +602,7 @@ class _AlbumCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: AsyncCover(url: album.picUrl, size: 140, radius: 14),
+              child: AsyncCover(url: album.picUrl, size: 140, radius: 8),
             ),
             const SizedBox(height: 8),
             Text(
@@ -523,6 +611,7 @@ class _AlbumCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
+                height: 1.35,
                 fontWeight: FontWeight.w600,
                 color: scheme.onSurface,
               ),

@@ -15,6 +15,7 @@ import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_action_menu.dart';
+import '../../core/utils/image_cache_manager.dart';
 import '../search/artist_names_link.dart';
 
 enum PlaylistDetailKind { playlist, album }
@@ -114,8 +115,15 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
     final future = _load();
     _loadingFuture = future;
     future.then<void>(
-      (_) {
-        if (identical(_loadingFuture, future)) _loadingFuture = null;
+      (songs) {
+        if (identical(_loadingFuture, future)) {
+          _loadingFuture = null;
+          // 预加载前10个封面
+          if (songs.isNotEmpty) {
+            final coverUrls = songs.map((s) => s.album.picUrl).toList();
+            ImageCacheManager.preloadCovers(coverUrls, limit: 10);
+          }
+        }
       },
       onError: (Object error, StackTrace stackTrace) {
         if (identical(_loadingFuture, future)) _loadingFuture = null;
@@ -267,7 +275,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Padding(
               padding: EdgeInsets.only(top: 56),
-              child: Center(child: CircularProgressIndicator()),
+              child: GSkeletonList(itemCount: 8),
             );
           }
           if (snapshot.hasError) {
@@ -504,9 +512,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
             loading: snapshot.connectionState != ConnectionState.done,
             downloadBusy: _downloadAllBusy,
             reverseOrder: _reverseOrder,
-            onPlay: allSongs.isEmpty
+            onPlay: visibleSongs.isEmpty
                 ? null
-                : () => context.read<PlayerController>().playQueue(allSongs),
+                : () => context.read<PlayerController>().playQueue(visibleSongs),
             onFilter: _toggleSearch,
             onDownload: allSongs.isEmpty ? null : () => _downloadAll(allSongs),
             onSort: () => setState(() => _reverseOrder = !_reverseOrder),
@@ -526,7 +534,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               color: panelColor,
               child: SizedBox(
                 height: 260,
-                child: Center(child: CircularProgressIndicator()),
+                child: GSkeletonList(itemCount: 4),
               ),
             ),
           )
@@ -564,12 +572,16 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
         else
           SliverList.builder(
             itemCount: visibleSongs.length,
-            itemBuilder: (context, index) => _MobilePlaylistSongRow(
-              song: visibleSongs[index],
-              songs: visibleSongs,
-              index: index,
-              color: panelColor,
-            ),
+            itemBuilder: (context, index) {
+              return RepaintBoundary(
+                child: _MobilePlaylistSongRow(
+                  song: visibleSongs[index],
+                  songs: visibleSongs,
+                  index: index,
+                  color: panelColor,
+                ),
+              );
+            },
           ),
         const SliverToBoxAdapter(
           child: ColoredBox(

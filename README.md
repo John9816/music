@@ -21,15 +21,34 @@ DuckMusic/
 
 确保 Flutter SDK 已安装并执行过 `flutter doctor`。
 
+### Android Studio 启动
+
+1. 在 Android Studio 中安装 **Flutter** 插件及其依赖 **Dart**，然后打开包含 `pubspec.yaml` 的 **DuckMusic 根目录**。
+2. 在 Settings > Languages & Frameworks > Flutter 设置 Flutter SDK。本机路径为 `/Users/wangweijie/development/flutter`，当前安装版本为 3.44.8；其他电脑填写各自的 SDK 路径。
+3. 首次打开时执行 `flutter pub get`。SDK Manager 中需有 Android SDK Platform 36、Build Tools 36 和 NDK 28.2.13676358；Gradle JDK 使用 Android Studio 自带的 JBR（Gradle 9.1 需要 Java 17 或更高版本）。
+4. 从 Device Manager 启动模拟器，或连接已启用 USB 调试的 Android 手机。本机已有 `Medium_Phone` 模拟器。
+5. 选择共享运行配置 **DuckMusic Android**，选择 Android 设备后点击 Run。入口是 `lib/main.dart`，默认运行 debug 模式，支持热重载。
+
+`android/` 是原生宿主，主要用于 Gradle、权限和签名设置。Flutter 日常开发使用根目录项目。`android/local.properties` 中的 `sdk.dir`、`flutter.sdk` 是每台电脑的本地路径，不提交到版本库。
+
+本地 debug 包使用 `com.music.player.debug`，可与正式版同时安装，数据各自独立。运行 debug 不需要正式签名文件；release 构建仍需要 `android/key.properties` 和正式签名证书。
+
 ```bash
+# 首次安装依赖
+flutter pub get
+
 # macOS（开发主力）
 flutter run -d macos
 
 # iOS（需 Xcode + 开发者证书）
 flutter run -d ios
 
-# Android
-flutter run -d android
+# Android：先获取设备 ID，再指定一个实际设备
+flutter devices
+flutter run -d <android-device-id>
+
+# 本地 Android APK（build/app/outputs/flutter-apk/app-debug.apk）
+flutter build apk --debug
 
 # Windows（需 Visual Studio 工具链）
 flutter run -d windows

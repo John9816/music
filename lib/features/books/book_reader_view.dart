@@ -143,10 +143,12 @@ class _BookReaderViewState extends State<BookReaderView> {
   List<String> _paginate(String text) {
     if (text.isEmpty) return const ['正文为空'];
     final viewport = MediaQuery.sizeOf(context);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final scaledFontSize = _fontSize * textScaler.scale(_fontSize) / _fontSize;
     final contentWidth = (viewport.width - 44).clamp(280.0, 760.0);
     final contentHeight = (viewport.height - 70).clamp(400.0, 1200.0);
-    final charactersPerLine = contentWidth / _fontSize * 0.78;
-    final linesPerPage = contentHeight / (_fontSize * _lineHeight);
+    final charactersPerLine = contentWidth / scaledFontSize * 0.78;
+    final linesPerPage = contentHeight / (scaledFontSize * _lineHeight);
     final maxCharacters =
         (charactersPerLine * linesPerPage).floor().clamp(120, 1300);
     final chunks = <String>[];
@@ -202,8 +204,9 @@ class _BookReaderViewState extends State<BookReaderView> {
     if (target >= 0 && target < _pages.length) {
       _pageController.animateToPage(
         target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+        // 走令牌并尊重「减弱动态效果」：关闭动画时直接跳页。
+        duration: PlatformMotion.duration(context, Motion.normal),
+        curve: Motion.standard,
       );
       return;
     }
@@ -496,7 +499,7 @@ class _BookReaderViewState extends State<BookReaderView> {
         ignoring: !visible,
         child: AnimatedOpacity(
           opacity: visible ? 1 : 0,
-          duration: const Duration(milliseconds: 180),
+          duration: PlatformMotion.duration(context, Motion.normal),
           child: SafeArea(
             bottom: false,
             child: Container(

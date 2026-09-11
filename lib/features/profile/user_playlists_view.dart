@@ -212,6 +212,9 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                     text: widget.filter == UserPlaylistFilter.favorites
                         ? '还没有收藏的歌单'
                         : '还没有歌单',
+                    actionLabel: widget.filter == UserPlaylistFilter.favorites
+                        ? '重试'
+                        : '导入歌单',
                     onRetry: widget.filter == UserPlaylistFilter.favorites
                         ? _reload
                         : _openImport,

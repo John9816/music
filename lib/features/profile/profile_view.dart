@@ -39,6 +39,7 @@ class _ProfileViewState extends State<ProfileView> {
   String? _membershipToken;
   Membership? _membership;
   bool _membershipLoading = false;
+  bool _membershipError = false;
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +101,13 @@ class _ProfileViewState extends State<ProfileView> {
               ? () => _openPage(context, const EditProfileView())
               : () => _openLogin(context),
           onMembershipTap: auth.isLoggedIn
-              ? () => _showRedeemDialog(auth.token!)
+              ? () {
+                  if (_membershipError) {
+                    _loadMembership(auth.token!);
+                  } else {
+                    _showRedeemDialog(auth.token!);
+                  }
+                }
               : () => _openLogin(context),
         ),
         const _SectionTitle('音乐资料库'),
@@ -254,22 +261,33 @@ class _ProfileViewState extends State<ProfileView> {
 
   Future<void> _loadMembership(String token) async {
     if (_membershipLoading) return;
-    setState(() => _membershipLoading = true);
+    setState(() {
+      _membershipLoading = true;
+      _membershipError = false;
+    });
     try {
       final membership = await MembershipApi().getMembership(token);
       if (mounted && token == _membershipToken) {
-        setState(() => _membership = membership);
+        setState(() {
+          _membership = membership;
+          _membershipError = false;
+        });
       }
     } catch (_) {
-      // 会员状态不是页面主体，失败时保留兑换入口即可。
+      if (mounted) {
+        setState(() => _membershipError = true);
+      }
     } finally {
       if (mounted) setState(() => _membershipLoading = false);
     }
   }
 
   String _membershipText() {
+    if (_membershipLoading) return '加载中...';
+    if (_membershipError) return '状态获取失败，点击重试';
     final membership = _membership;
-    if (membership == null || !membership.active) return '尚未开通会员';
+    if (membership == null) return '加载中...';
+    if (!membership.active) return '尚未开通会员';
     if (membership.lifetime) return '${membership.typeName ?? '永久'} · 长期有效';
     final expiresAt = membership.expiresAt;
     if (expiresAt == null) return membership.typeName ?? '有效会员';
@@ -417,7 +435,7 @@ class _AccountCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final cardColor = scheme.surfaceContainer.withValues(alpha: 0.92);
     return Container(
-      height: 156,
+      constraints: const BoxConstraints(minHeight: 156),
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
@@ -428,10 +446,10 @@ class _AccountCard extends StatelessWidget {
         children: [
           GPressScale(
             onTap: onAccountTap,
-            child: SizedBox(
-              height: 102,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 102),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Row(
                   children: [
                     UserAvatar(
@@ -494,10 +512,10 @@ class _AccountCard extends StatelessWidget {
           ),
           GPressScale(
             onTap: onMembershipTap,
-            child: SizedBox(
-              height: 52,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
                 child: Row(
                   children: [
                     Container(
@@ -667,10 +685,10 @@ class _SettingRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return GPressScale(
       onTap: onTap,
-      child: SizedBox(
-        height: 64,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
               SizedBox(

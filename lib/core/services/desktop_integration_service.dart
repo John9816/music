@@ -36,19 +36,21 @@ const windowShortcutSpecs = <DesktopShortcutSpec>[
   DesktopShortcutSpec('lyrics', '显示 / 隐藏歌词', '切换状态栏歌词'),
 ];
 
-/// macOS / Windows / Linux 的全局快捷键与 macOS 状态栏歌词桥接。
+/// macOS / Windows 的全局快捷键与 macOS 状态栏歌词桥接。
 class DesktopIntegrationService extends ChangeNotifier {
   DesktopIntegrationService({
     required this.settings,
     required this.player,
     this.onOpenSearch,
+    this.onFavorite,
   });
 
   static const _windowChannel = MethodChannel('duckmusic/window');
 
   final SettingsController settings;
   final PlayerController player;
-  final VoidCallback? onOpenSearch;
+  VoidCallback? onOpenSearch;
+  VoidCallback? onFavorite;
 
   final Map<String, HotKey> _registered = {};
   final Map<String, String> _errors = {};
@@ -59,8 +61,7 @@ class DesktopIntegrationService extends ChangeNotifier {
   String _settingsFingerprint = '';
   bool _disposed = false;
 
-  bool get supported =>
-      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  bool get supported => Platform.isMacOS || Platform.isWindows;
   String? errorFor(String action) => _errors[action];
 
   Future<void> initialize() async {
@@ -146,7 +147,7 @@ class DesktopIntegrationService extends ChangeNotifier {
         unawaited(player.setVolume(player.volume <= 0 ? 0.7 : 0));
         return;
       case 'favorite':
-        player.toggleLike();
+        onFavorite?.call();
         return;
       case 'loop':
         unawaited(player.cycleLoopMode());
@@ -155,16 +156,24 @@ class DesktopIntegrationService extends ChangeNotifier {
         player.toggleShuffle();
         return;
       case 'window':
-        unawaited(_windowChannel.invokeMethod<void>('toggleVisibility'));
+        unawaited(_invokeWindow('toggleVisibility'));
         return;
       case 'search':
-        unawaited(_windowChannel.invokeMethod<void>('showWindow'));
+        unawaited(_invokeWindow('showWindow'));
         onOpenSearch?.call();
         return;
       case 'lyrics':
         unawaited(settings.setStatusBarLyrics(!settings.statusBarLyrics));
         return;
     }
+  }
+
+  /// 窗口通道在未实现该能力的平台上会抛 MissingPluginException，
+  /// 这些调用都是 fire-and-forget，必须就地吞掉，否则会变成未捕获异步异常。
+  Future<void> _invokeWindow(String method) async {
+    try {
+      await _windowChannel.invokeMethod<void>(method);
+    } catch (_) {}
   }
 
   Future<void> _syncStatusLyrics() async {

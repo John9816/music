@@ -12,20 +12,25 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-        home: Column(
-          children: [
-            GButton(
-              label: '播放',
-              icon: Icons.play_arrow_rounded,
-              onTap: () {},
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: Column(
+              children: [
+                GButton(
+                  label: '播放',
+                  icon: Icons.play_arrow_rounded,
+                  onTap: () {},
+                ),
+                GChoiceChip(label: '推荐', selected: true, onTap: () {}),
+                GSegmented(
+                  items: const ['歌曲', '歌单'],
+                  selected: 0,
+                  onSelected: (_) {},
+                ),
+              ],
             ),
-            GChoiceChip(label: '推荐', selected: true, onTap: () {}),
-            GSegmented(
-              items: const ['歌曲', '歌单'],
-              selected: 0,
-              onSelected: (_) {},
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -42,10 +47,11 @@ void main() {
     final choiceLabel = tester.widget<Text>(find.text('推荐'));
     expect(choiceLabel.style?.color, scheme.onPrimary);
 
+    // GSegmented uses a Container (not AnimatedContainer) for the sliding indicator
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is AnimatedContainer &&
+            widget is Container &&
             widget.decoration is BoxDecoration &&
             (widget.decoration as BoxDecoration).color ==
                 scheme.surfaceContainerHigh,

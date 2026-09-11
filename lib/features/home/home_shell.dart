@@ -8,10 +8,12 @@ import 'package:provider/provider.dart';
 
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/services/desktop_integration_service.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/services/user_playlist_library.dart';
 import '../../core/settings/settings_controller.dart';
+import '../../core/utils/toast_helper.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/user_avatar.dart';
 import '../discover/discover_view.dart';
@@ -43,6 +45,7 @@ class _HomeShellState extends State<HomeShell> {
   String? _pendingSearchQuery;
   int _sourceVersion = 0;
   MiniPlayerPanel? _miniPlayerPanel;
+  String? _activePlaylistId;
   final Set<int> _visitedPages = {0};
   final List<Widget?> _pageCache = List<Widget?>.filled(_pageCount, null);
   final List<GlobalKey<_TabNavigatorState>> _tabKeys = List.generate(
@@ -93,6 +96,7 @@ class _HomeShellState extends State<HomeShell> {
     _player.onSongPlayed = _recordPlayedSong;
     _player.onSongChanged = _syncFavoriteState;
     _player.onMembershipRequired = _openMembershipCenter;
+    context.read<DesktopIntegrationService>().onFavorite = _toggleFavorite;
     unawaited(_restoreLastPlayback());
     _settings.addListener(_onSettingsChanged);
   }
@@ -137,16 +141,39 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  Future<void> _toggleFavorite() async {
+    final song = _player.current;
+    final token = _auth.token;
+    if (song == null) return;
+    if (!_auth.isLoggedIn || token == null) {
+      if (!mounted) return;
+      showAppToast(context, '请先登录后再收藏');
+      return;
+    }
+    final wasLiked = _player.liked;
+    try {
+      if (wasLiked) {
+        await UserApi().removeFavorite(song.id, song.source, token);
+      } else {
+        await UserApi().addFavorite(song, token);
+      }
+      _player.setLiked(!wasLiked);
+    } catch (_) {
+      // 快捷键触发，不显示错误提示，保持当前状态
+    }
+  }
+
   void _openMembershipCenter() {
     if (!mounted) return;
     switchTo(_profileIndex);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('播放需要有效会员，请在个人中心输入兑换码'),
-        ),
-      );
+    showAppToast(
+      context,
+      '播放需要有效会员，请在个人中心输入兑换码',
+      action: SnackBarAction(
+        label: '去兑换',
+        onPressed: () => switchTo(_profileIndex),
+      ),
+    );
   }
 
   @override
@@ -190,6 +217,10 @@ class _HomeShellState extends State<HomeShell> {
     setState(() {
       _index = index;
       _visitedPages.add(index);
+      // 切换到其他页面时清空活跃歌单ID
+      if (index != 2) {
+        _activePlaylistId = null;
+      }
     });
   }
 
@@ -200,8 +231,10 @@ class _HomeShellState extends State<HomeShell> {
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= GBreakpoints.sidebar;
     final sidebarWidth = windowWidth >= 1180 ? 264.0 : 236.0;
-    final dockedPlayerPanel = windowWidth >= GBreakpoints.desktopPlayer &&
+    final hasCurrentSong =
         context.select<PlayerController, bool>((p) => p.current != null);
+    final dockedPlayerPanel =
+        windowWidth >= GBreakpoints.desktopPlayer && hasCurrentSong;
     final playerPanelWidth = (windowWidth * 0.30).clamp(360.0, 420.0);
     final pages = List<Widget>.generate(
       _pageCount,
@@ -211,136 +244,325 @@ class _HomeShellState extends State<HomeShell> {
     );
 
     final canPopTab = _tabCanPop[_index];
-    return ValueListenableBuilder<bool>(
-      valueListenable: canPopTab,
-      builder: (context, tabCanPop, child) {
-        return PopScope<void>(
-          canPop: _index == 0,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (!tabCanPop && _index != 0) {
-              switchTo(0);
-            }
-          },
-          child: child!,
-        );
+    return Shortcuts(
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.space): const _PlayPauseIntent(),
+        LogicalKeySet(LogicalKeyboardKey.arrowLeft):
+            const _SeekBackwardIntent(),
+        LogicalKeySet(LogicalKeyboardKey.arrowRight):
+            const _SeekForwardIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.arrowLeft):
+            const _SeekBackwardLongIntent(),
+        LogicalKeySet(LogicalKeyboardKey.shift, LogicalKeyboardKey.arrowRight):
+            const _SeekForwardLongIntent(),
+        LogicalKeySet(LogicalKeyboardKey.arrowUp): const _VolumeUpIntent(),
+        LogicalKeySet(LogicalKeyboardKey.arrowDown): const _VolumeDownIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.meta,
+          LogicalKeyboardKey.arrowRight,
+        ): const _NextTrackIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.arrowRight,
+        ): const _NextTrackIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.meta,
+          LogicalKeyboardKey.arrowLeft,
+        ): const _PreviousTrackIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.arrowLeft,
+        ): const _PreviousTrackIntent(),
       },
-      child: Scaffold(
-        key: const ValueKey('home-shell-scaffold'),
-        backgroundColor: scheme.surfaceContainerLowest,
-        body: ColoredBox(
-          color: scheme.surfaceContainerLowest,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          if (wide)
-                            _Sidebar(
-                              width: sidebarWidth,
-                              topInset: macOS ? 48 : 18,
-                              selected: _index,
-                              onSelect: _selectPage,
-                              onOpenPlaylist: _openUserPlaylist,
-                              onSearch: (query) {
-                                setState(() {
-                                  _pendingSearchQuery = query;
-                                  _pageCache[1] = null;
-                                });
-                                _selectPage(1);
-                              },
-                              searchQuery: _pendingSearchQuery,
-                            ),
-                          Expanded(
-                            child: GWindowControlsSafeRegion(
-                              child: _AnimatedTabStack(
-                                index: _index,
-                                children: [
-                                  for (var i = 0; i < pages.length; i++)
-                                    _TabNavigator(
-                                      key: _tabKeys[i],
-                                      active: _index == i,
-                                      canPopListenable: _tabCanPop[i],
-                                      child: pages[i],
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          _PlayPauseIntent: CallbackAction<_PlayPauseIntent>(
+            onInvoke: (_) {
+              // 避免在输入框中触发
+              final focus = FocusManager.instance.primaryFocus;
+              if (focus?.context?.widget is EditableText) return null;
+              _player.togglePlay();
+              return null;
+            },
+          ),
+          _SeekBackwardIntent: CallbackAction<_SeekBackwardIntent>(
+            onInvoke: (_) {
+              final position = _player.position;
+              _player.seek(Duration(
+                seconds: (position.inSeconds - 5).clamp(0, position.inSeconds),
+              ));
+              return null;
+            },
+          ),
+          _SeekForwardIntent: CallbackAction<_SeekForwardIntent>(
+            onInvoke: (_) {
+              final current = _player.current;
+              if (current == null) return null;
+              final position = _player.position;
+              final duration = Duration(milliseconds: current.durationMs);
+              _player.seek(Duration(
+                seconds: (position.inSeconds + 5).clamp(0, duration.inSeconds),
+              ));
+              return null;
+            },
+          ),
+          _SeekBackwardLongIntent: CallbackAction<_SeekBackwardLongIntent>(
+            onInvoke: (_) {
+              final position = _player.position;
+              _player.seek(Duration(
+                seconds: (position.inSeconds - 30).clamp(0, position.inSeconds),
+              ));
+              return null;
+            },
+          ),
+          _SeekForwardLongIntent: CallbackAction<_SeekForwardLongIntent>(
+            onInvoke: (_) {
+              final current = _player.current;
+              if (current == null) return null;
+              final position = _player.position;
+              final duration = Duration(milliseconds: current.durationMs);
+              _player.seek(Duration(
+                seconds: (position.inSeconds + 30).clamp(0, duration.inSeconds),
+              ));
+              return null;
+            },
+          ),
+          _VolumeUpIntent: CallbackAction<_VolumeUpIntent>(
+            onInvoke: (_) {
+              final volume = _player.volume;
+              _player.setVolume((volume + 0.05).clamp(0.0, 1.0));
+              return null;
+            },
+          ),
+          _VolumeDownIntent: CallbackAction<_VolumeDownIntent>(
+            onInvoke: (_) {
+              final volume = _player.volume;
+              _player.setVolume((volume - 0.05).clamp(0.0, 1.0));
+              return null;
+            },
+          ),
+          _NextTrackIntent: CallbackAction<_NextTrackIntent>(
+            onInvoke: (_) {
+              _player.next();
+              return null;
+            },
+          ),
+          _PreviousTrackIntent: CallbackAction<_PreviousTrackIntent>(
+            onInvoke: (_) {
+              _player.previous();
+              return null;
+            },
+          ),
+        },
+        child: ValueListenableBuilder<bool>(
+          valueListenable: canPopTab,
+          builder: (context, tabCanPop, child) {
+            return PopScope<void>(
+              canPop: _index == 0,
+              onPopInvokedWithResult: (didPop, _) {
+                if (didPop) return;
+                if (!tabCanPop && _index != 0) {
+                  switchTo(0);
+                }
+              },
+              child: child!,
+            );
+          },
+          child: Scaffold(
+            key: const ValueKey('home-shell-scaffold'),
+            backgroundColor: scheme.surfaceContainerLowest,
+            body: ColoredBox(
+              color: scheme.surfaceContainerLowest,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              if (wide)
+                                _Sidebar(
+                                  width: sidebarWidth,
+                                  topInset: macOS ? 48 : 18,
+                                  selected: _index,
+                                  onSelect: _selectPage,
+                                  onOpenPlaylist: _openUserPlaylist,
+                                  onSearch: (query) {
+                                    setState(() {
+                                      _pendingSearchQuery = query;
+                                      _pageCache[1] = null;
+                                    });
+                                    _selectPage(1);
+                                  },
+                                  searchQuery: _pendingSearchQuery,
+                                  activePlaylistId: _activePlaylistId,
+                                ),
+                              Expanded(
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: GBreakpoints.contentMax,
                                     ),
-                                ],
+                                    child: GWindowControlsSafeRegion(
+                                      child: wide
+                                          ? AnimatedPadding(
+                                              duration: PlatformMotion.duration(
+                                                  context, Motion.normal),
+                                              curve: Motion.standard,
+                                              padding: EdgeInsets.only(
+                                                right: _miniPlayerPanel != null
+                                                    ? (windowWidth >= 1500
+                                                            ? 420
+                                                            : windowWidth >=
+                                                                    1200
+                                                                ? 380
+                                                                : 360)
+                                                        .toDouble()
+                                                    : 0,
+                                              ),
+                                              child: _AnimatedTabStack(
+                                                index: _index,
+                                                children: [
+                                                  for (var i = 0;
+                                                      i < pages.length;
+                                                      i++)
+                                                    _TabNavigator(
+                                                      key: _tabKeys[i],
+                                                      active: _index == i,
+                                                      canPopListenable:
+                                                          _tabCanPop[i],
+                                                      child: pages[i],
+                                                    ),
+                                                ],
+                                              ),
+                                            )
+                                          : ValueListenableBuilder<bool>(
+                                              valueListenable: canPopTab,
+                                              builder: (context, nestedCanPop,
+                                                  child) {
+                                                final miniPlayerInset =
+                                                    !wide && hasCurrentSong
+                                                        ? nestedCanPop
+                                                            ? max(
+                                                                  MediaQuery
+                                                                          .viewPaddingOf(
+                                                                        context,
+                                                                      ).bottom -
+                                                                      8,
+                                                                  26,
+                                                                ) +
+                                                                56
+                                                            : 56
+                                                        : 0;
+                                                return AnimatedPadding(
+                                                  duration:
+                                                      PlatformMotion.duration(
+                                                          context,
+                                                          Motion.normal),
+                                                  curve: Motion.standard,
+                                                  padding: EdgeInsets.only(
+                                                    bottom: miniPlayerInset
+                                                        .toDouble(),
+                                                  ),
+                                                  child: child,
+                                                );
+                                              },
+                                              child: _AnimatedTabStack(
+                                                index: _index,
+                                                children: [
+                                                  for (var i = 0;
+                                                      i < pages.length;
+                                                      i++)
+                                                    _TabNavigator(
+                                                      key: _tabKeys[i],
+                                                      active: _index == i,
+                                                      canPopListenable:
+                                                          _tabCanPop[i],
+                                                      child: pages[i],
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                    if (wide)
-                      MiniPlayer(
-                        sidebarWidth: sidebarWidth,
-                        panel: dockedPlayerPanel ? _miniPlayerPanel : null,
-                        onPanelChanged: dockedPlayerPanel
-                            ? (panel) =>
-                                setState(() => _miniPlayerPanel = panel)
-                            : null,
-                      ),
-                  ],
-                ),
-              ),
-              if (!wide)
-                ValueListenableBuilder<bool>(
-                  valueListenable: canPopTab,
-                  builder: (context, tabCanPop, child) {
-                    return Positioned(
-                      left: 16,
-                      right: 16,
-                      bottom: tabCanPop
-                          ? max(
-                              MediaQuery.viewPaddingOf(context).bottom - 8,
-                              26,
-                            )
-                          : 0,
-                      child: child!,
-                    );
-                  },
-                  child: const MiniPlayer(),
-                ),
-              if (dockedPlayerPanel)
-                AnimatedPositioned(
-                  duration: Motion.normal,
-                  curve: Curves.easeOutCubic,
-                  top: 0,
-                  bottom: 80,
-                  right: _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
-                  width: playerPanelWidth,
-                  child: IgnorePointer(
-                    ignoring: _miniPlayerPanel == null,
-                    child: DesktopPlayerPanel(
-                      panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
-                      onClose: () => setState(() => _miniPlayerPanel = null),
+                        ),
+                        if (wide)
+                          MiniPlayer(
+                            sidebarWidth: sidebarWidth,
+                            panel: dockedPlayerPanel ? _miniPlayerPanel : null,
+                            onPanelChanged: dockedPlayerPanel
+                                ? (panel) =>
+                                    setState(() => _miniPlayerPanel = panel)
+                                : null,
+                          ),
+                      ],
                     ),
                   ),
-                ),
-              if (macOS && wide)
-                Positioned(
-                  left: 0,
-                  width: sidebarWidth,
-                  top: 0,
-                  child: const _WindowDragBar(),
-                ),
-            ],
+                  if (!wide)
+                    ValueListenableBuilder<bool>(
+                      valueListenable: canPopTab,
+                      builder: (context, tabCanPop, child) {
+                        return Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: tabCanPop
+                              ? max(
+                                  MediaQuery.viewPaddingOf(context).bottom - 8,
+                                  26,
+                                )
+                              : 0,
+                          child: child!,
+                        );
+                      },
+                      child: const MiniPlayer(),
+                    ),
+                  if (dockedPlayerPanel)
+                    AnimatedPositioned(
+                      duration: PlatformMotion.duration(context, Motion.normal),
+                      curve: Motion.standard,
+                      top: 0,
+                      bottom: 80,
+                      right:
+                          _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
+                      width: playerPanelWidth,
+                      child: IgnorePointer(
+                        ignoring: _miniPlayerPanel == null,
+                        child: DesktopPlayerPanel(
+                          panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
+                          onClose: () =>
+                              setState(() => _miniPlayerPanel = null),
+                        ),
+                      ),
+                    ),
+                  if (macOS && wide)
+                    Positioned(
+                      left: 0,
+                      width: sidebarWidth,
+                      top: 0,
+                      child: const _WindowDragBar(),
+                    ),
+                ],
+              ),
+            ),
+            bottomNavigationBar: wide
+                ? null
+                : ValueListenableBuilder<bool>(
+                    valueListenable: canPopTab,
+                    builder: (context, tabCanPop, child) {
+                      if (tabCanPop) return const SizedBox.shrink();
+                      return _BottomNav(
+                        selected: _index,
+                        onSelect: _selectPage,
+                      );
+                    },
+                  ),
           ),
         ),
-        bottomNavigationBar: wide
-            ? null
-            : ValueListenableBuilder<bool>(
-                valueListenable: canPopTab,
-                builder: (context, tabCanPop, child) {
-                  if (tabCanPop) return const SizedBox.shrink();
-                  return _BottomNav(
-                    selected: _index,
-                    onSelect: _selectPage,
-                  );
-                },
-              ),
       ),
     );
   }
@@ -474,6 +696,11 @@ class _HomeShellState extends State<HomeShell> {
     final token = _auth.token;
     final id = userPlaylistId(item);
     if (token == null || id == null) return;
+
+    setState(() {
+      _activePlaylistId = id.toString();
+    });
+
     final source = item['source']?.toString().trim();
     final sourceId = item['sourceId']?.toString().trim();
     final canSync = source != null &&
@@ -495,6 +722,7 @@ class _HomeShellState extends State<HomeShell> {
           : null,
     );
 
+    setState(() => _activePlaylistId = id);
     switchTo(2);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _tabKeys[2].currentState?.push(page);
@@ -533,31 +761,104 @@ class _TabNavigator extends StatefulWidget {
 /// Keeping the stacks alive is important for mobile: switching tabs must not
 /// reset scroll position or a nested detail page. IgnorePointer and
 /// ExcludeSemantics ensure only the visible tab participates in interaction.
-class _AnimatedTabStack extends StatelessWidget {
+class _AnimatedTabStack extends StatefulWidget {
   const _AnimatedTabStack({required this.index, required this.children});
 
   final int index;
   final List<Widget> children;
 
   @override
+  State<_AnimatedTabStack> createState() => _AnimatedTabStackState();
+}
+
+class _AnimatedTabStackState extends State<_AnimatedTabStack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  /// 正在淡出的旧 Tab。过渡期间它必须保持可见，否则会看到闪白。
+  int? _outgoing;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Motion.normal,
+      value: 1,
+    )..addStatusListener(_onAnimationStatus);
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _outgoing != null) {
+      setState(() => _outgoing = null);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _outgoing = null;
+      _controller.value = 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedTabStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index == widget.index) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _outgoing = null;
+      _controller.value = 1;
+      return;
+    }
+    _outgoing = oldWidget.index;
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        for (var i = 0; i < children.length; i++)
+        for (var i = 0; i < widget.children.length; i++)
           Positioned.fill(
-            child: Offstage(
-              offstage: i != index,
-              child: ExcludeSemantics(
-                excluding: i != index,
-                child: IgnorePointer(
-                  ignoring: i != index,
-                  child: TickerMode(
-                    enabled: i == index,
-                    child: RepaintBoundary(child: children[i]),
+            child: AnimatedBuilder(
+              animation: _controller,
+              // 子树在这里提升，不随动画帧重建；每个 Tab 的 Navigator 状态得以保留。
+              child: RepaintBoundary(child: widget.children[i]),
+              builder: (context, child) {
+                final active = i == widget.index;
+                final leaving = i == _outgoing;
+                final progress = Motion.standard.transform(_controller.value);
+                final opacity = active
+                    ? progress
+                    : leaving
+                        ? 1 - progress
+                        : 0.0;
+                return Offstage(
+                  offstage: !active && !leaving,
+                  child: ExcludeSemantics(
+                    excluding: !active,
+                    child: IgnorePointer(
+                      ignoring: !active,
+                      child: TickerMode(
+                        enabled: active,
+                        child: Opacity(
+                          opacity: opacity.clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
       ],
@@ -657,6 +958,7 @@ class _Sidebar extends StatefulWidget {
     required this.onOpenPlaylist,
     required this.onSearch,
     this.searchQuery,
+    this.activePlaylistId,
   });
 
   final double width;
@@ -666,6 +968,7 @@ class _Sidebar extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onOpenPlaylist;
   final ValueChanged<String> onSearch;
   final String? searchQuery;
+  final String? activePlaylistId;
 
   @override
   State<_Sidebar> createState() => _SidebarState();
@@ -1032,10 +1335,13 @@ class _SidebarState extends State<_Sidebar> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 2),
       children: [
-        if (owned.isNotEmpty) ...owned.map(_playlistItem),
+        if (owned.isNotEmpty)
+          ...owned.map((item) =>
+              _playlistItem(item, activePlaylistId: widget.activePlaylistId)),
         if (favorites.isNotEmpty) ...[
           _playlistSectionTitle('收藏歌单', scheme),
-          ...favorites.map(_playlistItem),
+          ...favorites.map((item) =>
+              _playlistItem(item, activePlaylistId: widget.activePlaylistId)),
         ],
       ],
     );
@@ -1055,12 +1361,14 @@ class _SidebarState extends State<_Sidebar> {
     );
   }
 
-  Widget _playlistItem(Map<String, dynamic> item) {
+  Widget _playlistItem(Map<String, dynamic> item,
+      {required String? activePlaylistId}) {
+    final itemId = item['id'] as int?;
     return _SidebarItem(
       icon: CupertinoIcons.music_note_list,
       selectedIcon: CupertinoIcons.music_note_list,
       label: userPlaylistName(item),
-      selected: false,
+      selected: itemId != null && itemId.toString() == activePlaylistId,
       onTap: () => widget.onOpenPlaylist(item),
     );
   }
@@ -1210,6 +1518,8 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final selectedTab = _HomeShellState._tabToPageIndex.indexOf(selected);
+    final motion = PlatformMotion.tabDuration(context);
     return Container(
       key: const ValueKey('mobile-bottom-nav-surface'),
       decoration: BoxDecoration(
@@ -1219,53 +1529,102 @@ class _BottomNav extends StatelessWidget {
         top: false,
         child: SizedBox(
           height: 58,
-          child: Row(
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              for (var i = 0; i < _HomeShellState._tabs.length; i++)
-                Expanded(
-                  child: Semantics(
-                    button: true,
-                    selected: _HomeShellState._tabToPageIndex[i] == selected,
-                    label: _HomeShellState._tabs[i].label,
-                    child: GPressScale(
-                      onTap: () {
-                        PlatformMotion.selectionFeedback(context);
-                        onSelect(_HomeShellState._tabToPageIndex[i]);
-                      },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _HomeShellState._tabToPageIndex[i] == selected
-                                ? _HomeShellState._tabs[i].selectedIcon
-                                : _HomeShellState._tabs[i].icon,
-                            size: 23,
-                            color:
-                                _HomeShellState._tabToPageIndex[i] == selected
-                                    ? scheme.primary
-                                    : scheme.onSurfaceVariant,
+              if (selectedTab >= 0)
+                Positioned.fill(
+                  child: AnimatedAlign(
+                    duration: motion,
+                    curve: Motion.standard,
+                    alignment: Alignment(selectedTab / 3 * 2 - 1, -1),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / _HomeShellState._tabs.length,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 5),
+                          width: 56,
+                          height: 29,
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            _HomeShellState._tabs[i].label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              height: 1.1,
-                              fontWeight:
-                                  _HomeShellState._tabToPageIndex[i] == selected
-                                      ? TypeScale.semibold
-                                      : TypeScale.medium,
-                              color:
-                                  _HomeShellState._tabToPageIndex[i] == selected
-                                      ? scheme.primary
-                                      : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.5,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < _HomeShellState._tabs.length; i++)
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          selected:
+                              _HomeShellState._tabToPageIndex[i] == selected,
+                          label: _HomeShellState._tabs[i].label,
+                          onTap: () {
+                            PlatformMotion.selectionFeedback(context);
+                            onSelect(_HomeShellState._tabToPageIndex[i]);
+                          },
+                          child: ExcludeSemantics(
+                              child: GPressScale(
+                            onTap: () {
+                              onSelect(_HomeShellState._tabToPageIndex[i]);
+                            },
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  height: 26,
+                                  child: AnimatedSwitcher(
+                                    duration: motion,
+                                    child: Icon(
+                                      _HomeShellState._tabToPageIndex[i] ==
+                                              selected
+                                          ? _HomeShellState
+                                              ._tabs[i].selectedIcon
+                                          : _HomeShellState._tabs[i].icon,
+                                      size: 23,
+                                      key: ValueKey(
+                                          _HomeShellState._tabToPageIndex[i] ==
+                                              selected),
+                                      color:
+                                          _HomeShellState._tabToPageIndex[i] ==
+                                                  selected
+                                              ? scheme.primary
+                                              : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _HomeShellState._tabs[i].label,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    height: 1.1,
+                                    fontWeight:
+                                        _HomeShellState._tabToPageIndex[i] ==
+                                                selected
+                                            ? TypeScale.semibold
+                                            : TypeScale.medium,
+                                    color: _HomeShellState._tabToPageIndex[i] ==
+                                            selected
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1294,4 +1653,41 @@ class _WindowDragBar extends StatelessWidget {
       child: const SizedBox(height: height, width: double.infinity),
     );
   }
+}
+
+// 播放控制 Intents
+class _PlayPauseIntent extends Intent {
+  const _PlayPauseIntent();
+}
+
+class _SeekBackwardIntent extends Intent {
+  const _SeekBackwardIntent();
+}
+
+class _SeekForwardIntent extends Intent {
+  const _SeekForwardIntent();
+}
+
+class _SeekBackwardLongIntent extends Intent {
+  const _SeekBackwardLongIntent();
+}
+
+class _SeekForwardLongIntent extends Intent {
+  const _SeekForwardLongIntent();
+}
+
+class _VolumeUpIntent extends Intent {
+  const _VolumeUpIntent();
+}
+
+class _VolumeDownIntent extends Intent {
+  const _VolumeDownIntent();
+}
+
+class _NextTrackIntent extends Intent {
+  const _NextTrackIntent();
+}
+
+class _PreviousTrackIntent extends Intent {
+  const _PreviousTrackIntent();
 }

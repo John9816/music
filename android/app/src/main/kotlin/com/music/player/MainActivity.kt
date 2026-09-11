@@ -16,6 +16,7 @@ import java.io.File
 
 class MainActivity : AudioServiceActivity() {
     private var pendingApkPath: String? = null
+    private var pendingNotificationPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -79,11 +80,15 @@ class MainActivity : AudioServiceActivity() {
                             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                             PackageManager.PERMISSION_GRANTED
                         ) {
+                            if (pendingNotificationPermissionResult != null) {
+                                result.error("REQUEST_IN_PROGRESS", "通知权限请求正在处理中", null)
+                                return@setMethodCallHandler
+                            }
+                            pendingNotificationPermissionResult = result
                             requestPermissions(
                                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                                 NOTIFICATION_PERMISSION_REQUEST_CODE,
                             )
-                            result.success(false)
                         } else {
                             result.success(true)
                         }
@@ -97,9 +102,51 @@ class MainActivity : AudioServiceActivity() {
                         }
                         result.success(enabled)
                     }
+                    "openNotificationSettings" -> {
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                },
+                            )
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST_CODE) return
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        pendingNotificationPermissionResult?.success(granted)
+        pendingNotificationPermissionResult = null
+    }
+
+    override fun onDestroy() {
+        // 权限弹窗期间 Activity 可能被系统回收，此时 onRequestPermissionsResult
+        // 不会再触发。若不在这里兜底回调，Dart 侧的 await 会永久挂起，
+        // 导致通知权限再也不会被请求第二次。
+        pendingNotificationPermissionResult?.let { result ->
+            val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            try {
+                result.success(granted)
+            } catch (_: Exception) {
+                // 引擎可能已断开，忽略即可。
+            }
+        }
+        pendingNotificationPermissionResult = null
+        super.onDestroy()
     }
 
     override fun onResume() {

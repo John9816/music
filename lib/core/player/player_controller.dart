@@ -31,6 +31,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     Future<File?> Function(Song song)? localFileFor,
     Future<void> Function(SettingsController settings)? maintainAudioCache,
     LastPlaybackStore? lastPlaybackStore,
+    Future<void> Function()? beforePlayback,
   })  : _settings = settings,
         _player = audioPlayer ??
             AudioPlayer(
@@ -43,7 +44,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         _maintainAudioCache = maintainAudioCache ??
             ((settings) => CacheService.instance.maintainAudioCache(settings)),
         _lastPlaybackStore =
-            lastPlaybackStore ?? SharedPreferencesLastPlaybackStore() {
+            lastPlaybackStore ?? SharedPreferencesLastPlaybackStore(),
+        _beforePlayback = beforePlayback {
     PlaybackCoordinator.instance.register(this, pause);
     _positionController = StreamController<Duration>.broadcast(
       sync: true,
@@ -86,6 +88,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   final Future<File?> Function(Song song) _localFileFor;
   final Future<void> Function(SettingsController settings) _maintainAudioCache;
   final LastPlaybackStore _lastPlaybackStore;
+  final Future<void> Function()? _beforePlayback;
   late final StreamController<Duration> _positionController;
   late final Stream<Duration> _positionStream;
 
@@ -162,6 +165,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// Shared for the controller lifetime so widget rebuilds cannot restart the
   /// progress clock before it emits its next value.
   Stream<Duration> get positionStream => _positionStream;
+
+  /// 已缓冲进度，供系统媒体控件绘制缓冲条。与 [position] 一样在音源就绪前返回零。
+  Duration get bufferedPosition {
+    if (!_positionSourceReady) return Duration.zero;
+    return _player.bufferedPosition;
+  }
+
   Duration? get duration =>
       _effectiveDuration(_positionSourceReady ? _player.duration : null);
 
@@ -446,6 +456,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       _emitNativePosition(force: true);
       notifyListeners();
 
+      await _prepareForPlayback();
+      if (seq != _playSeq) return;
       // just_audio 的 play Future 在暂停或播放结束后才完成，不能在这里
       // await，否则整首歌期间都会被误判为“正在加载”。
       final playback = _player.play();
@@ -528,11 +540,18 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       _deferredSeek = null;
       _enqueueSeek(deferredSeek);
     }
-    // 播放完毕自动切下一首
+    // 播放完毕自动切下一首（除非循环模式为 off 且当前为队列最后一首）
     if (_positionSourceReady &&
         !_loading &&
         event.processingState == ProcessingState.completed &&
         _queue.isNotEmpty) {
+      // 如果是"不循环"模式且播完最后一首，停在末尾不再自动播放
+      if (_loopMode == LoopMode.off && _index == _queue.length - 1 && !_shuffle) {
+        unawaited(_player.pause());
+        unawaited(_player.seek(Duration.zero));
+        notifyListeners();
+        return;
+      }
       unawaited(next());
       return;
     }
@@ -596,12 +615,22 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       await PlaybackCoordinator.instance.activate(this);
       final seq = _playSeq;
+      await _prepareForPlayback();
+      if (seq != _playSeq) return;
       unawaited(
           _player.play().catchError((Object error, StackTrace stackTrace) {
         _setPlaybackError(seq, error);
       }));
     }
     notifyListeners();
+  }
+
+  Future<void> _prepareForPlayback() async {
+    try {
+      await _beforePlayback?.call();
+    } catch (_) {
+      // A notification permission failure must never prevent audio playback.
+    }
   }
 
   Future<void> retry() async {

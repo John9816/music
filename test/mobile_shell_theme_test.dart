@@ -1,6 +1,7 @@
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/player/player_controller.dart';
+import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
@@ -22,6 +23,10 @@ void main() {
     final player = _CurrentSongPlayer(settings);
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(settings.dispose);
     addTearDown(player.dispose);
     addTearDown(auth.dispose);
@@ -37,6 +42,7 @@ void main() {
           ChangeNotifierProvider<PlayerController>.value(value: player),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: theme,
@@ -88,6 +94,10 @@ void main() {
     final player = _CurrentSongPlayer(settings);
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(settings.dispose);
     addTearDown(player.dispose);
     addTearDown(auth.dispose);
@@ -100,6 +110,7 @@ void main() {
           ChangeNotifierProvider<PlayerController>.value(value: player),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,

@@ -3,6 +3,9 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/plugin_registrar_windows.h>
+#include <flutter/standard_method_codec.h>
 
 #include <memory>
 
@@ -23,11 +26,24 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  // Registers the "duckmusic/window" channel. Mirrors the macOS implementation
+  // in macos/Runner/MainFlutterWindow.swift so the Dart side is platform
+  // agnostic.
+  void SetupWindowChannel();
+
+  // Shows the window, restoring it first if minimized, and brings it forward.
+  void ShowAndActivate();
+
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Owns the "duckmusic/window" channel; must outlive OnCreate.
+  std::unique_ptr<flutter::PluginRegistrarWindows> window_registrar_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      window_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

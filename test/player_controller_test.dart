@@ -12,10 +12,33 @@ import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Mock platform channels used by SystemMediaController
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('com.751152.duckmusic/system_media'),
+    (MethodCall methodCall) async {
+      // Mock iOS system media channel
+      return null;
+    },
+  );
+
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+    const MethodChannel('com.751152.duckmusic/notifications'),
+    (MethodCall methodCall) async {
+      // Mock Android notification channel
+      if (methodCall.method == 'areNotificationsEnabled') {
+        return true;
+      }
+      return null;
+    },
+  );
 
   test('position stream remains stable across UI rebuilds', () {
     final player = PlayerController(settings: SettingsController());
@@ -455,6 +478,39 @@ void main() {
     expect(requestCount, 1);
   });
 
+  test('system media does not republish unchanged queue or artwork', () async {
+    final settings = SettingsController();
+    final player = _SystemMediaPlayer(settings);
+    final handler = SystemMediaController();
+    var queueUpdates = 0;
+    var mediaUpdates = 0;
+    final queueSubscription = handler.queue.listen((_) => queueUpdates++);
+    final mediaSubscription = handler.mediaItem.listen((_) => mediaUpdates++);
+    handler.attach(player);
+    await Future<void>.delayed(Duration.zero);
+    addTearDown(() async {
+      handler.detach(player);
+      await queueSubscription.cancel();
+      await mediaSubscription.cancel();
+      player.dispose();
+      settings.dispose();
+    });
+
+    final queueUpdatesAfterAttach = queueUpdates;
+    final mediaUpdatesAfterAttach = mediaUpdates;
+
+    player.notifyListeners();
+    player.notifyListeners();
+    await Future<void>.delayed(Duration.zero);
+    expect(queueUpdates, queueUpdatesAfterAttach);
+    expect(mediaUpdates, mediaUpdatesAfterAttach);
+
+    await handler.skipToNext();
+    await Future<void>.delayed(Duration.zero);
+    expect(queueUpdates, queueUpdatesAfterAttach);
+    expect(mediaUpdates, mediaUpdatesAfterAttach + 1);
+  });
+
   test('Android media notification uses vendor-compatible visuals', () {
     const config = SystemMediaController.androidConfig;
 
@@ -462,6 +518,28 @@ void main() {
     expect(config.notificationColor, const Color(0xFF2FD365));
     expect(config.artDownscaleWidth, 512);
     expect(config.artDownscaleHeight, 512);
+  });
+
+  test('notification permission preparation shares an in-flight request',
+      () async {
+    final gate = Completer<void>();
+    var requestCount = 0;
+    final handler = SystemMediaController(
+      isAndroid: () => true,
+      androidNotificationPermissionRequester: () {
+        requestCount++;
+        return gate.future;
+      },
+    );
+
+    final first = handler.prepareForPlayback();
+    final second = handler.prepareForPlayback();
+    await Future<void>.delayed(Duration.zero);
+    expect(requestCount, 1);
+    expect(first, isNot(same(second)));
+
+    gate.complete();
+    await Future.wait([first, second]);
   });
 }
 

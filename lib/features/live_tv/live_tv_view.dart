@@ -141,31 +141,41 @@ class _LiveTvViewState extends State<LiveTvView> {
   Widget build(BuildContext context) {
     final catalog = _catalog;
     return Scaffold(
+      appBar: GAppBar(
+        title: '电视直播',
+        onBack: () => Navigator.of(context).maybePop(),
+      ),
       body: RefreshIndicator(
         onRefresh: () => _load(includeCache: false),
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
-              child: GPageHeader(
-                title: '电视直播',
-                subtitle: catalog == null
-                    ? '正在读取频道源'
-                    : '${catalog.groups.length} 个分组 · '
-                        '${catalog.channelCount} 个频道 · '
-                        '${catalog.lineCount} 条线路',
-                trailing: SizedBox.square(
-                  dimension: 40,
-                  child: _refreshing
-                      ? const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          tooltip: '刷新直播源',
-                          onPressed: () => _load(includeCache: false),
-                          icon: const Icon(Icons.refresh),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      catalog == null
+                          ? '正在读取频道源'
+                          : '${catalog.groups.length} 个分组 · '
+                              '${catalog.channelCount} 个频道 · '
+                              '${catalog.lineCount} 条线路',
+                      style: TextStyle(
+                        fontSize: TypeScale.small,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (_refreshing)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: SizedBox(
+                          height: 2,
+                          child: LinearProgressIndicator(minHeight: 2),
                         ),
+                      ),
+                  ],
                 ),
               ),
             ),

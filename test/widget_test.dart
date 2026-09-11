@@ -17,6 +17,7 @@ import 'package:duck_music/core/player/lrc_parser.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/services/app_update_service.dart';
+import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/player/desktop_player_panel.dart';
 import 'package:duck_music/features/player/mini_player.dart';
@@ -479,6 +480,19 @@ void main() {
   });
 
   testWidgets('artist detail loads subsequent catalog pages', (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     final firstSong = _song(
@@ -497,28 +511,37 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.byId('dark').data,
-        home: ArtistDetailView(
-          artistName: '歌手甲',
-          loader: () async => const ArtistInfo(
-            name: '歌手甲',
-            profile: '简介',
-          ),
-          catalogLoader: () async => ArtistCatalog.fromSongs(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data,
+          home: ArtistDetailView(
             artistName: '歌手甲',
-            searchedSongs: [firstSong],
-            hasMore: true,
-            nextOffset: 30,
-          ),
-          catalogPageLoader: (offset) async {
-            expect(offset, 30);
-            return ArtistCatalog.fromSongs(
+            loader: () async => const ArtistInfo(
+              name: '歌手甲',
+              profile: '简介',
+            ),
+            catalogLoader: () async => ArtistCatalog.fromSongs(
               artistName: '歌手甲',
-              searchedSongs: [secondSong],
-              nextOffset: 31,
-            );
-          },
+              searchedSongs: [firstSong],
+              hasMore: true,
+              nextOffset: 30,
+            ),
+            catalogPageLoader: (offset) async {
+              expect(offset, 30);
+              return ArtistCatalog.fromSongs(
+                artistName: '歌手甲',
+                searchedSongs: [secondSong],
+                nextOffset: 31,
+              );
+            },
+          ),
         ),
       ),
     );
@@ -531,19 +554,41 @@ void main() {
   });
 
   testWidgets('artist detail renders loaded information', (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final player = _PreviewPlayerController();
+    final settings = SettingsController();
+    final auth = AuthController();
+    final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.byId('dark').data,
-        home: ArtistDetailView(
-          artistName: '王俊凯',
-          loader: () async => const ArtistInfo(
-            name: '王俊凯',
-            profile: '测试歌手简介',
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.byId('dark').data,
+          home: ArtistDetailView(
+            artistName: '王俊凯',
+            loader: () async => const ArtistInfo(
+              name: '王俊凯',
+              profile: '测试歌手简介',
+            ),
+            catalogLoader: () async => _artistCatalog(),
           ),
-          catalogLoader: () async => _artistCatalog(),
         ),
       ),
     );
@@ -658,7 +703,7 @@ void main() {
     expect(find.byType(HomeShell), findsNothing);
     expect(find.text('柒伍壹壹音乐'), findsOneWidget);
     expect(find.text('继续聆听'), findsOneWidget);
-    expect(find.text('已阅读并同意用户协议与隐私政策'), findsOneWidget);
+    expect(find.text('我已阅读并同意'), findsOneWidget);
     expect(find.text('忘记密码'), findsOneWidget);
     expect(find.text('创建账号'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
@@ -713,6 +758,14 @@ void main() {
     await tester.enterText(find.byType(TextField).at(3), 'secret12');
     await tester.tap(find.text('创建账号').last);
     await tester.pump();
+    expect(api.registeredUsername, isNull);
+    expect(find.text('请先阅读并同意用户协议与隐私政策'), findsOneWidget);
+
+    await tester.ensureVisible(find.byType(Checkbox));
+    await tester.tap(find.byType(Checkbox));
+    await tester.ensureVisible(find.text('创建账号').last);
+    await tester.tap(find.text('创建账号').last);
+    await tester.pump();
     await tester.pump();
 
     expect(api.registeredUsername, 'listener');
@@ -741,14 +794,14 @@ void main() {
         );
 
     await tester.pumpWidget(app(const LoginView(allowBack: false)));
-    await tester.tap(find.text('查看用户协议'));
+    await tester.tap(find.text('《用户协议》'));
     await tester.pumpAndSettle();
     expect(find.byType(LegalDocumentView), findsOneWidget);
     expect(find.text('用户协议'), findsWidgets);
 
     await tester.tap(find.byTooltip('返回'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('查看隐私政策'));
+    await tester.tap(find.text('《隐私政策》'));
     await tester.pumpAndSettle();
     expect(find.text('隐私政策'), findsWidgets);
 
@@ -815,7 +868,7 @@ void main() {
     await pumpAt(const Size(390, 844));
   });
 
-  testWidgets('mobile mini player exposes the red navigation-edge progress',
+  testWidgets('mobile mini player exposes themed navigation-edge progress',
       (tester) async {
     final player = _PreviewPlayerController();
     addTearDown(player.dispose);
@@ -847,7 +900,7 @@ void main() {
       find.byKey(const ValueKey('mobile-mini-player-content-clip')),
     );
     final decoration = surface.decoration! as BoxDecoration;
-    expect(progress.color, const Color(0xFFE53935));
+    expect(progress.color, const Color(0xFF2FD365));
     final progressSize = tester.getSize(
       find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
     );
@@ -982,6 +1035,10 @@ void main() {
     final settings = SettingsController();
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
@@ -996,6 +1053,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -1357,9 +1415,15 @@ void main() {
     final player = _PreviewPlayerController();
     final settings = SettingsController();
     final auth = AuthController();
+    final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
 
     await tester.pumpWidget(
       MultiProvider(
@@ -1367,6 +1431,8 @@ void main() {
           ChangeNotifierProvider<PlayerController>.value(value: player),
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('light').data.copyWith(
@@ -1393,10 +1459,13 @@ void main() {
     expect(profileTitle, findsOneWidget);
     expect(find.byTooltip('返回'), findsNothing);
 
-    await tester.tap(find.text('首页'));
-    await tester.pump();
+    await tester.tap(find.text('首页').first);
+    await tester.pumpAndSettle();
     expect(profileTitle, findsNothing);
-    expect(find.text('首页'), findsOneWidget);
+    expect(find.descendant(
+      of: find.byType(DiscoverView),
+      matching: find.text('首页'),
+    ), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1411,6 +1480,10 @@ void main() {
     final player = _PreviewPlayerController();
     final settings = SettingsController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(auth.dispose);
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
@@ -1427,6 +1500,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -1483,9 +1557,15 @@ void main() {
     final player = _PreviewPlayerController();
     final settings = SettingsController();
     final auth = AuthController();
+    final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
+    addTearDown(timer.dispose);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
@@ -1495,6 +1575,8 @@ void main() {
           ChangeNotifierProvider<PlayerController>.value(value: player),
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
+          ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('light').data.copyWith(
@@ -1568,8 +1650,8 @@ void main() {
                   title: '选择音质',
                   current: 'auto',
                   options: const [
-                    (value: 'auto', label: '自动'),
-                    (value: 'lossless', label: '无损'),
+                    (value: 'auto', label: '自动', detail: null),
+                    (value: 'lossless', label: '无损', detail: null),
                   ],
                 ),
                 child: const Text('打开选择器'),
@@ -1835,7 +1917,9 @@ void main() {
       find.bySemanticsLabel('查看弹壳Danko / Vinz-T的歌手信息'),
       findsOneWidget,
     );
-    expect(tester.getCenter(find.byTooltip('收起播放器')).dy, 64);
+    // The player now keeps the close control inside the safe-area toolbar
+    // instead of translating it under the status bar.
+    expect(tester.getCenter(find.byTooltip('收起播放器')).dy, 79);
     expect(tester.takeException(), isNull);
 
     player.setPlaying(true);
@@ -1862,8 +1946,12 @@ void main() {
 
     await tester.tap(find.byTooltip('歌曲百科'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
     expect(find.text('歌曲百科'), findsOneWidget);
     expect(find.text('The Gentlemen (Live)'), findsNWidgets(2));
+    expect(find.text('歌手信息'), findsOneWidget);
+    expect(find.text('弹壳Danko'), findsOneWidget);
+    expect(find.text('Vinz-T'), findsOneWidget);
     await tester.tap(find.byTooltip('关闭歌曲信息'));
     await tester.pumpAndSettle();
 
@@ -2032,11 +2120,24 @@ void main() {
 
         expect(find.text('心动'), findsNothing);
         expect(find.byKey(const ValueKey('vinyl-tonearm')), findsOneWidget);
+        final vinylSize =
+            tester.getSize(find.byKey(const ValueKey('vinyl-disc')));
+        final coverSize =
+            tester.getSize(find.byKey(const ValueKey('vinyl-cover')));
+        expect(vinylSize.width, closeTo(vinylSize.height, 0.01));
+        expect(coverSize.width, closeTo(coverSize.height, 0.01));
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
         expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
         expect(find.byTooltip('睡眠定时'), findsOneWidget);
         expect(find.byTooltip('播放队列'), findsOneWidget);
-        expect(find.byTooltip('循环模式'), findsOneWidget);
+        expect(
+          find.byTooltip(switch (player.loopMode.name) {
+            'one' => '单曲循环',
+            'all' => '列表循环',
+            _ => '不循环',
+          }),
+          findsOneWidget,
+        );
         expect(find.byTooltip('歌曲百科'), findsOneWidget);
         expect(find.byTooltip('更多'), findsOneWidget);
 
@@ -2049,6 +2150,21 @@ void main() {
         ]) {
           expect(viewport.contains(tester.getCenter(finder)), isTrue);
         }
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byTooltip('歌曲百科'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('当前音质'));
+        await tester.pumpAndSettle();
+        expect(
+          viewport.contains(tester.getCenter(find.text('当前音质'))),
+          isTrue,
+        );
+        await tester.ensureVisible(find.byTooltip('关闭歌曲信息'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('关闭歌曲信息'));
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
     }
@@ -2390,6 +2506,10 @@ void main() {
     final settings = SettingsController();
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
@@ -2404,6 +2524,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -2493,6 +2614,10 @@ void main() {
     final settings = SettingsController();
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     final platformCalls = <MethodCall>[];
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
@@ -2523,6 +2648,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -2563,6 +2689,10 @@ void main() {
     final settings = SettingsController();
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     final platformCalls = <MethodCall>[];
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
@@ -2593,6 +2723,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -2627,6 +2758,10 @@ void main() {
     final settings = SettingsController();
     final auth = AuthController();
     final timer = SleepTimer();
+    final desktop = DesktopIntegrationService(
+      settings: settings,
+      player: player,
+    );
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     addTearDown(auth.dispose);
@@ -2643,6 +2778,7 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(

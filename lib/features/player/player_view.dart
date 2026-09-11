@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -21,6 +23,7 @@ import '../profile/login_view.dart';
 import '../profile/profile_view.dart';
 import '../search/artist_names_link.dart';
 import '../../widgets/song_action_menu.dart';
+import '../../core/theme/app_animations.dart';
 import 'queue_view.dart';
 
 enum _PlayerPane { lyrics, queue }
@@ -32,16 +35,20 @@ Route<void> buildPlayerRoute({required bool reducedMotion}) {
   return PageRouteBuilder<void>(
     opaque: false,
     barrierColor: Colors.transparent,
-    transitionDuration:
-        reducedMotion ? Duration.zero : const Duration(milliseconds: 420),
-    reverseTransitionDuration:
-        reducedMotion ? Duration.zero : const Duration(milliseconds: 320),
+    transitionDuration: AppAnimations.adaptive(
+      AppAnimations.slow,
+      reducedMotion: reducedMotion,
+    ),
+    reverseTransitionDuration: AppAnimations.adaptive(
+      AppAnimations.slow,
+      reducedMotion: reducedMotion,
+    ),
     pageBuilder: (context, animation, secondaryAnimation) => const PlayerView(),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: AppAnimations.pageTransition,
+        reverseCurve: AppAnimations.pageTransition,
       );
       final slide = Tween<Offset>(
         begin: const Offset(0, 1),
@@ -66,8 +73,67 @@ class PlayerView extends StatefulWidget {
   State<PlayerView> createState() => _PlayerViewState();
 }
 
-class _PlayerViewState extends State<PlayerView> {
+class _PlayerViewState extends State<PlayerView>
+    with SingleTickerProviderStateMixin {
   _PlayerPane _pane = _PlayerPane.lyrics;
+  late final AnimationController _dismissOffset;
+  bool _draggingToDismiss = false;
+  bool _dismissing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissOffset = AnimationController(vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _dismissOffset.dispose();
+    super.dispose();
+  }
+
+  void _startDismissDrag(DragStartDetails details) {
+    if (_dismissing || !Navigator.of(context).canPop()) return;
+    _dismissOffset.stop();
+    _draggingToDismiss = true;
+  }
+
+  void _updateDismissDrag(DragUpdateDetails details) {
+    if (!_draggingToDismiss) return;
+    final height = MediaQuery.sizeOf(context).height;
+    if (height <= 0) return;
+    _dismissOffset.value =
+        (_dismissOffset.value + (details.primaryDelta ?? 0) / height)
+            .clamp(0.0, 1.0)
+            .toDouble();
+  }
+
+  void _endDismissDrag(DragEndDetails details) {
+    if (!_draggingToDismiss) return;
+    _draggingToDismiss = false;
+    final distance = _dismissOffset.value * MediaQuery.sizeOf(context).height;
+    final shouldDismiss = _dismissOffset.value >= 0.18 ||
+        (distance >= 24 && (details.primaryVelocity ?? 0) >= 850);
+    if (shouldDismiss) {
+      _dismissing = true;
+      Navigator.of(context).maybePop().then((popped) {
+        if (!mounted || popped) return;
+        _dismissing = false;
+        _returnFromDismissDrag();
+      });
+    } else {
+      _returnFromDismissDrag();
+    }
+  }
+
+  void _returnFromDismissDrag() {
+    _draggingToDismiss = false;
+    _dismissOffset.animateTo(
+      0,
+      duration: PlatformMotion.duration(context, Motion.normal),
+      curve: Motion.standard,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +178,10 @@ class _PlayerViewState extends State<PlayerView> {
                                 padding:
                                     const EdgeInsets.fromLTRB(8, 8, 34, 26),
                                 child: AnimatedSwitcher(
-                                  duration: Motion.normal,
+                                  duration: PlatformMotion.duration(
+                                    context,
+                                    Motion.normal,
+                                  ),
                                   child: _pane == _PlayerPane.lyrics
                                       ? const _SelectedLyricView(
                                           key: ValueKey('lyrics'),
@@ -128,7 +197,13 @@ class _PlayerViewState extends State<PlayerView> {
                       ),
                     ],
                   )
-                : _MobilePlayer(song: current),
+                : _MobilePlayer(
+                    song: current,
+                    onDismissDragStart: _startDismissDrag,
+                    onDismissDragUpdate: _updateDismissDrag,
+                    onDismissDragEnd: _endDismissDrag,
+                    onDismissDragCancel: _returnFromDismissDrag,
+                  ),
           ),
         ],
       ),
@@ -146,7 +221,25 @@ class _PlayerViewState extends State<PlayerView> {
         systemNavigationBarDividerColor: Colors.transparent,
         systemNavigationBarContrastEnforced: false,
       ),
-      child: content,
+      child: AnimatedBuilder(
+        animation: _dismissOffset,
+        child: content,
+        builder: (context, child) => Transform.translate(
+          key: const ValueKey('player-dismiss-surface'),
+          offset: Offset(
+            0,
+            _dismissOffset.value * MediaQuery.sizeOf(context).height,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(
+                (_dismissOffset.value * 160).clamp(0.0, 24.0).toDouble(),
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -245,7 +338,7 @@ class _TopBar extends StatelessWidget {
             tooltip: '关闭播放器',
             size: 20,
             padding: 2,
-            filled: true,
+            tint: Colors.white,
             backgroundColor: glassFill(context, alpha: 0.10),
             onTap: () => Navigator.of(context).maybePop(),
           ),
@@ -258,9 +351,19 @@ class _TopBar extends StatelessWidget {
 
 /// 手机端播放器：上方页面横向切换，进度与播放控制始终固定。
 class _MobilePlayer extends StatefulWidget {
-  const _MobilePlayer({required this.song});
+  const _MobilePlayer({
+    required this.song,
+    required this.onDismissDragStart,
+    required this.onDismissDragUpdate,
+    required this.onDismissDragEnd,
+    required this.onDismissDragCancel,
+  });
 
   final Song song;
+  final GestureDragStartCallback onDismissDragStart;
+  final GestureDragUpdateCallback onDismissDragUpdate;
+  final GestureDragEndCallback onDismissDragEnd;
+  final GestureDragCancelCallback onDismissDragCancel;
 
   @override
   State<_MobilePlayer> createState() => _MobilePlayerState();
@@ -281,7 +384,8 @@ class _MobilePlayerState extends State<_MobilePlayer> {
   @override
   void didUpdateWidget(covariant _MobilePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.song.id != widget.song.id) {
+    if (oldWidget.song.id != widget.song.id ||
+        oldWidget.song.source != widget.song.source) {
       _page = 0;
       if (_pageController.hasClients) _pageController.jumpToPage(0);
     }
@@ -296,10 +400,15 @@ class _MobilePlayerState extends State<_MobilePlayer> {
 
   void _showPage(int page) {
     if (_page == page) return;
+    final duration = PlatformMotion.duration(context, Motion.slow);
+    if (duration == Duration.zero) {
+      _pageController.jumpToPage(page);
+      return;
+    }
     _pageController.animateToPage(
       page,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
+      duration: duration,
+      curve: Motion.standard,
     );
   }
 
@@ -313,10 +422,20 @@ class _MobilePlayerState extends State<_MobilePlayer> {
         final compact = constraints.maxHeight < 620;
         return Column(
           children: [
-            _MobilePlayerTopBar(
-              song: widget.song,
-              showingLyrics: _page == 1,
-              compact: compact,
+            // A dedicated top region keeps dismissal out of the lyrics and
+            // playback timeline gesture arenas.
+            GestureDetector(
+              key: const ValueKey('mobile-player-dismiss-region'),
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: widget.onDismissDragStart,
+              onVerticalDragUpdate: widget.onDismissDragUpdate,
+              onVerticalDragEnd: widget.onDismissDragEnd,
+              onVerticalDragCancel: widget.onDismissDragCancel,
+              child: _MobilePlayerTopBar(
+                song: widget.song,
+                showingLyrics: _page == 1,
+                compact: compact,
+              ),
             ),
             Expanded(
               child: PageView(
@@ -325,13 +444,17 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                 onPageChanged: (page) => setState(() => _page = page),
                 children: [
                   _MobileCoverStage(
-                    key: ValueKey('mobile-cover-${widget.song.id}'),
+                    key: ValueKey(
+                      'mobile-cover-${widget.song.source}:${widget.song.id}',
+                    ),
                     song: widget.song,
                     compact: compact,
                     onOpenLyrics: () => _showPage(1),
                   ),
                   _LyricView(
-                    key: ValueKey('mobile-lyrics-${widget.song.id}'),
+                    key: ValueKey(
+                      'mobile-lyrics-${widget.song.source}:${widget.song.id}',
+                    ),
                     lrc: state.$1,
                     immersive: true,
                     compact: compact,
@@ -377,35 +500,31 @@ class _MobilePlayerTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: compact ? 48 : 68,
-      child: Transform.translate(
-        offset: Offset(0, compact ? -4 : -17),
-        child: Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.none,
+      height: compact ? 54 : 64,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
           children: [
-            Positioned(
-              left: 10,
-              child: _ImmersiveIconButton(
-                icon: Icons.keyboard_arrow_down_rounded,
-                tooltip: '收起播放器',
-                size: compact ? 29 : 32,
-                onTap: () => Navigator.of(context).maybePop(),
-              ),
+            _ImmersiveIconButton(
+              icon: Icons.keyboard_arrow_down_rounded,
+              tooltip: '收起播放器',
+              size: compact ? 29 : 32,
+              buttonSize: compact ? 42 : 46,
+              onTap: () => Navigator.of(context).maybePop(),
             ),
-            AnimatedSwitcher(
-              duration: Motion.normal,
-              child: showingLyrics
-                  ? SizedBox(
-                      key: const ValueKey('lyric-title'),
-                      width: MediaQuery.sizeOf(context).width - 150,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: PlatformMotion.duration(context, Motion.normal),
+                child: showingLyrics
+                    ? Column(
+                        key: const ValueKey('lyric-title'),
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             song.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: compact ? 15 : 17,
@@ -431,12 +550,20 @@ class _MobilePlayerTopBar extends StatelessWidget {
                             ),
                           ),
                         ],
+                      )
+                    : Text(
+                        '正在播放',
+                        key: const ValueKey('cover-title'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.80),
+                          fontSize: compact ? 13 : 15,
+                          fontWeight: TypeScale.semibold,
+                        ),
                       ),
-                    )
-                  : const SizedBox.shrink(
-                      key: ValueKey('cover-title'),
-                    ),
+              ),
             ),
+            const SizedBox(width: 46),
           ],
         ),
       ),
@@ -461,12 +588,12 @@ class _MobileCoverStage extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxDiscWidth = MediaQuery.sizeOf(context).width - 38;
-        final lyricHeight = compact ? 58.0 : 82.0;
-        final topInset = compact ? 0.0 : 8.0;
+        final lyricHeight = compact ? 54.0 : 78.0;
+        final topInset = compact ? 0.0 : 10.0;
         final discSize = math
             .min(
               maxDiscWidth,
-              (constraints.maxHeight - lyricHeight - topInset - 4)
+              (constraints.maxHeight - lyricHeight - topInset - 12)
                   .clamp(140.0, 350.0),
             )
             .toDouble();
@@ -490,7 +617,7 @@ class _MobileCoverStage extends StatelessWidget {
                     height: discSize,
                     child: _VinylStage(song: song),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: lyricHeight,
                     child: _VinylRollingLyrics(
@@ -515,30 +642,24 @@ class _VinylStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: LayoutBuilder(
-            builder: (context, constraints) => Stack(
-              children: [
-                Positioned(
-                  left: constraints.maxWidth * 0.04,
-                  right: constraints.maxWidth * 0.04,
-                  top: constraints.maxHeight * 0.15,
-                  bottom: 0,
-                  child: _SpinningVinyl(song: song),
-                ),
-              ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stageSize = constraints.biggest.shortestSide;
+        final vinylSize = stageSize * 0.88;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Align(
+              alignment: const Alignment(0, 0.86),
+              child: SizedBox.square(
+                dimension: vinylSize,
+                child: _SpinningVinyl(song: song),
+              ),
             ),
-          ),
-        ),
-        const Positioned.fill(child: _AnimatedTonearm()),
-      ],
+            const Positioned.fill(child: _AnimatedTonearm()),
+          ],
+        );
+      },
     );
   }
 }
@@ -650,7 +771,7 @@ class _VinylRollingLyrics extends StatelessWidget {
         final next = current + 1 < lines.length ? lines[current + 1].text : '';
         return ClipRect(
           child: AnimatedSwitcher(
-            duration: Motion.normal,
+            duration: PlatformMotion.duration(context, Motion.normal),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) => FadeTransition(
@@ -725,6 +846,7 @@ class _SpinningVinyl extends StatefulWidget {
 class _SpinningVinylState extends State<_SpinningVinyl>
     with SingleTickerProviderStateMixin {
   late final AnimationController _rotation;
+  bool? _lastAnimating;
 
   @override
   void initState() {
@@ -733,19 +855,12 @@ class _SpinningVinylState extends State<_SpinningVinyl>
       vsync: this,
       duration: const Duration(seconds: 18),
     );
-    _syncRotation(context.read<PlayerController>().playing);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncRotation(context.read<PlayerController>().playing);
-  }
-
-  void _syncRotation(bool playing) {
-    if (playing && !_rotation.isAnimating) {
+  void _syncRotation(bool animate) {
+    if (animate && !_rotation.isAnimating) {
       _rotation.repeat();
-    } else if (!playing && _rotation.isAnimating) {
+    } else if (!animate && _rotation.isAnimating) {
       _rotation.stop();
     }
   }
@@ -759,42 +874,57 @@ class _SpinningVinylState extends State<_SpinningVinyl>
   @override
   Widget build(BuildContext context) {
     final playing = context.select<PlayerController, bool>((p) => p.playing);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncRotation(playing);
-    });
+    final animate = playing &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        TickerMode.valuesOf(context).enabled;
+    if (_lastAnimating != animate) {
+      _lastAnimating = animate;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncRotation(animate);
+      });
+    }
     return RotationTransition(
+      key: const ValueKey('vinyl-disc'),
       turns: _rotation,
       child: RepaintBoundary(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            const Positioned.fill(
-              child: CustomPaint(painter: _VinylPainter()),
-            ),
-            FractionallySizedBox(
-              widthFactor: 0.59,
-              heightFactor: 0.59,
-              child: LayoutBuilder(
-                builder: (context, constraints) => ClipOval(
-                  child: AsyncCover(
-                    url: widget.song.album.picUrl,
-                    size: constraints.maxWidth,
-                    radius: constraints.maxWidth / 2,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final vinylSize = constraints.biggest.shortestSide;
+            final labelSize = vinylSize * 0.56;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                const Positioned.fill(
+                  child: CustomPaint(painter: _VinylPainter()),
+                ),
+                SizedBox.square(
+                  dimension: labelSize,
+                  child: ClipOval(
+                    key: const ValueKey('vinyl-cover'),
+                    clipBehavior: Clip.antiAlias,
+                    child: AsyncCover(
+                      url: widget.song.album.picUrl,
+                      size: labelSize,
+                      radius: 0,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            FractionallySizedBox(
-              widthFactor: 0.035,
-              heightFactor: 0.035,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.72),
+                SizedBox.square(
+                  dimension: vinylSize * 0.034,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.76),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        width: 0.8,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -848,9 +978,9 @@ class _TonearmPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final t = Curves.easeInOutCubic.transform(progress.value);
     final scale = math.min(size.width, size.height);
-    final pivot = Offset(size.width * 0.82, size.height * 0.16);
-    final restingTip = Offset(size.width * 0.89, size.height * 0.34);
-    final playingTip = Offset(size.width * 0.69, size.height * 0.39);
+    final pivot = Offset(size.width * 0.83, size.height * 0.16);
+    final restingTip = Offset(size.width * 0.89, size.height * 0.33);
+    final playingTip = Offset(size.width * 0.70, size.height * 0.38);
     final tip = Offset.lerp(restingTip, playingTip, t)!;
     final elbow = Offset.lerp(
       Offset(size.width * 0.84, size.height * 0.24),
@@ -870,34 +1000,34 @@ class _TonearmPainter extends CustomPainter {
       ..lineTo(tip.dx, tip.dy);
     final shadow = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = scale * 0.026
+      ..strokeWidth = scale * 0.021
       ..strokeCap = StrokeCap.round
       ..color = Colors.black.withValues(alpha: 0.30);
     final arm = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = scale * 0.015
+      ..strokeWidth = scale * 0.0115
       ..strokeCap = StrokeCap.round
       ..color = const Color(0xFFD8D5CE);
     canvas.drawPath(path, shadow);
     canvas.drawPath(path, arm);
     canvas.drawCircle(
       pivot,
-      scale * 0.070,
+      scale * 0.058,
       Paint()..color = Colors.black.withValues(alpha: 0.30),
     );
     canvas.drawCircle(
       pivot,
-      scale * 0.052,
+      scale * 0.042,
       Paint()
         ..shader = const RadialGradient(
           colors: [Color(0xFFF3F1EC), Color(0xFFAAA69E)],
         ).createShader(
-          Rect.fromCircle(center: pivot, radius: scale * 0.052),
+          Rect.fromCircle(center: pivot, radius: scale * 0.042),
         ),
     );
     canvas.drawCircle(
       pivot,
-      scale * 0.018,
+      scale * 0.014,
       Paint()..color = const Color(0xFF55524D),
     );
     final direction = tip - elbow;
@@ -909,18 +1039,18 @@ class _TonearmPainter extends CustomPainter {
       RRect.fromRectAndRadius(
         Rect.fromCenter(
           center: Offset.zero,
-          width: scale * 0.085,
-          height: scale * 0.045,
+          width: scale * 0.070,
+          height: scale * 0.038,
         ),
-        Radius.circular(scale * 0.010),
+        Radius.circular(scale * 0.008),
       ),
       Paint()..color = const Color(0xFFBBB7AF),
     );
     canvas.drawLine(
-      Offset(scale * 0.038, 0),
-      Offset(scale * 0.055, scale * 0.018),
+      Offset(scale * 0.032, 0),
+      Offset(scale * 0.047, scale * 0.015),
       Paint()
-        ..strokeWidth = scale * 0.006
+        ..strokeWidth = scale * 0.0045
         ..strokeCap = StrokeCap.round
         ..color = const Color(0xFFE7E4DD),
     );
@@ -950,27 +1080,29 @@ class _MobileControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
-    final state =
-        context.select<PlayerController, (bool, bool, String, String?, int)>(
+    final state = context
+        .select<PlayerController, (bool, bool, String, String?, int, bool)>(
       (player) => (
         player.playing,
         player.loading,
         player.loopMode.name,
         player.effectiveQuality,
         player.queueIndex,
+        player.shuffle,
       ),
     );
     final requestedQuality = context.select<SettingsController, String>(
       (settings) => settings.qualityForSource(song.source),
     );
     final quality = state.$4 ?? requestedQuality;
+    final shuffle = state.$6;
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 1 : 7),
+      padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 4 : 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: compact ? 42 : 59,
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: compact ? 48 : 58),
             child: error != null
                 ? _PlaybackErrorBanner(
                     message: error!,
@@ -986,20 +1118,10 @@ class _MobileControls extends StatelessWidget {
             compact: compact,
             onQualityTap: () => _showPlaybackQualitySheet(context),
           ),
-          SizedBox(height: compact ? 1 : 28),
+          SizedBox(height: compact ? 7 : 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _ImmersiveIconButton(
-                icon: state.$3 == 'one'
-                    ? Icons.repeat_one_rounded
-                    : Icons.repeat_rounded,
-                tooltip: '循环模式',
-                selected: state.$3 != 'off',
-                size: compact ? 22 : 25,
-                buttonSize: compact ? 40 : 48,
-                onTap: player.cycleLoopMode,
-              ),
               _ImmersiveIconButton(
                 icon: Icons.skip_previous_rounded,
                 tooltip: '上一首',
@@ -1007,6 +1129,7 @@ class _MobileControls extends StatelessWidget {
                 buttonSize: compact ? 44 : 54,
                 onTap: player.previous,
               ),
+              SizedBox(width: compact ? 18 : 26),
               _PlayPauseButton(
                 playing: state.$1,
                 loading: state.$2,
@@ -1015,6 +1138,7 @@ class _MobileControls extends StatelessWidget {
                 immersive: true,
                 compact: compact,
               ),
+              SizedBox(width: compact ? 18 : 26),
               _ImmersiveIconButton(
                 icon: Icons.skip_next_rounded,
                 tooltip: '下一首',
@@ -1022,45 +1146,67 @@ class _MobileControls extends StatelessWidget {
                 buttonSize: compact ? 44 : 54,
                 onTap: player.next,
               ),
-              _ImmersiveIconButton(
-                icon: Icons.queue_music_rounded,
-                tooltip: '播放队列',
-                size: compact ? 24 : 27,
-                buttonSize: compact ? 40 : 48,
-                onTap: () => showQueueSheet(context),
-              ),
             ],
           ),
-          SizedBox(height: compact ? 0 : 8),
+          SizedBox(height: compact ? 2 : 7),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _ImmersiveIconButton(
+                icon: Icons.shuffle_rounded,
+                tooltip: shuffle ? '随机播放（已开启）' : '随机播放',
+                selected: shuffle,
+                size: compact ? 21 : 23,
+                buttonSize: compact ? 38 : 42,
+                onTap: player.toggleShuffle,
+              ),
+              _ImmersiveIconButton(
+                icon: state.$3 == 'one'
+                    ? Icons.repeat_one_rounded
+                    : Icons.repeat_rounded,
+                tooltip: switch (state.$3) {
+                  'one' => '单曲循环',
+                  'all' => '列表循环',
+                  _ => '不循环',
+                },
+                selected: state.$3 != 'off',
+                size: compact ? 21 : 23,
+                buttonSize: compact ? 38 : 42,
+                onTap: player.cycleLoopMode,
+              ),
+              _ImmersiveIconButton(
                 icon: Icons.airplay_rounded,
                 tooltip: 'AirPlay 或蓝牙',
                 size: compact ? 20 : 22,
-                buttonSize: compact ? 40 : 46,
+                buttonSize: compact ? 38 : 42,
                 onTap: onOpenDevicePicker,
               ),
               _ImmersiveIconButton(
-                icon: Icons.lightbulb_outline_rounded,
+                icon: Icons.bedtime_outlined,
                 tooltip: '睡眠定时',
-                size: compact ? 21 : 24,
-                buttonSize: compact ? 40 : 46,
+                size: compact ? 20 : 22,
+                buttonSize: compact ? 38 : 42,
                 onTap: () => _showSleepTimer(context),
               ),
               _ImmersiveIconButton(
                 icon: Icons.info_outline_rounded,
                 tooltip: '歌曲百科',
-                size: compact ? 21 : 24,
-                buttonSize: compact ? 40 : 46,
+                size: compact ? 20 : 22,
+                buttonSize: compact ? 38 : 42,
                 onTap: () => _showSongInfoSheet(context, song, quality),
+              ),
+              _ImmersiveIconButton(
+                icon: Icons.queue_music_rounded,
+                tooltip: '播放队列',
+                size: compact ? 21 : 23,
+                buttonSize: compact ? 38 : 42,
+                onTap: () => showQueueSheet(context),
               ),
               _ImmersiveIconButton(
                 icon: Icons.more_horiz_rounded,
                 tooltip: '更多',
-                size: compact ? 23 : 26,
-                buttonSize: compact ? 40 : 46,
+                size: compact ? 22 : 24,
+                buttonSize: compact ? 38 : 42,
                 onTap: () => showSongActions(
                   context,
                   song: song,
@@ -1186,6 +1332,7 @@ Future<void> _showSongInfoSheet(
     useRootNavigator: true,
     useSafeArea: true,
     showDragHandle: true,
+    isScrollControlled: true,
     builder: (sheetContext) => _SongInfoSheet(song: song, quality: quality),
   );
 }
@@ -1199,71 +1346,168 @@ class _SongInfoSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
-                child: Text(
-                  '歌曲百科',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: TypeScale.bold,
-                  ),
-                ),
-              ),
-              GIconButton(
-                icon: Icons.close_rounded,
-                tooltip: '关闭歌曲信息',
-                backgroundColor: Colors.transparent,
-                onTap: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              AsyncCover(url: song.album.picUrl, size: 64, radius: 8),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: TypeScale.semibold,
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '歌曲百科',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: TypeScale.bold,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      song.artistNames,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  GIconButton(
+                    icon: Icons.close_rounded,
+                    tooltip: '关闭歌曲信息',
+                    backgroundColor: Colors.transparent,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  AsyncCover(url: song.album.picUrl, size: 64, radius: 8),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: TypeScale.semibold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artistNames,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _SongArtistsSection(song: song),
+              const SizedBox(height: 10),
+              _SongInfoRow(label: '专辑', value: song.album.name),
+              _SongInfoRow(label: '音乐源', value: _sourceLabel(song.source)),
+              _SongInfoRow(
+                label: '时长',
+                value: _ProgressRow._fmt(
+                  Duration(milliseconds: song.durationMs),
                 ),
               ),
+              _SongInfoRow(label: '当前音质', value: _mobileQualityLabel(quality)),
             ],
           ),
-          const SizedBox(height: 18),
-          _SongInfoRow(label: '专辑', value: song.album.name),
-          _SongInfoRow(label: '音乐源', value: _sourceLabel(song.source)),
-          _SongInfoRow(
-            label: '时长',
-            value: _ProgressRow._fmt(
-              Duration(milliseconds: song.durationMs),
+        ),
+      ),
+    );
+  }
+}
+
+class _SongArtistsSection extends StatelessWidget {
+  const _SongArtistsSection({required this.song});
+
+  final Song song;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final artists = song.artists.where((artist) {
+      final name = artist.name.trim();
+      return name.isNotEmpty && name != '未知' && name != '未知歌手';
+    }).toList();
+    if (artists.isEmpty) {
+      return const _SongInfoRow(label: '歌手信息', value: '未知');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '歌手信息',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: TypeScale.semibold,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (var index = 0; index < artists.length; index++) ...[
+          _SongArtistRow(song: song, artist: artists[index]),
+          if (index != artists.length - 1) const SizedBox(height: 6),
+        ],
+      ],
+    );
+  }
+}
+
+class _SongArtistRow extends StatelessWidget {
+  const _SongArtistRow({required this.song, required this.artist});
+
+  final Song song;
+  final Artist artist;
+
+  @override
+  Widget build(BuildContext context) {
+    final artistId = artist.id == 0 ? null : '${artist.id}';
+    return Container(
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          ClipOval(
+            child: AsyncCover(url: artist.picUrl, size: 38, radius: 19),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ArtistNamesLink(
+              artists: [artist],
+              source: song.source,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: TypeScale.semibold,
+              ),
             ),
           ),
-          _SongInfoRow(label: '当前音质', value: _mobileQualityLabel(quality)),
+          GIconButton(
+            icon: Icons.arrow_forward_ios_rounded,
+            tooltip: '查看${artist.name}的歌手资料',
+            size: 14,
+            padding: 9,
+            backgroundColor: Colors.transparent,
+            onTap: () => openArtistInfo(
+              context,
+              artists: [artist],
+              source: song.source,
+              artistId: artistId,
+            ),
+          ),
         ],
       ),
     );
@@ -1348,6 +1592,7 @@ class _MobileProgressRow extends StatelessWidget {
               child: GProgressBar(
                 position: position,
                 duration: total,
+                bufferedPosition: player.bufferedPosition,
                 onSeek: player.seek,
                 height: compact ? 2 : 2.5,
               ),
@@ -1625,8 +1870,15 @@ class _CoverAndControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
-    final state = context.select<PlayerController, (bool, bool, String?)>(
-      (player) => (player.playing, player.loading, player.error),
+    final state =
+        context.select<PlayerController, (bool, bool, String?, bool, String)>(
+      (player) => (
+        player.playing,
+        player.loading,
+        player.error,
+        player.shuffle,
+        player.loopMode.name,
+      ),
     );
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
@@ -1700,6 +1952,14 @@ class _CoverAndControls extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       GIconButton(
+                        icon: Icons.shuffle_rounded,
+                        tooltip: state.$4 ? '随机播放（已开启）' : '随机播放',
+                        size: 26,
+                        padding: 10,
+                        tint: state.$4 ? scheme.primary : null,
+                        onTap: player.toggleShuffle,
+                      ),
+                      GIconButton(
                         icon: Icons.skip_previous_rounded,
                         tooltip: '上一首',
                         size: 34,
@@ -1718,6 +1978,20 @@ class _CoverAndControls extends StatelessWidget {
                         size: 34,
                         padding: 10,
                         onTap: player.next,
+                      ),
+                      GIconButton(
+                        icon: state.$5 == 'one'
+                            ? Icons.repeat_one_rounded
+                            : Icons.repeat_rounded,
+                        tooltip: switch (state.$5) {
+                          'one' => '单曲循环',
+                          'all' => '列表循环',
+                          _ => '不循环',
+                        },
+                        size: 26,
+                        padding: 10,
+                        tint: state.$5 != 'off' ? scheme.primary : null,
+                        onTap: player.cycleLoopMode,
                       ),
                     ],
                   ),
@@ -1770,7 +2044,7 @@ class _PaneButton extends StatelessWidget {
     return GPressScale(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: Motion.fast,
+        duration: PlatformMotion.duration(context, Motion.fast),
         width: 44,
         height: 44,
         decoration: BoxDecoration(
@@ -1952,7 +2226,7 @@ class _InlineQueueView extends StatelessWidget {
                     return GPressScale(
                       onTap: () => player.playAt(index),
                       child: AnimatedContainer(
-                        duration: Motion.fast,
+                        duration: PlatformMotion.duration(context, Motion.fast),
                         height: 58,
                         margin: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -2055,24 +2329,38 @@ class _PlaybackErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final immersive = Theme.of(context).scaffoldBackgroundColor == Colors.black;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
-        color: scheme.error.withValues(alpha: 0.10),
+        color: immersive
+            ? scheme.error.withValues(alpha: 0.16)
+            : scheme.error.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(RadiusToken.md),
-        border: Border.all(color: scheme.error.withValues(alpha: 0.24)),
+        border: Border.all(
+          color: immersive
+              ? AppBrand.cueYellow.withValues(alpha: 0.60)
+              : scheme.error.withValues(alpha: 0.24),
+        ),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline_rounded, size: 18, color: scheme.error),
+          Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: immersive ? Colors.white : scheme.error,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: scheme.onSurface),
+              style: TextStyle(
+                fontSize: 12,
+                color: immersive ? Colors.white : scheme.onSurface,
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -2115,64 +2403,77 @@ class _PlayPauseButton extends StatelessWidget {
         : large
             ? 64.0
             : 56.0;
-    return GPressScale(
-      onTap: loading ? null : onTap,
-      disabled: loading,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: immersive
-              ? Colors.transparent
-              : dark
-                  ? Colors.white
-                  : scheme.primary,
-          boxShadow: immersive
-              ? const []
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 18,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-        ),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
-          reverseDuration: const Duration(milliseconds: 220),
-          switchInCurve: Curves.easeOutBack,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.72, end: 1).animate(animation),
-              child: child,
+    final label = loading
+        ? '正在加载'
+        : playing
+            ? '暂停'
+            : '播放';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        label: label,
+        button: true,
+        enabled: !loading,
+        child: GPressScale(
+          onTap: loading ? null : onTap,
+          disabled: loading,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: immersive
+                  ? Colors.transparent
+                  : dark
+                      ? Colors.white
+                      : scheme.primary,
+              boxShadow: immersive
+                  ? const []
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+            ),
+            child: AnimatedSwitcher(
+              duration: PlatformMotion.duration(context, Motion.normal),
+              reverseDuration: PlatformMotion.duration(context, Motion.fast),
+              switchInCurve: Curves.easeOutBack,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.72, end: 1).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: loading
+                  ? Padding(
+                      key: const ValueKey('playback-loading'),
+                      padding: EdgeInsets.all(immersive ? 18 : 20),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: immersive
+                            ? Colors.white
+                            : dark
+                                ? Colors.black
+                                : Colors.white,
+                      ),
+                    )
+                  : Icon(
+                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      key: ValueKey(playing ? 'pause' : 'play'),
+                      size: size * (immersive ? 0.78 : 0.52),
+                      color: immersive
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : dark
+                              ? Colors.black
+                              : Colors.white,
+                    ),
             ),
           ),
-          child: loading
-              ? Padding(
-                  key: const ValueKey('playback-loading'),
-                  padding: EdgeInsets.all(immersive ? 18 : 20),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: immersive
-                        ? Colors.white
-                        : dark
-                            ? Colors.black
-                            : Colors.white,
-                  ),
-                )
-              : Icon(
-                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  key: ValueKey(playing ? 'pause' : 'play'),
-                  size: size * (immersive ? 0.78 : 0.52),
-                  color: immersive
-                      ? Colors.white.withValues(alpha: 0.82)
-                      : dark
-                          ? Colors.black
-                          : Colors.white,
-                ),
         ),
       ),
     );
@@ -2193,48 +2494,60 @@ class _FavoriteBtn extends StatefulWidget {
 class _FavoriteBtnState extends State<_FavoriteBtn> {
   bool _fav = false;
   bool _busy = false;
+  bool _loaded = false;
+  String? _token;
+  int _requestVersion = 0;
 
   @override
-  void initState() {
-    super.initState();
-    _refresh();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final token = context.watch<AuthController>().token;
+    if (!_loaded || _token != token) {
+      _loaded = true;
+      _token = token;
+      _refresh();
+    }
   }
 
   @override
   void didUpdateWidget(covariant _FavoriteBtn oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.song.id != widget.song.id) _refresh();
+    if (oldWidget.song.id != widget.song.id ||
+        oldWidget.song.source != widget.song.source) {
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {
-    final auth = context.read<AuthController>();
-    final token = auth.token;
-    if (token == null) {
-      if (mounted) setState(() => _fav = false);
-      return;
-    }
+    final request = ++_requestVersion;
+    final song = widget.song;
+    final token = context.read<AuthController>().token;
+    _fav = false;
+    _busy = false;
+    if (token == null) return;
     try {
       final items = await UserApi().getFavorites(token);
-      if (!mounted) return;
+      if (!mounted || !_isCurrentRequest(request, song, token)) return;
       setState(() {
         _fav = items.any(
           (e) {
             final id = e['songId'] ?? e['id'];
             final source = e['source'] ?? 'netease';
-            return id?.toString() == widget.song.id &&
-                source.toString() == widget.song.source;
+            return id?.toString() == song.id &&
+                source.toString() == song.source;
           },
         );
       });
       final player = context.read<PlayerController>();
-      if (player.current?.id == widget.song.id &&
-          player.current?.source == widget.song.source) {
+      if (player.current?.id == song.id &&
+          player.current?.source == song.source) {
         player.setLiked(_fav);
       }
     } catch (_) {}
   }
 
   Future<void> _toggle() async {
+    if (_busy) return;
     final auth = context.read<AuthController>();
     final token = auth.token;
     if (token == null) {
@@ -2243,19 +2556,21 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
       );
       return;
     }
+    final request = ++_requestVersion;
+    final song = widget.song;
+    final wasFavorite = _fav;
     setState(() => _busy = true);
     try {
-      if (_fav) {
-        await UserApi()
-            .removeFavorite(widget.song.id, widget.song.source, token);
+      if (wasFavorite) {
+        await UserApi().removeFavorite(song.id, song.source, token);
       } else {
-        await UserApi().addFavorite(widget.song, token);
+        await UserApi().addFavorite(song, token);
       }
-      if (mounted) {
-        setState(() => _fav = !_fav);
+      if (mounted && _isCurrentRequest(request, song, token)) {
+        setState(() => _fav = !wasFavorite);
         final player = context.read<PlayerController>();
-        if (player.current?.id == widget.song.id &&
-            player.current?.source == widget.song.source) {
+        if (player.current?.id == song.id &&
+            player.current?.source == song.source) {
           player.setLiked(_fav);
         }
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2263,48 +2578,68 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
         );
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && _isCurrentRequest(request, song, token)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('操作失败，请稍后重试')),
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (_isCurrentRequest(request, song, token)) {
+        setState(() => _busy = false);
+      }
     }
   }
+
+  bool _isCurrentRequest(int request, Song song, String token) =>
+      mounted &&
+      request == _requestVersion &&
+      widget.song.id == song.id &&
+      widget.song.source == song.source &&
+      context.read<AuthController>().token == token;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
-      onTap: _busy ? null : _toggle,
-      disabled: _busy,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: widget.immersive
-              ? Colors.transparent
-              : glassFill(context, alpha: 0.05),
-          border: widget.immersive
-              ? null
-              : Border.all(color: glassHairline(context)),
-        ),
-        child: _busy
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(
-                _fav ? Icons.favorite_rounded : Icons.favorite_outline_rounded,
-                size: 22,
-                color: _fav
-                    ? scheme.primary
-                    : widget.immersive
+    return Tooltip(
+      message: _fav ? '取消收藏' : '收藏歌曲',
+      child: Semantics(
+        button: true,
+        enabled: !_busy,
+        toggled: _fav,
+        label: _fav ? '取消收藏' : '收藏歌曲',
+        child: GPressScale(
+          onTap: _busy ? null : _toggle,
+          disabled: _busy,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.immersive
+                  ? Colors.transparent
+                  : glassFill(context, alpha: 0.05),
+              border: widget.immersive
+                  ? null
+                  : Border.all(color: glassHairline(context)),
+            ),
+            child: _busy
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : GPopIcon(
+                    icon: _fav
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_outline_rounded,
+                    active: _fav,
+                    size: 22,
+                    activeColor: scheme.primary,
+                    color: widget.immersive
                         ? Colors.white.withValues(alpha: 0.92)
                         : scheme.onSurface,
-              ),
+                  ),
+          ),
+        ),
       ),
     );
   }
@@ -2343,6 +2678,7 @@ class _ProgressRow extends StatelessWidget {
                   child: GProgressBar(
                     position: position,
                     duration: duration ?? Duration.zero,
+                    bufferedPosition: player.bufferedPosition,
                     onSeek: player.seek,
                     height: 4,
                   ),
@@ -2386,6 +2722,31 @@ class _LyricViewState extends State<_LyricView> {
   final ScrollController _controller = ScrollController();
   List<LrcLine> _lines = const [];
   int _lastCurrentLine = -1;
+  bool _userScrolling = false;
+  Timer? _scrollResumeTimer;
+
+  void _resumeFollowing() {
+    _scrollResumeTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _userScrolling = false);
+    final position = context.read<PlayerController>().position;
+    _scheduleScroll(_currentLineFor(position), force: true);
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final startedDragging = notification is ScrollStartNotification &&
+        notification.dragDetails != null;
+    final userMoved = notification is UserScrollNotification &&
+        notification.direction != ScrollDirection.idle;
+    if (startedDragging || userMoved) {
+      _scrollResumeTimer?.cancel();
+      if (!_userScrolling) setState(() => _userScrolling = true);
+    } else if (notification is ScrollEndNotification && _userScrolling) {
+      _scrollResumeTimer?.cancel();
+      _scrollResumeTimer = Timer(const Duration(seconds: 5), _resumeFollowing);
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -2399,11 +2760,14 @@ class _LyricViewState extends State<_LyricView> {
     if (oldWidget.lrc != widget.lrc) {
       _lines = parseLrc(widget.lrc);
       _lastCurrentLine = -1;
+      _userScrolling = false;
+      _scrollResumeTimer?.cancel();
     }
   }
 
   @override
   void dispose() {
+    _scrollResumeTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -2471,72 +2835,77 @@ class _LyricViewState extends State<_LyricView> {
             final verticalPadding = widget.immersive
                 ? (constraints.maxHeight - lineHeight) / 2
                 : 100.0;
-            Widget list = ListView.builder(
-              controller: _controller,
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(
-                vertical: verticalPadding.clamp(0.0, double.infinity),
-                horizontal: widget.immersive ? 34 : 30,
-              ),
-              itemCount: _lines.length,
-              itemBuilder: (context, i) {
-                final isCurrent = i == current;
-                return Semantics(
-                  button: true,
-                  label: '跳转到 ${_formatLyricTime(_lines[i].time)}',
-                  child: GPressScale(
-                    onTap: () => player.seek(_lines[i].time),
-                    scale: 0.985,
-                    child: SizedBox(
-                      height: lineHeight,
-                      child: Align(
-                        alignment: widget.immersive
-                            ? Alignment.center
-                            : Alignment.centerLeft,
-                        child: AnimatedDefaultTextStyle(
-                          duration: Motion.normal,
-                          curve: Curves.easeOutCubic,
-                          style: TextStyle(
-                            fontSize: widget.immersive
-                                ? isCurrent
-                                    ? widget.compact
-                                        ? 18
-                                        : 19
-                                    : widget.compact
-                                        ? 14
-                                        : 16
-                                : isCurrent
-                                    ? 21
-                                    : 15,
-                            fontWeight:
-                                isCurrent ? TypeScale.bold : TypeScale.semibold,
-                            color: widget.immersive
-                                ? Colors.white.withValues(
-                                    alpha: isCurrent ? 1 : 0.38,
-                                  )
-                                : isCurrent
-                                    ? scheme.onSurface
-                                    : scheme.onSurfaceVariant
-                                        .withValues(alpha: 0.42),
-                            height: 1.28,
-                          ),
-                          textAlign: widget.immersive
-                              ? TextAlign.center
-                              : TextAlign.left,
-                          child: Text(
-                            _lines[i].text.isEmpty ? '· · ·' : _lines[i].text,
-                            maxLines: 2,
+            Widget list = NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: ListView.builder(
+                controller: _controller,
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.symmetric(
+                  vertical: verticalPadding.clamp(0.0, double.infinity),
+                  horizontal: widget.immersive ? 34 : 30,
+                ),
+                itemCount: _lines.length,
+                itemBuilder: (context, i) {
+                  final isCurrent = i == current;
+                  return Semantics(
+                    button: true,
+                    label: '跳转到 ${_formatLyricTime(_lines[i].time)}',
+                    child: GPressScale(
+                      onTap: () => player.seek(_lines[i].time),
+                      scale: 0.985,
+                      child: SizedBox(
+                        height: lineHeight,
+                        child: Align(
+                          alignment: widget.immersive
+                              ? Alignment.center
+                              : Alignment.centerLeft,
+                          child: AnimatedDefaultTextStyle(
+                            duration:
+                                PlatformMotion.duration(context, Motion.normal),
+                            curve: Curves.easeOutCubic,
+                            style: TextStyle(
+                              fontSize: widget.immersive
+                                  ? isCurrent
+                                      ? widget.compact
+                                          ? 18
+                                          : 19
+                                      : widget.compact
+                                          ? 14
+                                          : 16
+                                  : isCurrent
+                                      ? 21
+                                      : 15,
+                              fontWeight: isCurrent
+                                  ? TypeScale.bold
+                                  : TypeScale.semibold,
+                              color: widget.immersive
+                                  ? Colors.white.withValues(
+                                      alpha: isCurrent ? 1 : 0.38,
+                                    )
+                                  : isCurrent
+                                      ? scheme.onSurface
+                                      : scheme.onSurfaceVariant
+                                          .withValues(alpha: 0.42),
+                              height: 1.28,
+                            ),
                             textAlign: widget.immersive
                                 ? TextAlign.center
                                 : TextAlign.left,
-                            overflow: TextOverflow.ellipsis,
+                            child: Text(
+                              _lines[i].text.isEmpty ? '· · ·' : _lines[i].text,
+                              maxLines: 2,
+                              textAlign: widget.immersive
+                                  ? TextAlign.center
+                                  : TextAlign.left,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             );
             if (widget.immersive) {
               list = RepaintBoundary(
@@ -2564,7 +2933,23 @@ class _LyricViewState extends State<_LyricView> {
                 child: list,
               );
             }
-            return list;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                list,
+                if (_userScrolling)
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: GButton(
+                      label: '回到当前',
+                      filled: false,
+                      small: true,
+                      onTap: _resumeFollowing,
+                    ),
+                  ),
+              ],
+            );
           },
         );
       },
@@ -2587,12 +2972,14 @@ class _LyricViewState extends State<_LyricView> {
     return current;
   }
 
-  void _scheduleScroll(int current) {
-    if (current == _lastCurrentLine) return;
+  void _scheduleScroll(int current, {bool force = false}) {
+    if (!force && current == _lastCurrentLine) return;
+    if (_userScrolling) return; // Don't auto-scroll when user is scrolling
     final initialAlignment = _lastCurrentLine == -1;
     _lastCurrentLine = current;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_userScrolling) return;
       if (!_controller.hasClients) {
         _lastCurrentLine = -1;
         _scheduleScroll(current);
@@ -2611,12 +2998,13 @@ class _LyricViewState extends State<_LyricView> {
       if ((_controller.offset - target).abs() > 12) {
         final clampedTarget =
             target.clamp(0.0, _controller.position.maxScrollExtent);
-        if (initialAlignment) {
+        final duration = PlatformMotion.duration(context, Motion.slow);
+        if (initialAlignment || duration == Duration.zero) {
           _controller.jumpTo(clampedTarget);
         } else {
           _controller.animateTo(
             clampedTarget,
-            duration: Motion.slow,
+            duration: duration,
             curve: Motion.emphasized,
           );
         }

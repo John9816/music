@@ -62,6 +62,7 @@ class SettingsRow extends StatelessWidget {
     this.value,
     this.trailing,
     this.onTap,
+    this.onToggle,
     this.destructive = false,
   });
 
@@ -71,13 +72,21 @@ class SettingsRow extends StatelessWidget {
   final String? value;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final ValueChanged<bool>? onToggle;
   final bool destructive;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final effectiveOnTap = onToggle != null && trailing is Switch
+        ? () {
+            final switchWidget = trailing as Switch;
+            onToggle?.call(!switchWidget.value);
+          }
+        : onTap;
+
     return GPressScale(
-      onTap: onTap,
+      onTap: effectiveOnTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 62),
         child: Padding(
@@ -175,33 +184,66 @@ Future<T?> showSettingsPicker<T>(
   BuildContext context, {
   required String title,
   required T current,
-  required List<({T value, String label})> options,
+  required List<({T value, String label, String? detail})> options,
 }) {
+  final isDesktop = MediaQuery.sizeOf(context).width >= GBreakpoints.sidebar;
+
+  if (isDesktop) {
+    return showDialog<T>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final option in options)
+                GListTile(
+                  selected: option.value == current,
+                  title: Text(option.label),
+                  subtitle: option.detail != null ? Text(option.detail!) : null,
+                  trailing: option.value == current
+                      ? const Icon(Icons.check_rounded, size: 19)
+                      : null,
+                  onTap: () => Navigator.of(dialogContext).pop(option.value),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
+    isScrollControlled: true,
     builder: (sheetContext) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+              ),
             ),
-          ),
-          for (final option in options)
-            GListTile(
-              selected: option.value == current,
-              title: Text(option.label),
-              trailing: option.value == current
-                  ? const Icon(Icons.check_rounded, size: 19)
-                  : null,
-              onTap: () => Navigator.of(sheetContext).pop(option.value),
-            ),
-          const SizedBox(height: 8),
-        ],
+            for (final option in options)
+              GListTile(
+                selected: option.value == current,
+                title: Text(option.label),
+                subtitle: option.detail != null ? Text(option.detail!) : null,
+                trailing: option.value == current
+                    ? const Icon(Icons.check_rounded, size: 19)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(option.value),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     ),
   );
