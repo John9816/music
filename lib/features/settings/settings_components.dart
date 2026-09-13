@@ -63,6 +63,7 @@ class SettingsRow extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.onToggle,
+    this.toggleValue,
     this.destructive = false,
   });
 
@@ -73,89 +74,112 @@ class SettingsRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final ValueChanged<bool>? onToggle;
+  final bool? toggleValue;
   final bool destructive;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final effectiveOnTap = onToggle != null && trailing is Switch
-        ? () {
-            final switchWidget = trailing as Switch;
-            onToggle?.call(!switchWidget.value);
-          }
-        : onTap;
+    final currentToggleValue = toggleValue ??
+        switch (trailing) {
+          SettingsSwitch(value: final value) => value,
+          Switch(value: final value) => value,
+          _ => null,
+        };
+    final isToggle = onToggle != null && currentToggleValue != null;
+    final effectiveOnTap =
+        isToggle ? () => onToggle!(!currentToggleValue) : onTap;
 
-    return GPressScale(
+    final row = GPressScale(
       onTap: effectiveOnTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 62),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                child: Icon(
-                  icon,
-                  size: 19,
-                  color: destructive ? scheme.error : scheme.onSurface,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: TypeScale.semibold,
-                        color: destructive ? scheme.error : scheme.onSurface,
-                      ),
+          child: LayoutBuilder(builder: (context, constraints) {
+            final stackValue = value != null &&
+                (constraints.maxWidth < 430 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 20);
+            final valueText = value == null
+                ? null
+                : Text(
+                    value!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: TypeScale.medium,
+                      color: scheme.onSurfaceVariant,
                     ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (value != null) ...[
-                const SizedBox(width: 12),
-                Text(
-                  value!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: TypeScale.medium,
-                    color: scheme.onSurfaceVariant,
+                  );
+            return Row(
+              children: [
+                SizedBox(
+                  width: 24,
+                  child: Icon(
+                    icon,
+                    size: 19,
+                    color: destructive ? scheme.error : scheme.onSurface,
                   ),
                 ),
-              ],
-              if (trailing != null) ...[
-                const SizedBox(width: 12),
-                trailing!,
-              ] else if (onTap != null) ...[
-                const SizedBox(width: 7),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 19,
-                  color: scheme.onSurfaceVariant,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: TypeScale.semibold,
+                          color: destructive ? scheme.error : scheme.onSurface,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                      if (stackValue) ...[
+                        const SizedBox(height: 5),
+                        valueText!,
+                      ],
+                    ],
+                  ),
                 ),
+                if (valueText != null && !stackValue) ...[
+                  const SizedBox(width: 12),
+                  Flexible(child: valueText),
+                ],
+                if (trailing != null) ...[
+                  const SizedBox(width: 12),
+                  ExcludeFocus(excluding: isToggle, child: trailing!),
+                ] else if (onTap != null) ...[
+                  const SizedBox(width: 7),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 19,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
               ],
-            ],
-          ),
+            );
+          }),
         ),
       ),
+    );
+    if (!isToggle) return row;
+    return Semantics(
+      label: title,
+      hint: subtitle,
+      toggled: currentToggleValue,
+      enabled: effectiveOnTap != null,
+      onTap: effectiveOnTap,
+      child: ExcludeSemantics(child: row),
     );
   }
 }
@@ -228,7 +252,8 @@ Future<T?> showSettingsPicker<T>(
               padding: const EdgeInsets.all(16),
               child: Text(
                 title,
-                style: const TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
               ),
             ),
             for (final option in options)

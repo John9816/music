@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -6,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
-import '../../core/models/playlist.dart';
+import '../../core/services/song_download_service.dart';
 import '../../core/services/user_playlist_library.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
@@ -14,107 +15,156 @@ import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../playlists/playlist_import_view.dart';
 import '../profile/user_playlists_view.dart';
+import '../profile/user_library_view.dart';
+import '../profile/login_view.dart';
 import 'downloads_view.dart';
 
-/// Desktop library overview matching the compact macOS collection layout.
+/// Responsive overview of the user's playlists, favorites and offline music.
 class LibraryView extends StatefulWidget {
   const LibraryView({
     super.key,
     required this.onOpenFavorites,
     required this.onOpenHistory,
+    this.api,
+    this.downloadService,
   });
 
   final VoidCallback onOpenFavorites;
   final VoidCallback onOpenHistory;
+  final UserApi? api;
+  final SongDownloadService? downloadService;
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
 }
 
 class _LibraryViewState extends State<LibraryView> {
-  Future<List<Playlist>>? _userPlaylistsFuture;
+  late final UserApi _api = widget.api ?? UserApi();
+  late final SongDownloadService _downloads =
+      widget.downloadService ?? SongDownloadService.instance;
+  late final AuthController _auth;
+  Future<_LibraryData>? _future;
+  _LibraryData? _lastData;
+  late int _lastSessionGeneration;
+  int _sessionVersion = 0;
+  int _requestVersion = 0;
+  bool _downloadsReady = false;
+  bool _creating = false;
 
   @override
   void initState() {
     super.initState();
+    _auth = context.read<AuthController>();
+    _lastSessionGeneration = _auth.sessionGeneration;
+    _auth.addListener(_onSessionChanged);
     UserPlaylistLibrary.instance.addListener(_onPlaylistLibraryChanged);
-    _userPlaylistsFuture = _loadUserPlaylists();
+    _downloads.addListener(_onDownloadsChanged);
+    _future = _loadLibrary();
+    unawaited(_loadDownloads());
   }
 
   @override
   void dispose() {
     UserPlaylistLibrary.instance.removeListener(_onPlaylistLibraryChanged);
+    _auth.removeListener(_onSessionChanged);
+    _downloads.removeListener(_onDownloadsChanged);
     super.dispose();
   }
 
   void _onPlaylistLibraryChanged() {
     if (!mounted) return;
-    setState(() {
-      _userPlaylistsFuture = _loadUserPlaylists();
-    });
+    unawaited(_refresh());
   }
 
-  Future<List<Playlist>> _loadUserPlaylists() async {
-    final auth = context.read<AuthController>();
-    if (!auth.isLoggedIn || auth.token == null) return const [];
+  void _onSessionChanged() {
+    if (!mounted || _lastSessionGeneration == _auth.sessionGeneration) return;
+    _lastSessionGeneration = _auth.sessionGeneration;
+    _lastData = null;
+    _sessionVersion++;
+    unawaited(_refresh());
+  }
+
+  void _onDownloadsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadDownloads() async {
     try {
-      final items = await UserApi().getOwnedPlaylists(auth.token!);
-      return items
-          .map<Playlist>((json) => Playlist(
-                id: int.tryParse(json['playlistId']?.toString() ??
-                        json['id']?.toString() ??
-                        '') ??
-                    0,
-                name: json['name']?.toString() ??
-                    json['playlistName']?.toString() ??
-                    '未命名歌单',
-                coverUrl: json['coverImgUrl']?.toString(),
-                creatorName: json['creatorName']?.toString(),
-                playCount: (json['playCount'] as num?)?.toInt(),
-              ))
-          .toList();
+      await _downloads.initialize();
+      if (mounted) setState(() => _downloadsReady = true);
     } catch (_) {
-      return const [];
+      // The download manager owns recovery; the overview must not invent a count.
     }
+  }
+
+  Future<_LibraryData> _loadLibrary() async {
+    final request = ++_requestVersion;
+    final session = _auth.sessionGeneration;
+    final token = _auth.token;
+    if (token == null) return const _LibraryData([]);
+    final favorites = _api.getFavorites(token).then<int?>(
+          (songs) => songs.length,
+          onError: (Object _, StackTrace __) => null,
+        );
+    final playlists = await _api.getOwnedPlaylists(token);
+    final data = _LibraryData(playlists, favoriteCount: await favorites);
+    if (mounted &&
+        request == _requestVersion &&
+        session == _auth.sessionGeneration) {
+      _lastData = data;
+    }
+    return data;
+  }
+
+  Future<void> _refresh() async {
+    if (!mounted) return;
+    final future = _loadLibrary();
+    setState(() {
+      _future = future;
+    });
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder presents the failure together with a retry action.
+    }
+  }
+
+  Future<bool> _ensureSignedIn() async {
+    if (_auth.isLoggedIn) return true;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LoginView()),
+    );
+    return mounted && _auth.isLoggedIn;
   }
 
   Future<void> _openCreatePlaylist() async {
-    final auth = context.read<AuthController>();
-    if (!auth.isLoggedIn || auth.token == null) {
-      _message('请先登录');
-      return;
-    }
-    final nameController = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('新建歌单'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '输入歌单名称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(nameController.text.trim()),
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
-    nameController.dispose();
-    if (name == null || name.isEmpty || !mounted) return;
+    if (_creating) return;
+    _creating = true;
     try {
-      await UserApi().createPlaylist(name, null, auth.token!);
-      if (!mounted) return;
-      _message('歌单已创建');
-    } catch (error) {
-      _message('创建失败: $error');
+      if (!await _ensureSignedIn() || !mounted) return;
+      final session = _auth.sessionGeneration;
+      final name = await showDialog<String>(
+        context: context,
+        builder: (_) => const _CreatePlaylistDialog(),
+      );
+      final token = _auth.token;
+      if (name == null ||
+          name.isEmpty ||
+          !mounted ||
+          token == null ||
+          session != _auth.sessionGeneration) {
+        return;
+      }
+      try {
+        await _api.createPlaylist(name, null, token);
+        if (!mounted || session != _auth.sessionGeneration) return;
+        _message('歌单已创建');
+      } catch (_) {
+        if (!mounted || session != _auth.sessionGeneration) return;
+        _message('歌单创建失败，请稍后重试');
+      }
+    } finally {
+      _creating = false;
     }
   }
 
@@ -126,10 +176,42 @@ class _LibraryViewState extends State<LibraryView> {
     );
   }
 
-  void _openUserPlaylists() {
+  Future<void> _openUserPlaylists() async {
+    if (!await _ensureSignedIn()) return;
+    if (!mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const UserPlaylistsView()),
+      MaterialPageRoute(builder: (_) => UserPlaylistsView(api: _api)),
     );
+  }
+
+  void _openPlaylist(Map<String, dynamic> playlist) {
+    final token = _auth.token;
+    final id = userPlaylistId(playlist);
+    if (token == null || id == null) return;
+    final source = playlist['source']?.toString().trim();
+    final sourceId = playlist['sourceId']?.toString().trim();
+    final canSync = source != null &&
+        source != 'local' &&
+        source.isNotEmpty &&
+        sourceId != null &&
+        sourceId.isNotEmpty;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => UserLibraryView(
+        title: userPlaylistName(playlist),
+        loader: () async {
+          final items = await _api.getUserPlaylistSongs(id, token);
+          return items.map(itemToSong).toList();
+        },
+        onSync: canSync ? () => _api.syncPlaylist(id, token) : null,
+        onRemove: (song) async {
+          final recordId = song.libraryId;
+          if (recordId == null || recordId.isEmpty) {
+            throw StateError('歌曲记录暂不可用，请刷新歌单');
+          }
+          await _api.deleteUserPlaylistSong(id, recordId, token);
+        },
+      ),
+    ));
   }
 
   void _message(String text) {
@@ -141,75 +223,183 @@ class _LibraryViewState extends State<LibraryView> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final desktop = width >= 720;
     final current = context.select<PlayerController, Song?>((p) => p.current);
 
     return Scaffold(
-      body: FutureBuilder<List<Playlist>>(
-        future: _userPlaylistsFuture,
-        builder: (context, snapshot) {
-          final playlistCount = snapshot.data?.length ?? 0;
-          return CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: _LibraryHeader(
-                  desktop: desktop,
-                  onImport: _openImport,
-                  onCreate: _openCreatePlaylist,
-                ),
-              ),
-              SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: desktop ? 20 : 18),
-                sliver: SliverToBoxAdapter(
-                  child: _LibraryGrid(
-                    desktop: desktop,
-                    playlistCount: playlistCount,
-                    current: current,
-                    onFavorites: widget.onOpenFavorites,
-                    onHistory: widget.onOpenHistory,
-                    onPlaylists: _openUserPlaylists,
-                    onDownloads: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const DownloadsView()),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= GBreakpoints.contentSplit;
+        final padding = desktop ? 24.0 : 18.0;
+        return FutureBuilder<_LibraryData>(
+          key: ValueKey(_sessionVersion),
+          future: _future,
+          builder: (context, snapshot) {
+            final data = _auth.isLoggedIn ? snapshot.data ?? _lastData : null;
+            final playlists = data?.playlists ?? const <Map<String, dynamic>>[];
+            final loading = snapshot.connectionState == ConnectionState.waiting;
+            final hasError = snapshot.hasError && _auth.isLoggedIn;
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _LibraryHeader(
+                      desktop: desktop,
+                      onImport: _openImport,
+                      onCreate: _openCreatePlaylist,
                     ),
                   ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    desktop ? 20 : 18,
-                    desktop ? 31 : 25,
-                    desktop ? 20 : 18,
-                    16,
-                  ),
-                  child: const Text(
-                    '我的歌单',
-                    style: TextStyle(
-                      fontSize: 22,
-                      height: 1.15,
-                      fontWeight: FontWeight.w800,
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: padding),
+                    sliver: SliverToBoxAdapter(
+                      child: _LibraryGrid(
+                        playlistCount: data?.playlists.length,
+                        favoriteCount: data?.favoriteCount,
+                        downloadCount: _downloadsReady
+                            ? _downloads.downloads.length
+                            : null,
+                        downloadingCount: _downloads.progress.length,
+                        signedIn: _auth.isLoggedIn,
+                        current: current,
+                        onFavorites: widget.onOpenFavorites,
+                        onHistory: widget.onOpenHistory,
+                        onPlaylists: _openUserPlaylists,
+                        onDownloads: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const DownloadsView()),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    desktop ? 20 : 18,
-                    0,
-                    desktop ? 20 : 18,
-                    28,
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(padding, 28, padding, 14),
+                      child: SectionHeader(
+                        '我的歌单',
+                        subtitle: playlists.isEmpty
+                            ? null
+                            : '${playlists.length} 个歌单',
+                        action: GIconButton(
+                          icon: Icons.refresh_rounded,
+                          tooltip: '刷新资料库',
+                          onTap: loading ? null : _refresh,
+                        ),
+                      ),
+                    ),
                   ),
-                  child: _PlaylistCallout(onCreate: _openCreatePlaylist),
-                ),
+                  if (hasError)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(padding, 0, padding, 16),
+                        child: _LibraryNotice(
+                          title: '资料库加载失败',
+                          detail:
+                              data == null ? '请检查网络连接后重试' : '已保留上次加载的内容，请重试更新',
+                          action: '重试',
+                          onTap: _refresh,
+                        ),
+                      ),
+                    ),
+                  if (!_auth.isLoggedIn)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: padding),
+                        child: _LibraryNotice(
+                          title: '登录后同步你的音乐',
+                          detail: '在不同设备上查看收藏、歌单与播放历史',
+                          action: '去登录',
+                          onTap: _ensureSignedIn,
+                        ),
+                      ),
+                    )
+                  else if (loading && data == null)
+                    const SliverToBoxAdapter(
+                      child: SizedBox(
+                          height: 120, child: Center(child: GLoading())),
+                    )
+                  else if (playlists.isNotEmpty)
+                    SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: padding),
+                      sliver: SliverList.separated(
+                        itemCount: playlists.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final playlist = playlists[index];
+                          return _OwnedPlaylistRow(
+                            playlist: playlist,
+                            onTap: () => _openPlaylist(playlist),
+                          );
+                        },
+                      ),
+                    )
+                  else if (!hasError)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: padding),
+                        child: _PlaylistCallout(onCreate: _openCreatePlaylist),
+                      ),
+                    ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                ],
               ),
-            ],
-          );
-        },
-      ),
+            );
+          },
+        );
+      }),
     );
   }
+}
+
+class _LibraryData {
+  const _LibraryData(this.playlists, {this.favoriteCount});
+  final List<Map<String, dynamic>> playlists;
+  final int? favoriteCount;
+}
+
+class _CreatePlaylistDialog extends StatefulWidget {
+  const _CreatePlaylistDialog();
+
+  @override
+  State<_CreatePlaylistDialog> createState() => _CreatePlaylistDialogState();
+}
+
+class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    if (name.isNotEmpty) Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('新建歌单'),
+        scrollable: true,
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(hintText: '输入歌单名称'),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _submit(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: _controller.text.trim().isEmpty ? null : _submit,
+            child: const Text('创建'),
+          ),
+        ],
+      );
 }
 
 class _LibraryHeader extends StatelessWidget {
@@ -233,16 +423,19 @@ class _LibraryHeader extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
-        padding:
-            EdgeInsets.fromLTRB(desktop ? 20 : 18, 0, desktop ? 20 : 18, 0),
+        padding: EdgeInsets.fromLTRB(
+          (desktop ? 20 : 18) + macOSWindowControlsInset(context),
+          0,
+          desktop ? 20 : 18,
+          0,
+        ),
         child: Row(
           children: [
-            Text(
+            Expanded(
+                child: Text(
               '资料库',
-              style:
-                  pageTitleStyle(context).copyWith(fontSize: titleSize),
-            ),
-            const Spacer(),
+              style: pageTitleStyle(context).copyWith(fontSize: titleSize),
+            )),
             _HeaderButton(
               icon: CupertinoIcons.link,
               tooltip: '导入歌单',
@@ -280,21 +473,24 @@ class _HeaderButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: tooltip,
-      child: GPressScale(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: emphasized
-                ? scheme.primary
-                : scheme.onSurface.withValues(alpha: 0.055),
-          ),
-          child: Icon(
-            icon,
-            size: emphasized ? 25 : 19,
-            color: emphasized ? scheme.onPrimary : scheme.onSurface,
+      child: Semantics(
+        label: tooltip,
+        child: GPressScale(
+          onTap: onTap,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: emphasized
+                  ? scheme.primary
+                  : scheme.onSurface.withValues(alpha: 0.055),
+            ),
+            child: Icon(
+              icon,
+              size: emphasized ? 25 : 19,
+              color: emphasized ? scheme.onPrimary : scheme.onSurface,
+            ),
           ),
         ),
       ),
@@ -304,8 +500,11 @@ class _HeaderButton extends StatelessWidget {
 
 class _LibraryGrid extends StatelessWidget {
   const _LibraryGrid({
-    required this.desktop,
     required this.playlistCount,
+    required this.favoriteCount,
+    required this.downloadCount,
+    required this.downloadingCount,
+    required this.signedIn,
     required this.current,
     required this.onFavorites,
     required this.onHistory,
@@ -313,8 +512,11 @@ class _LibraryGrid extends StatelessWidget {
     required this.onDownloads,
   });
 
-  final bool desktop;
-  final int playlistCount;
+  final int? playlistCount;
+  final int? favoriteCount;
+  final int? downloadCount;
+  final int downloadingCount;
+  final bool signedIn;
   final Song? current;
   final VoidCallback onFavorites;
   final VoidCallback onHistory;
@@ -327,7 +529,11 @@ class _LibraryGrid extends StatelessWidget {
       _LibraryCard(
         icon: CupertinoIcons.heart_fill,
         title: '喜欢',
-        subtitle: '还没有歌曲',
+        subtitle: !signedIn
+            ? '登录后查看'
+            : favoriteCount == null
+                ? '查看收藏的歌曲'
+                : '$favoriteCount 首歌曲',
         accent: true,
         onTap: onFavorites,
       ),
@@ -341,33 +547,39 @@ class _LibraryGrid extends StatelessWidget {
       _LibraryCard(
         icon: CupertinoIcons.bookmark_fill,
         title: '我的歌单',
-        subtitle: '$playlistCount 个歌单',
+        subtitle: playlistCount == null ? '整理喜欢的音乐' : '$playlistCount 个歌单',
         onTap: onPlaylists,
       ),
       _LibraryCard(
         icon: CupertinoIcons.arrow_down_circle_fill,
         title: '下载',
-        subtitle: '暂无下载',
+        subtitle: downloadCount == null
+            ? '管理离线音乐'
+            : downloadingCount > 0
+                ? '$downloadCount 首已下载 · $downloadingCount 首进行中'
+                : '$downloadCount 首已下载',
         onTap: onDownloads,
       ),
     ];
 
-    if (!desktop) {
-      return Column(
-        children: [
-          for (var index = 0; index < items.length; index++) ...[
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 92),
-              child: items[index],
-            ),
-            if (index != items.length - 1) const SizedBox(height: 8),
+    final largeText = MediaQuery.textScalerOf(context).scale(15) > 21;
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth < 340 ||
+          largeText && constraints.maxWidth < 600) {
+        return Column(
+          children: [
+            for (var index = 0; index < items.length; index++) ...[
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 92),
+                child: items[index],
+              ),
+              if (index != items.length - 1) const SizedBox(height: 8),
+            ],
           ],
-        ],
-      );
-    }
+        );
+      }
 
-    return IntrinsicHeight(
-      child: Column(
+      return Column(
         children: [
           IntrinsicHeight(
             child: Row(
@@ -391,8 +603,8 @@ class _LibraryGrid extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
+      );
+    });
   }
 }
 
@@ -427,6 +639,7 @@ class _LibraryCard extends StatelessWidget {
         child: Stack(
           children: [
             Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
@@ -444,10 +657,10 @@ class _LibraryCard extends StatelessWidget {
                     color: accent ? scheme.primary : scheme.onSurface,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 18),
                 Text(
                   title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 15,
@@ -458,7 +671,7 @@ class _LibraryCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   subtitle,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
@@ -484,6 +697,90 @@ class _LibraryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _OwnedPlaylistRow extends StatelessWidget {
+  const _OwnedPlaylistRow({required this.playlist, required this.onTap});
+
+  final Map<String, dynamic> playlist;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cover = playlist['coverImgUrl'] ??
+        playlist['coverUrl'] ??
+        playlist['picUrl'] ??
+        playlist['cover'];
+    final count = playlist['trackCount'] ?? playlist['songCount'];
+    final subtitle = count == null
+        ? (playlist['source'] == null || playlist['source'] == 'local'
+            ? '自建歌单'
+            : '导入歌单')
+        : '$count 首歌曲';
+    return GPressScale(
+      onTap: userPlaylistId(playlist) == null ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(RadiusToken.lg),
+        ),
+        child: Row(children: [
+          AsyncCover(url: cover?.toString(), size: 52, radius: RadiusToken.sm),
+          const SizedBox(width: 14),
+          Expanded(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(userPlaylistName(playlist),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: TypeScale.semibold)),
+              const SizedBox(height: 5),
+              Text(subtitle,
+                  style:
+                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            ],
+          )),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right_rounded,
+              color: scheme.onSurfaceVariant, size: 20),
+        ]),
+      ),
+    );
+  }
+}
+
+class _LibraryNotice extends StatelessWidget {
+  const _LibraryNotice(
+      {required this.title,
+      required this.detail,
+      required this.action,
+      required this.onTap});
+
+  final String title;
+  final String detail;
+  final String action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GSurface(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: TypeScale.semibold)),
+          const SizedBox(height: 6),
+          Text(detail,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 14),
+          GButton(label: action, onTap: onTap, small: true),
+        ]),
+      );
 }
 
 class _PlaylistCallout extends StatelessWidget {
@@ -527,7 +824,7 @@ class _PlaylistCallout extends StatelessWidget {
             style: TextButton.styleFrom(
               foregroundColor: scheme.primary,
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-              minimumSize: const Size(44, 40),
+              minimumSize: const Size(44, 44),
             ),
             child: const Text(
               '新建',

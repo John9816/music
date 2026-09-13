@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    The standalone Dart AOT executable maps its appended snapshot as executable
+    memory. Hardened Runtime otherwise terminates it before main (SIGKILL).
+    Scope this exception to the helper; the Flutter app retains Release.entitlements.
+  -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

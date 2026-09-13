@@ -49,6 +49,8 @@ class AuthController extends ChangeNotifier {
   Future<bool>? _refreshFuture;
   bool _refreshRejected = false;
   bool _restoring = false;
+  int _sessionGeneration = 0;
+  bool _sessionEstablished = false;
 
   String? get token => _token;
   String? get username => _username;
@@ -58,6 +60,10 @@ class AuthController extends ChangeNotifier {
   bool get loading => _loading;
   bool get initialized => _initialized;
   String? get error => _error;
+
+  /// Changes when a session is established or cleared, but not when its
+  /// credentials rotate or its profile changes. This value is process-local.
+  int get sessionGeneration => _sessionGeneration;
 
   Future<void> load() async {
     _loading = true;
@@ -98,6 +104,7 @@ class AuthController extends ChangeNotifier {
       _restoring = false;
       _loading = false;
       _initialized = true;
+      _syncSessionGeneration();
       notifyListeners();
     }
   }
@@ -128,6 +135,7 @@ class AuthController extends ChangeNotifier {
       if (_email == null || _avatarUrl == null) await _restoreProfile();
       if (_token == null) return false;
       await _persist();
+      _syncSessionGeneration(newSession: true);
       return true;
     } catch (e) {
       _error = e.toString();
@@ -174,6 +182,7 @@ class AuthController extends ChangeNotifier {
       if (_avatarUrl == null) await _restoreProfile();
       if (_token == null) return false;
       await _persist();
+      _syncSessionGeneration(newSession: true);
       return true;
     } catch (e) {
       _error = e.toString();
@@ -353,6 +362,15 @@ class AuthController extends ChangeNotifier {
     return _now().millisecondsSinceEpoch >= expiresAtMs - _expirySafetyWindowMs;
   }
 
+  void _syncSessionGeneration({bool newSession = false}) {
+    final established = _token != null;
+    if (_sessionEstablished == established && !(newSession && established)) {
+      return;
+    }
+    _sessionEstablished = established;
+    _sessionGeneration++;
+  }
+
   Future<void> _clearSession({String? error}) async {
     try {
       await onSessionCleared?.call();
@@ -365,6 +383,7 @@ class AuthController extends ChangeNotifier {
     _expiresAtMs = null;
     _userId = null;
     _error = error;
+    _syncSessionGeneration();
     ApiClient.instance.bearerToken = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);

@@ -236,6 +236,7 @@ jobs:
   macos:
     needs: validate
     if: needs.validate.outputs.android_only != 'true'
+    timeout-minutes: 90
     strategy:
       matrix:
         include:
@@ -253,7 +254,19 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Build unsigned macOS app
+      - name: Configure production macOS signing
+        if: needs.validate.outputs.is_release == 'true'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/configure_macos_signing.sh
+
+      - name: Build macOS app and embedded helper
         shell: bash
         run: |
           set -euo pipefail
@@ -274,8 +287,12 @@ jobs:
           }
           bash scripts/build_ios_helper.sh "${app}/Contents/Resources/duckmusic-ios-helper"
 
-      - name: Create unsigned macOS DMG
+      - name: Sign, notarize, and verify macOS package
         shell: bash
+        env:
+          IS_RELEASE: ${{ needs.validate.outputs.is_release }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           app_count="$(find build/macos/Build/Products/Release \
@@ -286,17 +303,26 @@ jobs:
             echo "Expected one macOS app bundle, found ${app_count}." >&2
             exit 1
           }
-          mkdir -p dist dmg-root
-          cp -R "${app}" dmg-root/
-          ln -s /Applications dmg-root/Applications
-          dmg="dist/DuckMusic-Flutter-v${{ needs.validate.outputs.version }}-macOS-${{ matrix.arch }}.dmg"
-          hdiutil create -volname "DuckMusic" -srcfolder dmg-root -ov -format UDZO "${dmg}"
-          hdiutil verify "${dmg}"
+          mode=development
+          if [[ "${IS_RELEASE}" == true ]]; then mode=release; fi
+          bash scripts/package_macos.sh "${app}" "${{ matrix.arch }}" \
+            "${{ needs.validate.outputs.version }}" \
+            "${{ needs.validate.outputs.build_number }}" dist "${mode}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-release
           path: dist/*
+          if-no-files-found: error
+
+      - name: Remove isolated signing keychain
+        if: always() && env.MACOS_KEYCHAIN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${MACOS_KEYCHAIN}" == "${RUNNER_TEMP}"/duckmusic-signing.*/signing.keychain-db ]]
+          security delete-keychain "${MACOS_KEYCHAIN}"
+          rmdir "$(dirname "${MACOS_KEYCHAIN}")"
 
   windows:
     needs: validate
@@ -479,7 +505,7 @@ jobs:
           name: DuckMusic Flutter v${{ needs.validate.outputs.version }}
           generate_release_notes: true
           body: |
-            macOS DMG 未使用 Apple Developer ID 签名或公证。首次启动时，请在 Finder 中右键应用并选择“打开”，或在“系统设置 > 隐私与安全性”中允许打开。
+            macOS 应用与 DMG 已通过 Developer ID 签名、Apple 公证及 Gatekeeper 校验。Apple Silicon 请下载 arm64，Intel 请下载 x64 安装包。
           fail_on_unmatched_files: true
           files: dist/*
 

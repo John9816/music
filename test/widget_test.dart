@@ -517,7 +517,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -577,7 +578,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -1053,7 +1055,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -1432,7 +1435,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('light').data.copyWith(
@@ -1462,10 +1466,12 @@ void main() {
     await tester.tap(find.text('首页').first);
     await tester.pumpAndSettle();
     expect(profileTitle, findsNothing);
-    expect(find.descendant(
-      of: find.byType(DiscoverView),
-      matching: find.text('首页'),
-    ), findsOneWidget);
+    expect(
+        find.descendant(
+          of: find.byType(DiscoverView),
+          matching: find.text('首页'),
+        ),
+        findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1500,7 +1506,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -1576,7 +1583,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('light').data.copyWith(
@@ -2524,7 +2532,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data,
@@ -2534,12 +2543,12 @@ void main() {
     );
     await tester.pump();
 
-    final navLabels = ['首页', '发现', '搜索', '我的'];
+    final navLabels = ['首页', '发现', '搜索', '资料库', '我的'];
     final labelCenters = [
       for (final label in navLabels) tester.getCenter(find.text(label).last).dx,
     ];
     expect(labelCenters, orderedEquals([...labelCenters]..sort()));
-    expect(find.text('资料库'), findsNothing);
+    expect(find.text('资料库'), findsOneWidget);
     expect(find.text('影视'), findsNothing);
     expect(find.text('直播'), findsNothing);
 
@@ -2648,7 +2657,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -2723,7 +2733,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(
@@ -2778,7 +2789,8 @@ void main() {
           ChangeNotifierProvider<SettingsController>.value(value: settings),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: AppTheme.byId('dark').data.copyWith(

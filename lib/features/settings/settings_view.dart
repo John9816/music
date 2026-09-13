@@ -42,7 +42,7 @@ class SettingsView extends StatelessWidget {
               SettingsRow(
                 icon: Icons.language_rounded,
                 title: '音乐源',
-                subtitle: '推荐、歌单详情与播放使用的数据源；搜索会合并三源结果',
+                subtitle: '推荐、搜索、歌单与播放使用的数据源',
                 value:
                     AppConfig.musicSources[settings.source] ?? settings.source,
                 onTap: () => _pickSource(context, settings),
@@ -92,6 +92,7 @@ class SettingsView extends StatelessWidget {
                   onChanged: settings.setReduceMotion,
                 ),
                 onToggle: settings.setReduceMotion,
+                toggleValue: settings.reduceMotion,
               ),
             ],
           ),
@@ -241,7 +242,8 @@ class SettingsView extends StatelessWidget {
       title: '${sourceDisplayName(settings.source)}播放音质',
       current: settings.qualityForSource(settings.source),
       options: qualityOptionsForSource(settings.source)
-          .map((option) => (value: option.id, label: option.label, detail: option.detail))
+          .map((option) =>
+              (value: option.id, label: option.label, detail: option.detail))
           .toList(),
     );
     if (value != null) {

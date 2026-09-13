@@ -48,6 +48,7 @@ class _HomeShellState extends State<HomeShell> {
   String? _activePlaylistId;
   final Set<int> _visitedPages = {0};
   final List<Widget?> _pageCache = List<Widget?>.filled(_pageCount, null);
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'library-search');
   final List<GlobalKey<_TabNavigatorState>> _tabKeys = List.generate(
     _pageCount,
     (_) => GlobalKey<_TabNavigatorState>(),
@@ -60,8 +61,10 @@ class _HomeShellState extends State<HomeShell> {
   late final SettingsController _settings;
   late final PlayerController _player;
   late final AuthController _auth;
+  late int _lastAuthGeneration;
+  int _authVersion = 0;
 
-  static const _tabToPageIndex = [0, 3, 1, 6];
+  static const _tabToPageIndex = [0, 3, 1, 2, 6];
 
   static const _tabs = [
     (
@@ -80,6 +83,11 @@ class _HomeShellState extends State<HomeShell> {
       selectedIcon: CupertinoIcons.search
     ),
     (
+      label: '资料库',
+      icon: CupertinoIcons.square_stack,
+      selectedIcon: CupertinoIcons.square_stack_fill,
+    ),
+    (
       label: '我的',
       icon: CupertinoIcons.person,
       selectedIcon: CupertinoIcons.person_fill,
@@ -92,6 +100,7 @@ class _HomeShellState extends State<HomeShell> {
     _settings = context.read<SettingsController>();
     _player = context.read<PlayerController>();
     _auth = context.read<AuthController>();
+    _lastAuthGeneration = _auth.sessionGeneration;
     _lastSource = _settings.source;
     _player.onSongPlayed = _recordPlayedSong;
     _player.onSongChanged = _syncFavoriteState;
@@ -99,6 +108,7 @@ class _HomeShellState extends State<HomeShell> {
     context.read<DesktopIntegrationService>().onFavorite = _toggleFavorite;
     unawaited(_restoreLastPlayback());
     _settings.addListener(_onSettingsChanged);
+    _auth.addListener(_onAuthChanged);
   }
 
   Future<void> _restoreLastPlayback() {
@@ -179,6 +189,8 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     _settings.removeListener(_onSettingsChanged);
+    _auth.removeListener(_onAuthChanged);
+    _searchFocusNode.dispose();
     if (_player.onSongPlayed == _recordPlayedSong) {
       _player.onSongPlayed = null;
     }
@@ -192,6 +204,41 @@ class _HomeShellState extends State<HomeShell> {
       notifier.dispose();
     }
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (!mounted || _lastAuthGeneration == _auth.sessionGeneration) return;
+    _lastAuthGeneration = _auth.sessionGeneration;
+    setState(() {
+      _authVersion++;
+      _pageCache[2] = null;
+      _activePlaylistId = null;
+      if (!_auth.isLoggedIn &&
+          (_index == _favoritesIndex || _index == _historyIndex)) {
+        _index = _profileIndex;
+        _visitedPages.add(_profileIndex);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final index in [2, _favoritesIndex, _historyIndex, _profileIndex]) {
+        _tabKeys[index].currentState?.popToRoot();
+      }
+    });
+  }
+
+  bool get _editingText {
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    return focusedContext?.widget is EditableText ||
+        focusedContext?.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  void _focusSearch() {
+    switchTo(1);
+    _tabKeys[1].currentState?.popToRoot();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _index == 1) _searchFocusNode.requestFocus();
+    });
   }
 
   void _onSettingsChanged() {
@@ -210,6 +257,12 @@ class _HomeShellState extends State<HomeShell> {
 
   void switchTo(int index) {
     if (index < 0 || index >= _pageCount) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _index == index) {
+        _tabKeys[index].currentState?.focus();
+      }
+    });
     if (_index == index && _visitedPages.contains(index)) {
       _tabKeys[index].currentState?.popToRoot();
       return;
@@ -230,22 +283,30 @@ class _HomeShellState extends State<HomeShell> {
     final scheme = Theme.of(context).colorScheme;
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= GBreakpoints.sidebar;
-    final sidebarWidth = windowWidth >= 1180 ? 264.0 : 236.0;
+    final sidebarWidth = (windowWidth * 0.205).clamp(224.0, 264.0);
     final hasCurrentSong =
         context.select<PlayerController, bool>((p) => p.current != null);
-    final dockedPlayerPanel =
-        windowWidth >= GBreakpoints.desktopPlayer && hasCurrentSong;
     final playerPanelWidth = (windowWidth * 0.30).clamp(360.0, 420.0);
+    final dockedPlayerPanel = windowWidth >= GBreakpoints.desktopPlayer &&
+        hasCurrentSong &&
+        windowWidth - sidebarWidth - playerPanelWidth >= 560;
+    final panelVisible = dockedPlayerPanel && _miniPlayerPanel != null;
     final pages = List<Widget>.generate(
       _pageCount,
       (pageIndex) => _visitedPages.contains(pageIndex)
-          ? _pageCache[pageIndex] ??= _buildPage(pageIndex)
+          ? pageIndex == _favoritesIndex || pageIndex == _historyIndex
+              ? _buildPage(pageIndex)
+              : _pageCache[pageIndex] ??= _buildPage(pageIndex)
           : const SizedBox.shrink(),
     );
 
     final canPopTab = _tabCanPop[_index];
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyF):
+            const _FocusSearchIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyF):
+            const _FocusSearchIntent(),
         LogicalKeySet(LogicalKeyboardKey.space): const _PlayPauseIntent(),
         LogicalKeySet(LogicalKeyboardKey.arrowLeft):
             const _SeekBackwardIntent(),
@@ -276,16 +337,21 @@ class _HomeShellState extends State<HomeShell> {
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          _PlayPauseIntent: CallbackAction<_PlayPauseIntent>(
+          _FocusSearchIntent: CallbackAction<_FocusSearchIntent>(
             onInvoke: (_) {
-              // 避免在输入框中触发
-              final focus = FocusManager.instance.primaryFocus;
-              if (focus?.context?.widget is EditableText) return null;
+              _focusSearch();
+              return null;
+            },
+          ),
+          _PlayPauseIntent: _PlaybackAction<_PlayPauseIntent>(
+            enabled: () => !_editingText,
+            onInvoke: (_) {
               _player.togglePlay();
               return null;
             },
           ),
-          _SeekBackwardIntent: CallbackAction<_SeekBackwardIntent>(
+          _SeekBackwardIntent: _PlaybackAction<_SeekBackwardIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final position = _player.position;
               _player.seek(Duration(
@@ -294,7 +360,8 @@ class _HomeShellState extends State<HomeShell> {
               return null;
             },
           ),
-          _SeekForwardIntent: CallbackAction<_SeekForwardIntent>(
+          _SeekForwardIntent: _PlaybackAction<_SeekForwardIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final current = _player.current;
               if (current == null) return null;
@@ -306,7 +373,8 @@ class _HomeShellState extends State<HomeShell> {
               return null;
             },
           ),
-          _SeekBackwardLongIntent: CallbackAction<_SeekBackwardLongIntent>(
+          _SeekBackwardLongIntent: _PlaybackAction<_SeekBackwardLongIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final position = _player.position;
               _player.seek(Duration(
@@ -315,7 +383,8 @@ class _HomeShellState extends State<HomeShell> {
               return null;
             },
           ),
-          _SeekForwardLongIntent: CallbackAction<_SeekForwardLongIntent>(
+          _SeekForwardLongIntent: _PlaybackAction<_SeekForwardLongIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final current = _player.current;
               if (current == null) return null;
@@ -327,27 +396,31 @@ class _HomeShellState extends State<HomeShell> {
               return null;
             },
           ),
-          _VolumeUpIntent: CallbackAction<_VolumeUpIntent>(
+          _VolumeUpIntent: _PlaybackAction<_VolumeUpIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final volume = _player.volume;
               _player.setVolume((volume + 0.05).clamp(0.0, 1.0));
               return null;
             },
           ),
-          _VolumeDownIntent: CallbackAction<_VolumeDownIntent>(
+          _VolumeDownIntent: _PlaybackAction<_VolumeDownIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               final volume = _player.volume;
               _player.setVolume((volume - 0.05).clamp(0.0, 1.0));
               return null;
             },
           ),
-          _NextTrackIntent: CallbackAction<_NextTrackIntent>(
+          _NextTrackIntent: _PlaybackAction<_NextTrackIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               _player.next();
               return null;
             },
           ),
-          _PreviousTrackIntent: CallbackAction<_PreviousTrackIntent>(
+          _PreviousTrackIntent: _PlaybackAction<_PreviousTrackIntent>(
+            enabled: () => !_editingText,
             onInvoke: (_) {
               _player.previous();
               return null;
@@ -399,91 +472,66 @@ class _HomeShellState extends State<HomeShell> {
                                   activePlaylistId: _activePlaylistId,
                                 ),
                               Expanded(
-                                child: Center(
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: GBreakpoints.contentMax,
-                                    ),
-                                    child: GWindowControlsSafeRegion(
-                                      child: wide
-                                          ? AnimatedPadding(
+                                child: AnimatedPadding(
+                                  duration: PlatformMotion.duration(
+                                      context, Motion.normal),
+                                  curve: Motion.standard,
+                                  padding: EdgeInsets.only(
+                                    right: panelVisible ? playerPanelWidth : 0,
+                                  ),
+                                  child: Center(
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: GBreakpoints.contentMax,
+                                      ),
+                                      child: GWindowControlsSafeRegion(
+                                        safe: wide,
+                                        child: ValueListenableBuilder<bool>(
+                                          valueListenable: canPopTab,
+                                          builder:
+                                              (context, nestedCanPop, child) {
+                                            final miniPlayerInset =
+                                                !wide && hasCurrentSong
+                                                    ? nestedCanPop
+                                                        ? max(
+                                                              MediaQuery
+                                                                      .viewPaddingOf(
+                                                                    context,
+                                                                  ).bottom -
+                                                                  8,
+                                                              26,
+                                                            ) +
+                                                            56
+                                                        : 56
+                                                    : 0;
+                                            return AnimatedPadding(
                                               duration: PlatformMotion.duration(
                                                   context, Motion.normal),
                                               curve: Motion.standard,
                                               padding: EdgeInsets.only(
-                                                right: _miniPlayerPanel != null
-                                                    ? (windowWidth >= 1500
-                                                            ? 420
-                                                            : windowWidth >=
-                                                                    1200
-                                                                ? 380
-                                                                : 360)
-                                                        .toDouble()
-                                                    : 0,
+                                                bottom:
+                                                    miniPlayerInset.toDouble(),
                                               ),
-                                              child: _AnimatedTabStack(
-                                                index: _index,
-                                                children: [
-                                                  for (var i = 0;
-                                                      i < pages.length;
-                                                      i++)
-                                                    _TabNavigator(
-                                                      key: _tabKeys[i],
-                                                      active: _index == i,
-                                                      canPopListenable:
-                                                          _tabCanPop[i],
-                                                      child: pages[i],
-                                                    ),
-                                                ],
-                                              ),
-                                            )
-                                          : ValueListenableBuilder<bool>(
-                                              valueListenable: canPopTab,
-                                              builder: (context, nestedCanPop,
-                                                  child) {
-                                                final miniPlayerInset =
-                                                    !wide && hasCurrentSong
-                                                        ? nestedCanPop
-                                                            ? max(
-                                                                  MediaQuery
-                                                                          .viewPaddingOf(
-                                                                        context,
-                                                                      ).bottom -
-                                                                      8,
-                                                                  26,
-                                                                ) +
-                                                                56
-                                                            : 56
-                                                        : 0;
-                                                return AnimatedPadding(
-                                                  duration:
-                                                      PlatformMotion.duration(
-                                                          context,
-                                                          Motion.normal),
-                                                  curve: Motion.standard,
-                                                  padding: EdgeInsets.only(
-                                                    bottom: miniPlayerInset
-                                                        .toDouble(),
-                                                  ),
-                                                  child: child,
-                                                );
-                                              },
-                                              child: _AnimatedTabStack(
-                                                index: _index,
-                                                children: [
-                                                  for (var i = 0;
-                                                      i < pages.length;
-                                                      i++)
-                                                    _TabNavigator(
-                                                      key: _tabKeys[i],
-                                                      active: _index == i,
-                                                      canPopListenable:
-                                                          _tabCanPop[i],
-                                                      child: pages[i],
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
+                                              child: child,
+                                            );
+                                          },
+                                          child: _AnimatedTabStack(
+                                            index: _index,
+                                            children: [
+                                              for (var i = 0;
+                                                  i < pages.length;
+                                                  i++)
+                                                _TabNavigator(
+                                                  key: _tabKeys[i],
+                                                  active: _index == i,
+                                                  canPopListenable:
+                                                      _tabCanPop[i],
+                                                  child: pages[i],
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -526,16 +574,22 @@ class _HomeShellState extends State<HomeShell> {
                       duration: PlatformMotion.duration(context, Motion.normal),
                       curve: Motion.standard,
                       top: 0,
-                      bottom: 80,
+                      bottom: MiniPlayer.desktopHeight(context),
                       right:
                           _miniPlayerPanel == null ? -playerPanelWidth - 24 : 0,
                       width: playerPanelWidth,
                       child: IgnorePointer(
-                        ignoring: _miniPlayerPanel == null,
-                        child: DesktopPlayerPanel(
-                          panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
-                          onClose: () =>
-                              setState(() => _miniPlayerPanel = null),
+                        ignoring: !panelVisible,
+                        child: ExcludeFocus(
+                          excluding: !panelVisible,
+                          child: ExcludeSemantics(
+                            excluding: !panelVisible,
+                            child: DesktopPlayerPanel(
+                              panel: _miniPlayerPanel ?? MiniPlayerPanel.lyrics,
+                              onClose: () =>
+                                  setState(() => _miniPlayerPanel = null),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -578,10 +632,11 @@ class _HomeShellState extends State<HomeShell> {
         return SearchView(
           key: ValueKey('search_$_pendingSearchQuery'),
           initialQuery: _pendingSearchQuery,
+          focusNode: _searchFocusNode,
         );
       case 2:
         return LibraryView(
-          key: ValueKey('library_$_sourceVersion'),
+          key: ValueKey('library_${_sourceVersion}_$_authVersion'),
           onOpenFavorites: () => _openUserLibraryFromLibrary(favorites: true),
           onOpenHistory: () => _openUserLibraryFromLibrary(favorites: false),
         );
@@ -593,7 +648,7 @@ class _HomeShellState extends State<HomeShell> {
         );
       case _favoritesIndex:
         return UserLibraryView(
-          key: const ValueKey('favorites'),
+          key: ValueKey('favorites_$_authVersion'),
           title: '喜欢的音乐',
           kind: UserLibraryKind.favorites,
           embedded: true,
@@ -607,7 +662,7 @@ class _HomeShellState extends State<HomeShell> {
         );
       case _historyIndex:
         return UserLibraryView(
-          key: const ValueKey('history'),
+          key: ValueKey('history_$_authVersion'),
           title: '播放历史',
           kind: UserLibraryKind.history,
           embedded: true,
@@ -848,11 +903,14 @@ class _AnimatedTabStackState extends State<_AnimatedTabStack>
                     excluding: !active,
                     child: IgnorePointer(
                       ignoring: !active,
-                      child: TickerMode(
-                        enabled: active,
-                        child: Opacity(
-                          opacity: opacity.clamp(0.0, 1.0),
-                          child: child,
+                      child: ExcludeFocus(
+                        excluding: !active,
+                        child: TickerMode(
+                          enabled: active,
+                          child: Opacity(
+                            opacity: opacity.clamp(0.0, 1.0),
+                            child: child,
+                          ),
                         ),
                       ),
                     ),
@@ -874,6 +932,10 @@ class _TabNavigatorState extends State<_TabNavigator> {
   void popToRoot() {
     final navigator = _navigatorKey.currentState;
     navigator?.popUntil((route) => route.isFirst);
+  }
+
+  void focus() {
+    _navigatorKey.currentState?.focusNode.requestFocus();
   }
 
   void push(Widget page) {
@@ -1363,12 +1425,12 @@ class _SidebarState extends State<_Sidebar> {
 
   Widget _playlistItem(Map<String, dynamic> item,
       {required String? activePlaylistId}) {
-    final itemId = item['id'] as int?;
+    final itemId = userPlaylistId(item);
     return _SidebarItem(
       icon: CupertinoIcons.music_note_list,
       selectedIcon: CupertinoIcons.music_note_list,
       label: userPlaylistName(item),
-      selected: itemId != null && itemId.toString() == activePlaylistId,
+      selected: itemId != null && itemId == activePlaylistId,
       onTap: () => widget.onOpenPlaylist(item),
     );
   }
@@ -1537,7 +1599,10 @@ class _BottomNav extends StatelessWidget {
                   child: AnimatedAlign(
                     duration: motion,
                     curve: Motion.standard,
-                    alignment: Alignment(selectedTab / 3 * 2 - 1, -1),
+                    alignment: Alignment(
+                      selectedTab / (_HomeShellState._tabs.length - 1) * 2 - 1,
+                      -1,
+                    ),
                     child: FractionallySizedBox(
                       widthFactor: 1 / _HomeShellState._tabs.length,
                       child: Align(
@@ -1655,7 +1720,22 @@ class _WindowDragBar extends StatelessWidget {
   }
 }
 
+/// Disabled playback bindings bubble to Flutter's text-editing shortcuts.
+/// Returning null from an enabled action would still consume the key event.
+class _PlaybackAction<T extends Intent> extends CallbackAction<T> {
+  _PlaybackAction({required this.enabled, required super.onInvoke});
+
+  final bool Function() enabled;
+
+  @override
+  bool isEnabled(T intent) => enabled();
+}
+
 // 播放控制 Intents
+class _FocusSearchIntent extends Intent {
+  const _FocusSearchIntent();
+}
+
 class _PlayPauseIntent extends Intent {
   const _PlayPauseIntent();
 }

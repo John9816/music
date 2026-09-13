@@ -142,8 +142,21 @@ class _PlayerViewState extends State<PlayerView>
     if (current == null) {
       return const Scaffold(body: Center(child: Text('暂无播放')));
     }
-    final wide = MediaQuery.sizeOf(context).width >= GBreakpoints.sidebar;
+    return LayoutBuilder(
+      builder: (context, constraints) => _buildPlayerSurface(
+        context,
+        current,
+        wide: constraints.maxWidth >= GBreakpoints.sidebar &&
+            constraints.maxHeight >= 600,
+      ),
+    );
+  }
 
+  Widget _buildPlayerSurface(
+    BuildContext context,
+    Song current, {
+    required bool wide,
+  }) {
     final content = Scaffold(
       backgroundColor: wide ? null : Colors.black,
       body: Stack(
@@ -329,7 +342,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: Theme.of(context).platform == TargetPlatform.macOS ? 42 : 58,
+      height: Theme.of(context).platform == TargetPlatform.macOS ? 44 : 58,
       child: Row(
         children: [
           const Spacer(),
@@ -337,7 +350,7 @@ class _TopBar extends StatelessWidget {
             icon: Icons.close_rounded,
             tooltip: '关闭播放器',
             size: 20,
-            padding: 2,
+            padding: 12,
             tint: Colors.white,
             backgroundColor: glassFill(context, alpha: 0.10),
             onTap: () => Navigator.of(context).maybePop(),
@@ -349,7 +362,7 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// 手机端播放器：上方页面横向切换，进度与播放控制始终固定。
+/// 手机端播放器：竖屏上下排布，横屏并排展示封面/歌词与播放控制。
 class _MobilePlayer extends StatefulWidget {
   const _MobilePlayer({
     required this.song,
@@ -372,6 +385,8 @@ class _MobilePlayer extends StatefulWidget {
 class _MobilePlayerState extends State<_MobilePlayer> {
   late final PageController _pageController;
   late final CastService _castService;
+  final _pagesKey = GlobalKey();
+  final _controlsKey = GlobalKey();
   int _page = 0;
 
   @override
@@ -420,6 +435,44 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxHeight < 620;
+        final landscape = constraints.maxWidth >= 600 &&
+            constraints.maxWidth > constraints.maxHeight;
+        final pages = PageView(
+          key: _pagesKey,
+          controller: _pageController,
+          physics: const BouncingScrollPhysics(),
+          onPageChanged: (page) => setState(() => _page = page),
+          children: [
+            _MobileCoverStage(
+              key: ValueKey(
+                'mobile-cover-${widget.song.source}:${widget.song.id}',
+              ),
+              song: widget.song,
+              compact: compact,
+              onOpenLyrics: () => _showPage(1),
+            ),
+            _LyricView(
+              key: ValueKey(
+                'mobile-lyrics-${widget.song.source}:${widget.song.id}',
+              ),
+              lrc: state.$1,
+              immersive: true,
+              compact: compact,
+              onBackgroundTap: () => _showPage(0),
+            ),
+          ],
+        );
+        final controls = SingleChildScrollView(
+          key: _controlsKey,
+          primary: false,
+          child: _MobileControls(
+            song: widget.song,
+            error: state.$2,
+            showingLyrics: _page == 1,
+            compact: compact,
+            onOpenDevicePicker: _openDevicePicker,
+          ),
+        );
         return Column(
           children: [
             // A dedicated top region keeps dismissal out of the lyrics and
@@ -438,37 +491,29 @@ class _MobilePlayerState extends State<_MobilePlayer> {
               ),
             ),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const BouncingScrollPhysics(),
-                onPageChanged: (page) => setState(() => _page = page),
-                children: [
-                  _MobileCoverStage(
-                    key: ValueKey(
-                      'mobile-cover-${widget.song.source}:${widget.song.id}',
+              child: landscape
+                  ? Row(
+                      children: [
+                        Expanded(flex: 4, child: pages),
+                        Expanded(flex: 6, child: controls),
+                      ],
+                    )
+                  : LayoutBuilder(
+                      builder: (context, bodyConstraints) => Column(
+                        children: [
+                          Expanded(child: pages),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: math.max(
+                                bodyConstraints.maxHeight - 120,
+                                bodyConstraints.maxHeight / 2,
+                              ),
+                            ),
+                            child: controls,
+                          ),
+                        ],
+                      ),
                     ),
-                    song: widget.song,
-                    compact: compact,
-                    onOpenLyrics: () => _showPage(1),
-                  ),
-                  _LyricView(
-                    key: ValueKey(
-                      'mobile-lyrics-${widget.song.source}:${widget.song.id}',
-                    ),
-                    lrc: state.$1,
-                    immersive: true,
-                    compact: compact,
-                    onBackgroundTap: () => _showPage(0),
-                  ),
-                ],
-              ),
-            ),
-            _MobileControls(
-              song: widget.song,
-              error: state.$2,
-              showingLyrics: _page == 1,
-              compact: compact,
-              onOpenDevicePicker: _openDevicePicker,
             ),
           ],
         );
@@ -498,9 +543,17 @@ class _MobilePlayerTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: compact ? 54 : 64,
+    final textScaler = MediaQuery.textScalerOf(context);
+    final lineHeight = DefaultTextStyle.of(context).style.height ?? 1.25;
+    final titleHeight = ((textScaler.scale(compact ? 15 : 17) +
+                    textScaler.scale(compact ? 11 : 13)) *
+                lineHeight +
+            3)
+        .ceilToDouble();
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minHeight: math.max(compact ? 54 : 64, titleHeight),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
@@ -509,7 +562,7 @@ class _MobilePlayerTopBar extends StatelessWidget {
               icon: Icons.keyboard_arrow_down_rounded,
               tooltip: '收起播放器',
               size: compact ? 29 : 32,
-              buttonSize: compact ? 42 : 46,
+              buttonSize: compact ? 44 : 46,
               onTap: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
@@ -518,6 +571,7 @@ class _MobilePlayerTopBar extends StatelessWidget {
                 child: showingLyrics
                     ? Column(
                         key: const ValueKey('lyric-title'),
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
@@ -537,6 +591,11 @@ class _MobilePlayerTopBar extends StatelessWidget {
                             button: true,
                             excludeSemantics: true,
                             label: '查看${song.artistNames}的歌手信息',
+                            onTap: () => openArtistInfo(
+                              context,
+                              artists: song.artists,
+                              source: song.source,
+                            ),
                             child: ArtistNamesLink(
                               artists: song.artists,
                               source: song.source,
@@ -587,8 +646,10 @@ class _MobileCoverStage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxDiscWidth = MediaQuery.sizeOf(context).width - 38;
-        final lyricHeight = compact ? 54.0 : 78.0;
+        final maxDiscWidth = math.max(0.0, constraints.maxWidth - 38);
+        final lyricHeight = (compact ? 54.0 : 78.0) *
+            MediaQuery.textScalerOf(context).scale(14) /
+            14;
         final topInset = compact ? 0.0 : 10.0;
         final discSize = math
             .min(
@@ -606,26 +667,33 @@ class _MobileCoverStage extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onOpenLyrics,
-              child: Column(
-                mainAxisAlignment: compact
-                    ? MainAxisAlignment.center
-                    : MainAxisAlignment.start,
-                children: [
-                  if (!compact) SizedBox(height: topInset),
-                  SizedBox(
-                    width: discSize,
-                    height: discSize,
-                    child: _VinylStage(song: song),
+              child: SingleChildScrollView(
+                primary: false,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: compact
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.start,
+                    children: [
+                      if (!compact) SizedBox(height: topInset),
+                      SizedBox(
+                        width: discSize,
+                        height: discSize,
+                        child: _VinylStage(song: song),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: lyricHeight,
+                        child: _VinylRollingLyrics(
+                          key: const ValueKey('vinyl-rolling-lyrics'),
+                          compact: compact,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: lyricHeight,
-                    child: _VinylRollingLyrics(
-                      key: const ValueKey('vinyl-rolling-lyrics'),
-                      compact: compact,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -816,7 +884,8 @@ class _VinylLyricLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: compact ? 26 : 25,
+      height:
+          (compact ? 26 : 25) * MediaQuery.textScalerOf(context).scale(14) / 14,
       child: Center(
         child: Text(
           text.isEmpty ? ' ' : text,
@@ -1096,13 +1165,22 @@ class _MobileControls extends StatelessWidget {
     );
     final quality = state.$4 ?? requestedQuality;
     final shuffle = state.$6;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final lineHeight = DefaultTextStyle.of(context).style.height ?? 1.25;
+    final summaryHeight = ((textScaler.scale(compact ? 16 : 19) +
+                    textScaler.scale(compact ? 11 : 13)) *
+                lineHeight +
+            (compact ? 1 : 4))
+        .ceilToDouble();
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 4 : 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(minHeight: compact ? 48 : 58),
+            constraints: BoxConstraints(
+              minHeight: math.max(compact ? 48 : 58, summaryHeight),
+            ),
             child: error != null
                 ? _PlaybackErrorBanner(
                     message: error!,
@@ -1149,71 +1227,91 @@ class _MobileControls extends StatelessWidget {
             ],
           ),
           SizedBox(height: compact ? 2 : 7),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _ImmersiveIconButton(
-                icon: Icons.shuffle_rounded,
-                tooltip: shuffle ? '随机播放（已开启）' : '随机播放',
-                selected: shuffle,
-                size: compact ? 21 : 23,
-                buttonSize: compact ? 38 : 42,
-                onTap: player.toggleShuffle,
-              ),
-              _ImmersiveIconButton(
-                icon: state.$3 == 'one'
-                    ? Icons.repeat_one_rounded
-                    : Icons.repeat_rounded,
-                tooltip: switch (state.$3) {
-                  'one' => '单曲循环',
-                  'all' => '列表循环',
-                  _ => '不循环',
-                },
-                selected: state.$3 != 'off',
-                size: compact ? 21 : 23,
-                buttonSize: compact ? 38 : 42,
-                onTap: player.cycleLoopMode,
-              ),
-              _ImmersiveIconButton(
-                icon: Icons.airplay_rounded,
-                tooltip: 'AirPlay 或蓝牙',
-                size: compact ? 20 : 22,
-                buttonSize: compact ? 38 : 42,
-                onTap: onOpenDevicePicker,
-              ),
-              _ImmersiveIconButton(
-                icon: Icons.bedtime_outlined,
-                tooltip: '睡眠定时',
-                size: compact ? 20 : 22,
-                buttonSize: compact ? 38 : 42,
-                onTap: () => _showSleepTimer(context),
-              ),
-              _ImmersiveIconButton(
-                icon: Icons.info_outline_rounded,
-                tooltip: '歌曲百科',
-                size: compact ? 20 : 22,
-                buttonSize: compact ? 38 : 42,
-                onTap: () => _showSongInfoSheet(context, song, quality),
-              ),
-              _ImmersiveIconButton(
-                icon: Icons.queue_music_rounded,
-                tooltip: '播放队列',
-                size: compact ? 21 : 23,
-                buttonSize: compact ? 38 : 42,
-                onTap: () => showQueueSheet(context),
-              ),
-              _ImmersiveIconButton(
-                icon: Icons.more_horiz_rounded,
-                tooltip: '更多',
-                size: compact ? 22 : 24,
-                buttonSize: compact ? 38 : 42,
-                onTap: () => showSongActions(
-                  context,
-                  song: song,
-                  queueIndex: state.$5,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tools = <Widget>[
+                _ImmersiveIconButton(
+                  icon: Icons.shuffle_rounded,
+                  tooltip: shuffle ? '随机播放（已开启）' : '随机播放',
+                  selected: shuffle,
+                  size: compact ? 21 : 23,
+                  buttonSize: 44,
+                  onTap: player.toggleShuffle,
                 ),
-              ),
-            ],
+                _ImmersiveIconButton(
+                  icon: state.$3 == 'one'
+                      ? Icons.repeat_one_rounded
+                      : Icons.repeat_rounded,
+                  tooltip: switch (state.$3) {
+                    'one' => '单曲循环',
+                    'all' => '列表循环',
+                    _ => '不循环',
+                  },
+                  selected: state.$3 != 'off',
+                  size: compact ? 21 : 23,
+                  buttonSize: 44,
+                  onTap: player.cycleLoopMode,
+                ),
+                _ImmersiveIconButton(
+                  icon: Icons.airplay_rounded,
+                  tooltip: 'AirPlay 或蓝牙',
+                  size: compact ? 20 : 22,
+                  buttonSize: 44,
+                  onTap: onOpenDevicePicker,
+                ),
+                _ImmersiveIconButton(
+                  icon: Icons.bedtime_outlined,
+                  tooltip: '睡眠定时',
+                  size: compact ? 20 : 22,
+                  buttonSize: 44,
+                  onTap: () => _showSleepTimer(context),
+                ),
+                _ImmersiveIconButton(
+                  icon: Icons.info_outline_rounded,
+                  tooltip: '歌曲百科',
+                  size: compact ? 20 : 22,
+                  buttonSize: 44,
+                  onTap: () => _showSongInfoSheet(context, song, quality),
+                ),
+                _ImmersiveIconButton(
+                  icon: Icons.queue_music_rounded,
+                  tooltip: '播放队列',
+                  size: compact ? 21 : 23,
+                  buttonSize: 44,
+                  onTap: () => showQueueSheet(context),
+                ),
+                _ImmersiveIconButton(
+                  icon: Icons.more_horiz_rounded,
+                  tooltip: '更多',
+                  size: compact ? 22 : 24,
+                  buttonSize: 44,
+                  onTap: () => showSongActions(
+                    context,
+                    song: song,
+                    queueIndex: state.$5,
+                  ),
+                ),
+              ];
+              if (constraints.maxWidth >= tools.length * 44) {
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: tools,
+                );
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [tools[0], tools[1], tools[5], tools[6]],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [tools[2], tools[3], tools[4]],
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -1252,6 +1350,11 @@ class _MobileSongSummary extends StatelessWidget {
                 button: true,
                 excludeSemantics: true,
                 label: '查看${song.artistNames}的歌手信息',
+                onTap: () => openArtistInfo(
+                  context,
+                  artists: song.artists,
+                  source: song.source,
+                ),
                 child: ArtistNamesLink(
                   artists: song.artists,
                   source: song.source,
@@ -1267,8 +1370,8 @@ class _MobileSongSummary extends StatelessWidget {
           ),
         ),
         SizedBox(
-          width: compact ? 40 : 46,
-          height: compact ? 40 : 46,
+          width: compact ? 44 : 46,
+          height: compact ? 44 : 46,
           child: _FavoriteBtn(song: song, immersive: true),
         ),
       ],
@@ -1291,14 +1394,14 @@ class _LyricUtilityRow extends StatelessWidget {
           icon: Icons.more_horiz_rounded,
           tooltip: '更多',
           size: compact ? 22 : 25,
-          buttonSize: compact ? 40 : 44,
+          buttonSize: 44,
           onTap: () => showSongActions(context, song: song),
         ),
         Row(
           children: [
             SizedBox(
-              width: compact ? 40 : 44,
-              height: compact ? 40 : 44,
+              width: 44,
+              height: 44,
               child: _FavoriteBtn(song: song, immersive: true),
             ),
             SizedBox(width: compact ? 16 : 24),
@@ -1306,7 +1409,7 @@ class _LyricUtilityRow extends StatelessWidget {
               icon: Icons.mic_none_rounded,
               tooltip: '逐字歌词',
               size: compact ? 24 : 27,
-              buttonSize: compact ? 40 : 44,
+              buttonSize: 44,
               onTap: () {
                 ScaffoldMessenger.of(context)
                   ..hideCurrentSnackBar()
@@ -1597,28 +1700,27 @@ class _MobileProgressRow extends StatelessWidget {
                 height: compact ? 2 : 2.5,
               ),
             ),
-            Transform.translate(
-              offset: Offset(0, compact ? -4 : -2),
-              child: Row(
-                children: [
-                  Text(_ProgressRow._fmt(position), style: timeStyle),
-                  Expanded(
-                    child: Tooltip(
-                      message: '切换音质',
-                      child: Semantics(
-                        button: true,
-                        label: '切换音质，当前$qualityLabel',
-                        child: GPressScale(
-                          onTap: onQualityTap,
-                          child: SizedBox(
-                            height: compact ? 20 : 24,
-                            child: Center(
-                              child: Text(
-                                qualityLabel,
-                                textAlign: TextAlign.center,
-                                style: timeStyle.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.68),
-                                ),
+            Row(
+              children: [
+                Text(_ProgressRow._fmt(position), style: timeStyle),
+                Expanded(
+                  child: Tooltip(
+                    message: '切换音质',
+                    child: Semantics(
+                      button: true,
+                      label: '切换音质，当前$qualityLabel',
+                      onTap: onQualityTap,
+                      excludeSemantics: true,
+                      child: GPressScale(
+                        onTap: onQualityTap,
+                        child: SizedBox(
+                          height: 44,
+                          child: Center(
+                            child: Text(
+                              qualityLabel,
+                              textAlign: TextAlign.center,
+                              style: timeStyle.copyWith(
+                                color: Colors.white.withValues(alpha: 0.68),
                               ),
                             ),
                           ),
@@ -1626,9 +1728,9 @@ class _MobileProgressRow extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(_ProgressRow._fmt(total), style: timeStyle),
-                ],
-              ),
+                ),
+                Text(_ProgressRow._fmt(total), style: timeStyle),
+              ],
             ),
           ],
         );
@@ -1819,7 +1921,7 @@ class _ImmersiveIconButton extends StatelessWidget {
     required this.onTap,
     this.size = 22,
     this.buttonSize = 46,
-    this.selected = false,
+    this.selected,
   });
 
   final IconData icon;
@@ -1827,7 +1929,7 @@ class _ImmersiveIconButton extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
   final double buttonSize;
-  final bool selected;
+  final bool? selected;
 
   @override
   Widget build(BuildContext context) {
@@ -1835,16 +1937,19 @@ class _ImmersiveIconButton extends StatelessWidget {
       message: tooltip,
       child: Semantics(
         button: true,
+        selected: selected,
         label: tooltip,
+        onTap: onTap,
+        excludeSemantics: true,
         child: GPressScale(
           onTap: onTap,
           child: SizedBox(
-            width: buttonSize,
-            height: buttonSize,
+            width: math.max(44, buttonSize),
+            height: math.max(44, buttonSize),
             child: Icon(
               icon,
               size: size,
-              color: selected
+              color: selected == true
                   ? Theme.of(context).colorScheme.primary
                   : Colors.white.withValues(alpha: 0.78),
             ),
@@ -2003,15 +2108,18 @@ class _CoverAndControls extends StatelessWidget {
                     children: [
                       _PaneButton(
                         icon: Icons.lyrics_outlined,
+                        tooltip: '歌词',
                         selected: pane == _PlayerPane.lyrics,
                         onTap: () => onPaneChanged(_PlayerPane.lyrics),
                       ),
                       _PaneButton(
                         icon: Icons.timer_outlined,
+                        tooltip: '睡眠定时',
                         onTap: () => _showSleepTimer(context),
                       ),
                       _PaneButton(
                         icon: Icons.queue_music_rounded,
+                        tooltip: '播放队列',
                         selected: pane == _PlayerPane.queue,
                         onTap: () => onPaneChanged(_PlayerPane.queue),
                       ),
@@ -2030,32 +2138,45 @@ class _CoverAndControls extends StatelessWidget {
 class _PaneButton extends StatelessWidget {
   const _PaneButton({
     required this.icon,
+    required this.tooltip,
     required this.onTap,
     this.selected = false,
   });
 
   final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: PlatformMotion.duration(context, Motion.fast),
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color:
-              selected ? glassFill(context, alpha: 0.16) : Colors.transparent,
-          border: selected
-              ? Border.all(color: Colors.white.withValues(alpha: 0.14))
-              : null,
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        selected: selected,
+        onTap: onTap,
+        excludeSemantics: true,
+        child: GPressScale(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: PlatformMotion.duration(context, Motion.fast),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected
+                  ? glassFill(context, alpha: 0.16)
+                  : Colors.transparent,
+              border: selected
+                  ? Border.all(color: Colors.white.withValues(alpha: 0.14))
+                  : null,
+            ),
+            child: Icon(icon, size: 21, color: scheme.onSurface),
+          ),
         ),
-        child: Icon(icon, size: 21, color: scheme.onSurface),
       ),
     );
   }
@@ -2414,6 +2535,8 @@ class _PlayPauseButton extends StatelessWidget {
         label: label,
         button: true,
         enabled: !loading,
+        onTap: loading ? null : onTap,
+        excludeSemantics: true,
         child: GPressScale(
           onTap: loading ? null : onTap,
           disabled: loading,
@@ -2607,6 +2730,8 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
         enabled: !_busy,
         toggled: _fav,
         label: _fav ? '取消收藏' : '收藏歌曲',
+        onTap: _busy ? null : _toggle,
+        excludeSemantics: true,
         child: GPressScale(
           onTap: _busy ? null : _toggle,
           disabled: _busy,

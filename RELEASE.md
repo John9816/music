@@ -5,7 +5,7 @@
 当前发布方式：
 
 - Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
-- 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、未签名且未公证的 macOS DMG 和 Windows EXE；Android 同时更新 ECS。
+- 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、Developer ID 签名且经 Apple 公证的 macOS DMG 和 Windows EXE；Android 同时更新 ECS。
 - iOS Action 产物用于后续侧载签名或人工签名，不是 App Store 正式包；App Store 发布仍需使用分发证书重新导出并上传审核。
 - `.github/workflows/flutter-release.yml` 是自动发布流程的实现，`pubspec.yaml` 是版本号的唯一来源。
 
@@ -183,9 +183,7 @@ keyPassword=<key password>
 
 ### 3.2 macOS 签名与公证
 
-当前 GitHub Actions 发布未签名且未公证的 macOS DMG，不要求 Apple Developer Program 凭据。普通用户可以安装，但首次启动会收到 Gatekeeper 安全提示，需要在 Finder 中右键应用选择“打开”，或前往“系统设置 > 隐私与安全性”允许打开。
-
-如后续加入 Apple Developer Program 并恢复正式签名与公证流程，需要配置：
+正式 macOS 标签发布必须使用有效的 Developer ID Application 证书与 Apple 公证凭据。缺少配置、身份无效、公证未返回 `Accepted` 或验收失败都会中止发布，不生成未签名的替代正式包。需要配置：
 
 ```text
 MACOS_CERTIFICATE_BASE64
@@ -201,7 +199,19 @@ APPLE_TEAM_ID
 - `MACOS_NOTARIZATION_PASSWORD` 应使用 Apple ID 的 app-specific password，不要使用 Apple ID 登录密码。
 - `APPLE_TEAM_ID` 是 Apple Developer Team ID。
 
-恢复正式流程后，CI 应依次完成 app 签名、DMG 制作、Apple 公证和 staple 校验。不要只签名而跳过公证。
+CI 在专用临时钥匙串中导入证书并验证公证凭据，任务结束后删除钥匙串。不要使用 Apple Development 身份替代 Developer ID Application。
+
+流程由 `scripts/package_macos.sh` 与 `scripts/verify_macos_app.sh` 实现：
+
+1. Flutter 构建后写入 `Contents/Resources/duckmusic-ios-helper`，检查主程序、helper 与所有 Mach-O 的目标架构、bundle ID 和版本。
+2. 在私有副本中由内到外签署 helper、动态库、framework 和应用；helper 必须显式签署，不能仅依赖 `codesign --deep`。
+3. 验证资源 seal、Developer ID Team、Hardened Runtime 与安全时间戳，公证应用并校验 staple。
+4. 制作 DMG，签名、公证、staple，并通过 Gatekeeper 检查；只读挂载后再次验证安装包中的应用。
+5. 所有检查通过且成功卸载诊断挂载后，才把最终 DMG 放入发布资产目录。任何签名后修改应用包的操作都必须重新签名和公证。
+
+Dart AOT helper 使用专用 `macos/Runner/Helper.entitlements`，允许映射其可执行 snapshot 内存；主应用继续使用原 `Release.entitlements`，不获得该例外权限。仅打开 Hardened Runtime 或只增加 `allow-jit` 会使当前 helper 在进入 `main` 前被 macOS 终止。macOS 专项测试会编译真实 helper，签名后执行一个无副作用的协议命令，检查它能正常返回。
+
+手动开发构建会重新进行 ad-hoc 签名以保证资源完整性，产物名带 `-development.dmg`，只用于内部诊断；它没有 Apple 信任凭据，不属于正式分发包。不能将“可在开发机启动”视为通过 Gatekeeper 验收。
 
 ### 3.3 Windows 签名
 
@@ -242,7 +252,7 @@ git status --short
 - 版本变更和功能代码已经提交，准备打标签的 commit 是预期 commit。
 - 更新说明不包含密钥、用户数据或内部地址。
 - Android 使用历史版本相同的签名密钥。
-- 如本次发布正式签名的 macOS 包，确认 Developer ID 证书和 Apple Developer 协议状态有效。
+- 如本次包含 macOS，确认 Developer ID 证书、公证凭据和 Apple Developer 协议状态有效；不可降级为未签名正式包。
 - 至少在本次涉及的平台上完成一次 release 模式冒烟测试。
 
 ## 5. GitHub Actions 自动发布
@@ -250,8 +260,8 @@ git status --short
 工作流有三种触发方式：
 
 1. 推送 `android-ecs-v*` 标签：只构建并验证正式签名 Android APK，然后更新 ECS 升级通道，并创建 `flutter-v<version>` GitHub Release 兼容旧 Flutter 客户端。
-2. 推送 `flutter-v*` 标签：四端联合发布。CI 校验并构建四端产物，macOS 当前生成未签名、未公证的 DMG；Android 同时更新 ECS。
-3. 在 Actions 页面手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。没有配置凭据时，Android 可能使用 debug key，macOS/Windows 可能未签名，因此这些 artifacts 只能用于内部测试。
+2. 推送 `flutter-v*` 标签：四端联合发布。CI 校验并构建四端产物，macOS 必须签名、公证并通过完整验收；Android 同时更新 ECS。
+3. 在 Actions 页面从分支手动运行 `workflow_dispatch`：只做验证构建并上传 workflow artifacts，不创建 GitHub Release。macOS 产物带 `-development.dmg` 后缀且只做 ad-hoc 签名；这些 artifacts 只能用于内部测试。
 
 正式发布时，`validate` job 会从 `pubspec.yaml` 读取版本，并要求：
 
@@ -325,7 +335,16 @@ flutter build macos --release \
   --dart-define="IOS_APP_STORE_ID=$IOS_APP_STORE_ID"
 ```
 
-产物：`build/macos/Build/Products/Release/7511.app`。当前 CI 会制作未签名、未公证的 DMG，并在 Release 中提示 Gatekeeper 打开方式；加入 Apple Developer Program 后应恢复 Developer ID 签名、公证和 staple 校验。
+产物：`build/macos/Build/Products/Release/7511.app`。若要生成包含内置 helper 的本地开发 DMG，继续执行：
+
+```bash
+APP=build/macos/Build/Products/Release/7511.app
+bash scripts/build_ios_helper.sh "$APP/Contents/Resources/duckmusic-ios-helper"
+# Apple Silicon 使用 arm64；Intel 构建机使用 x64。
+bash scripts/package_macos.sh "$APP" arm64 "$VERSION" "$BUILD_NUMBER" dist development
+```
+
+脚本不会改写传入的 app，而是在临时副本中重签并验证。生成的 `DuckMusic-Flutter-v<VERSION>-macOS-arm64-development.dmg` 不具备 Apple 公证信任，只能用于内部测试。对外分发必须通过正式 CI 的 `release` 模式，保持原有正式 DMG 文件名以兼容客户端更新。
 
 ### 6.3 Windows EXE 安装器
 
@@ -413,7 +432,7 @@ macOS/Windows 桌面端的“iOS 安装中心”不是 App Store 的替代品。
 
 桌面发布构建会把 `tool/duckmusic_ios_helper.dart` 编译为 `duckmusic-ios-helper` 并放入 DMG/EXE。macOS Helper 使用本机 `security`、`codesign`、`plutil` 和 `xcrun devicectl` 完成描述文件匹配、IPA 重签名与设备安装；它不会向 ECS 发送 Apple 凭据。Windows Helper 当前只提供 Apple Devices/Bonjour 诊断，安装/刷新仍返回明确的 `helperMissing`，直到接入经过许可证审核的 Windows 本地签名后端。
 
-macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问用户 Xcode 描述文件、钥匙串签名身份和 CoreDevice 服务的必要条件。当前未签名 DMG 只适合可接受首次 Gatekeeper 手动授权的用户；面向大规模普通用户分发前应恢复 Developer ID 签名、公证和 staple 校验。
+macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问用户 Xcode 描述文件、钥匙串签名身份和 CoreDevice 服务的必要条件。直接分发必须保持 Developer ID 签名、公证和 staple 校验。新增或重编译 helper 后，必须重新封存整个应用；不能直接把 helper 复制进一个已经签名的应用后发布。
 
 ## 8. 发布后验收
 
@@ -421,7 +440,7 @@ macOS Runner 的 App Sandbox entitlement 已关闭，这是内置 Helper 访问�
 - GitHub Releases API 返回的第一条非 draft、非 prerelease `flutter-v*` 必须是本次 Android 版本；只检查 Release 页面存在还不够。
 - ECS `latest.json` 的 `version`、`buildNumber`、`downloadUrl` 与本次版本完全一致，APK 范围 GET 返回 HTTP 206 和 APK MIME 类型。
 - Android APK 可覆盖安装旧版，且签名证书 SHA-256 与历史版本一致。
-- Apple Silicon 和 Intel macOS 分别下载匹配的 DMG，确认右键“打开”或“隐私与安全性 > 仍要打开”后可以正常启动。
+- Apple Silicon 和 Intel macOS 分别下载匹配的 DMG，核验 SHA-256、`codesign --verify --deep --strict`、`stapler validate` 和 `spctl --assess`，从下载后的安装包正常安装并启动，不通过关闭系统安全校验验收。
 - Windows 安装器显示预期发布者，可安装、启动、覆盖升级和卸载。
 - iOS App Store 页面展示新版本，旧版应用能跳转更新。
 - 四个平台“关于/设置”中的版本正确，应用内更新不会重复提示当前版本。
@@ -472,6 +491,12 @@ CI 计算出的 APK 证书指纹与 `ANDROID_SIGNING_CERT_SHA256` 不同。确�
 ### macOS 公证失败
 
 检查 Developer ID Application 证书是否过期、签名 identity 是否完整、app-specific password 是否有效，以及 Apple Developer 协议是否待接受。查看 `notarytool` 对应 job 的原始错误再处理。
+
+打包脚本在失败、超时或非 `Accepted` 结果时输出命令退出码、Apple 状态和 submission ID；Apple 日志可用时附带 `statusSummary` 与验证问题。保留该 ID 便于后续查询，不输出任何证书、私钥或公证密码。
+
+### macOS 提示应用已损坏或文件无效
+
+先区分磁盘映像完整性与应用资源签名：`hdiutil verify` 通过不代表应用签名有效。只读挂载后对 `.app` 执行 `codesign --verify --deep --strict`。若出现 `a sealed resource is missing or invalid` 与 `file added: .../duckmusic-ios-helper`，说明 helper 在 Xcode 封存应用之后加入，必须经新的打包流程重新签名并公证；不要把绕过 Gatekeeper 当作修复。已发布的 `1.1.46` arm64 DMG 已复现此问题，调查记录见 `docs/superpowers/research/2026-09-13-macos-release-repair.md`。
 
 ### Windows 用户看到未知发布者
 

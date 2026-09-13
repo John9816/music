@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +28,21 @@ class MiniPlayer extends StatefulWidget {
   final MiniPlayerPanel? panel;
   final ValueChanged<MiniPlayerPanel?>? onPanelChanged;
 
+  /// Shared with the shell so docked panels clear the entire playback bar.
+  static double desktopHeight(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    final touch =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+    final transportHeight = platform == TargetPlatform.android ? 48 : 44;
+    final progressHeight = touch ? 44 : 28;
+    final textScaler = MediaQuery.textScalerOf(context);
+    return math.max(
+      transportHeight + progressHeight + 8.0,
+      (textScaler.scale(TypeScale.bodyLarge) + textScaler.scale(12.5)) * 1.4 +
+          22,
+    );
+  }
+
   @override
   State<MiniPlayer> createState() => _MiniPlayerState();
 }
@@ -51,37 +68,41 @@ class _MiniPlayerState extends State<MiniPlayer> {
   @override
   Widget build(BuildContext context) {
     final current = context.select<PlayerController, Song?>((p) => p.current);
-    final desktop =
-        MediaQuery.sizeOf(context).width >= GBreakpoints.desktopPlayer &&
-            widget.sidebarWidth != null;
-    final height = desktop ? 80.0 : 56.0;
     final duration = PlatformMotion.duration(context, Motion.normal);
-    final content = current == null
-        ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
-        : KeyedSubtree(
-            key: const ValueKey('mini-player-active'),
-            child: _surface(
-              context,
-              current,
-              desktop: desktop,
-              height: height,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= GBreakpoints.desktopPlayer &&
+            widget.sidebarWidth != null;
+        final height = desktop ? MiniPlayer.desktopHeight(context) : 56.0;
+        final content = current == null
+            ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
+            : KeyedSubtree(
+                key: const ValueKey('mini-player-active'),
+                child: _surface(
+                  context,
+                  current,
+                  desktop: desktop,
+                  height: height,
+                ),
+              );
+        if (duration == Duration.zero) return content;
+        return AnimatedSize(
+          duration: duration,
+          curve: PlatformMotion.curve(context),
+          alignment: Alignment.topCenter,
+          clipBehavior: Clip.none,
+          child: AnimatedSwitcher(
+            duration: duration,
+            switchInCurve: PlatformMotion.curve(context),
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: child,
             ),
-          );
-    return AnimatedSize(
-      duration: duration,
-      curve: PlatformMotion.curve(context),
-      alignment: Alignment.topCenter,
-      clipBehavior: Clip.none,
-      child: AnimatedSwitcher(
-        duration: duration,
-        switchInCurve: PlatformMotion.curve(context),
-        switchOutCurve: Curves.easeIn,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
-        child: content,
-      ),
+            child: content,
+          ),
+        );
+      },
     );
   }
 
@@ -257,7 +278,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final player = context.read<PlayerController>();
     final liked = context.select<PlayerController, bool>((p) => p.liked);
     final scheme = Theme.of(context).colorScheme;
-    final trackAreaWidth = (widget.sidebarWidth ?? 264) + 64;
+    final trackAreaWidth =
+        ((widget.sidebarWidth ?? 264) + 64).clamp(220.0, 360.0);
     return Row(
       children: [
         SizedBox(
@@ -278,29 +300,29 @@ class _MiniPlayerState extends State<MiniPlayer> {
               icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
               size: 21,
               padding: 8,
+              tooltip: liked ? '取消收藏' : '收藏歌曲',
+              selected: liked,
               tint: liked ? scheme.primary : null,
               onTap:
                   _favoriteBusy ? null : () => _toggleFavorite(current, player),
             ),
           ),
         ),
-        SizedBox(
-          width: 360,
+        Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 _transportControls(context, player),
-                const SizedBox(height: 5),
+                const SizedBox(height: 2),
                 const _PlaybackTimeline(showTimes: true),
               ],
             ),
           ),
         ),
-        const Spacer(),
         SizedBox(
-          width: 360,
+          width: 320,
           child: Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _rightTools(context, player),
@@ -380,12 +402,11 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       onTap: player.next,
                     ),
                   const SizedBox(width: 2),
-                  GIconButton(
+                  _PlayerIconButton(
                     icon: CupertinoIcons.list_bullet,
                     tooltip: '播放队列',
                     size: 27,
                     padding: 6,
-                    backgroundColor: Colors.transparent,
                     onTap: () => showQueueSheet(context),
                   ),
                 ],
@@ -407,54 +428,48 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final loopMode =
         context.select<PlayerController, String>((p) => p.loopMode.name);
     return SizedBox(
-      height: 36,
+      height: Theme.of(context).platform == TargetPlatform.android ? 48 : 44,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 32,
-            child: _PlayerIconButton(
-              icon: CupertinoIcons.shuffle,
-              size: 16,
-              padding: 8,
-              tint: shuffle ? scheme.primary : scheme.onSurfaceVariant,
-              onTap: player.toggleShuffle,
-            ),
+          _PlayerIconButton(
+            icon: CupertinoIcons.shuffle,
+            size: 16,
+            padding: 8,
+            tooltip: shuffle ? '随机播放（已开启）' : '随机播放',
+            selected: shuffle,
+            tint: shuffle ? scheme.primary : scheme.onSurfaceVariant,
+            onTap: player.toggleShuffle,
           ),
-          SizedBox(
-            width: 32,
-            child: _PlayerIconButton(
-              icon: CupertinoIcons.backward_end_fill,
-              size: 20,
-              padding: 6,
-              onTap: player.previous,
-            ),
+          _PlayerIconButton(
+            icon: CupertinoIcons.backward_end_fill,
+            size: 20,
+            padding: 6,
+            tooltip: '上一首',
+            onTap: player.previous,
           ),
-          SizedBox(
-            width: 32,
-            child: Center(child: _PlayButton(player: player, size: 28)),
+          _PlayButton(player: player, size: 28),
+          _PlayerIconButton(
+            icon: CupertinoIcons.forward_end_fill,
+            size: 20,
+            padding: 6,
+            tooltip: '下一首',
+            onTap: player.next,
           ),
-          SizedBox(
-            width: 32,
-            child: _PlayerIconButton(
-              icon: CupertinoIcons.forward_end_fill,
-              size: 20,
-              padding: 6,
-              onTap: player.next,
-            ),
-          ),
-          SizedBox(
-            width: 32,
-            child: _PlayerIconButton(
-              icon: loopMode == 'one'
-                  ? CupertinoIcons.repeat_1
-                  : CupertinoIcons.repeat,
-              size: 16,
-              padding: 8,
-              tint:
-                  loopMode != 'off' ? scheme.primary : scheme.onSurfaceVariant,
-              onTap: player.cycleLoopMode,
-            ),
+          _PlayerIconButton(
+            icon: loopMode == 'one'
+                ? CupertinoIcons.repeat_1
+                : CupertinoIcons.repeat,
+            size: 16,
+            padding: 8,
+            tooltip: switch (loopMode) {
+              'one' => '单曲循环',
+              'all' => '列表循环',
+              _ => '不循环',
+            },
+            selected: loopMode != 'off',
+            tint: loopMode != 'off' ? scheme.primary : scheme.onSurfaceVariant,
+            onTap: player.cycleLoopMode,
           ),
         ],
       ),
@@ -476,6 +491,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                   : CupertinoIcons.volume_down,
               size: 18,
               padding: 6,
+              tooltip: volume <= 0 ? '取消静音' : '静音',
               onTap: () => player.setVolume(volume <= 0 ? 0.7 : 0),
             ),
             if (!dense) ...[
@@ -603,8 +619,7 @@ class _PlayerIconButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final targetSize = switch (Theme.of(context).platform) {
       TargetPlatform.android => 48.0,
-      TargetPlatform.iOS => 44.0,
-      _ => 36.0,
+      _ => 44.0,
     };
     Widget button = GPressScale(
       onTap: onTap,
@@ -635,8 +650,11 @@ class _PlayerIconButton extends StatelessWidget {
     if (tooltip != null) button = Tooltip(message: tooltip!, child: button);
     return Semantics(
       button: true,
+      enabled: onTap != null,
       selected: selected,
       label: tooltip,
+      onTap: onTap,
+      excludeSemantics: true,
       child: button,
     );
   }
@@ -847,8 +865,7 @@ class _PlayButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final minimumTargetSize = switch (Theme.of(context).platform) {
       TargetPlatform.android => 48.0,
-      TargetPlatform.iOS => 44.0,
-      _ => size,
+      _ => 44.0,
     };
     final targetSize = size > minimumTargetSize ? size : minimumTargetSize;
     final label = loading
@@ -862,6 +879,8 @@ class _PlayButton extends StatelessWidget {
         label: label,
         button: true,
         enabled: !loading,
+        onTap: loading ? null : player.togglePlay,
+        excludeSemantics: true,
         child: GPressScale(
           onTap: loading ? null : player.togglePlay,
           child: SizedBox.square(
@@ -920,17 +939,10 @@ class _PlayButton extends StatelessWidget {
   }
 }
 
-class _PlaybackTimeline extends StatefulWidget {
+class _PlaybackTimeline extends StatelessWidget {
   const _PlaybackTimeline({required this.showTimes});
 
   final bool showTimes;
-
-  @override
-  State<_PlaybackTimeline> createState() => _PlaybackTimelineState();
-}
-
-class _PlaybackTimelineState extends State<_PlaybackTimeline> {
-  double? _dragFraction;
 
   @override
   Widget build(BuildContext context) {
@@ -945,80 +957,19 @@ class _PlaybackTimelineState extends State<_PlaybackTimeline> {
       initialData: player.position,
       builder: (context, snapshot) {
         final position = snapshot.data ?? player.position;
-        final totalMs = duration.inMilliseconds.toDouble();
-        final fraction = totalMs <= 0
-            ? 0.0
-            : (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
         final remaining =
             duration > position ? duration - position : Duration.zero;
-        final displayedFraction = _dragFraction ?? fraction;
-        final bar = LayoutBuilder(
-          builder: (context, constraints) {
-            double? fractionAt(double dx) {
-              if (totalMs <= 0 || constraints.maxWidth <= 0) return null;
-              return (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
-            }
-
-            void commitAt(double dx) {
-              final value = fractionAt(dx);
-              if (value == null) return;
-              player.seek(Duration(milliseconds: (totalMs * value).round()));
-            }
-
-            void previewAt(double dx) {
-              final value = fractionAt(dx);
-              if (value == null) return;
-              setState(() => _dragFraction = value);
-            }
-
-            void commitDrag() {
-              final value = _dragFraction;
-              if (value == null || totalMs <= 0) return;
-              player.seek(Duration(milliseconds: (totalMs * value).round()));
-              setState(() => _dragFraction = null);
-            }
-
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) => commitAt(details.localPosition.dx),
-              onHorizontalDragStart: totalMs <= 0
-                  ? null
-                  : (_) => setState(() => _dragFraction = fraction),
-              onHorizontalDragUpdate: totalMs <= 0
-                  ? null
-                  : (details) => previewAt(details.localPosition.dx),
-              onHorizontalDragEnd: totalMs <= 0 ? null : (_) => commitDrag(),
-              onHorizontalDragCancel: totalMs <= 0
-                  ? null
-                  : () => setState(() => _dragFraction = null),
-              child: SizedBox(
-                height: widget.showTimes ? 14 : 12,
-                child: Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: Stack(
-                      children: [
-                        Container(
-                          height: widget.showTimes ? 4 : 3,
-                          color: scheme.onSurface.withValues(alpha: 0.18),
-                        ),
-                        FractionallySizedBox(
-                          widthFactor: displayedFraction,
-                          child: Container(
-                            height: widget.showTimes ? 4 : 3,
-                            color: scheme.onSurface.withValues(alpha: 0.88),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
+        final bar = GProgressBar(
+          position: position,
+          duration: duration,
+          bufferedPosition: player.bufferedPosition,
+          onSeek: player.seek,
+          height: showTimes ? 4 : 3,
+          showThumb: false,
+          activeColor: scheme.onSurface.withValues(alpha: 0.88),
         );
 
-        if (!widget.showTimes) return bar;
+        if (!showTimes) return bar;
         final timeStyle = TextStyle(
           fontSize: 10.5,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -1026,18 +977,15 @@ class _PlaybackTimelineState extends State<_PlaybackTimeline> {
         );
         return Row(
           children: [
-            SizedBox(
-              width: 38,
-              child: Text(_formatDuration(position), style: timeStyle),
-            ),
+            Text(_formatDuration(position), style: timeStyle, maxLines: 1),
+            const SizedBox(width: 10),
             Expanded(child: bar),
-            SizedBox(
-              width: 43,
-              child: Text(
-                '-${_formatDuration(remaining)}',
-                textAlign: TextAlign.end,
-                style: timeStyle,
-              ),
+            const SizedBox(width: 10),
+            Text(
+              '-${_formatDuration(remaining)}',
+              maxLines: 1,
+              textAlign: TextAlign.end,
+              style: timeStyle,
             ),
           ],
         );

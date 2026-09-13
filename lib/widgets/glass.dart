@@ -20,14 +20,20 @@ class GWindowControlsSafeRegion extends InheritedWidget {
   const GWindowControlsSafeRegion({
     super.key,
     required super.child,
+    this.safe = true,
   });
 
+  final bool safe;
+
   static bool contains(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<GWindowControlsSafeRegion>() !=
-      null;
+      context
+          .dependOnInheritedWidgetOfExactType<GWindowControlsSafeRegion>()
+          ?.safe ??
+      false;
 
   @override
-  bool updateShouldNotify(GWindowControlsSafeRegion oldWidget) => false;
+  bool updateShouldNotify(GWindowControlsSafeRegion oldWidget) =>
+      oldWidget.safe != safe;
 }
 
 class GBreakpoints {
@@ -328,11 +334,11 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
     final titleContent = MediaQuery.withNoTextScaling(
       child: DefaultTextStyle(
-        style: TextStyle(
-          fontSize: titleScaler.scale(TypeScale.subhead),
-          fontWeight: TypeScale.semibold,
-          color: scheme.onSurface,
-        ),
+        style: Theme.of(context).textTheme.titleMedium!.copyWith(
+              fontSize: titleScaler.scale(TypeScale.subhead),
+              fontWeight: TypeScale.semibold,
+              color: scheme.onSurface,
+            ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         child: titleWidget ?? Text(title ?? ''),
@@ -794,12 +800,13 @@ class GListTile extends StatelessWidget {
                 children: [
                   if (title != null)
                     DefaultTextStyle(
-                      style: TextStyle(
-                        fontSize: TypeScale.bodyLarge,
-                        fontWeight:
-                            selected ? TypeScale.semibold : TypeScale.medium,
-                        color: selected ? scheme.primary : scheme.onSurface,
-                      ),
+                      style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                            fontSize: TypeScale.bodyLarge,
+                            fontWeight: selected
+                                ? TypeScale.semibold
+                                : TypeScale.medium,
+                            color: selected ? scheme.primary : scheme.onSurface,
+                          ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       child: title!,
@@ -807,10 +814,10 @@ class GListTile extends StatelessWidget {
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     DefaultTextStyle(
-                      style: TextStyle(
-                        fontSize: TypeScale.small,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                            fontSize: TypeScale.small,
+                            color: scheme.onSurfaceVariant,
+                          ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       child: subtitle!,
@@ -838,6 +845,8 @@ class GProgressBar extends StatefulWidget {
     this.height = 4,
     this.showThumb = true,
     this.activeColor,
+    this.semanticLabel = '播放进度',
+    this.touchTargetHeight,
   });
 
   final Duration position;
@@ -849,6 +858,8 @@ class GProgressBar extends StatefulWidget {
   final double height;
   final bool showThumb;
   final Color? activeColor;
+  final String semanticLabel;
+  final double? touchTargetHeight;
 
   @override
   State<GProgressBar> createState() => _GProgressBarState();
@@ -863,6 +874,30 @@ double playbackProgressFraction(Duration position, Duration duration) {
 
 class _GProgressBarState extends State<GProgressBar> {
   double? _dragFraction;
+  final FocusNode _focusNode = FocusNode(debugLabel: 'playback-progress');
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _seekTo(int milliseconds) {
+    final total = widget.duration.inMilliseconds;
+    if (total <= 0) return;
+    final target = milliseconds.clamp(0, total);
+    if (target == widget.position.inMilliseconds) return;
+    widget.onSeek(Duration(milliseconds: target));
+  }
+
+  String _timeLabel(int milliseconds) {
+    final seconds = milliseconds < 0 ? 0 : milliseconds ~/ 1000;
+    final minutes = seconds ~/ 60;
+    final tail = (seconds % 60).toString().padLeft(2, '0');
+    if (minutes < 60) return '$minutes:$tail';
+    return '${minutes ~/ 60}:${(minutes % 60).toString().padLeft(2, '0')}:$tail';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -879,125 +914,192 @@ class _GProgressBarState extends State<GProgressBar> {
     final motion = PlatformMotion.duration(context, Motion.fast);
     final trackHeight = dragging ? widget.height + 2 : widget.height;
     final thumbSize = dragging ? 15.0 : 11.0;
+    final enabled = total > 0;
+    final platform = Theme.of(context).platform;
+    final touchTargetHeight = widget.touchTargetHeight ??
+        (platform == TargetPlatform.android || platform == TargetPlatform.iOS
+            ? 44.0
+            : 28.0);
+    final displayedMilliseconds = (displayedFraction * total).round();
+    String timeValue(int milliseconds) =>
+        '${_timeLabel(milliseconds)} / ${_timeLabel(total.round())}';
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        double? fractionAt(double dx) {
-          if (total <= 0 || constraints.maxWidth <= 0) return null;
-          return (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
-        }
-
-        void commitAt(double dx) {
-          final ratio = fractionAt(dx);
-          if (ratio == null) return;
-          PlatformMotion.selectionFeedback(context);
-          widget.onSeek(Duration(milliseconds: (total * ratio).round()));
-        }
-
-        void previewAt(double dx) {
-          final ratio = fractionAt(dx);
-          if (ratio == null) return;
-          setState(() => _dragFraction = ratio);
-        }
-
-        void commitDrag() {
-          final ratio = _dragFraction;
-          if (ratio == null || total <= 0) return;
-          PlatformMotion.selectionFeedback(context);
-          widget.onSeek(Duration(milliseconds: (total * ratio).round()));
-          setState(() => _dragFraction = null);
-        }
-
-        void cancelDrag() {
-          if (_dragFraction != null) setState(() => _dragFraction = null);
-        }
-
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) => commitAt(details.localPosition.dx),
-          onHorizontalDragStart: total <= 0
-              ? null
-              : (_) => setState(() => _dragFraction = fraction),
-          onHorizontalDragUpdate: total <= 0
-              ? null
-              : (details) => previewAt(details.localPosition.dx),
-          onHorizontalDragEnd: total <= 0 ? null : (_) => commitDrag(),
-          onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
-          child: SizedBox(
-            height: 22,
-            child: Center(
-              child: AnimatedContainer(
-                duration: motion,
-                curve: Motion.standard,
-                height: trackHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    // 轨道
-                    Container(
-                      height: trackHeight,
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest
-                            .withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(trackHeight / 2),
-                      ),
-                    ),
-                    // 已缓冲（二级进度）
-                    if (buffered > displayedFraction)
-                      FractionallySizedBox(
-                        widthFactor: buffered,
-                        heightFactor: 1,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: scheme.onSurface.withValues(alpha: 0.22),
-                            borderRadius:
-                                BorderRadius.circular(trackHeight / 2),
-                          ),
-                        ),
-                      ),
-                    // 已播放
-                    FractionallySizedBox(
-                      widthFactor: displayedFraction,
-                      heightFactor: 1,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: AppBrand.gradient(active),
-                          borderRadius: BorderRadius.circular(trackHeight / 2),
-                        ),
-                      ),
-                    ),
-                    if (widget.showThumb)
-                      Positioned(
-                        left: (constraints.maxWidth * displayedFraction) -
-                            thumbSize / 2,
-                        top: (trackHeight - thumbSize) / 2,
-                        child: AnimatedContainer(
-                          duration: motion,
-                          curve: Motion.standard,
-                          width: thumbSize,
-                          height: thumbSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: scheme.onPrimary,
-                            boxShadow: [
-                              BoxShadow(
-                                color: scheme.shadow
-                                    .withValues(alpha: dragging ? 0.36 : 0.28),
-                                blurRadius: dragging ? 6 : 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+    return Semantics(
+      slider: enabled,
+      enabled: enabled,
+      label: widget.semanticLabel,
+      value: enabled ? timeValue(displayedMilliseconds) : '时长未知',
+      increasedValue: enabled
+          ? timeValue((displayedMilliseconds + 5000).clamp(0, total.round()))
+          : null,
+      decreasedValue: enabled
+          ? timeValue((displayedMilliseconds - 5000).clamp(0, total.round()))
+          : null,
+      onIncrease: enabled ? () => _seekTo(displayedMilliseconds + 5000) : null,
+      onDecrease: enabled ? () => _seekTo(displayedMilliseconds - 5000) : null,
+      child: Focus(
+        focusNode: _focusNode,
+        canRequestFocus: enabled,
+        onFocusChange: (focused) {
+          if (mounted) setState(() => _focused = focused);
+        },
+        onKeyEvent: (_, event) {
+          if (!enabled || event is! KeyDownEvent && event is! KeyRepeatEvent) {
+            return KeyEventResult.ignored;
+          }
+          final keyboard = HardwareKeyboard.instance;
+          if (keyboard.isControlPressed ||
+              keyboard.isMetaPressed ||
+              keyboard.isShiftPressed ||
+              keyboard.isAltPressed) {
+            return KeyEventResult.ignored;
+          }
+          final target = switch (event.logicalKey) {
+            LogicalKeyboardKey.arrowLeft ||
+            LogicalKeyboardKey.arrowDown =>
+              displayedMilliseconds - 5000,
+            LogicalKeyboardKey.arrowRight ||
+            LogicalKeyboardKey.arrowUp =>
+              displayedMilliseconds + 5000,
+            LogicalKeyboardKey.home => 0,
+            LogicalKeyboardKey.end => total.round(),
+            _ => null,
+          };
+          if (target == null) return KeyEventResult.ignored;
+          _seekTo(target);
+          return KeyEventResult.handled;
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(RadiusToken.sm),
+            border: _focused ? Border.all(color: active, width: 2) : null,
           ),
-        );
-      },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              double? fractionAt(double dx) {
+                if (total <= 0 || constraints.maxWidth <= 0) return null;
+                return (dx / constraints.maxWidth).clamp(0.0, 1.0).toDouble();
+              }
+
+              void commitAt(double dx) {
+                final ratio = fractionAt(dx);
+                if (ratio == null) return;
+                PlatformMotion.selectionFeedback(context);
+                _focusNode.requestFocus();
+                widget.onSeek(Duration(milliseconds: (total * ratio).round()));
+              }
+
+              void previewAt(double dx) {
+                final ratio = fractionAt(dx);
+                if (ratio == null) return;
+                setState(() => _dragFraction = ratio);
+              }
+
+              void commitDrag() {
+                final ratio = _dragFraction;
+                if (ratio == null || total <= 0) return;
+                PlatformMotion.selectionFeedback(context);
+                widget.onSeek(Duration(milliseconds: (total * ratio).round()));
+                setState(() => _dragFraction = null);
+              }
+
+              void cancelDrag() {
+                if (_dragFraction != null) setState(() => _dragFraction = null);
+              }
+
+              return GestureDetector(
+                excludeFromSemantics: true,
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (details) => commitAt(details.localPosition.dx),
+                onHorizontalDragStart: total <= 0
+                    ? null
+                    : (_) => setState(() => _dragFraction = fraction),
+                onHorizontalDragUpdate: total <= 0
+                    ? null
+                    : (details) => previewAt(details.localPosition.dx),
+                onHorizontalDragEnd: total <= 0 ? null : (_) => commitDrag(),
+                onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
+                child: SizedBox(
+                  height: touchTargetHeight,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: motion,
+                      curve: Motion.standard,
+                      height: trackHeight,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.centerLeft,
+                        children: [
+                          // 轨道
+                          Container(
+                            height: trackHeight,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.55),
+                              borderRadius:
+                                  BorderRadius.circular(trackHeight / 2),
+                            ),
+                          ),
+                          // 已缓冲（二级进度）
+                          if (buffered > displayedFraction)
+                            FractionallySizedBox(
+                              widthFactor: buffered,
+                              heightFactor: 1,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color:
+                                      scheme.onSurface.withValues(alpha: 0.22),
+                                  borderRadius:
+                                      BorderRadius.circular(trackHeight / 2),
+                                ),
+                              ),
+                            ),
+                          // 已播放
+                          FractionallySizedBox(
+                            widthFactor: displayedFraction,
+                            heightFactor: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: AppBrand.gradient(active),
+                                borderRadius:
+                                    BorderRadius.circular(trackHeight / 2),
+                              ),
+                            ),
+                          ),
+                          if (widget.showThumb)
+                            Positioned(
+                              left: (constraints.maxWidth * displayedFraction) -
+                                  thumbSize / 2,
+                              top: (trackHeight - thumbSize) / 2,
+                              child: AnimatedContainer(
+                                duration: motion,
+                                curve: Motion.standard,
+                                width: thumbSize,
+                                height: thumbSize,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: scheme.onPrimary,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: scheme.shadow.withValues(
+                                          alpha: dragging ? 0.36 : 0.28),
+                                      blurRadius: dragging ? 6 : 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1167,11 +1269,11 @@ class _GSegmentedLabel extends StatelessWidget {
       child: AnimatedDefaultTextStyle(
         duration: duration,
         curve: Motion.standard,
-        style: TextStyle(
-          fontSize: TypeScale.body,
-          fontWeight: selected ? TypeScale.semibold : TypeScale.medium,
-          color: selected ? scheme.primary : scheme.onSurfaceVariant,
-        ),
+        style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+              fontSize: TypeScale.body,
+              fontWeight: selected ? TypeScale.semibold : TypeScale.medium,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
           child: Text(
