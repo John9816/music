@@ -28,6 +28,14 @@ class MiniPlayer extends StatefulWidget {
   final MiniPlayerPanel? panel;
   final ValueChanged<MiniPlayerPanel?>? onPanelChanged;
 
+  static double mobileHeight(BuildContext context) {
+    final textScaler = MediaQuery.textScalerOf(context);
+    return math.max(
+      64.0,
+      (textScaler.scale(15.5) + textScaler.scale(13)) * 1.2 + 18,
+    );
+  }
+
   /// Shared with the shell so docked panels clear the entire playback bar.
   static double desktopHeight(BuildContext context) {
     final platform = Theme.of(context).platform;
@@ -73,7 +81,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= GBreakpoints.desktopPlayer &&
             widget.sidebarWidth != null;
-        final height = desktop ? MiniPlayer.desktopHeight(context) : 56.0;
+        final height = desktop
+            ? MiniPlayer.desktopHeight(context)
+            : MiniPlayer.mobileHeight(context);
         final content = current == null
             ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
             : KeyedSubtree(
@@ -113,39 +123,19 @@ class _MiniPlayerState extends State<MiniPlayer> {
     required double height,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       key: ValueKey(
         desktop ? 'desktop-mini-player-surface' : 'mobile-mini-player-surface',
       ),
       height: height,
       decoration: BoxDecoration(
-        color: desktop ? scheme.surfaceContainer : scheme.surfaceContainerHigh,
-        borderRadius: desktop ? null : BorderRadius.circular(28),
-        border: desktop
-            ? Border(top: BorderSide(color: glassHairline(context)))
-            : null,
-        boxShadow: desktop
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 18,
-                  offset: const Offset(0, -5),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: dark ? 0.28 : 0.16),
-                  blurRadius: 22,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+        color: scheme.surfaceContainer,
+        border: Border(top: BorderSide(color: glassHairline(context))),
       ),
       child: desktop
           ? _desktopBar(context, current)
-          : ClipRRect(
+          : ClipRect(
               key: const ValueKey('mobile-mini-player-content-clip'),
-              borderRadius: BorderRadius.circular(28),
               child: _compactBar(context, current),
             ),
     );
@@ -370,12 +360,20 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   Widget _compactBar(BuildContext context, Song current) {
     final player = context.read<PlayerController>();
+    final platform = Theme.of(context).platform;
+    final touch =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     return Column(
       children: [
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) => Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 10, 0),
+              padding: EdgeInsets.fromLTRB(
+                constraints.maxWidth < 320 ? 12 : 20,
+                0,
+                12,
+                0,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -384,7 +382,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       onTap: _openPlayer,
                     ),
                   ),
-                  if (constraints.maxWidth >= 500)
+                  if (!touch && constraints.maxWidth >= 500)
                     _PlayerIconButton(
                       icon: CupertinoIcons.backward_end_fill,
                       size: 16,
@@ -392,23 +390,23 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       tooltip: '上一首',
                       onTap: player.previous,
                     ),
-                  _PlayButton(player: player, size: 36, outlined: true),
-                  if (constraints.maxWidth >= 320)
+                  _PlayButton(player: player, size: 34),
+                  if (touch || constraints.maxWidth >= 380)
                     _PlayerIconButton(
                       icon: CupertinoIcons.forward_end_fill,
-                      size: 16,
+                      size: 25,
                       padding: 7,
                       tooltip: '下一首',
                       onTap: player.next,
                     ),
-                  const SizedBox(width: 2),
-                  _PlayerIconButton(
-                    icon: CupertinoIcons.list_bullet,
-                    tooltip: '播放队列',
-                    size: 27,
-                    padding: 6,
-                    onTap: () => showQueueSheet(context),
-                  ),
+                  if (!touch)
+                    _PlayerIconButton(
+                      icon: CupertinoIcons.list_bullet,
+                      tooltip: '播放队列',
+                      size: 24,
+                      padding: 6,
+                      onTap: () => showQueueSheet(context),
+                    ),
                 ],
               ),
             ),
@@ -556,7 +554,7 @@ class _MobileMiniPlayerProgress extends StatelessWidget {
     final duration =
         context.select<PlayerController, Duration?>((value) => value.duration);
     return SizedBox(
-      height: 3,
+      height: 2,
       width: double.infinity,
       child: StreamBuilder<Duration>(
         stream: player.positionStream,
@@ -573,7 +571,10 @@ class _MobileMiniPlayerProgress extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   ColoredBox(
-                    color: Colors.white.withValues(alpha: 0.10),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.08),
                   ),
                   Positioned(
                     left: 0,
@@ -765,68 +766,55 @@ class _CompactTrackIdentity extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          Container(
-            key: const ValueKey('mobile-mini-player-disc'),
-            width: 54,
-            height: 54,
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            ),
-            child: AsyncCover(
-              url: song.album.picUrl,
-              size: 42,
-              radius: 21,
-            ),
+          AsyncCover(
+            key: const ValueKey('mobile-mini-player-artwork'),
+            url: song.album.picUrl,
+            size: 40,
+            radius: 7,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Row(
               children: [
                 Flexible(
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 36,
-                    child: ClipRect(
-                      child: AnimatedSwitcher(
-                        duration:
-                            PlatformMotion.duration(context, Motion.normal),
-                        switchInCurve: Motion.standard,
-                        switchOutCurve: Curves.easeInCubic,
-                        layoutBuilder: (current, previous) => Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [...previous, if (current != null) current],
-                        ),
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(
-                                text: song.name,
-                                style: TextStyle(color: scheme.onSurface),
-                              ),
-                              TextSpan(
-                                text: error == null
-                                    ? ' - ${song.artistNames}'
-                                    : ' - $error',
-                                style: TextStyle(
-                                  color: error == null
-                                      ? scheme.onSurfaceVariant
-                                      : scheme.error,
-                                ),
-                              ),
-                            ],
+                  child: ClipRect(
+                    child: AnimatedSwitcher(
+                      duration: PlatformMotion.duration(context, Motion.normal),
+                      switchInCurve: Motion.standard,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (current, previous) => Stack(
+                        alignment: Alignment.centerLeft,
+                        children: [...previous, if (current != null) current],
+                      ),
+                      child: Column(
+                        key: ValueKey((song.source, song.id, song.name, error)),
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            song.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontSize: 15.5,
+                              fontWeight: TypeScale.semibold,
+                              height: 1.2,
+                            ),
                           ),
-                          key: ValueKey(
-                              (song.source, song.id, song.name, error)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15.5,
-                            fontWeight: TypeScale.medium,
-                            height: 1.1,
+                          Text(
+                            error ?? song.artistNames,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: error == null
+                                  ? scheme.onSurfaceVariant
+                                  : scheme.error,
+                              fontSize: 13,
+                              height: 1.2,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -851,12 +839,10 @@ class _PlayButton extends StatelessWidget {
   const _PlayButton({
     required this.player,
     required this.size,
-    this.outlined = false,
   });
 
   final PlayerController player;
   final double size;
-  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
@@ -886,18 +872,9 @@ class _PlayButton extends StatelessWidget {
           child: SizedBox.square(
             dimension: targetSize,
             child: Center(
-              child: Container(
+              child: SizedBox(
                 width: size,
                 height: size,
-                decoration: outlined
-                    ? BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: scheme.onSurface.withValues(alpha: 0.72),
-                          width: 2,
-                        ),
-                      )
-                    : null,
                 child: AnimatedSwitcher(
                   duration: PlatformMotion.duration(context, Motion.normal),
                   switchInCurve: Motion.standard,
@@ -926,7 +903,7 @@ class _PlayButton extends StatelessWidget {
                           key: ValueKey(playing
                               ? 'mini-player-pause'
                               : 'mini-player-play'),
-                          size: outlined ? size * 0.52 : size * 0.82,
+                          size: size * 0.82,
                           color: scheme.onSurface,
                         ),
                 ),

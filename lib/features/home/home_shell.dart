@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -280,6 +279,9 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final windowWidth = MediaQuery.sizeOf(context).width;
+    // Scaffold removes the body's bottom padding whenever a nav widget exists,
+    // including its zero-height state on nested routes. Read it above Scaffold.
+    final bottomSystemInset = MediaQuery.paddingOf(context).bottom;
     final scheme = Theme.of(context).colorScheme;
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= GBreakpoints.sidebar;
@@ -492,18 +494,13 @@ class _HomeShellState extends State<HomeShell> {
                                               (context, nestedCanPop, child) {
                                             final miniPlayerInset =
                                                 !wide && hasCurrentSong
-                                                    ? nestedCanPop
-                                                        ? max(
-                                                              MediaQuery
-                                                                      .viewPaddingOf(
-                                                                    context,
-                                                                  ).bottom -
-                                                                  8,
-                                                              26,
-                                                            ) +
-                                                            56
-                                                        : 56
-                                                    : 0;
+                                                    ? MiniPlayer.mobileHeight(
+                                                          context,
+                                                        ) +
+                                                        (nestedCanPop
+                                                            ? bottomSystemInset
+                                                            : 0)
+                                                    : 0.0;
                                             return AnimatedPadding(
                                               duration: PlatformMotion.duration(
                                                   context, Motion.normal),
@@ -556,15 +553,20 @@ class _HomeShellState extends State<HomeShell> {
                       valueListenable: canPopTab,
                       builder: (context, tabCanPop, child) {
                         return Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: tabCanPop
-                              ? max(
-                                  MediaQuery.viewPaddingOf(context).bottom - 8,
-                                  26,
-                                )
-                              : 0,
-                          child: child!,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: ColoredBox(
+                            color: scheme.surfaceContainer,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                bottom: tabCanPop && hasCurrentSong
+                                    ? bottomSystemInset
+                                    : 0,
+                              ),
+                              child: child!,
+                            ),
+                          ),
                         );
                       },
                       child: const MiniPlayer(),
@@ -1570,7 +1572,7 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
-/// 窄屏底部导航：资料库已融合到“我的”。
+/// 窄屏底部导航：以图标与文字标示当前栏目。
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.selected, required this.onSelect});
 
@@ -1580,117 +1582,81 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final selectedTab = _HomeShellState._tabToPageIndex.indexOf(selected);
     final motion = PlatformMotion.tabDuration(context);
     return Container(
       key: const ValueKey('mobile-bottom-nav-surface'),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
+        color: scheme.surfaceContainer,
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
           height: 58,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (selectedTab >= 0)
-                Positioned.fill(
-                  child: AnimatedAlign(
-                    duration: motion,
-                    curve: Motion.standard,
-                    alignment: Alignment(
-                      selectedTab / (_HomeShellState._tabs.length - 1) * 2 - 1,
-                      -1,
-                    ),
-                    child: FractionallySizedBox(
-                      widthFactor: 1 / _HomeShellState._tabs.length,
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 5),
-                          width: 56,
-                          height: 29,
-                          decoration: BoxDecoration(
-                            color: scheme.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.5,
+            child: Row(
+              children: [
+                for (var i = 0; i < _HomeShellState._tabs.length; i++)
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      selected: _HomeShellState._tabToPageIndex[i] == selected,
+                      label: _HomeShellState._tabs[i].label,
+                      onTap: () {
+                        PlatformMotion.selectionFeedback(context);
+                        onSelect(_HomeShellState._tabToPageIndex[i]);
+                      },
+                      child: ExcludeSemantics(
+                          child: GPressScale(
+                        onTap: () {
+                          onSelect(_HomeShellState._tabToPageIndex[i]);
+                        },
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              height: 26,
+                              child: AnimatedSwitcher(
+                                duration: motion,
+                                child: Icon(
+                                  _HomeShellState._tabToPageIndex[i] == selected
+                                      ? _HomeShellState._tabs[i].selectedIcon
+                                      : _HomeShellState._tabs[i].icon,
+                                  size: 25,
+                                  key: ValueKey(
+                                      _HomeShellState._tabToPageIndex[i] ==
+                                          selected),
+                                  color: _HomeShellState._tabToPageIndex[i] ==
+                                          selected
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _HomeShellState._tabs[i].label,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.1,
+                                fontWeight:
+                                    _HomeShellState._tabToPageIndex[i] ==
+                                            selected
+                                        ? TypeScale.semibold
+                                        : TypeScale.medium,
+                                color: _HomeShellState._tabToPageIndex[i] ==
+                                        selected
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                      )),
                     ),
                   ),
-                ),
-              MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.5,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < _HomeShellState._tabs.length; i++)
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected:
-                              _HomeShellState._tabToPageIndex[i] == selected,
-                          label: _HomeShellState._tabs[i].label,
-                          onTap: () {
-                            PlatformMotion.selectionFeedback(context);
-                            onSelect(_HomeShellState._tabToPageIndex[i]);
-                          },
-                          child: ExcludeSemantics(
-                              child: GPressScale(
-                            onTap: () {
-                              onSelect(_HomeShellState._tabToPageIndex[i]);
-                            },
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(
-                                  height: 26,
-                                  child: AnimatedSwitcher(
-                                    duration: motion,
-                                    child: Icon(
-                                      _HomeShellState._tabToPageIndex[i] ==
-                                              selected
-                                          ? _HomeShellState
-                                              ._tabs[i].selectedIcon
-                                          : _HomeShellState._tabs[i].icon,
-                                      size: 23,
-                                      key: ValueKey(
-                                          _HomeShellState._tabToPageIndex[i] ==
-                                              selected),
-                                      color:
-                                          _HomeShellState._tabToPageIndex[i] ==
-                                                  selected
-                                              ? scheme.primary
-                                              : scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  _HomeShellState._tabs[i].label,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    height: 1.1,
-                                    fontWeight:
-                                        _HomeShellState._tabToPageIndex[i] ==
-                                                selected
-                                            ? TypeScale.semibold
-                                            : TypeScale.medium,
-                                    color: _HomeShellState._tabToPageIndex[i] ==
-                                            selected
-                                        ? scheme.primary
-                                        : scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

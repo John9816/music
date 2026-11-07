@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
 import 'package:flutter_cache_manager/flutter_cache_manager.dart' as cache;
 
 /// 自定义图片缓存管理器
@@ -65,4 +68,144 @@ class ImageCacheManager {
 class _CoverCacheManager extends cache.CacheManager
     with cache.ImageCacheManager {
   _CoverCacheManager(super.config);
+
+  final _resizing = <String, Stream<cache.FileResponse>>{};
+
+  @override
+  Stream<cache.FileResponse> getImageFile(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+    int? maxHeight,
+    int? maxWidth,
+  }) async* {
+    if (maxWidth == null && maxHeight == null) {
+      yield* getFileStream(url,
+          key: key, headers: headers, withProgress: withProgress);
+      return;
+    }
+    final originalKey = key ?? url;
+    final resizedKey = 'resized'
+        '${maxWidth == null ? '' : '_w$maxWidth'}'
+        '${maxHeight == null ? '' : '_h$maxHeight'}_$originalKey';
+    // Every subscriber receives the existing artwork, including subscribers
+    // that arrive after a shared refresh has already started.
+    final cached = await getFileFromCache(resizedKey);
+    if (cached != null) {
+      yield cached;
+      if (cached.validTill.isAfter(DateTime.now())) return;
+    }
+    final refresh = _resizing.putIfAbsent(
+      resizedKey,
+      () => _resizeStream(
+        url,
+        originalKey,
+        resizedKey,
+        headers,
+        maxWidth,
+        maxHeight,
+      ).asBroadcastStream(),
+    );
+    var hasArtwork = cached != null;
+    try {
+      await for (final response in refresh) {
+        if (response is cache.FileInfo) hasArtwork = true;
+        if (response is! cache.DownloadProgress ||
+            (withProgress && !hasArtwork)) {
+          yield response;
+        }
+      }
+    } on Object {
+      // A failed background refresh must not replace already decoded artwork
+      // with an error. An initial failure still reaches the retry control.
+      if (!hasArtwork) rethrow;
+    }
+  }
+
+  Stream<cache.FileResponse> _resizeStream(
+    String url,
+    String originalKey,
+    String resizedKey,
+    Map<String, String>? headers,
+    int? maxWidth,
+    int? maxHeight,
+  ) async* {
+    try {
+      await for (final response in getFileStream(
+        url,
+        key: originalKey,
+        headers: headers,
+        withProgress: true,
+      )) {
+        yield response is cache.FileInfo
+            ? await _resizeFile(response, resizedKey, maxWidth, maxHeight)
+            : response;
+      }
+    } finally {
+      // The broadcast stream finishes even when a codec listener cancels on
+      // error, so failed requests can never be reused by a later retry.
+      _resizing.remove(resizedKey);
+    }
+  }
+
+  Future<cache.FileInfo> _resizeFile(
+    cache.FileInfo original,
+    String resizedKey,
+    int? maxWidth,
+    int? maxHeight,
+  ) async {
+    final extension = original.file.path.split('.').last.toLowerCase();
+    final canResize =
+        const {'jpg', 'jpeg', 'png', 'tga', 'cur', 'ico'}.contains(extension);
+    var bytes = await original.file.readAsBytes();
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      // Keep animated formats in their original encoding. Decoding a frame
+      // validates the bytes before they can replace usable cached artwork.
+      final scale = canResize
+          ? math.min(
+              1.0,
+              math.min(
+                maxWidth == null ? 1.0 : maxWidth / descriptor.width,
+                maxHeight == null ? 1.0 : maxHeight / descriptor.height,
+              ),
+            )
+          : 1.0;
+      codec = await descriptor.instantiateCodec(
+        targetWidth: math.max(1, (descriptor.width * scale).round()),
+        targetHeight: math.max(1, (descriptor.height * scale).round()),
+      );
+      image = (await codec.getNextFrame()).image;
+      var outputExtension = extension;
+      if (scale < 1) {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data == null) throw StateError('封面缩放失败');
+        bytes = data.buffer.asUint8List();
+        outputExtension = 'png';
+      }
+      // Every format needs the same cache key contract so a late subscriber
+      // can display it while the shared refresh is still pending. Small and
+      // animated originals retain their bytes, encoding, and expiration.
+      final file = await putFile(
+        original.originalUrl,
+        bytes,
+        key: resizedKey,
+        maxAge: original.validTill.difference(DateTime.now()),
+        fileExtension: outputExtension,
+      );
+      return cache.FileInfo(
+          file, original.source, original.validTill, original.originalUrl,
+          statusCode: original.statusCode);
+    } finally {
+      image?.dispose();
+      codec?.dispose();
+      descriptor?.dispose();
+      buffer.dispose();
+    }
+  }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -324,7 +325,7 @@ class _AmbientBackground extends StatelessWidget {
                       ? Colors.black.withValues(alpha: 0.18)
                       : scheme.primary.withValues(alpha: dark ? 0.20 : 0.10),
                   immersive ? const Color(0x1A000000) : Colors.transparent,
-                  if (immersive) Colors.black.withValues(alpha: 0.58),
+                  if (immersive) Colors.black.withValues(alpha: 0.32),
                 ],
               ),
             ),
@@ -351,8 +352,8 @@ class _TopBar extends StatelessWidget {
             tooltip: '关闭播放器',
             size: 20,
             padding: 12,
-            tint: Colors.white,
-            backgroundColor: glassFill(context, alpha: 0.10),
+            tint: Theme.of(context).colorScheme.onSurface,
+            backgroundColor: Colors.transparent,
             onTap: () => Navigator.of(context).maybePop(),
           ),
           const SizedBox(width: 12),
@@ -434,7 +435,8 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxHeight < 620;
+        final compact =
+            constraints.maxHeight < 620 || constraints.maxWidth < 360;
         final landscape = constraints.maxWidth >= 600 &&
             constraints.maxWidth > constraints.maxHeight;
         final pages = PageView(
@@ -552,7 +554,7 @@ class _MobilePlayerTopBar extends StatelessWidget {
         .ceilToDouble();
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight: math.max(compact ? 54 : 64, titleHeight),
+        minHeight: math.max(compact ? 48 : 56, titleHeight),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -610,14 +612,15 @@ class _MobilePlayerTopBar extends StatelessWidget {
                           ),
                         ],
                       )
-                    : Text(
-                        '正在播放',
+                    : Center(
                         key: const ValueKey('cover-title'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.80),
-                          fontSize: compact ? 13 : 15,
-                          fontWeight: TypeScale.semibold,
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.32),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
               ),
@@ -646,18 +649,13 @@ class _MobileCoverStage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxDiscWidth = math.max(0.0, constraints.maxWidth - 38);
-        final lyricHeight = (compact ? 54.0 : 78.0) *
-            MediaQuery.textScalerOf(context).scale(14) /
-            14;
-        final topInset = compact ? 0.0 : 10.0;
-        final discSize = math
-            .min(
-              maxDiscWidth,
-              (constraints.maxHeight - lyricHeight - topInset - 12)
-                  .clamp(140.0, 350.0),
-            )
-            .toDouble();
+        final coverSize = math.max(
+          0.0,
+          math.min(
+            math.min(constraints.maxWidth - 48, 420.0),
+            constraints.maxHeight - (compact ? 16 : 32),
+          ),
+        );
         return Semantics(
           container: true,
           button: true,
@@ -667,468 +665,34 @@ class _MobileCoverStage extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onOpenLyrics,
-              child: SingleChildScrollView(
-                primary: false,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: compact
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.start,
-                    children: [
-                      if (!compact) SizedBox(height: topInset),
-                      SizedBox(
-                        width: discSize,
-                        height: discSize,
-                        child: _VinylStage(song: song),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: lyricHeight,
-                        child: _VinylRollingLyrics(
-                          key: const ValueKey('vinyl-rolling-lyrics'),
-                          compact: compact,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _VinylStage extends StatelessWidget {
-  const _VinylStage({required this.song});
-
-  final Song song;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stageSize = constraints.biggest.shortestSide;
-        final vinylSize = stageSize * 0.88;
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: const Alignment(0, 0.86),
-              child: SizedBox.square(
-                dimension: vinylSize,
-                child: _SpinningVinyl(song: song),
-              ),
-            ),
-            const Positioned.fill(child: _AnimatedTonearm()),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _AnimatedTonearm extends StatefulWidget {
-  const _AnimatedTonearm();
-
-  @override
-  State<_AnimatedTonearm> createState() => _AnimatedTonearmState();
-}
-
-class _AnimatedTonearmState extends State<_AnimatedTonearm>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  bool? _lastPlaying;
-  bool? _lastReduceMotion;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 680),
-      value: context.read<PlayerController>().playing ? 1 : 0,
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final playing = context.select<PlayerController, bool>((p) => p.playing);
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    if (_lastPlaying != playing || _lastReduceMotion != reduceMotion) {
-      _lastPlaying = playing;
-      _lastReduceMotion = reduceMotion;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final target = playing ? 1.0 : 0.0;
-        if (reduceMotion) {
-          _controller.value = target;
-        } else if (_controller.value != target) {
-          _controller.animateTo(
-            target,
-            duration: const Duration(milliseconds: 680),
-            curve: Curves.easeInOutCubic,
-          );
-        }
-      });
-    }
-    return RepaintBoundary(
-      child: CustomPaint(
-        key: const ValueKey('vinyl-tonearm'),
-        painter: _TonearmPainter(progress: _controller),
-      ),
-    );
-  }
-}
-
-class _VinylRollingLyrics extends StatelessWidget {
-  const _VinylRollingLyrics({super.key, required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final lrc = context.select<PlayerController, String>((p) => p.lyric);
-    final player = context.read<PlayerController>();
-    final lines = parseLrc(lrc);
-    if (lines.isEmpty) {
-      final loading = context.select<PlayerController, bool>((p) => p.loading);
-      return Center(
-        child: Text(
-          loading && lrc.isEmpty ? '歌词加载中' : '暂无歌词',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.48),
-            fontSize: compact ? 12 : 14,
-          ),
-        ),
-      );
-    }
-    int currentLine(Duration position) {
-      var low = 0;
-      var high = lines.length - 1;
-      var current = 0;
-      while (low <= high) {
-        final middle = low + ((high - low) >> 1);
-        if (lines[middle].time <= position) {
-          current = middle;
-          low = middle + 1;
-        } else {
-          high = middle - 1;
-        }
-      }
-      return current;
-    }
-
-    return StreamBuilder<int>(
-      stream: player.positionStream.map(currentLine).distinct(),
-      initialData: currentLine(player.position),
-      builder: (context, snapshot) {
-        final current = snapshot.data ?? 0;
-        final previous = current > 0 ? lines[current - 1].text : '';
-        final active = lines[current].text;
-        final next = current + 1 < lines.length ? lines[current + 1].text : '';
-        return ClipRect(
-          child: AnimatedSwitcher(
-            duration: PlatformMotion.duration(context, Motion.normal),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.28),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: Column(
-              key: ValueKey(current),
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!compact)
-                  _VinylLyricLine(
-                      text: previous, active: false, compact: false),
-                _VinylLyricLine(text: active, active: true, compact: compact),
-                _VinylLyricLine(text: next, active: false, compact: compact),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _VinylLyricLine extends StatelessWidget {
-  const _VinylLyricLine({
-    required this.text,
-    required this.active,
-    required this.compact,
-  });
-
-  final String text;
-  final bool active;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height:
-          (compact ? 26 : 25) * MediaQuery.textScalerOf(context).scale(14) / 14,
-      child: Center(
-        child: Text(
-          text.isEmpty ? ' ' : text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: active ? 0.94 : 0.36),
-            fontSize: active ? (compact ? 14 : 16) : (compact ? 11 : 12),
-            fontWeight: active ? TypeScale.semibold : TypeScale.medium,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SpinningVinyl extends StatefulWidget {
-  const _SpinningVinyl({required this.song});
-
-  final Song song;
-
-  @override
-  State<_SpinningVinyl> createState() => _SpinningVinylState();
-}
-
-class _SpinningVinylState extends State<_SpinningVinyl>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _rotation;
-  bool? _lastAnimating;
-
-  @override
-  void initState() {
-    super.initState();
-    _rotation = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 18),
-    );
-  }
-
-  void _syncRotation(bool animate) {
-    if (animate && !_rotation.isAnimating) {
-      _rotation.repeat();
-    } else if (!animate && _rotation.isAnimating) {
-      _rotation.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _rotation.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final playing = context.select<PlayerController, bool>((p) => p.playing);
-    final animate = playing &&
-        !MediaQuery.disableAnimationsOf(context) &&
-        TickerMode.valuesOf(context).enabled;
-    if (_lastAnimating != animate) {
-      _lastAnimating = animate;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncRotation(animate);
-      });
-    }
-    return RotationTransition(
-      key: const ValueKey('vinyl-disc'),
-      turns: _rotation,
-      child: RepaintBoundary(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final vinylSize = constraints.biggest.shortestSide;
-            final labelSize = vinylSize * 0.56;
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                const Positioned.fill(
-                  child: CustomPaint(painter: _VinylPainter()),
-                ),
-                SizedBox.square(
-                  dimension: labelSize,
-                  child: ClipOval(
-                    key: const ValueKey('vinyl-cover'),
-                    clipBehavior: Clip.antiAlias,
-                    child: AsyncCover(
-                      url: widget.song.album.picUrl,
-                      size: labelSize,
-                      radius: 0,
-                    ),
-                  ),
-                ),
-                SizedBox.square(
-                  dimension: vinylSize * 0.034,
+              child: Center(
+                child: RepaintBoundary(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.76),
-                      border: Border.all(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        width: 0.8,
-                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 24,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: AsyncCover(
+                      key: const ValueKey('mobile-player-artwork'),
+                      url: song.album.picUrl,
+                      size: coverSize,
+                      radius: 14,
                     ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
-      ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
-}
-
-class _VinylPainter extends CustomPainter {
-  const _VinylPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final radius = math.min(size.width, size.height) / 2;
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..shader = const RadialGradient(
-          colors: [Color(0xFF292929), Color(0xFF080808), Color(0xFF171717)],
-          stops: [0, 0.72, 1],
-        ).createShader(Rect.fromCircle(center: center, radius: radius)),
-    );
-    final groovePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(0.55, radius * 0.003)
-      ..color = Colors.white.withValues(alpha: 0.055);
-    for (var index = 0; index < 19; index++) {
-      final fraction = 0.62 + index * 0.019;
-      canvas.drawCircle(center, radius * fraction, groovePaint);
-    }
-    canvas.drawCircle(
-      center,
-      radius * 0.985,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.3
-        ..color = Colors.white.withValues(alpha: 0.10),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _TonearmPainter extends CustomPainter {
-  const _TonearmPainter({required this.progress}) : super(repaint: progress);
-
-  final Animation<double> progress;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final t = Curves.easeInOutCubic.transform(progress.value);
-    final scale = math.min(size.width, size.height);
-    final pivot = Offset(size.width * 0.83, size.height * 0.16);
-    final restingTip = Offset(size.width * 0.89, size.height * 0.33);
-    final playingTip = Offset(size.width * 0.70, size.height * 0.38);
-    final tip = Offset.lerp(restingTip, playingTip, t)!;
-    final elbow = Offset.lerp(
-      Offset(size.width * 0.84, size.height * 0.24),
-      Offset(size.width * 0.76, size.height * 0.27),
-      t,
-    )!;
-    final path = Path()
-      ..moveTo(pivot.dx, pivot.dy + scale * 0.025)
-      ..cubicTo(
-        pivot.dx + scale * 0.015,
-        pivot.dy + scale * 0.06,
-        elbow.dx + scale * 0.025,
-        elbow.dy - scale * 0.025,
-        elbow.dx,
-        elbow.dy,
-      )
-      ..lineTo(tip.dx, tip.dy);
-    final shadow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = scale * 0.021
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.black.withValues(alpha: 0.30);
-    final arm = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = scale * 0.0115
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0xFFD8D5CE);
-    canvas.drawPath(path, shadow);
-    canvas.drawPath(path, arm);
-    canvas.drawCircle(
-      pivot,
-      scale * 0.058,
-      Paint()..color = Colors.black.withValues(alpha: 0.30),
-    );
-    canvas.drawCircle(
-      pivot,
-      scale * 0.042,
-      Paint()
-        ..shader = const RadialGradient(
-          colors: [Color(0xFFF3F1EC), Color(0xFFAAA69E)],
-        ).createShader(
-          Rect.fromCircle(center: pivot, radius: scale * 0.042),
-        ),
-    );
-    canvas.drawCircle(
-      pivot,
-      scale * 0.014,
-      Paint()..color = const Color(0xFF55524D),
-    );
-    final direction = tip - elbow;
-    final angle = math.atan2(direction.dy, direction.dx);
-    canvas.save();
-    canvas.translate(tip.dx, tip.dy);
-    canvas.rotate(angle);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset.zero,
-          width: scale * 0.070,
-          height: scale * 0.038,
-        ),
-        Radius.circular(scale * 0.008),
-      ),
-      Paint()..color = const Color(0xFFBBB7AF),
-    );
-    canvas.drawLine(
-      Offset(scale * 0.032, 0),
-      Offset(scale * 0.047, scale * 0.015),
-      Paint()
-        ..strokeWidth = scale * 0.0045
-        ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFE7E4DD),
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _TonearmPainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }
 
 class _MobileControls extends StatelessWidget {
@@ -1167,13 +731,13 @@ class _MobileControls extends StatelessWidget {
     final shuffle = state.$6;
     final textScaler = MediaQuery.textScalerOf(context);
     final lineHeight = DefaultTextStyle.of(context).style.height ?? 1.25;
-    final summaryHeight = ((textScaler.scale(compact ? 16 : 19) +
-                    textScaler.scale(compact ? 11 : 13)) *
+    final summaryHeight = ((textScaler.scale(compact ? 17 : 22) +
+                    textScaler.scale(compact ? 12 : 15)) *
                 lineHeight +
             (compact ? 1 : 4))
         .ceilToDouble();
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 4 : 10),
+      padding: EdgeInsets.fromLTRB(24, 0, 24, compact ? 4 : 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1182,32 +746,55 @@ class _MobileControls extends StatelessWidget {
               minHeight: math.max(compact ? 48 : 58, summaryHeight),
             ),
             child: error != null
-                ? _PlaybackErrorBanner(
-                    message: error!,
-                    actionLabel: _playbackActionLabel(player),
-                    onAction: () => _handlePlaybackError(context, player),
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: _PlaybackErrorBanner(
+                          message: error!,
+                          actionLabel: _playbackActionLabel(player),
+                          onAction: () => _handlePlaybackError(context, player),
+                        ),
+                      ),
+                      _ImmersiveIconButton(
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: '更多',
+                        onTap: () => showSongActions(
+                          context,
+                          song: song,
+                          queueIndex: state.$5,
+                        ),
+                      ),
+                    ],
                   )
                 : showingLyrics
                     ? _LyricUtilityRow(song: song, compact: compact)
-                    : _MobileSongSummary(song: song, compact: compact),
+                    : _MobileSongSummary(
+                        song: song,
+                        compact: compact,
+                        onMore: () => showSongActions(
+                          context,
+                          song: song,
+                          queueIndex: state.$5,
+                        ),
+                      ),
           ),
           _MobileProgressRow(
             qualityLabel: _mobileQualityLabel(quality),
             compact: compact,
             onQualityTap: () => _showPlaybackQualitySheet(context),
           ),
-          SizedBox(height: compact ? 7 : 16),
+          SizedBox(height: compact ? 4 : 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _ImmersiveIconButton(
-                icon: Icons.skip_previous_rounded,
+                icon: CupertinoIcons.backward_fill,
                 tooltip: '上一首',
                 size: compact ? 32 : 38,
-                buttonSize: compact ? 44 : 54,
+                buttonSize: compact ? 48 : 56,
+                tint: Colors.white,
                 onTap: player.previous,
               ),
-              SizedBox(width: compact ? 18 : 26),
               _PlayPauseButton(
                 playing: state.$1,
                 loading: state.$2,
@@ -1216,17 +803,18 @@ class _MobileControls extends StatelessWidget {
                 immersive: true,
                 compact: compact,
               ),
-              SizedBox(width: compact ? 18 : 26),
               _ImmersiveIconButton(
-                icon: Icons.skip_next_rounded,
+                icon: CupertinoIcons.forward_fill,
                 tooltip: '下一首',
                 size: compact ? 32 : 38,
-                buttonSize: compact ? 44 : 54,
+                buttonSize: compact ? 48 : 56,
+                tint: Colors.white,
                 onTap: player.next,
               ),
             ],
           ),
-          SizedBox(height: compact ? 2 : 7),
+          const SizedBox(height: 4),
+          const _PlayerVolume(immersive: true),
           LayoutBuilder(
             builder: (context, constraints) {
               final tools = <Widget>[
@@ -1280,17 +868,6 @@ class _MobileControls extends StatelessWidget {
                   buttonSize: 44,
                   onTap: () => showQueueSheet(context),
                 ),
-                _ImmersiveIconButton(
-                  icon: Icons.more_horiz_rounded,
-                  tooltip: '更多',
-                  size: compact ? 22 : 24,
-                  buttonSize: 44,
-                  onTap: () => showSongActions(
-                    context,
-                    song: song,
-                    queueIndex: state.$5,
-                  ),
-                ),
               ];
               if (constraints.maxWidth >= tools.length * 44) {
                 return Row(
@@ -1303,7 +880,7 @@ class _MobileControls extends StatelessWidget {
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [tools[0], tools[1], tools[5], tools[6]],
+                    children: [tools[0], tools[1], tools[5]],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1320,10 +897,15 @@ class _MobileControls extends StatelessWidget {
 }
 
 class _MobileSongSummary extends StatelessWidget {
-  const _MobileSongSummary({required this.song, required this.compact});
+  const _MobileSongSummary({
+    required this.song,
+    required this.compact,
+    required this.onMore,
+  });
 
   final Song song;
   final bool compact;
+  final VoidCallback onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -1340,7 +922,7 @@ class _MobileSongSummary extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: compact ? 16 : 19,
+                  fontSize: compact ? 17 : 22,
                   fontWeight: TypeScale.bold,
                 ),
               ),
@@ -1362,7 +944,7 @@ class _MobileSongSummary extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.58),
-                    fontSize: compact ? 11 : 13,
+                    fontSize: compact ? 12 : 15,
                   ),
                 ),
               ),
@@ -1370,9 +952,18 @@ class _MobileSongSummary extends StatelessWidget {
           ),
         ),
         SizedBox(
-          width: compact ? 44 : 46,
-          height: compact ? 44 : 46,
+          width: 44,
+          height: 44,
           child: _FavoriteBtn(song: song, immersive: true),
+        ),
+        const SizedBox(width: 6),
+        _ImmersiveIconButton(
+          icon: Icons.more_horiz_rounded,
+          tooltip: '更多',
+          size: 24,
+          buttonSize: 44,
+          surface: true,
+          onTap: onMore,
         ),
       ],
     );
@@ -1681,6 +1272,7 @@ class _MobileProgressRow extends StatelessWidget {
       builder: (context, snapshot) {
         final position = snapshot.data ?? player.position;
         final total = duration ?? Duration.zero;
+        final remaining = total > position ? total - position : Duration.zero;
         return Column(
           children: [
             Theme(
@@ -1697,7 +1289,8 @@ class _MobileProgressRow extends StatelessWidget {
                 duration: total,
                 bufferedPosition: player.bufferedPosition,
                 onSeek: player.seek,
-                height: compact ? 2 : 2.5,
+                height: compact ? 2.5 : 3,
+                showThumb: false,
               ),
             ),
             Row(
@@ -1729,7 +1322,7 @@ class _MobileProgressRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                Text(_ProgressRow._fmt(total), style: timeStyle),
+                Text('-${_ProgressRow._fmt(remaining)}', style: timeStyle),
               ],
             ),
           ],
@@ -1922,6 +1515,8 @@ class _ImmersiveIconButton extends StatelessWidget {
     this.size = 22,
     this.buttonSize = 46,
     this.selected,
+    this.tint,
+    this.surface = false,
   });
 
   final IconData icon;
@@ -1930,6 +1525,8 @@ class _ImmersiveIconButton extends StatelessWidget {
   final double size;
   final double buttonSize;
   final bool? selected;
+  final Color? tint;
+  final bool surface;
 
   @override
   Widget build(BuildContext context) {
@@ -1943,15 +1540,22 @@ class _ImmersiveIconButton extends StatelessWidget {
         excludeSemantics: true,
         child: GPressScale(
           onTap: onTap,
-          child: SizedBox(
+          child: Container(
             width: math.max(44, buttonSize),
             height: math.max(44, buttonSize),
+            decoration: surface
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.10),
+                  )
+                : null,
             child: Icon(
               icon,
               size: size,
-              color: selected == true
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.white.withValues(alpha: 0.78),
+              color: tint ??
+                  (selected == true
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.white.withValues(alpha: 0.72)),
             ),
           ),
         ),
@@ -2040,6 +1644,17 @@ class _CoverAndControls extends StatelessWidget {
                         ),
                       ),
                       _FavoriteBtn(song: song),
+                      GIconButton(
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: '更多',
+                        size: 24,
+                        backgroundColor: Colors.transparent,
+                        onTap: () => showSongActions(
+                          context,
+                          song: song,
+                          queueIndex: player.queueIndex,
+                        ),
+                      ),
                     ],
                   ),
                   if (state.$3 != null) ...[
@@ -2170,9 +1785,6 @@ class _PaneButton extends StatelessWidget {
               color: selected
                   ? glassFill(context, alpha: 0.16)
                   : Colors.transparent,
-              border: selected
-                  ? Border.all(color: Colors.white.withValues(alpha: 0.14))
-                  : null,
             ),
             child: Icon(icon, size: 21, color: scheme.onSurface),
           ),
@@ -2183,7 +1795,9 @@ class _PaneButton extends StatelessWidget {
 }
 
 class _PlayerVolume extends StatefulWidget {
-  const _PlayerVolume();
+  const _PlayerVolume({this.immersive = false});
+
+  final bool immersive;
 
   @override
   State<_PlayerVolume> createState() => _PlayerVolumeState();
@@ -2198,10 +1812,13 @@ class _PlayerVolumeState extends State<_PlayerVolume> {
     final volume = context.select<PlayerController, double>((p) => p.volume);
     final displayedVolume = _dragFraction ?? volume;
     final scheme = Theme.of(context).colorScheme;
+    final foreground = widget.immersive ? Colors.white : scheme.onSurface;
+    final secondary = widget.immersive
+        ? Colors.white.withValues(alpha: 0.60)
+        : scheme.onSurfaceVariant;
     return Row(
       children: [
-        Icon(Icons.volume_mute_rounded,
-            size: 16, color: scheme.onSurfaceVariant),
+        Icon(Icons.volume_mute_rounded, size: 18, color: secondary),
         const SizedBox(width: 10),
         Expanded(
           child: LayoutBuilder(
@@ -2213,33 +1830,45 @@ class _PlayerVolumeState extends State<_PlayerVolume> {
                 player.setVolume(value);
               }
 
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (d) => update(d.localPosition.dx),
-                onHorizontalDragStart: (_) =>
-                    setState(() => _dragFraction = volume),
-                onHorizontalDragUpdate: (d) =>
-                    update(d.localPosition.dx, preview: true),
-                onHorizontalDragEnd: (_) =>
-                    setState(() => _dragFraction = null),
-                onHorizontalDragCancel: () =>
-                    setState(() => _dragFraction = null),
-                child: SizedBox(
-                  height: 18,
-                  child: Center(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: Stack(
-                        children: [
-                          Container(
-                            height: 5,
-                            color: Colors.white.withValues(alpha: 0.22),
-                          ),
-                          FractionallySizedBox(
-                            widthFactor: displayedVolume.clamp(0.0, 1.0),
-                            child: Container(height: 5, color: Colors.white),
-                          ),
-                        ],
+              return Semantics(
+                label: '音量',
+                value: '${(displayedVolume * 100).round()}%',
+                increasedValue:
+                    '${((displayedVolume + 0.05).clamp(0.0, 1.0) * 100).round()}%',
+                decreasedValue:
+                    '${((displayedVolume - 0.05).clamp(0.0, 1.0) * 100).round()}%',
+                onIncrease: () => player
+                    .setVolume((volume + 0.05).clamp(0.0, 1.0).toDouble()),
+                onDecrease: () => player
+                    .setVolume((volume - 0.05).clamp(0.0, 1.0).toDouble()),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (d) => update(d.localPosition.dx),
+                  onHorizontalDragStart: (_) =>
+                      setState(() => _dragFraction = volume),
+                  onHorizontalDragUpdate: (d) =>
+                      update(d.localPosition.dx, preview: true),
+                  onHorizontalDragEnd: (_) =>
+                      setState(() => _dragFraction = null),
+                  onHorizontalDragCancel: () =>
+                      setState(() => _dragFraction = null),
+                  child: SizedBox(
+                    height: 44,
+                    child: Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: Stack(
+                          children: [
+                            Container(
+                              height: 4,
+                              color: foreground.withValues(alpha: 0.20),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: displayedVolume.clamp(0.0, 1.0),
+                              child: Container(height: 4, color: foreground),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -2249,7 +1878,7 @@ class _PlayerVolumeState extends State<_PlayerVolume> {
           ),
         ),
         const SizedBox(width: 10),
-        Icon(Icons.volume_up_rounded, size: 16, color: scheme.onSurfaceVariant),
+        Icon(Icons.volume_up_rounded, size: 18, color: secondary),
       ],
     );
   }
@@ -2348,15 +1977,18 @@ class _InlineQueueView extends StatelessWidget {
                       onTap: () => player.playAt(index),
                       child: AnimatedContainer(
                         duration: PlatformMotion.duration(context, Motion.fast),
-                        height: 58,
+                        constraints: const BoxConstraints(minHeight: 68),
                         margin: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 2,
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: current
-                              ? Colors.white.withValues(alpha: 0.12)
+                              ? scheme.onSurface.withValues(alpha: 0.07)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(9),
                         ),
@@ -2364,12 +1996,13 @@ class _InlineQueueView extends StatelessWidget {
                           children: [
                             AsyncCover(
                               url: song.album.picUrl,
-                              size: 42,
-                              radius: 7,
+                              size: 44,
+                              radius: 8,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -2378,7 +2011,7 @@ class _InlineQueueView extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontSize: 13.5,
+                                      fontSize: 15,
                                       fontWeight: current
                                           ? TypeScale.bold
                                           : TypeScale.semibold,
@@ -2391,7 +2024,7 @@ class _InlineQueueView extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontSize: 11.5,
+                                      fontSize: 13,
                                       color: scheme.onSurfaceVariant,
                                     ),
                                   ),
@@ -2404,6 +2037,11 @@ class _InlineQueueView extends StatelessWidget {
                                 size: 18,
                                 color: scheme.onSurface,
                               ),
+                            SongActionButton(
+                              song: song,
+                              queueIndex: index,
+                              onPlay: () => player.playAt(index),
+                            ),
                           ],
                         ),
                       ),
@@ -2518,9 +2156,8 @@ class _PlayPauseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final size = compact
-        ? 52.0
+        ? 56.0
         : large
             ? 64.0
             : 56.0;
@@ -2540,26 +2177,9 @@ class _PlayPauseButton extends StatelessWidget {
         child: GPressScale(
           onTap: loading ? null : onTap,
           disabled: loading,
-          child: Container(
+          child: SizedBox(
             width: size,
             height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: immersive
-                  ? Colors.transparent
-                  : dark
-                      ? Colors.white
-                      : scheme.primary,
-              boxShadow: immersive
-                  ? const []
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
-                        blurRadius: 18,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-            ),
             child: AnimatedSwitcher(
               duration: PlatformMotion.duration(context, Motion.normal),
               reverseDuration: PlatformMotion.duration(context, Motion.fast),
@@ -2578,22 +2198,16 @@ class _PlayPauseButton extends StatelessWidget {
                       padding: EdgeInsets.all(immersive ? 18 : 20),
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: immersive
-                            ? Colors.white
-                            : dark
-                                ? Colors.black
-                                : Colors.white,
+                        color: immersive ? Colors.white : scheme.onSurface,
                       ),
                     )
                   : Icon(
-                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      playing
+                          ? CupertinoIcons.pause_fill
+                          : CupertinoIcons.play_fill,
                       key: ValueKey(playing ? 'pause' : 'play'),
-                      size: size * (immersive ? 0.78 : 0.52),
-                      color: immersive
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : dark
-                              ? Colors.black
-                              : Colors.white,
+                      size: size * 0.78,
+                      color: immersive ? Colors.white : scheme.onSurface,
                     ),
             ),
           ),
@@ -2741,11 +2355,8 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: widget.immersive
-                  ? Colors.transparent
-                  : glassFill(context, alpha: 0.05),
-              border: widget.immersive
-                  ? null
-                  : Border.all(color: glassHairline(context)),
+                  ? Colors.white.withValues(alpha: 0.10)
+                  : scheme.onSurface.withValues(alpha: 0.06),
             ),
             child: _busy
                 ? const Padding(

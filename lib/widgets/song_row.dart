@@ -31,31 +31,21 @@ class SongRow extends StatelessWidget {
       (p) => p.current?.id == song.id && p.current?.source == song.source,
     );
 
-    return GListTile(
+    final row = GListTile(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       onTap: onTap,
       selected: isPlaying,
       leading: leading ??
           Stack(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: AsyncCover(url: song.album.picUrl, size: 48, radius: 10),
-              ),
+              AsyncCover(url: song.album.picUrl, size: 48, radius: 8),
               // 正在播放时显示音波图标覆盖
               if (isPlaying)
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                       color: Colors.black.withValues(alpha: 0.6),
                     ),
                     child: Icon(
@@ -72,8 +62,8 @@ class SongRow extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontSize: TypeScale.bodyLarge,
-          fontWeight: FontWeight.w600,
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
           letterSpacing: 0,
           color: isPlaying ? scheme.primary : null,
         ),
@@ -83,7 +73,7 @@ class SongRow extends StatelessWidget {
         source: song.source,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: TypeScale.small),
+        style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
       ),
       trailing: trailing ??
           Row(
@@ -102,6 +92,17 @@ class SongRow extends StatelessWidget {
               SongActionButton(song: song, onPlay: onTap),
             ],
           ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row,
+        Padding(
+          padding: const EdgeInsets.only(left: 80, right: 20),
+          child: Divider(
+              height: 0.5, thickness: 0.5, color: glassHairline(context)),
+        ),
+      ],
     );
   }
 

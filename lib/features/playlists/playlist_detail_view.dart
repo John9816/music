@@ -59,6 +59,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   bool _reverseOrder = false;
   bool _downloadAllBusy = false;
   final ScrollController _mobileScrollController = ScrollController();
+  final GlobalKey _mobileHeroKey = GlobalKey();
 
   @override
   void initState() {
@@ -232,8 +233,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   }
 
   void _updateMobileTitle() {
+    final hero = _mobileHeroKey.currentContext?.findRenderObject();
+    if (hero is! RenderBox || !hero.hasSize) return;
     final pinned = _mobileScrollController.hasClients &&
-        _mobileScrollController.offset >= 198;
+        _mobileScrollController.offset >= hero.size.height - 64;
     if ((pinned != _mobileTitleVisible || pinned != _mobilePlayHeaderPinned) &&
         mounted) {
       setState(() {
@@ -252,7 +255,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.sizeOf(context).width < 720) {
+    if (MediaQuery.sizeOf(context).width < GBreakpoints.sidebar) {
       return _buildMobile(context);
     }
     return _buildDesktop(context);
@@ -388,6 +391,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 
   Widget _buildMobile(BuildContext context) {
     final mobileScheme = Theme.of(context).colorScheme;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateMobileTitle();
+    });
     return Scaffold(
       backgroundColor: mobileScheme.surfaceContainerLowest,
       body: Stack(
@@ -431,32 +437,28 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                           key: const ValueKey(
                             'mobile-play-panel-pinned-surface',
                           ),
-                          height: 64,
                           alignment: Alignment.topCenter,
                           color: mobileScheme.surfaceContainerLowest,
                           child: _MobilePlayAllPanel(
                             key: const ValueKey('mobile-play-panel-pinned'),
-                            songs: loadedSongs,
-                            trackCount: widget.playlist.trackCount ??
-                                loadedSongs.length,
                             color: mobileScheme.surfaceContainerLowest,
                             loading: snapshot.connectionState !=
                                 ConnectionState.done,
                             downloadBusy: _downloadAllBusy,
-                            reverseOrder: _reverseOrder,
                             compact: true,
-                            onPlay: loadedSongs.isEmpty
+                            isFavorite: _isFavorite,
+                            favoriteLoading: _favoriteLoading,
+                            onFavorite: _supportsPlaylistFavorites
+                                ? _toggleFavorite
+                                : null,
+                            onPlay: visibleSongs.isEmpty
                                 ? null
                                 : () => context
                                     .read<PlayerController>()
-                                    .playQueue(loadedSongs),
-                            onFilter: _toggleSearch,
+                                    .playQueue(visibleSongs),
                             onDownload: loadedSongs.isEmpty
                                 ? null
                                 : () => _downloadAll(loadedSongs),
-                            onSort: () => setState(
-                              () => _reverseOrder = !_reverseOrder,
-                            ),
                           ),
                         ),
                       ),
@@ -468,7 +470,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                       onSearch: _toggleSearch,
                       onSearchChanged: (value) =>
                           setState(() => _searchQuery = value),
-                      onMore: _showMoreActions,
+                      onMore: _showMobileMoreActions,
                     ),
                   ],
                 );
@@ -496,30 +498,52 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       slivers: [
         SliverToBoxAdapter(
           child: _MobilePlaylistHero(
+            key: _mobileHeroKey,
             playlist: widget.playlist,
             kind: widget.kind,
-            isFavorite: _isFavorite,
-            favoriteLoading: _favoriteLoading,
-            onFavorite: _toggleFavorite,
+            songs: allSongs,
+            loading: snapshot.connectionState != ConnectionState.done,
           ),
         ),
         SliverToBoxAdapter(
           child: _MobilePlayAllPanel(
             key: const ValueKey('mobile-play-panel-expanded'),
-            songs: allSongs,
-            trackCount: widget.playlist.trackCount ?? allSongs.length,
             color: panelColor,
             loading: snapshot.connectionState != ConnectionState.done,
             downloadBusy: _downloadAllBusy,
-            reverseOrder: _reverseOrder,
+            isFavorite: _isFavorite,
+            favoriteLoading: _favoriteLoading,
+            onFavorite: _supportsPlaylistFavorites ? _toggleFavorite : null,
             onPlay: visibleSongs.isEmpty
                 ? null
-                : () => context.read<PlayerController>().playQueue(visibleSongs),
-            onFilter: _toggleSearch,
+                : () =>
+                    context.read<PlayerController>().playQueue(visibleSongs),
             onDownload: allSongs.isEmpty ? null : () => _downloadAll(allSongs),
-            onSort: () => setState(() => _reverseOrder = !_reverseOrder),
           ),
         ),
+        if (widget.playlist.description?.trim().isNotEmpty == true)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+              child: InkWell(
+                onTap: () => setState(
+                  () => _descriptionExpanded = !_descriptionExpanded,
+                ),
+                child: Text(
+                  widget.playlist.description!.trim(),
+                  maxLines: _descriptionExpanded ? null : 2,
+                  overflow: _descriptionExpanded
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (current != null)
           SliverToBoxAdapter(
             child: _MobileContinueRow(
@@ -643,6 +667,36 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       if (value == 'refresh' && mounted) _reload();
     });
   }
+
+  void _showMobileMoreActions() {
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        MediaQuery.sizeOf(context).width - 20,
+        MediaQuery.paddingOf(context).top + 56,
+        20,
+        0,
+      ),
+      items: [
+        const PopupMenuItem(value: 'filter', child: Text('筛选歌曲')),
+        PopupMenuItem(
+          value: 'sort',
+          child: Text(_reverseOrder ? '恢复原排序' : '倒序排列'),
+        ),
+        const PopupMenuItem(value: 'refresh', child: Text('刷新详情')),
+      ],
+    ).then((value) {
+      if (!mounted) return;
+      switch (value) {
+        case 'filter':
+          if (!_searchOpen) _toggleSearch();
+        case 'sort':
+          setState(() => _reverseOrder = !_reverseOrder);
+        case 'refresh':
+          _reload();
+      }
+    });
+  }
 }
 
 class _PlaylistAmbientBackground extends StatelessWidget {
@@ -684,7 +738,9 @@ class _MobilePlaylistTopBar extends StatelessWidget {
       key: const ValueKey('mobile-playlist-top-bar-surface'),
       duration: Motion.fast,
       height: 64,
-      color: titleVisible ? scheme.surfaceContainerLowest : Colors.transparent,
+      color: titleVisible || searchOpen
+          ? scheme.surfaceContainerLowest
+          : null,
       alignment: Alignment.topCenter,
       child: SizedBox(
         height: 56,
@@ -717,13 +773,16 @@ class _MobilePlaylistTopBar extends StatelessWidget {
               ),
             Row(
               children: [
-                const SizedBox(width: 4),
+                const SizedBox(width: 12),
                 GIconButton(
                   icon: Icons.arrow_back_ios_new_rounded,
                   tooltip: '返回',
                   size: 23,
                   padding: 10,
-                  backgroundColor: Colors.transparent,
+                  tint: titleVisible || searchOpen ? null : Colors.white,
+                  backgroundColor: titleVisible || searchOpen
+                      ? Colors.transparent
+                      : Colors.black.withValues(alpha: 0.18),
                   onTap: onBack,
                 ),
                 if (searchOpen) ...[
@@ -750,18 +809,24 @@ class _MobilePlaylistTopBar extends StatelessWidget {
                   tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
                   size: searchOpen ? 25 : 27,
                   padding: 8,
-                  backgroundColor: Colors.transparent,
+                  tint: titleVisible || searchOpen ? null : Colors.white,
+                  backgroundColor: titleVisible || searchOpen
+                      ? Colors.transparent
+                      : Colors.black.withValues(alpha: 0.18),
                   onTap: onSearch,
                 ),
                 GIconButton(
-                  icon: Icons.more_vert_rounded,
+                  icon: Icons.more_horiz_rounded,
                   tooltip: '更多',
                   size: 26,
                   padding: 8,
-                  backgroundColor: Colors.transparent,
+                  tint: titleVisible || searchOpen ? null : Colors.white,
+                  backgroundColor: titleVisible || searchOpen
+                      ? Colors.transparent
+                      : Colors.black.withValues(alpha: 0.18),
                   onTap: onMore,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 12),
               ],
             ),
           ],
@@ -780,168 +845,119 @@ class _MobilePlaylistTopBar extends StatelessWidget {
 
 class _MobilePlaylistHero extends StatelessWidget {
   const _MobilePlaylistHero({
+    super.key,
     required this.playlist,
     required this.kind,
-    required this.isFavorite,
-    required this.favoriteLoading,
-    required this.onFavorite,
+    required this.songs,
+    required this.loading,
   });
 
   final Playlist playlist;
   final PlaylistDetailKind kind;
-  final bool isFavorite;
-  final bool favoriteLoading;
-  final VoidCallback onFavorite;
+  final List<Song> songs;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final creator = playlist.creatorName?.trim();
-    return SizedBox(
-      height: 262,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 62, 20, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final viewport = MediaQuery.sizeOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The artwork remains prominent in portrait while leaving room for
+        // the controls on short landscape displays. Text determines the rest
+        // of the header height, including when accessibility text is enlarged.
+        final artworkSpace = (constraints.maxWidth * 0.46)
+            .clamp(96.0, (viewport.height * 0.30).clamp(96.0, 232.0));
+        return Stack(
           children: [
-            Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.22),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: AsyncCover(
-                    url: playlist.coverUrl,
-                    size: 112,
-                    radius: 6,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        playlist.name,
-                        key: const ValueKey('mobile-playlist-hero-title'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: TypeScale.bold,
-                          height: 1.17,
-                        ),
-                      ),
-                      const SizedBox(height: 13),
-                      Row(
-                        children: [
-                          ClipOval(
-                            child: AsyncCover(
-                              url: playlist.coverUrl,
-                              size: 20,
-                              radius: 10,
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              creator == null || creator.isEmpty
-                                  ? (kind == PlaylistDetailKind.album
-                                      ? '专辑'
-                                      : '歌单创建者')
-                                  : creator,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: scheme.onSurface.withValues(alpha: 0.72),
-                                fontSize: 13,
-                                fontWeight: TypeScale.semibold,
-                              ),
-                            ),
-                          ),
-                          if (playlist.playCount != null) ...[
-                            const SizedBox(width: 10),
-                            Container(
-                              width: 1,
-                              height: 14,
-                              color: scheme.onSurface.withValues(alpha: 0.16),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              '${_formatPlayCount(playlist.playCount!)}次播放',
-                              style: TextStyle(
-                                color: scheme.onSurface.withValues(alpha: 0.64),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Positioned.fill(
+              child: AsyncCover(
+                key: const ValueKey('mobile-playlist-hero-cover'),
+                url: playlist.coverUrl,
+                size: double.infinity,
+                radius: 0,
+                placeholderAlignment: const Alignment(0, -0.6),
+              ),
             ),
-            const Spacer(),
-            if (kind == PlaylistDetailKind.playlist)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Tooltip(
-                  message: isFavorite ? '取消收藏' : '收藏歌单',
-                  child: GPressScale(
-                    onTap: favoriteLoading ? null : onFavorite,
-                    child: Container(
-                      width: 109,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: scheme.onSurface.withValues(alpha: 0.105),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      alignment: Alignment.center,
-                      child: favoriteLoading
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isFavorite
-                                      ? Icons.inventory_2
-                                      : Icons.inventory_2_outlined,
-                                  size: 21,
-                                  color: scheme.onSurface
-                                      .withValues(alpha: isFavorite ? 1 : 0.68),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  isFavorite ? '已收藏' : '收藏',
-                                  style: TextStyle(
-                                    color: scheme.onSurface.withValues(
-                                      alpha: isFavorite ? 1 : 0.68,
-                                    ),
-                                    fontSize: 14,
-                                    fontWeight: TypeScale.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0, 0.40, 0.78, 1],
+                      colors: [
+                        Colors.black.withValues(alpha: 0.12),
+                        scheme.surfaceContainerLowest.withValues(alpha: 0.08),
+                        scheme.surfaceContainerLowest.withValues(alpha: 0.88),
+                        scheme.surfaceContainerLowest,
+                      ],
                     ),
                   ),
                 ),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(height: artworkSpace),
+                  Text(
+                    playlist.name,
+                    key: const ValueKey('mobile-playlist-hero-title'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 24,
+                      fontWeight: TypeScale.bold,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    creator == null || creator.isEmpty
+                        ? (kind == PlaylistDetailKind.album ? '专辑' : '歌单创建者')
+                        : creator,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 16,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    loading
+                        ? '正在加载歌曲'
+                        : '${playlist.trackCount ?? songs.length}首 · ${_formatPlaylistDuration(songs)}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                  if (playlist.playCount != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatPlayCount(playlist.playCount!)}次播放',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -949,110 +965,117 @@ class _MobilePlaylistHero extends StatelessWidget {
 class _MobilePlayAllPanel extends StatelessWidget {
   const _MobilePlayAllPanel({
     super.key,
-    required this.songs,
-    required this.trackCount,
     required this.color,
     required this.loading,
     required this.downloadBusy,
-    required this.reverseOrder,
+    required this.isFavorite,
+    required this.favoriteLoading,
     required this.onPlay,
-    required this.onFilter,
     required this.onDownload,
-    required this.onSort,
+    required this.onFavorite,
     this.compact = false,
   });
 
-  final List<Song> songs;
-  final int trackCount;
   final Color color;
   final bool loading;
   final bool downloadBusy;
-  final bool reverseOrder;
+  final bool isFavorite;
+  final bool favoriteLoading;
   final VoidCallback? onPlay;
-  final VoidCallback onFilter;
   final VoidCallback? onDownload;
-  final VoidCallback onSort;
+  final VoidCallback? onFavorite;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      height: compact ? 56 : 84,
-      padding: EdgeInsets.fromLTRB(20, compact ? 7 : 14, 10, compact ? 7 : 10),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: compact
-            ? BorderRadius.zero
-            : const BorderRadius.vertical(top: Radius.circular(10)),
-      ),
-      child: Row(
-        children: [
-          GPressScale(
-            onTap: onPlay,
-            disabled: onPlay == null,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFFF3338)
-                    .withValues(alpha: onPlay == null ? 0.45 : 1),
+    return ColoredBox(
+      color: color,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, compact ? 6 : 12, 20, 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final scaledLabel = MediaQuery.textScalerOf(context).scale(16);
+            final stackActions = constraints.maxWidth < scaledLabel * 4 + 160;
+            final playButton = FilledButton.icon(
+              onPressed: onPlay,
+              style: FilledButton.styleFrom(
+                backgroundColor: scheme.onSurface.withValues(alpha: 0.18),
+                foregroundColor: scheme.onSurface,
+                disabledBackgroundColor:
+                    scheme.onSurface.withValues(alpha: 0.08),
+                disabledForegroundColor: scheme.onSurfaceVariant,
+                minimumSize: const Size(144, 48),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: const StadiumBorder(),
+                side: BorderSide(
+                  color: scheme.onSurface.withValues(alpha: 0.12),
+                ),
+                textStyle: Theme.of(context).textTheme.labelLarge!.copyWith(
+                      fontSize: 16,
+                      fontWeight: TypeScale.semibold,
+                      height: 1.2,
+                    ),
               ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                size: 27,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
+              icon: loading
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.play_arrow_rounded, size: 24),
+              label: const Text('播放全部'),
+            );
+            final download = _MobileToolButton(
+              icon: Icons.download_rounded,
+              tooltip: '下载全部',
+              busy: downloadBusy,
+              onTap: onDownload,
+            );
+            final favorite = onFavorite == null
+                ? null
+                : _MobileToolButton(
+                    icon: isFavorite
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    tooltip: isFavorite ? '取消收藏' : '收藏歌单',
+                    busy: favoriteLoading,
+                    selected: isFavorite,
+                    onTap: onFavorite,
+                  );
+            if (stackActions) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  playButton,
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      download,
+                      if (favorite != null) ...[
+                        const SizedBox(width: 16),
+                        favorite,
+                      ],
+                    ],
+                  ),
+                ],
+              );
+            }
+            return Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '播放全部',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: TypeScale.bold,
-                    height: 1.1,
-                  ),
-                ),
-                SizedBox(height: compact ? 3 : 5),
-                Text(
-                  loading
-                      ? '正在加载歌曲'
-                      : '$trackCount首 · ${_formatPlaylistDuration(songs)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.46),
-                    fontSize: 12.5,
-                  ),
-                ),
+                download,
+                const SizedBox(width: 12),
+                Flexible(child: playButton),
+                if (favorite != null) ...[
+                  const SizedBox(width: 12),
+                  favorite,
+                ],
               ],
-            ),
-          ),
-          _MobileToolButton(
-            icon: Icons.filter_alt_outlined,
-            tooltip: '筛选歌曲',
-            onTap: onFilter,
-          ),
-          _MobileToolButton(
-            icon: Icons.download_for_offline_outlined,
-            tooltip: '下载全部',
-            busy: downloadBusy,
-            onTap: onDownload,
-          ),
-          _MobileToolButton(
-            icon:
-                reverseOrder ? Icons.sort_rounded : Icons.playlist_play_rounded,
-            tooltip: reverseOrder ? '恢复原排序' : '倒序排列',
-            onTap: onSort,
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -1064,12 +1087,14 @@ class _MobileToolButton extends StatelessWidget {
     required this.tooltip,
     required this.onTap,
     this.busy = false,
+    this.selected = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onTap;
   final bool busy;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -1078,20 +1103,34 @@ class _MobileToolButton extends StatelessWidget {
       message: tooltip,
       child: GPressScale(
         onTap: busy ? null : onTap,
-        child: SizedBox.square(
-          dimension: 44,
-          child: Center(
-            child: busy
-                ? const SizedBox.square(
-                    dimension: 19,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(
-                    icon,
-                    size: 27,
-                    color: scheme.onSurface.withValues(alpha: 0.82),
-                  ),
+        disabled: busy || onTap == null,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected
+                ? scheme.onSurface
+                : scheme.onSurface.withValues(alpha: 0.10),
+            border: Border.all(
+              color: scheme.onSurface.withValues(alpha: 0.12),
+            ),
           ),
+          alignment: Alignment.center,
+          child: busy
+              ? const SizedBox.square(
+                  dimension: 19,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  icon,
+                  size: 25,
+                  color: selected
+                      ? scheme.surfaceContainerLowest
+                      : scheme.onSurface.withValues(
+                          alpha: onTap == null ? 0.38 : 0.86,
+                        ),
+                ),
         ),
       ),
     );
@@ -1116,8 +1155,8 @@ class _MobileContinueRow extends StatelessWidget {
       color: color,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
-        child: SizedBox(
-          height: 40,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 40),
           child: Row(
             children: [
               GIconButton(
@@ -1185,90 +1224,93 @@ class _MobilePlaylistSongRow extends StatelessWidget {
     );
     final artistAlbum = song.album.name.trim().isEmpty
         ? song.artistNames
-        : '${song.artistNames} - ${song.album.name}';
+        : '${song.artistNames} · ${song.album.name}';
     return ColoredBox(
+      key: ValueKey('mobile-playlist-song-${song.id}'),
       color: color,
-      child: SizedBox(
-        height: 62,
-        child: Row(
-          children: [
-            const SizedBox(width: 20),
-            GPressScale(
-              onTap: () => context
-                  .read<PlayerController>()
-                  .playQueue(songs, index: index),
-              scale: 0.99,
-              child: Row(
-                children: [
-                  AsyncCover(
-                    url: song.album.picUrl,
-                    size: 44,
-                    radius: 4,
-                  ),
-                  const SizedBox(width: 12),
-                ],
-              ),
-            ),
-            Expanded(
-              child: GPressScale(
-                onTap: () => context
-                    .read<PlayerController>()
-                    .playQueue(songs, index: index),
-                scale: 0.99,
-                child: SizedBox(
-                  height: 62,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: playing
-                              ? const Color(0xFFFF3338)
-                              : scheme.onSurface,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w400,
-                          height: 1.1,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GPressScale(
+                    onTap: () => context
+                        .read<PlayerController>()
+                        .playQueue(songs, index: index),
+                    scale: 0.99,
+                    child: Row(
+                      children: [
+                        AsyncCover(
+                          url: song.album.picUrl,
+                          size: 48,
+                          radius: 8,
                         ),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          if (highQuality) ...[
-                            const _QualityBadge(label: '超清母带'),
-                            const SizedBox(width: 5),
-                          ],
-                          Flexible(
-                            child: Text(
-                              artistAlbum,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: scheme.onSurface.withValues(alpha: 0.48),
-                                fontSize: 12.5,
-                                height: 1,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                song.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: playing
+                                      ? scheme.primary
+                                      : scheme.onSurface,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.2,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  if (highQuality) ...[
+                                    const _QualityBadge(label: '超清母带'),
+                                    const SizedBox(width: 5),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      artistAlbum,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: scheme.onSurfaceVariant,
+                                        fontSize: 14,
+                                        height: 1.2,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                SongActionButton(
+                  song: song,
+                  onPlay: () => context
+                      .read<PlayerController>()
+                      .playQueue(songs, index: index),
+                ),
+              ],
             ),
-            SongActionButton(
-              song: song,
-              onPlay: () => context
-                  .read<PlayerController>()
-                  .playQueue(songs, index: index),
-            ),
-            const SizedBox(width: 6),
-          ],
-        ),
+          ),
+          Divider(
+            height: 1,
+            thickness: 0.5,
+            indent: 80,
+            endIndent: 20,
+            color: scheme.onSurface.withValues(alpha: 0.10),
+          ),
+        ],
       ),
     );
   }
@@ -1283,8 +1325,8 @@ class _QualityBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     const color = Color(0xFFD5A30D);
     return Container(
-      height: 18,
-      padding: const EdgeInsets.symmetric(horizontal: 3),
+      constraints: const BoxConstraints(minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         border: Border.all(color: color.withValues(alpha: 0.88)),

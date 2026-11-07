@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -50,6 +52,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
   bool _mutating = false;
   bool _selectionMode = false;
   bool _searchOpen = false;
+  bool _hasLoaded = false;
   List<Song> _loadedSongs = const <Song>[];
   final Set<String> _selected = <String>{};
 
@@ -67,8 +70,13 @@ class _UserLibraryViewState extends State<UserLibraryView> {
         (widget.kind == UserLibraryKind.playlist &&
             oldWidget.title != widget.title);
     if (contentChanged) {
+      _future = null;
+      _loadingFuture = null;
+      _loadedSongs = const <Song>[];
+      _hasLoaded = false;
       _searchController.clear();
       _query = '';
+      _searchOpen = false;
       _selectionMode = false;
       _selected.clear();
     }
@@ -114,6 +122,16 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     return future;
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _searchOpen = !_searchOpen;
+      if (!_searchOpen) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final content = Material(
@@ -131,21 +149,17 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                 size: 22,
                 padding: 9,
                 backgroundColor: Colors.transparent,
-                onTap: () => setState(() {
-                  _searchOpen = !_searchOpen;
-                  if (!_searchOpen) {
-                    _searchController.clear();
-                    _query = '';
-                  }
-                }),
+                onTap: _toggleSearch,
               ),
-              GIconButton(
-                icon: Icons.more_vert_rounded,
-                tooltip: '更多',
-                size: 22,
-                padding: 9,
-                backgroundColor: Colors.transparent,
-                onTap: _showMoreActions,
+              Builder(
+                builder: (buttonContext) => GIconButton(
+                  icon: Icons.more_vert_rounded,
+                  tooltip: '更多',
+                  size: 22,
+                  padding: 9,
+                  backgroundColor: Colors.transparent,
+                  onTap: () => _showMoreActions(buttonContext),
+                ),
               ),
               if (widget.onRemove != null)
                 GIconButton(
@@ -155,6 +169,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   tooltip: _selectionMode ? '退出管理' : '管理歌曲',
                   size: 18,
                   padding: 9,
+                  backgroundColor: Colors.transparent,
                   onTap: _selectionMode ? _exitSelection : _enterSelection,
                 ),
               if (widget.onSync != null)
@@ -163,6 +178,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   tooltip: '同步歌单',
                   size: 18,
                   padding: 9,
+                  backgroundColor: Colors.transparent,
                   onTap: _syncPlaylist,
                 ),
             ],
@@ -202,12 +218,20 @@ class _UserLibraryViewState extends State<UserLibraryView> {
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return _buildImmersiveLibrary(
-            const <Song>[],
+            _loadedSongs,
             history: _history,
-            loading: true,
+            loading: !_hasLoaded,
+            refreshing: _hasLoaded,
           );
         }
         if (snapshot.hasError) {
+          if (_hasLoaded) {
+            return _buildImmersiveLibrary(
+              _loadedSongs,
+              history: _history,
+              refreshFailed: true,
+            );
+          }
           return GEmptyState(
             icon: Icons.error_outline_rounded,
             text: '加载失败，请稍后重试',
@@ -215,6 +239,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
           );
         }
         final songs = snapshot.data ?? const <Song>[];
+        _hasLoaded = true;
         _loadedSongs = songs;
         if (_favorites) return _buildFavorites(songs);
         return _buildTrackList(songs, history: _history);
@@ -262,6 +287,8 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     List<Song> songs, {
     required bool history,
     bool loading = false,
+    bool refreshing = false,
+    bool refreshFailed = false,
   }) {
     final visible = _visibleSongs(songs);
     final title = switch (widget.kind) {
@@ -277,8 +304,8 @@ class _UserLibraryViewState extends State<UserLibraryView> {
           }
         : (history ? '没有匹配的播放记录' : '没有匹配的歌曲');
 
-    return RefreshIndicator(
-      onRefresh: _refresh,
+    final content = RefreshIndicator(
+      onRefresh: _refreshFromUi,
       child: Stack(
         children: [
           const Positioned.fill(child: _LibraryTintBackground()),
@@ -288,36 +315,41 @@ class _UserLibraryViewState extends State<UserLibraryView> {
             ),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+                padding: MediaQuery.sizeOf(context).width < GBreakpoints.sidebar
+                    ? EdgeInsets.zero
+                    : const EdgeInsets.fromLTRB(20, 16, 20, 0),
                 sliver: SliverToBoxAdapter(
                   child: _LibraryHero(
                     title: title,
                     songs: songs,
                     history: history,
                     kind: widget.kind,
+                    loading: loading,
                   ),
                 ),
               ),
               SliverToBoxAdapter(
                 child: _LibraryPlayBar(
                   songs: visible,
-                  count: visible.length,
+                  count: loading ? null : visible.length,
                   onPlay: visible.isEmpty
                       ? null
-                      : () => context.read<PlayerController>().playQueue(visible),
-                  onDownload: visible.isEmpty ? null : () => _downloadAll(visible),
+                      : () =>
+                          context.read<PlayerController>().playQueue(visible),
+                  onDownload:
+                      visible.isEmpty ? null : () => _downloadAll(visible),
                   onClear: history && songs.isNotEmpty && widget.onClear != null
                       ? () => _clearHistory(songs)
                       : null,
+                  onFilter: _toggleSearch,
                 ),
               ),
               SliverToBoxAdapter(
                 child: Offstage(
                   offstage: !_searchOpen,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                    child: SizedBox(
-                        height: 40, child: _searchField(history: history)),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: _searchField(history: history),
                   ),
                 ),
               ),
@@ -334,24 +366,37 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   ),
                 ),
               if (loading)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
+                const SliverToBoxAdapter(
+                  child: ExcludeSemantics(
+                    child: GSkeletonList(
+                      itemCount: 5,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    ),
+                  ),
                 )
               else if (visible.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: _LibraryEmptyState(
                     icon: _query.trim().isEmpty
-                        ? (history
-                            ? Icons.history_rounded
-                            : Icons.favorite_border_rounded)
+                        ? switch (widget.kind) {
+                            UserLibraryKind.history => Icons.history_rounded,
+                            UserLibraryKind.favorites =>
+                              Icons.favorite_border_rounded,
+                            UserLibraryKind.playlist =>
+                              Icons.queue_music_rounded,
+                          }
                         : Icons.search_off_rounded,
                     title: emptyTitle,
                     subtitle: _query.trim().isEmpty
-                        ? (history
-                            ? '播放过的歌曲会按时间出现在这里'
-                            : '在歌曲菜单或播放器中点亮喜欢，音乐会出现在这里')
+                        ? switch (widget.kind) {
+                            UserLibraryKind.history => '播放过的歌曲会按时间出现在这里',
+                            UserLibraryKind.favorites =>
+                              '在歌曲菜单或播放器中点亮喜欢，音乐会出现在这里',
+                            UserLibraryKind.playlist =>
+                              '在歌曲菜单中选择“收藏到歌单”，添加到这个歌单',
+                          }
                         : '换个歌曲或歌手名称试试',
                   ),
                 )
@@ -369,7 +414,7 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 30),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
                   sliver: SliverList.builder(
                     itemCount: visible.length,
                     itemBuilder: (context, index) {
@@ -390,6 +435,9 @@ class _UserLibraryViewState extends State<UserLibraryView> {
                         onDelete: widget.onRemove == null || _selectionMode
                             ? null
                             : () => _removeSong(song),
+                        removeLabel: _removeLabel,
+                        showFavoriteAction:
+                            !_favorites || widget.onRemove == null,
                         onSelect: () => _toggleSelection(song),
                       );
                     },
@@ -398,12 +446,55 @@ class _UserLibraryViewState extends State<UserLibraryView> {
               ],
             ],
           ),
+          if (refreshing)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                semanticsLabel: '正在刷新列表',
+              ),
+            ),
         ],
       ),
     );
+    return Column(
+      children: [
+        if (refreshFailed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      '刷新失败，仍显示上次的内容',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+                TextButton(onPressed: _reload, child: const Text('重试')),
+              ],
+            ),
+          ),
+        Expanded(child: content),
+      ],
+    );
   }
 
-  void _showMoreActions() {
+  void _showMoreActions(BuildContext buttonContext) {
+    final button = buttonContext.findRenderObject() as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final anchor = button.localToGlobal(
+      Offset(0, button.size.height),
+      ancestor: overlay,
+    );
     final items = <PopupMenuEntry<String>>[
       const PopupMenuItem(value: 'refresh', child: Text('刷新列表')),
       if (_history && widget.onClear != null)
@@ -411,11 +502,15 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     ];
     showMenu<String>(
       context: context,
-      position: const RelativeRect.fromLTRB(999, 58, 12, 0),
+      position: RelativeRect.fromRect(
+        anchor & Size(button.size.width, 0),
+        Offset.zero & overlay.size,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       items: items,
     ).then((value) {
       if (!mounted) return;
-      if (value == 'refresh') _refresh();
+      if (value == 'refresh') _reload();
       if (value == 'clear') _clearHistory(_loadedSongs);
     });
   }
@@ -480,12 +575,52 @@ class _UserLibraryViewState extends State<UserLibraryView> {
     if (future != null) await future;
   }
 
+  Future<void> _refreshFromUi() async {
+    try {
+      await _refresh();
+    } catch (_) {
+      // FutureBuilder displays a retry state while preserving cached content.
+    }
+  }
+
+  String get _removeLabel => switch (widget.kind) {
+        UserLibraryKind.playlist => '从歌单移除',
+        UserLibraryKind.favorites => '取消喜欢',
+        UserLibraryKind.history => '删除播放记录',
+      };
+
   Future<void> _removeSong(Song song) async {
     final remove = widget.onRemove;
     if (remove == null || _mutating) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$_removeLabel？'),
+        content: Text('“${song.name}”'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(_removeLabel),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _mutating) return;
     setState(() => _mutating = true);
     try {
       await remove(song);
+      if (!mounted) return;
+      if (_favorites) {
+        final player = context.read<PlayerController>();
+        if (player.current?.id == song.id &&
+            player.current?.source == song.source) {
+          player.setLiked(false);
+        }
+      }
       await _refresh();
     } catch (error) {
       if (mounted) {
@@ -622,17 +757,19 @@ class _LibraryHero extends StatelessWidget {
     required this.songs,
     required this.history,
     required this.kind,
+    this.loading = false,
   });
 
   final String title;
   final List<Song> songs;
   final bool history;
   final UserLibraryKind kind;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final desktop = MediaQuery.sizeOf(context).width >= 720;
+    final desktop = MediaQuery.sizeOf(context).width >= GBreakpoints.sidebar;
     final coverSize = desktop ? 200.0 : 132.0;
     final song = songs.isEmpty ? null : songs.first;
     final label = switch (kind) {
@@ -640,8 +777,94 @@ class _LibraryHero extends StatelessWidget {
       UserLibraryKind.history => '最近播放',
       UserLibraryKind.playlist => '歌单',
     };
-    final metadata =
-        history ? '${songs.length} 首 · 按播放时间排序' : '${songs.length} 首歌曲';
+    final metadata = loading
+        ? '正在加载歌曲…'
+        : history
+            ? '${songs.length} 首 · 按播放时间排序'
+            : '${songs.length} 首歌曲';
+    final placeholderIcon = switch (kind) {
+      UserLibraryKind.history => Icons.history_rounded,
+      UserLibraryKind.favorites => Icons.favorite_rounded,
+      UserLibraryKind.playlist => Icons.queue_music_rounded,
+    };
+    if (!desktop) {
+      final viewport = MediaQuery.sizeOf(context);
+      final artworkSpace = (viewport.width * 0.46)
+          .clamp(96.0, (viewport.height * 0.30).clamp(96.0, 232.0));
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: loading
+                ? const GSkeleton(radius: 0)
+                : song == null
+                    ? ColoredBox(
+                        color: scheme.primaryContainer,
+                        child: Align(
+                          alignment: const Alignment(0, -0.55),
+                          child: Icon(
+                            placeholderIcon,
+                            size: 80,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      )
+                    : AsyncCover(
+                        url: song.album.picUrl,
+                        size: double.infinity,
+                        radius: 0,
+                        placeholderAlignment: const Alignment(0, -0.6),
+                      ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, 0.4, 0.78, 1],
+                    colors: [
+                      Colors.black.withValues(alpha: 0.12),
+                      scheme.surfaceContainerLowest.withValues(alpha: 0.08),
+                      scheme.surfaceContainerLowest.withValues(alpha: 0.88),
+                      scheme.surfaceContainerLowest,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: artworkSpace),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: TypeScale.bold,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$label · $metadata',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.3,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -658,25 +881,25 @@ class _LibraryHero extends StatelessWidget {
               ),
             ],
           ),
-          child: song == null
-              ? DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(desktop ? 18 : 14),
-                  ),
-                  child: Icon(
-                    kind == UserLibraryKind.history
-                        ? Icons.history_rounded
-                        : Icons.favorite_rounded,
-                    size: coverSize * 0.34,
-                    color: scheme.primary,
-                  ),
-                )
-              : AsyncCover(
-                  url: song.album.picUrl,
-                  size: coverSize,
-                  radius: desktop ? 18 : 14,
-                ),
+          child: loading
+              ? const GSkeleton(radius: 18)
+              : song == null
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(desktop ? 18 : 14),
+                      ),
+                      child: Icon(
+                        placeholderIcon,
+                        size: coverSize * 0.34,
+                        color: scheme.primary,
+                      ),
+                    )
+                  : AsyncCover(
+                      url: song.album.picUrl,
+                      size: coverSize,
+                      radius: desktop ? 18 : 14,
+                    ),
         ),
         SizedBox(width: desktop ? 26 : 16),
         Expanded(
@@ -728,18 +951,87 @@ class _LibraryPlayBar extends StatelessWidget {
     required this.onPlay,
     required this.onDownload,
     required this.onClear,
+    required this.onFilter,
   });
 
   final List<Song> songs;
-  final int count;
+  final int? count;
   final VoidCallback? onPlay;
   final VoidCallback? onDownload;
   final VoidCallback? onClear;
+  final VoidCallback onFilter;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = onPlay != null;
+    if (MediaQuery.sizeOf(context).width < GBreakpoints.sidebar) {
+      final playButton = FilledButton.icon(
+        onPressed: onPlay,
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.onSurface.withValues(alpha: 0.18),
+          foregroundColor: scheme.onSurface,
+          minimumSize: const Size(144, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: const StadiumBorder(),
+          side: BorderSide(color: scheme.onSurface.withValues(alpha: 0.12)),
+          textStyle: Theme.of(context).textTheme.labelLarge!.copyWith(
+                fontSize: 16,
+                fontWeight: TypeScale.semibold,
+                height: 1.2,
+              ),
+        ),
+        icon: const Icon(Icons.play_arrow_rounded, size: 24),
+        label: const Text('播放全部'),
+      );
+      final download = GIconButton(
+        icon: Icons.download_rounded,
+        tooltip: '全部下载',
+        size: 24,
+        padding: 12,
+        backgroundColor: Colors.transparent,
+        onTap: onDownload,
+        disabled: onDownload == null,
+      );
+      final trailing = GIconButton(
+        icon:
+            onClear == null ? Icons.tune_rounded : Icons.delete_outline_rounded,
+        tooltip: onClear == null ? '筛选歌曲' : '清空播放历史',
+        size: 24,
+        padding: 12,
+        backgroundColor: Colors.transparent,
+        onTap: onClear ?? onFilter,
+      );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+        child: LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth <
+              MediaQuery.textScalerOf(context).scale(16) * 4 + 160) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                playButton,
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [download, const SizedBox(width: 16), trailing],
+                ),
+              ],
+            );
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              download,
+              const SizedBox(width: 12),
+              Flexible(child: playButton),
+              const SizedBox(width: 12),
+              trailing,
+            ],
+          );
+        }),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 22, 18, 14),
       child: Row(
@@ -780,7 +1072,7 @@ class _LibraryPlayBar extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '$count 首歌曲',
+                    count == null ? '正在加载…' : '$count 首歌曲',
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
                       fontSize: 13,
@@ -809,8 +1101,7 @@ class _LibraryPlayBar extends StatelessWidget {
             padding: 10,
             backgroundColor: Colors.transparent,
             tint: onClear == null ? scheme.onSurface : scheme.error,
-            onTap: onClear,
-            disabled: onClear == null,
+            onTap: onClear ?? onFilter,
           ),
         ],
       ),
@@ -847,16 +1138,17 @@ class _SongSelectionToolbar extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  '正在处理...',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
+                Expanded(
+                  child: Text(
+                    '正在处理...',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
                 ),
               ],
             )
           : Row(
               children: [
-                Text('$selectedCount/$totalCount 已选'),
-                const Spacer(),
+                Expanded(child: Text('$selectedCount/$totalCount 已选')),
                 TextButton(onPressed: onSelectAll, child: const Text('全选')),
                 GIconButton(
                   icon: Icons.delete_outline_rounded,
@@ -877,6 +1169,8 @@ class _LibrarySongRow extends StatelessWidget {
     required this.onTap,
     this.index,
     this.onDelete,
+    this.removeLabel = '从歌单移除',
+    this.showFavoriteAction = true,
     this.selected = false,
     this.selectionMode = false,
     this.onSelect,
@@ -886,6 +1180,8 @@ class _LibrarySongRow extends StatelessWidget {
   final VoidCallback onTap;
   final int? index;
   final VoidCallback? onDelete;
+  final String removeLabel;
+  final bool showFavoriteAction;
   final bool selected;
   final bool selectionMode;
   final VoidCallback? onSelect;
@@ -898,7 +1194,12 @@ class _LibrarySongRow extends StatelessWidget {
         GPressScale(
           onTap: onTap,
           child: SizedBox(
-            height: 64,
+            height: math.max(
+              68,
+              MediaQuery.textScalerOf(context).scale(16) * 1.3 +
+                  MediaQuery.textScalerOf(context).scale(14) * 1.3 +
+                  23,
+            ),
             child: Row(
               children: [
                 if (index != null)
@@ -926,8 +1227,9 @@ class _LibrarySongRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: TypeScale.semibold,
+                          fontSize: 16,
+                          height: 1.3,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -937,7 +1239,8 @@ class _LibrarySongRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 14,
+                          height: 1.3,
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
@@ -949,35 +1252,23 @@ class _LibrarySongRow extends StatelessWidget {
                     value: selected,
                     onChanged: (_) => onSelect?.call(),
                   )
-                else ...[
-                  GIconButton(
-                    icon: Icons.more_horiz_rounded,
-                    tooltip: '更多',
-                    size: 20,
-                    padding: 8,
-                    backgroundColor: Colors.transparent,
-                    onTap: () => showSongActions(
-                      context,
-                      song: song,
-                      onPlay: onTap,
-                    ),
+                else
+                  SongActionButton(
+                    song: song,
+                    onPlay: onTap,
+                    onRemove: onDelete,
+                    removeLabel: removeLabel,
+                    showFavoriteAction: showFavoriteAction,
                   ),
-                  if (onDelete != null)
-                    GIconButton(
-                      icon: Icons.delete_outline_rounded,
-                      tooltip: '删除',
-                      size: 19,
-                      padding: 8,
-                      tint: scheme.outline,
-                      backgroundColor: Colors.transparent,
-                      onTap: onDelete,
-                    ),
-                ],
               ],
             ),
           ),
         ),
-        Divider(height: 1, color: glassHairline(context)),
+        Divider(
+          height: 1,
+          indent: index == null ? 60 : 94,
+          color: glassHairline(context),
+        ),
       ],
     );
   }

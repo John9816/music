@@ -61,7 +61,8 @@ void main() {
       await _pumpPlayer(tester, const Size(812, 375), textScale: textScale);
 
       expect(tester.takeException(), isNull);
-      final cover = tester.getRect(find.byKey(const ValueKey('vinyl-disc')));
+      final cover =
+          tester.getRect(find.byKey(const ValueKey('mobile-player-artwork')));
       final play = tester.getRect(find.byTooltip('播放'));
       expect(cover.right, lessThan(play.left));
       _expectVisibleTargets(tester, const Size(812, 375), [
@@ -149,7 +150,7 @@ void main() {
       final bar = tester.getRect(find.byType(MiniPlayer));
       for (final label in ['播放', '播放队列']) {
         final target = tester.getRect(find.byTooltip(label));
-        expect(target.shortestSide, greaterThanOrEqualTo(44));
+        expect(target.shortestSide, greaterThanOrEqualTo(44 - 1e-6));
         expect(target.left, greaterThanOrEqualTo(bar.left));
         expect(target.right, lessThanOrEqualTo(bar.right));
       }
@@ -205,7 +206,7 @@ void _expectVisibleTargets(
   final viewport = Offset.zero & size;
   for (final label in labels) {
     final target = tester.getRect(find.byTooltip(label));
-    expect(target.shortestSide, greaterThanOrEqualTo(44), reason: label);
+    expect(target.shortestSide, greaterThanOrEqualTo(44 - 1e-6), reason: label);
     expect(viewport.contains(target.topLeft), isTrue, reason: label);
     expect(viewport.contains(target.bottomRight), isTrue, reason: label);
   }

@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 /// 保存只在当前生命周期有效的临时状态。
 class SettingsController extends ChangeNotifier {
   static const _sourceKey = 'music_source';
+  static const _searchSourceKey = 'search_music_source';
   static const _themeKey = 'theme';
   static const _themeModeKey = 'theme_mode';
   static const _accentKey = 'accent_color';
@@ -28,6 +29,7 @@ class SettingsController extends ChangeNotifier {
   static const _shortcutBindingsKey = 'desktop_shortcut_bindings';
 
   String _source = 'netease';
+  String _searchSource = 'netease';
   String _themeModeId = 'system';
   String _accentId = 'forestGreen';
   final Map<String, String> _qualityBySource = {};
@@ -43,6 +45,9 @@ class SettingsController extends ChangeNotifier {
   bool _loaded = false;
 
   String get source => _source;
+
+  /// Search remembers its own provider without changing browsing content.
+  String get searchSource => _searchSource;
   String get themeModeId => _themeModeId;
   ThemeMode get themeMode => switch (_themeModeId) {
         'light' => ThemeMode.light,
@@ -72,6 +77,14 @@ class SettingsController extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _source = prefs.getString(_sourceKey) ?? 'netease';
+      final savedSearchSource = prefs.getString(_searchSourceKey);
+      _searchSource = AppConfig.musicSources.containsKey(savedSearchSource)
+          ? savedSearchSource!
+          : _source;
+      if (savedSearchSource != _searchSource) {
+        // Seed existing installations once; later browsing changes stay local.
+        await prefs.setString(_searchSourceKey, _searchSource);
+      }
       final legacyQuality = prefs.getString(_qualityKey);
       for (final source in AppConfig.musicSources.keys) {
         _qualityBySource[source] = normalizeQualityForSource(
@@ -105,6 +118,13 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> setSource(String value) =>
       _setString(_sourceKey, value, () => _source, (v) => _source = v);
+
+  Future<void> setSearchSource(String value) => _setString(
+        _searchSourceKey,
+        value,
+        () => _searchSource,
+        (v) => _searchSource = v,
+      );
 
   /// 兼容旧主题 id，同时保留现有调用方。
   Future<void> setTheme(String id) async {

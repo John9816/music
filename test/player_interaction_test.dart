@@ -37,10 +37,11 @@ void main() {
   testWidgets('top drag follows the finger and returns below the threshold',
       (tester) async {
     await _pumpPlayer(tester, route: true);
-    final cover = find.byKey(const ValueKey('vinyl-tonearm'));
+    final cover = find.byKey(const ValueKey('mobile-player-artwork'));
     final originalTop = tester.getTopLeft(cover).dy;
     final gesture = await tester.startGesture(
-      tester.getCenter(find.text('正在播放')),
+      tester.getCenter(
+          find.byKey(const ValueKey('mobile-player-dismiss-region'))),
     );
 
     await gesture.moveBy(const Offset(0, 24));
@@ -61,7 +62,8 @@ void main() {
       (tester) async {
     await _pumpPlayer(tester, route: true);
     await tester.dragFrom(
-      tester.getCenter(find.text('正在播放')),
+      tester.getCenter(
+          find.byKey(const ValueKey('mobile-player-dismiss-region'))),
       const Offset(0, 210),
     );
     await tester.pumpAndSettle();
@@ -95,16 +97,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('reduced motion keeps a playing vinyl stationary',
+  testWidgets('reduced motion keeps playing artwork still without a ticker',
       (tester) async {
     await _pumpPlayer(tester, playing: true, reducedMotion: true);
-    final disc = tester.widget<RotationTransition>(
-      find.byKey(const ValueKey('vinyl-disc')),
-    );
-    final initialRotation = disc.turns.value;
+    final artwork = find.byKey(const ValueKey('mobile-player-artwork'));
+    final initialBounds = tester.getRect(artwork);
     await tester.pump(const Duration(seconds: 2));
 
-    expect(disc.turns.value, initialRotation);
+    expect(tester.getRect(artwork), initialBounds);
+    expect(tester.binding.transientCallbackCount, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -275,35 +276,32 @@ void main() {
       textScale: 2,
     );
 
-    expect(tester.getSize(find.byType(MiniPlayer)).height, 56);
-    expect(
-      tester
-          .getSize(
-              find.byKey(const ValueKey('mobile-mini-player-progress-fill')))
-          .height,
-      3,
-    );
+    final bar = tester.getRect(find.byType(MiniPlayer));
     expect(find.byTooltip('上一首'), findsNothing);
-    for (final label in ['播放', '下一首', '播放队列']) {
+    for (final label in ['播放', '下一首']) {
       final button = tester.getRect(find.byTooltip(label));
       expect(button.shortestSide, greaterThanOrEqualTo(48));
       expect(button.left, greaterThanOrEqualTo(0));
       expect(button.right, lessThanOrEqualTo(320));
     }
     final title = tester.getRect(find.textContaining('Test song same-id'));
-    final disc = tester.getRect(
-      find.byKey(const ValueKey('mobile-mini-player-disc')),
+    final artwork = tester.getRect(
+      find.byKey(const ValueKey('mobile-mini-player-artwork')),
     );
     expect(title.width, greaterThanOrEqualTo(90));
-    expect(disc.width, 54);
-    expect(title.left, greaterThanOrEqualTo(disc.right));
+    expect(artwork.width, artwork.height);
+    expect(bar.contains(artwork.topLeft), isTrue);
+    expect(bar.contains(artwork.bottomRight), isTrue);
+    expect(bar.contains(title.topLeft), isTrue);
+    expect(bar.contains(title.bottomRight), isTrue);
+    expect(title.left, greaterThanOrEqualTo(artwork.right));
     expect(title.right,
         lessThanOrEqualTo(tester.getRect(find.byTooltip('播放')).left));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-      'narrow mini player keeps play and queue targets on both platforms',
+      'narrow mini player keeps play and next targets on both platforms',
       (tester) async {
     for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
       await _pumpPlayer(
@@ -315,9 +313,8 @@ void main() {
       );
 
       expect(find.byTooltip('上一首'), findsNothing);
-      expect(find.byTooltip('下一首'), findsNothing);
       final minimumTarget = platform == TargetPlatform.android ? 48 : 44;
-      for (final label in ['播放', '播放队列']) {
+      for (final label in ['播放', '下一首']) {
         expect(
           tester.getSize(find.byTooltip(label)).shortestSide,
           greaterThanOrEqualTo(minimumTarget),
@@ -336,7 +333,7 @@ void main() {
       (tester) async {
     final harness = await _pumpPlayer(tester, mini: true);
     final size = tester.getSize(find.byType(MiniPlayer));
-    final queuePosition = tester.getCenter(find.byTooltip('播放队列'));
+    final nextPosition = tester.getCenter(find.byTooltip('下一首'));
     harness.player
         .replaceCurrent(_song(source: 'qq', name: 'A much longer title'));
     harness.player.setPlaying(true);
@@ -344,10 +341,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 80));
 
     expect(tester.getSize(find.byType(MiniPlayer)), size);
-    expect(tester.getCenter(find.byTooltip('播放队列')), queuePosition);
+    expect(tester.getCenter(find.byTooltip('下一首')), nextPosition);
     await tester.pumpAndSettle();
     expect(find.byIcon(cupertino.CupertinoIcons.pause_fill), findsOneWidget);
     expect(find.byTooltip('暂停'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mini player opens the full player and its playback queue',
+      (tester) async {
+    await _pumpPlayer(tester, mini: true, reducedMotion: true);
+    await tester.tap(find.byKey(const ValueKey('mobile-mini-player-artwork')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PlayerView), findsOneWidget);
+    await tester.tap(find.byTooltip('播放队列'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('关闭播放队列'), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭播放队列'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('收起播放器'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerView), findsNothing);
+    expect(find.byType(MiniPlayer), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

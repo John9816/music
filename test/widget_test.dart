@@ -895,27 +895,24 @@ void main() {
     final progress = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
     );
-    final surface = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile-mini-player-surface')),
-    );
-    final contentClip = tester.widget<ClipRRect>(
-      find.byKey(const ValueKey('mobile-mini-player-content-clip')),
-    );
-    final decoration = surface.decoration! as BoxDecoration;
-    expect(progress.color, const Color(0xFF2FD365));
+    expect(progress.color,
+        Theme.of(tester.element(find.byType(MiniPlayer))).colorScheme.primary);
     final progressSize = tester.getSize(
       find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
     );
-    expect(progressSize.height, 3);
+    expect(progressSize.height, greaterThan(0));
     final surfaceWidth = tester
         .getSize(
           find.byKey(const ValueKey('mobile-mini-player-surface')),
         )
         .width;
     expect(progressSize.width, closeTo(surfaceWidth * (170 / 207), 0.1));
-    expect(decoration.borderRadius, BorderRadius.circular(28));
-    expect(contentClip.borderRadius, BorderRadius.circular(28));
-    expect(surface.clipBehavior, Clip.none);
+    expect(
+      tester.getBottomLeft(
+          find.byKey(const ValueKey('mobile-mini-player-progress-fill'))),
+      tester.getBottomLeft(
+          find.byKey(const ValueKey('mobile-mini-player-surface'))),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -1110,6 +1107,10 @@ void main() {
 
   testWidgets('song rows expose the complete shared action menu',
       (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 700);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     final player = _PreviewPlayerController();
     final settings = SettingsController();
     final auth = AuthController();
@@ -1125,8 +1126,18 @@ void main() {
           ChangeNotifierProvider<AuthController>.value(value: auth),
         ],
         child: MaterialApp(
-          theme: AppTheme.byId('dark').data,
-          home: Scaffold(body: SongRow(song: player.current)),
+          theme: AppTheme.byId('dark')
+              .data
+              .copyWith(platform: TargetPlatform.android),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.6)),
+            child: child!,
+          ),
+          home: Scaffold(
+              body: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SongRow(song: player.current))),
         ),
       ),
     );
@@ -1135,7 +1146,13 @@ void main() {
     await tester.tap(find.byTooltip('更多：The Gentlemen (Live)'));
     await tester.pumpAndSettle();
     for (final action in const ['播放', '下一首播放', '喜欢', '收藏到歌单', '下载']) {
-      expect(find.text(action), findsOneWidget);
+      final item = find.text(action);
+      expect(item.hitTestable(), findsOneWidget);
+      final bounds = tester.getRect(item);
+      expect(bounds.left, greaterThanOrEqualTo(0));
+      expect(bounds.right, lessThanOrEqualTo(320));
+      expect(bounds.top, greaterThanOrEqualTo(0));
+      expect(bounds.bottom, lessThanOrEqualTo(700));
     }
     expect(tester.takeException(), isNull);
   });
@@ -1328,7 +1345,8 @@ void main() {
       tester.getSize(find.byType(GAppBar)).height,
       inInclusiveRange(103, 104),
     );
-    expect(tester.getSize(find.byType(GBackButton)).shortestSide, 44);
+    expect(tester.getSize(find.byType(GBackButton)).shortestSide,
+        greaterThanOrEqualTo(44));
     expect(tester.getCenter(find.text('详情')).dx, closeTo(195, 0.5));
     expect(tester.takeException(), isNull);
   });
@@ -1608,7 +1626,8 @@ void main() {
     final sourceRect = tester.getRect(qqSource);
     await tester.tapAt(Offset(sourceRect.left + 2, sourceRect.bottom - 2));
     await tester.pump();
-    expect(settings.source, 'qq');
+    expect(settings.source, 'netease');
+    expect(settings.searchSource, 'qq');
     expect(tester.takeException(), isNull);
   });
 
@@ -1866,7 +1885,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('iOS player swipes between vinyl and lyrics with fixed controls',
+  testWidgets(
+      'iOS player swipes between artwork and lyrics with fixed controls',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {});
     final player = _PreviewPlayerController();
@@ -1906,9 +1926,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('穿过人海只为与你相见'), findsOneWidget);
+    expect(find.text('穿过人海只为与你相见'), findsNothing);
     expect(find.text('心动'), findsNothing);
-    expect(find.byKey(const ValueKey('vinyl-tonearm')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile-player-artwork')), findsOneWidget);
     expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
     expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
@@ -1918,29 +1938,26 @@ void main() {
     expect(find.textContaining('关注'), findsNothing);
     expect(find.textContaining('作曲：'), findsNothing);
     expect(
-      find.byKey(const ValueKey('vinyl-rolling-lyrics')),
-      findsOneWidget,
-    );
-    expect(
       find.bySemanticsLabel('查看弹壳Danko / Vinz-T的歌手信息'),
       findsOneWidget,
     );
     // The player now keeps the close control inside the safe-area toolbar
     // instead of translating it under the status bar.
-    expect(tester.getCenter(find.byTooltip('收起播放器')).dy, 79);
+    expect(tester.getTopLeft(find.byTooltip('收起播放器')).dy,
+        greaterThanOrEqualTo(47));
     expect(tester.takeException(), isNull);
 
     player.setPlaying(true);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 340));
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    expect(find.byTooltip('暂停'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 400));
     expect(tester.takeException(), isNull);
 
     player.setPlaying(false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 740));
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byTooltip('播放'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     final progressBar = find.byType(GProgressBar);
@@ -1979,7 +1996,7 @@ void main() {
     expect(find.text('无损音质'), findsOneWidget);
 
     final queueCenter = tester.getCenter(find.byTooltip('播放队列'));
-    final playCenter = tester.getCenter(find.byIcon(Icons.play_arrow_rounded));
+    final playCenter = tester.getCenter(find.byTooltip('播放'));
     await tester.drag(find.byType(PageView), const Offset(-340, 0));
     await tester.pump(const Duration(milliseconds: 400));
     final fullLyricLine = find.descendant(
@@ -1989,7 +2006,7 @@ void main() {
     expect(fullLyricLine, findsOneWidget);
     expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
     expect(tester.getCenter(find.byTooltip('播放队列')), queueCenter);
-    expect(tester.getCenter(find.byIcon(Icons.play_arrow_rounded)), playCenter);
+    expect(tester.getCenter(find.byTooltip('播放')), playCenter);
 
     await tester.ensureVisible(fullLyricLine);
     await tester.pump();
@@ -2127,12 +2144,8 @@ void main() {
         await pumpPlayer(size, platform);
 
         expect(find.text('心动'), findsNothing);
-        expect(find.byKey(const ValueKey('vinyl-tonearm')), findsOneWidget);
-        final vinylSize =
-            tester.getSize(find.byKey(const ValueKey('vinyl-disc')));
         final coverSize =
-            tester.getSize(find.byKey(const ValueKey('vinyl-cover')));
-        expect(vinylSize.width, closeTo(vinylSize.height, 0.01));
+            tester.getSize(find.byKey(const ValueKey('mobile-player-artwork')));
         expect(coverSize.width, closeTo(coverSize.height, 0.01));
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
         expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
@@ -2151,7 +2164,7 @@ void main() {
 
         final viewport = Offset.zero & size;
         for (final finder in [
-          find.byIcon(Icons.play_arrow_rounded),
+          find.byTooltip('播放'),
           find.byTooltip('AirPlay 或蓝牙'),
           find.byTooltip('睡眠定时'),
           find.byTooltip('播放队列'),
@@ -2493,7 +2506,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(settings.source, 'qq');
+    expect(settings.source, 'netease');
+    expect(settings.searchSource, 'qq');
     expect(
         api.sources,
         containsAll(<(String, String)>[

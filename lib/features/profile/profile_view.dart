@@ -11,6 +11,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/user_avatar.dart';
 import '../library/downloads_view.dart';
 import '../settings/account_security_view.dart';
+import '../settings/settings_components.dart';
 import '../settings/settings_view.dart';
 import '../tools/tools_view.dart';
 import 'edit_profile_view.dart';
@@ -89,6 +90,7 @@ class _ProfileViewState extends State<ProfileView> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
       children: [
+        const SettingsSection('账户'),
         _AccountCard(
           name: name,
           email: auth.email,
@@ -110,60 +112,62 @@ class _ProfileViewState extends State<ProfileView> {
                 }
               : () => _openLogin(context),
         ),
-        const _SectionTitle('音乐资料库'),
-        _SettingsGroup(
+        const SettingsSection('音乐资料库'),
+        SettingsGroup(
           children: [
-            _SettingRow(
+            SettingsRow(
               icon: Icons.favorite_rounded,
+              iconColor: Theme.of(context).colorScheme.primary,
               title: '喜欢的音乐',
-              subtitle: '查看收藏的歌曲',
               onTap: widget.onOpenFavorites ??
                   () => _openSongLibrary(context, favorites: true),
             ),
-            _SettingRow(
+            SettingsRow(
               icon: Icons.queue_music_rounded,
+              iconColor: const Color(0xFF625BE8),
               title: '我的歌单',
-              subtitle: '管理创建和导入的歌单',
               onTap: () => _openPlaylists(
                 context,
                 filter: UserPlaylistFilter.owned,
               ),
             ),
-            _SettingRow(
+            SettingsRow(
               icon: Icons.bookmark_rounded,
+              iconColor: const Color(0xFFF5A000),
               title: '收藏的歌单',
-              subtitle: '查看收藏的在线歌单',
               onTap: () => _openPlaylists(
                 context,
                 filter: UserPlaylistFilter.favorites,
               ),
             ),
-            _SettingRow(
+            SettingsRow(
               icon: Icons.history_rounded,
+              iconColor: const Color(0xFF5C78D3),
               title: '播放历史',
-              subtitle: '查看完整播放记录',
               onTap: widget.onOpenHistory ??
                   () => _openSongLibrary(context, favorites: false),
             ),
-            _SettingRow(
+            SettingsRow(
               icon: Icons.download_for_offline_rounded,
+              iconColor: const Color(0xFF30A9D8),
               title: '下载管理',
-              subtitle: '管理已下载的歌曲',
               onTap: () => _openPage(context, const DownloadsView()),
             ),
           ],
         ),
-        const _SectionTitle('更多'),
-        _SettingsGroup(
+        const SettingsSection('更多'),
+        SettingsGroup(
           children: [
-            _SettingRow(
+            SettingsRow(
               icon: Icons.handyman_rounded,
+              iconColor: const Color(0xFFAD54D8),
               title: '工具箱',
               subtitle: 'AI 绘画、视频解析与歌单导入',
               onTap: () => _openPage(context, const ToolsView()),
             ),
-            _SettingRow(
+            SettingsRow(
               icon: Icons.shield_outlined,
+              iconColor: const Color(0xFF31BF5A),
               title: '账号安全',
               subtitle: '登录设备、密码与账号管理',
               onTap: auth.isLoggedIn
@@ -364,7 +368,7 @@ class _RedeemCodeDialogState extends State<_RedeemCodeDialog> {
             Text(
               '输入会员兑换码，兑换后即可使用音乐播放等会员功能。',
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 13,
                 color: scheme.onSurfaceVariant,
               ),
             ),
@@ -433,13 +437,12 @@ class _AccountCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final cardColor = scheme.surfaceContainer.withValues(alpha: 0.92);
+    final cardColor = scheme.surfaceContainer;
     return Container(
-      constraints: const BoxConstraints(minHeight: 156),
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: glassHairline(context)),
+        border: Border.all(color: glassHairline(context), width: 0.7),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -447,13 +450,14 @@ class _AccountCard extends StatelessWidget {
           GPressScale(
             onTap: onAccountTap,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 102),
+              constraints: const BoxConstraints(minHeight: 88),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(
                   children: [
                     UserAvatar(
-                      radius: 32,
+                      radius: 26,
                       name: name,
                       showInitial: loggedIn,
                       imageUrl: loggedIn ? avatarUrl : null,
@@ -477,9 +481,9 @@ class _AccountCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 22,
-                              height: 1.1,
-                              fontWeight: TypeScale.heavy,
+                              fontSize: 20,
+                              height: 1.2,
+                              fontWeight: TypeScale.semibold,
                             ),
                           ),
                           const SizedBox(height: 7),
@@ -492,7 +496,7 @@ class _AccountCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 12.5,
+                              fontSize: 13,
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
@@ -510,72 +514,25 @@ class _AccountCard extends StatelessWidget {
               ),
             ),
           ),
-          GPressScale(
-            onTap: onMembershipTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 52),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(
-                          color: scheme.primary.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      child: Text(
-                        'VIP',
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer,
-                          fontSize: 11,
-                          fontWeight: TypeScale.heavy,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: membershipLoading
-                          ? Text(
-                              '正在读取会员状态',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            )
-                          : Text(
-                              loggedIn ? membershipText : '登录后开通会员',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: TypeScale.semibold,
-                              ),
-                            ),
-                    ),
-                    Text(
-                      loggedIn ? '兑换码' : '登录',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
+          Padding(
+            padding: const EdgeInsets.only(left: 58, right: 16),
+            child: Divider(
+              height: 0.5,
+              thickness: 0.5,
+              color: glassHairline(context),
             ),
+          ),
+          SettingsRow(
+            icon: Icons.star_rounded,
+            iconColor: const Color(0xFFC8A348),
+            title: '会员权益',
+            subtitle: membershipLoading
+                ? '正在读取会员状态'
+                : loggedIn
+                    ? membershipText
+                    : '登录后开通会员',
+            value: loggedIn ? '兑换码' : '登录',
+            onTap: onMembershipTap,
           ),
         ],
       ),
@@ -590,149 +547,19 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 56,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 10, 0),
-        child: Row(
-          children: [
-            const Expanded(
-              child: Text(
-                '我的',
-                style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
-              ),
-            ),
-            GIconButton(
-              icon: Icons.settings_outlined,
-              tooltip: '设置',
-              size: 20,
-              padding: 10,
-              onTap: onSettings,
-            ),
-          ],
+    return GAppBar(
+      title: '我的',
+      transparent: true,
+      actions: [
+        GIconButton(
+          icon: Icons.settings_outlined,
+          tooltip: '设置',
+          size: 22,
+          padding: 10,
+          backgroundColor: Colors.transparent,
+          onTap: onSettings,
         ),
-      ),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: TypeScale.bold,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsGroup extends StatelessWidget {
-  const _SettingsGroup({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: glassHairline(context)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            children[i],
-            if (i != children.length - 1)
-              Padding(
-                padding: const EdgeInsets.only(left: 58),
-                child: Divider(height: 1, color: glassHairline(context)),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                child: Icon(icon, size: 19, color: scheme.onSurface),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: TypeScale.semibold,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (onTap != null) ...[
-                const SizedBox(width: 6),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+      ],
     );
   }
 }

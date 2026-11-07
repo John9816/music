@@ -15,6 +15,183 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('albums are usable while daily recommendations are loading',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+    await _pumpDiscover(tester, api, settle: false);
+
+    albums.complete(api.albums);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+    expect(find.byType(GSkeletonList), findsOneWidget);
+    expect(find.byTooltip('播放每日推荐'), findsNothing);
+
+    await tester.tap(find.text('测试新专辑'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(PlaylistDetailView), findsOneWidget);
+    expect(api.albumDetailRequests.single, ('0035Y3b01o1BsG', 'qq'));
+    daily.complete(api.daily);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('daily recommendations appear while albums are loading',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+    await _pumpDiscover(tester, api, settle: false);
+
+    daily.complete(api.daily);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip('播放每日推荐').hitTestable(), findsOneWidget);
+    expect(find.text('每日歌曲'), findsNWidgets(2));
+    expect(find.byType(GSkeletonList), findsNothing);
+    expect(find.byType(GSkeleton), findsWidgets);
+    expect(find.text('测试新专辑'), findsNothing);
+
+    albums.complete(api.albums);
+    await tester.pumpAndSettle();
+    expect(find.text('测试新专辑'), findsOneWidget);
+    expect(find.byType(GSkeleton), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('daily failure exposes its retry before albums finish loading',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+    await _pumpDiscover(tester, api, settle: false);
+
+    daily.completeError(StateError('daily offline'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('重试每日推荐'), findsOneWidget);
+    expect(find.byType(GSkeleton), findsWidgets);
+    albums.complete(api.albums);
+    await tester.pumpAndSettle();
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+
+    final retry = Completer<List<Song>>();
+    api.loadDaily = () => retry.future;
+    await tester.tap(find.text('重试每日推荐'));
+    await tester.tap(find.text('重试每日推荐'));
+    await tester.pump();
+
+    expect(api.dailyRequests, 2);
+    expect(api.albumRequests, 1);
+    expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
+    expect(find.byType(GSkeletonList), findsOneWidget);
+    retry.complete(api.daily);
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('播放每日推荐'), findsOneWidget);
+    expect(find.text('重试每日推荐'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('album failure preserves daily music and retries only albums',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final albums = Completer<List<Album>>();
+    api.loadAlbums = () => albums.future;
+    await _pumpDiscover(tester, api, settle: false);
+    albums.completeError(StateError('albums offline'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('播放每日推荐').hitTestable(), findsOneWidget);
+    expect(find.text('每日歌曲'), findsNWidgets(2));
+    expect(find.text('重试最新专辑'), findsOneWidget);
+
+    final retry = Completer<List<Album>>();
+    api.loadAlbums = () => retry.future;
+    await tester.tap(find.text('重试最新专辑'));
+    await tester.pump();
+
+    expect(api.dailyRequests, 1);
+    expect(api.albumRequests, 2);
+    expect(find.byTooltip('播放每日推荐').hitTestable(), findsOneWidget);
+    retry.complete(api.albums);
+    await tester.pumpAndSettle();
+
+    expect(find.text('测试新专辑'), findsOneWidget);
+    expect(find.text('重试最新专辑'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('refresh reuses each in-flight initial request', (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+    await _pumpDiscover(tester, api, settle: false);
+    final onRefresh = tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh;
+
+    final firstRefresh = onRefresh();
+    final secondRefresh = onRefresh();
+    await tester.pump();
+    expect(api.dailyRequests, 1);
+    expect(api.albumRequests, 1);
+
+    daily.complete(api.daily);
+    albums.complete(api.albums);
+    await Future.wait([firstRefresh, secondRefresh]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('测试新专辑'), findsOneWidget);
+    expect(find.byTooltip('播放每日推荐'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('refresh updates a completed section while retaining the other',
+      (tester) async {
+    final api = _FakeDiscoverMusicApi();
+    await _pumpDiscover(tester, api);
+    final daily = Completer<List<Song>>();
+    final albums = Completer<List<Album>>();
+    api.loadDaily = () => daily.future;
+    api.loadAlbums = () => albums.future;
+    final refresh = tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh();
+    await tester.pump();
+
+    albums.complete([const Album(id: 77, name: '刚刚更新的专辑')]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('刚刚更新的专辑').hitTestable(), findsOneWidget);
+    expect(find.text('每日歌曲'), findsNWidgets(2));
+    expect(find.byType(GSkeleton), findsNothing);
+
+    daily.complete([_testSong(0)]);
+    await refresh;
+    await tester.pumpAndSettle();
+
+    expect(find.text('推荐歌曲 2'), findsNWidgets(2));
+    expect(find.text('刚刚更新的专辑'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('latest albums appear before daily recommendations',
       (tester) async {
     final api = _FakeDiscoverMusicApi();
@@ -166,7 +343,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('failed refresh retains music and offers a working retry',
+  testWidgets('failed refresh retains music and retries only its section',
       (tester) async {
     final api = _FakeDiscoverMusicApi();
     await _pumpDiscover(tester, api);
@@ -188,15 +365,17 @@ void main() {
 
     expect(errors, isEmpty);
     expect(find.text('测试新专辑'), findsOneWidget);
-    expect(find.text('刷新失败，请检查网络后重试'), findsOneWidget);
-    expect(find.widgetWithText(SnackBarAction, '重试'), findsOneWidget);
+    expect(find.text('每日歌曲'), findsNWidgets(2));
+    expect(find.text('重试每日推荐'), findsOneWidget);
 
     api.loadDaily = null;
-    await tester.tap(find.widgetWithText(SnackBarAction, '重试'));
+    await tester.tap(find.text('重试每日推荐'));
     await tester.pumpAndSettle();
 
     expect(api.dailyRequests, 3);
+    expect(api.albumRequests, 2);
     expect(find.text('测试新专辑'), findsOneWidget);
+    expect(find.text('重试每日推荐'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

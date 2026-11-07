@@ -25,16 +25,10 @@ class PlaylistCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(RadiusToken.lg),
-                    boxShadow: ShadowToken.card(context, radius: 14),
-                  ),
-                  child: AsyncCover(
-                    url: playlist.coverUrl,
-                    size: double.infinity,
-                    radius: RadiusToken.lg,
-                  ),
+                AsyncCover(
+                  url: playlist.coverUrl,
+                  size: double.infinity,
+                  radius: 10,
                 ),
                 // 播放量角标（右下）
                 if (playlist.playCount != null && playlist.playCount! > 0)
@@ -47,9 +41,6 @@ class PlaylistCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.52),
                         borderRadius: BorderRadius.circular(7),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

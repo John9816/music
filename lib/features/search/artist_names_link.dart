@@ -87,15 +87,19 @@ Future<void> openArtistInfo(
     artist = await showModalBottomSheet<Artist>(
       context: context,
       useRootNavigator: true,
+      isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .75,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -104,15 +108,40 @@ Future<void> openArtistInfo(
                   ),
                 ),
               ),
-              for (final item in available)
-                GListTile(
-                  leading: ClipOval(
-                    child: _ArtistAvatar(artist: item),
-                  ),
-                  title: Text(item.name),
-                  trailing: const Icon(Icons.chevron_right_rounded, size: 18),
-                  onTap: () => Navigator.of(sheetContext).pop(item),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 16),
+                  itemCount: available.length,
+                  itemBuilder: (_, index) {
+                    final item = available[index];
+                    return GListTile(
+                      margin: EdgeInsets.zero,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      leading: _ArtistAvatar(artist: item),
+                      title: Text(
+                        item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w400,
+                          height: 1.3,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: Theme.of(sheetContext).colorScheme.outline,
+                      ),
+                      onTap: () => Navigator.of(sheetContext).pop(item),
+                    );
+                  },
                 ),
+              ),
             ],
           ),
         ),
@@ -145,7 +174,7 @@ class _ArtistAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final initialUrl = artist.picUrl;
     if (initialUrl != null && initialUrl.isNotEmpty) {
-      return AsyncCover(url: initialUrl, size: 42, radius: 21);
+      return AsyncCover(url: initialUrl, size: 48, radius: 8);
     }
     final key = artist.name.trim().toLowerCase();
     final future = _artistInfoCache.putIfAbsent(
@@ -156,8 +185,8 @@ class _ArtistAvatar extends StatelessWidget {
       future: future,
       builder: (context, snapshot) => AsyncCover(
         url: snapshot.data?.imageUrl,
-        size: 42,
-        radius: 21,
+        size: 48,
+        radius: 8,
       ),
     );
   }

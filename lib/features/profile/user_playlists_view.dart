@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/models/playlist.dart';
 import '../../core/services/user_playlist_library.dart';
+import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../playlists/playlist_import_view.dart';
 import 'user_library_view.dart';
@@ -153,6 +155,7 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                   tooltip: '退出管理',
                   size: 18,
                   padding: 9,
+                  backgroundColor: Colors.transparent,
                   onTap: _exitSelection,
                 ),
               ]
@@ -162,6 +165,7 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                   tooltip: '管理歌单',
                   size: 18,
                   padding: 9,
+                  backgroundColor: Colors.transparent,
                   onTap: _enterSelection,
                 ),
                 if (canImport)
@@ -170,6 +174,7 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                     tooltip: '导入歌单',
                     size: 18,
                     padding: 9,
+                    backgroundColor: Colors.transparent,
                     onTap: _openImport,
                   ),
               ],
@@ -242,7 +247,7 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                       ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
-                      child: SizedBox(height: 40, child: _searchField()),
+                      child: _searchField(),
                     ),
                     Expanded(
                       child: filteredOwned.isEmpty && filteredFavorites.isEmpty
@@ -477,9 +482,28 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
   }) {
     final count = (playlist['trackCount'] as num?)?.toInt();
     return GListTile(
-      leading: const Icon(Icons.queue_music_rounded),
-      title: Text(userPlaylistName(playlist)),
-      subtitle: count == null ? null : Text('$count 首歌曲'),
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      leading: AsyncCover(
+        url:
+            Playlist.fromV1(playlist).coverUrl ?? playlist['cover']?.toString(),
+        size: 48,
+        radius: 8,
+      ),
+      title: Text(
+        userPlaylistName(playlist),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          height: 1.3,
+        ),
+      ),
+      subtitle: count == null
+          ? null
+          : Text('$count 首歌曲',
+              style: const TextStyle(fontSize: 13, height: 1.4)),
       selected: selected,
       trailing: _selectionMode
           ? Checkbox(
@@ -498,7 +522,11 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                   backgroundColor: Colors.transparent,
                   onTap: () => _deleteSingle(playlist),
                 ),
-                const Icon(Icons.chevron_right, size: 18),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ],
             ),
       onTap: _selectionMode
@@ -525,19 +553,31 @@ class _SelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      child: Row(
-        children: [
-          Text('$selectedCount/$totalCount 已选'),
-          const Spacer(),
-          TextButton(onPressed: onSelectAll, child: const Text('全选')),
-          GIconButton(
-            icon: Icons.delete_outline_rounded,
-            tooltip: '删除所选歌单',
-            size: 18,
-            padding: 9,
-            onTap: onDelete,
-          ),
-        ],
+      child: SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text('$selectedCount/$totalCount 已选'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(onPressed: onSelectAll, child: const Text('全选')),
+                GIconButton(
+                  icon: Icons.delete_outline_rounded,
+                  tooltip: '删除所选歌单',
+                  size: 18,
+                  padding: 9,
+                  backgroundColor: Colors.transparent,
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

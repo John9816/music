@@ -5,6 +5,7 @@ import '../core/network/image_request_policy.dart';
 import '../core/theme/design_tokens.dart';
 import '../core/theme/platform_motion.dart';
 import '../core/utils/image_cache_manager.dart';
+import 'glass.dart' show GPressScale;
 
 /// 网络封面图（带占位/错误态），对应 macOS 版 AsyncImageView。
 /// size 支持有限数值；传入 infinite（如歌单卡片封面）时自动填满父级，
@@ -14,7 +15,7 @@ import '../core/utils/image_cache_manager.dart';
 /// **同一路由内 tag 必须唯一**：同一首歌可能同时出现在列表和迷你栏中，
 /// 重复 tag 会直接抛异常。请用 [coverHeroTag] 生成带命名空间的 tag，
 /// 并保证同屏只有一个位置使用某个 tag（通常让迷你栏让位给列表）。
-class AsyncCover extends StatelessWidget {
+class AsyncCover extends StatefulWidget {
   const AsyncCover({
     super.key,
     required this.url,
@@ -23,6 +24,7 @@ class AsyncCover extends StatelessWidget {
     this.memCacheWidth,
     this.memCacheHeight,
     this.heroTag,
+    this.placeholderAlignment = Alignment.center,
   });
 
   final String? url;
@@ -31,66 +33,142 @@ class AsyncCover extends StatelessWidget {
   final int? memCacheWidth;
   final int? memCacheHeight;
 
+  /// Positions missing/error artwork without changing the loaded image crop.
+  final AlignmentGeometry placeholderAlignment;
+
   /// 非空时包一层 [Hero]。为空时行为与改造前完全一致。
   final Object? heroTag;
 
   @override
+  State<AsyncCover> createState() => _AsyncCoverState();
+
+  static double? _radiusOf(BuildContext context) {
+    final cover = context.findAncestorWidgetOfExactType<AsyncCover>();
+    return cover?.radius;
+  }
+
+  static double lerpDouble(double a, double b, double t) => a + (b - a) * t;
+}
+
+class _AsyncCoverState extends State<AsyncCover> {
+  int _requestGeneration = 0;
+  bool _retrying = false;
+
+  @override
+  void didUpdateWidget(AsyncCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (normalizeRemoteImageUrl(oldWidget.url) !=
+        normalizeRemoteImageUrl(widget.url)) {
+      _requestGeneration++;
+      _retrying = false;
+    }
+  }
+
+  Future<void> _retry(
+    String imageUrl,
+    int? targetWidth,
+    int? targetHeight,
+  ) async {
+    if (_retrying) return;
+    final generation = ++_requestGeneration;
+    setState(() => _retrying = true);
+    final cache = ImageCacheManager.instance;
+    final provider = ResizeImage.resizeIfNeeded(
+      targetWidth,
+      targetHeight,
+      CachedNetworkImageProvider(
+        imageUrl,
+        cacheManager: cache,
+        headers: imageRequestHeaders(imageUrl),
+        maxWidth: 512,
+        maxHeight: 512,
+      ),
+    );
+    try {
+      await Future.wait([
+        cache.removeFile(imageUrl),
+        cache.removeFile('resized_w512_h512_$imageUrl'),
+        provider.evict(),
+      ]);
+    } catch (_) {
+      // A cache cleanup failure should still leave the cover retryable.
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _retrying = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final imageUrl = normalizeRemoteImageUrl(url);
+    final size = widget.size;
+    final radius = widget.radius;
+    final imageUrl = normalizeRemoteImageUrl(widget.url);
     final requestHeaders = imageRequestHeaders(imageUrl);
     final finite = size.isFinite && size > 0;
     final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final targetWidth = memCacheWidth ??
+    final targetWidth = widget.memCacheWidth ??
         (finite ? (size * pixelRatio).ceil().clamp(1, 1024).toInt() : null);
-    final targetHeight = memCacheHeight ??
+    final targetHeight = widget.memCacheHeight ??
         (finite ? (size * pixelRatio).ceil().clamp(1, 1024).toInt() : null);
     // 尊重系统「减弱动态效果」：关闭动画时直接显示，不做淡入。
     final fadeIn = PlatformMotion.duration(context, Motion.fast);
 
-    final Widget placeholder;
-    if (finite) {
-      placeholder = Container(
-        width: size,
-        height: size,
-        color: scheme.surfaceContainerHighest,
-        child: Icon(Icons.music_note, size: size * 0.4, color: scheme.outline),
-      );
-    } else {
-      // 无限尺寸：占满父级（如歌单卡片封面）
-      placeholder = ColoredBox(
-        color: scheme.surfaceContainerHighest,
-        child: Center(
-          child: Icon(Icons.music_note, size: 32, color: scheme.outline),
+    Widget surface({IconData? icon}) => SizedBox(
+          width: finite ? size : null,
+          height: finite ? size : null,
+          child: ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Align(
+              alignment: widget.placeholderAlignment,
+              child: icon == null
+                  ? null
+                  : Icon(
+                      icon,
+                      size: finite ? (size * .4).clamp(16.0, 40.0) : 32,
+                      color: scheme.outline,
+                    ),
+            ),
+          ),
+        );
+    final loading = Semantics(label: '封面加载中', child: surface());
+
+    Widget failed() {
+      void retry() => _retry(imageUrl!, targetWidth, targetHeight);
+      return Tooltip(
+        message: '重新加载封面',
+        child: Semantics(
+          label: '重新加载封面',
+          button: true,
+          onTap: retry,
+          child: ExcludeSemantics(
+            child: GPressScale(
+              onTap: retry,
+              child: surface(icon: Icons.refresh_rounded),
+            ),
+          ),
         ),
       );
     }
 
     final Widget image;
     if (imageUrl == null) {
-      image = placeholder;
-    } else if (finite) {
-      image = CachedNetworkImage(
-        imageUrl: imageUrl,
-        httpHeaders: requestHeaders,
-        cacheManager: ImageCacheManager.instance,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        memCacheWidth: targetWidth,
-        memCacheHeight: targetHeight,
-        maxWidthDiskCache: 512,
-        maxHeightDiskCache: 512,
-        fadeInDuration: fadeIn,
-        fadeOutDuration: Duration.zero,
-        placeholder: (_, __) => placeholder,
-        errorWidget: (_, __, ___) => placeholder,
+      image = Semantics(
+        label: '暂无封面',
+        image: true,
+        child: surface(icon: Icons.music_note),
       );
+    } else if (_retrying) {
+      image = loading;
     } else {
       image = CachedNetworkImage(
+        key: ValueKey((imageUrl, _requestGeneration)),
         imageUrl: imageUrl,
         httpHeaders: requestHeaders,
         cacheManager: ImageCacheManager.instance,
+        width: finite ? size : null,
+        height: finite ? size : null,
         fit: BoxFit.cover,
         memCacheWidth: targetWidth,
         memCacheHeight: targetHeight,
@@ -98,8 +176,8 @@ class AsyncCover extends StatelessWidget {
         maxHeightDiskCache: 512,
         fadeInDuration: fadeIn,
         fadeOutDuration: Duration.zero,
-        placeholder: (_, __) => placeholder,
-        errorWidget: (_, __, ___) => placeholder,
+        placeholder: (_, __) => loading,
+        errorWidget: (_, __, ___) => failed(),
       );
     }
 
@@ -108,7 +186,7 @@ class AsyncCover extends StatelessWidget {
       child: finite ? image : SizedBox.expand(child: image),
     );
 
-    final tag = heroTag;
+    final tag = widget.heroTag;
     if (tag == null) return clipped;
     return Hero(
       tag: tag,
@@ -123,8 +201,8 @@ class AsyncCover extends StatelessWidget {
       ) {
         final fromCover = fromContext.widget as Hero;
         final toCover = toContext.widget as Hero;
-        final fromRadius = _radiusOf(fromContext) ?? radius;
-        final toRadius = _radiusOf(toContext) ?? radius;
+        final fromRadius = AsyncCover._radiusOf(fromContext) ?? radius;
+        final toRadius = AsyncCover._radiusOf(toContext) ?? radius;
         final child = direction == HeroFlightDirection.push
             ? toCover.child
             : fromCover.child;
@@ -136,7 +214,7 @@ class AsyncCover extends StatelessWidget {
                 : 1 - animation.value;
             return ClipRRect(
               borderRadius: BorderRadius.circular(
-                lerpDouble(fromRadius, toRadius, t),
+                AsyncCover.lerpDouble(fromRadius, toRadius, t),
               ),
               child: child,
             );
@@ -146,13 +224,6 @@ class AsyncCover extends StatelessWidget {
       child: clipped,
     );
   }
-
-  static double? _radiusOf(BuildContext context) {
-    final cover = context.findAncestorWidgetOfExactType<AsyncCover>();
-    return cover?.radius;
-  }
-
-  static double lerpDouble(double a, double b, double t) => a + (b - a) * t;
 }
 
 /// 生成带命名空间的封面 Hero tag，避免不同列表间意外撞 tag。

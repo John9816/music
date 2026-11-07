@@ -41,6 +41,7 @@ class SettingsView extends StatelessWidget {
             children: [
               SettingsRow(
                 icon: Icons.language_rounded,
+                iconColor: const Color(0xFF30A9D8),
                 title: '音乐源',
                 subtitle: '推荐、搜索、歌单与播放使用的数据源',
                 value:
@@ -54,6 +55,7 @@ class SettingsView extends StatelessWidget {
             children: [
               SettingsRow(
                 icon: Icons.brightness_6_rounded,
+                iconColor: const Color(0xFF625BE8),
                 title: '深浅模式',
                 subtitle: '深色、浅色或跟随系统',
                 value: const {
@@ -66,6 +68,7 @@ class SettingsView extends StatelessWidget {
               ),
               SettingsRow(
                 icon: Icons.palette_outlined,
+                iconColor: const Color(0xFFAD54D8),
                 title: '主题色',
                 subtitle: '调整强调色与界面氛围',
                 value: AppAccent.byId(settings.accentId).name,
@@ -73,6 +76,7 @@ class SettingsView extends StatelessWidget {
               ),
               SettingsRow(
                 icon: Icons.blur_circular_rounded,
+                iconColor: const Color(0xFF509DE0),
                 title: '液态玻璃质量',
                 subtitle: '影响导航、播放栏与弹出菜单',
                 value: const {
@@ -85,6 +89,7 @@ class SettingsView extends StatelessWidget {
               ),
               SettingsRow(
                 icon: Icons.auto_awesome_rounded,
+                iconColor: const Color(0xFF818188),
                 title: '减弱动态效果',
                 subtitle: '减少封面、歌词和页面过渡动画',
                 trailing: SettingsSwitch(
@@ -101,6 +106,7 @@ class SettingsView extends StatelessWidget {
             children: [
               SettingsRow(
                 icon: Icons.graphic_eq_rounded,
+                iconColor: const Color(0xFFF5A000),
                 title: '默认播放音质',
                 subtitle:
                     '${sourceDisplayName(settings.source)}${qualitySupportSummary(settings.source)}',
@@ -112,6 +118,7 @@ class SettingsView extends StatelessWidget {
               ),
               SettingsRow(
                 icon: Icons.timer_outlined,
+                iconColor: const Color(0xFF5C78D3),
                 title: '睡眠定时',
                 subtitle: sleepTimer.isActive
                     ? '剩余 ${sleepTimer.displayText}，点击可重新设置'
@@ -126,6 +133,7 @@ class SettingsView extends StatelessWidget {
             children: [
               SettingsRow(
                 icon: Icons.inventory_2_outlined,
+                iconColor: const Color(0xFF8E8E93),
                 title: '存储与缓存',
                 subtitle: '下载音质、缓存上限、有效期与分类清理',
                 onTap: () => _open(context, const StorageSettingsView()),
@@ -133,6 +141,7 @@ class SettingsView extends StatelessWidget {
               if (desktop)
                 SettingsRow(
                   icon: Icons.desktop_mac_outlined,
+                  iconColor: const Color(0xFF4C98D5),
                   title: '桌面与快捷键',
                   subtitle: '状态栏歌词、全局快捷键与窗口控制',
                   onTap: () => _open(context, const DesktopSettingsView()),
@@ -140,6 +149,7 @@ class SettingsView extends StatelessWidget {
               if (Platform.isMacOS || Platform.isWindows)
                 SettingsRow(
                   icon: Icons.phone_iphone_outlined,
+                  iconColor: const Color(0xFF5A6AB8),
                   title: 'iOS 安装中心',
                   subtitle: '从 ECS 获取 IPA，在本机签名、安装和刷新',
                   onTap: () => _open(context, const IosSideloadView()),
@@ -152,12 +162,14 @@ class SettingsView extends StatelessWidget {
               if (Platform.isAndroid) const AndroidMediaStatusRow(),
               SettingsRow(
                 icon: Icons.notifications_rounded,
+                iconColor: const Color(0xFFFF453A),
                 title: '通知',
                 subtitle: '查看服务通知与重要公告',
                 onTap: () => _open(context, const NotificationsView()),
               ),
               SettingsRow(
                 icon: Icons.info_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
                 title: '关于 ${AppConfig.appName}',
                 subtitle: '版本、更新与服务状态',
                 onTap: () => _open(context, const AboutView()),
@@ -359,81 +371,21 @@ class _AndroidMediaStatusRowState extends State<AndroidMediaStatusRow>
         : _enabled == true
             ? '锁屏、通知中心和系统媒体卡可显示播放控制'
             : '开启后才能显示锁屏与通知中心的上一首、播放和下一首';
-    return GPressScale(
+    return SettingsRow(
+      icon: _enabled == true
+          ? Icons.multitrack_audio_rounded
+          : Icons.notifications_paused_outlined,
+      iconColor: _enabled == true ? scheme.primary : const Color(0xFF8E8E93),
+      title: title,
+      subtitle: subtitle,
+      value: _loading ? null : (_enabled == true ? '已开启' : '去开启'),
+      trailing: _loading
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : null,
       onTap: _loading ? null : _open,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 72),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                child: Icon(
-                  _enabled == true
-                      ? Icons.multitrack_audio_rounded
-                      : Icons.notifications_paused_outlined,
-                  size: 20,
-                  color: _enabled == true
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: TypeScale.semibold,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_loading)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else ...[
-                Text(
-                  _enabled == true ? '已开启' : '去开启',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: TypeScale.semibold,
-                    color: _enabled == true
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 19,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

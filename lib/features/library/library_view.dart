@@ -228,7 +228,10 @@ class _LibraryViewState extends State<LibraryView> {
     return Scaffold(
       body: LayoutBuilder(builder: (context, constraints) {
         final desktop = constraints.maxWidth >= GBreakpoints.contentSplit;
-        final padding = desktop ? 24.0 : 18.0;
+        final platform = Theme.of(context).platform;
+        final mobile = platform == TargetPlatform.android ||
+            platform == TargetPlatform.iOS;
+        final padding = desktop && !mobile ? 24.0 : 20.0;
         return FutureBuilder<_LibraryData>(
           key: ValueKey(_sessionVersion),
           future: _future,
@@ -245,6 +248,7 @@ class _LibraryViewState extends State<LibraryView> {
                   SliverToBoxAdapter(
                     child: _LibraryHeader(
                       desktop: desktop,
+                      mobile: mobile,
                       onImport: _openImport,
                       onCreate: _openCreatePlaylist,
                     ),
@@ -253,6 +257,7 @@ class _LibraryViewState extends State<LibraryView> {
                     padding: EdgeInsets.symmetric(horizontal: padding),
                     sliver: SliverToBoxAdapter(
                       child: _LibraryGrid(
+                        flat: mobile,
                         playlistCount: data?.playlists.length,
                         favoriteCount: data?.favoriteCount,
                         downloadCount: _downloadsReady
@@ -273,7 +278,9 @@ class _LibraryViewState extends State<LibraryView> {
                   ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(padding, 28, padding, 14),
+                      padding: mobile
+                          ? EdgeInsets.zero
+                          : EdgeInsets.fromLTRB(padding, 28, padding, 14),
                       child: SectionHeader(
                         '我的歌单',
                         subtitle: playlists.isEmpty
@@ -320,17 +327,57 @@ class _LibraryViewState extends State<LibraryView> {
                   else if (playlists.isNotEmpty)
                     SliverPadding(
                       padding: EdgeInsets.symmetric(horizontal: padding),
-                      sliver: SliverList.separated(
-                        itemCount: playlists.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final playlist = playlists[index];
-                          return _OwnedPlaylistRow(
-                            playlist: playlist,
-                            onTap: () => _openPlaylist(playlist),
-                          );
-                        },
-                      ),
+                      sliver: mobile
+                          ? SliverLayoutBuilder(
+                              builder: (context, constraints) {
+                                final textScaler =
+                                    MediaQuery.textScalerOf(context);
+                                final columns =
+                                    constraints.crossAxisExtent < 320 &&
+                                            textScaler.scale(15) > 22.5
+                                        ? 1
+                                        : 2;
+                                final coverSize = (constraints.crossAxisExtent -
+                                        16 * (columns - 1)) /
+                                    columns;
+                                final cardHeight = coverSize +
+                                    10 +
+                                    textScaler.scale(15) * 1.25 * 2 +
+                                    3 +
+                                    textScaler.scale(13) * 1.2 +
+                                    4;
+                                return SliverGrid.builder(
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 20,
+                                    mainAxisExtent: cardHeight,
+                                  ),
+                                  itemCount: playlists.length,
+                                  itemBuilder: (context, index) {
+                                    final playlist = playlists[index];
+                                    return _OwnedPlaylistRow(
+                                      playlist: playlist,
+                                      artworkFirst: true,
+                                      onTap: () => _openPlaylist(playlist),
+                                    );
+                                  },
+                                );
+                              },
+                            )
+                          : SliverList.separated(
+                              itemCount: playlists.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final playlist = playlists[index];
+                                return _OwnedPlaylistRow(
+                                  playlist: playlist,
+                                  onTap: () => _openPlaylist(playlist),
+                                );
+                              },
+                            ),
                     )
                   else if (!hasError)
                     SliverToBoxAdapter(
@@ -405,16 +452,37 @@ class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
 class _LibraryHeader extends StatelessWidget {
   const _LibraryHeader({
     required this.desktop,
+    required this.mobile,
     required this.onImport,
     required this.onCreate,
   });
 
   final bool desktop;
+  final bool mobile;
   final VoidCallback onImport;
   final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
+    if (mobile) {
+      return GAppBar(
+        title: '资料库',
+        actions: [
+          GIconButton(
+            icon: CupertinoIcons.link,
+            tooltip: '导入歌单',
+            backgroundColor: Colors.transparent,
+            onTap: onImport,
+          ),
+          GIconButton(
+            icon: CupertinoIcons.add,
+            tooltip: '新建歌单',
+            backgroundColor: Colors.transparent,
+            onTap: onCreate,
+          ),
+        ],
+      );
+    }
     final textScaler = MediaQuery.textScalerOf(context);
     final titleSize = desktop ? 28.0 : 27.0;
     final scaledHeight = textScaler.scale(titleSize);
@@ -500,6 +568,7 @@ class _HeaderButton extends StatelessWidget {
 
 class _LibraryGrid extends StatelessWidget {
   const _LibraryGrid({
+    required this.flat,
     required this.playlistCount,
     required this.favoriteCount,
     required this.downloadCount,
@@ -512,6 +581,7 @@ class _LibraryGrid extends StatelessWidget {
     required this.onDownloads,
   });
 
+  final bool flat;
   final int? playlistCount;
   final int? favoriteCount;
   final int? downloadCount;
@@ -527,8 +597,9 @@ class _LibraryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       _LibraryCard(
+        flat: flat,
         icon: CupertinoIcons.heart_fill,
-        title: '喜欢',
+        title: flat ? '喜欢的音乐' : '喜欢',
         subtitle: !signedIn
             ? '登录后查看'
             : favoriteCount == null
@@ -538,6 +609,7 @@ class _LibraryGrid extends StatelessWidget {
         onTap: onFavorites,
       ),
       _LibraryCard(
+        flat: flat,
         icon: CupertinoIcons.clock_fill,
         title: '播放历史',
         subtitle: '查看完整记录',
@@ -545,14 +617,16 @@ class _LibraryGrid extends StatelessWidget {
         onTap: onHistory,
       ),
       _LibraryCard(
+        flat: flat,
         icon: CupertinoIcons.bookmark_fill,
         title: '我的歌单',
         subtitle: playlistCount == null ? '整理喜欢的音乐' : '$playlistCount 个歌单',
         onTap: onPlaylists,
       ),
       _LibraryCard(
+        flat: flat,
         icon: CupertinoIcons.arrow_down_circle_fill,
-        title: '下载',
+        title: flat ? '下载的音乐' : '下载',
         subtitle: downloadCount == null
             ? '管理离线音乐'
             : downloadingCount > 0
@@ -561,6 +635,28 @@ class _LibraryGrid extends StatelessWidget {
         onTap: onDownloads,
       ),
     ];
+
+    if (flat) {
+      return Column(
+        children: [
+          for (var index = 0; index < items.length; index++) ...[
+            items[index],
+            if (index != items.length - 1)
+              Padding(
+                padding: const EdgeInsets.only(left: 44),
+                child: Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.45),
+                ),
+              ),
+          ],
+        ],
+      );
+    }
 
     final largeText = MediaQuery.textScalerOf(context).scale(15) > 21;
     return LayoutBuilder(builder: (context, constraints) {
@@ -610,6 +706,7 @@ class _LibraryGrid extends StatelessWidget {
 
 class _LibraryCard extends StatelessWidget {
   const _LibraryCard({
+    required this.flat,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -618,6 +715,7 @@ class _LibraryCard extends StatelessWidget {
     this.coverUrl,
   });
 
+  final bool flat;
   final IconData icon;
   final String title;
   final String subtitle;
@@ -628,6 +726,53 @@ class _LibraryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (flat) {
+      return GPressScale(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 15),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 28,
+                child: Icon(icon, size: 27, color: scheme.primary),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 19,
+                        height: 1.25,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.2,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(
+                CupertinoIcons.chevron_right,
+                size: 16,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return GPressScale(
       onTap: onTap,
       child: Container(
@@ -700,10 +845,15 @@ class _LibraryCard extends StatelessWidget {
 }
 
 class _OwnedPlaylistRow extends StatelessWidget {
-  const _OwnedPlaylistRow({required this.playlist, required this.onTap});
+  const _OwnedPlaylistRow({
+    required this.playlist,
+    required this.onTap,
+    this.artworkFirst = false,
+  });
 
   final Map<String, dynamic> playlist;
   final VoidCallback onTap;
+  final bool artworkFirst;
 
   @override
   Widget build(BuildContext context) {
@@ -718,6 +868,47 @@ class _OwnedPlaylistRow extends StatelessWidget {
             ? '自建歌单'
             : '导入歌单')
         : '$count 首歌曲';
+    if (artworkFirst) {
+      return GPressScale(
+        onTap: userPlaylistId(playlist) == null ? null : onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: AsyncCover(
+                url: cover?.toString(),
+                size: double.infinity,
+                radius: 10,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              userPlaylistName(playlist),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.25,
+                fontWeight: FontWeight.w500,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.2,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return GPressScale(
       onTap: userPlaylistId(playlist) == null ? null : onTap,
       child: Container(

@@ -2,10 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:duck_music/core/api/api_client.dart';
+import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/player/player_controller.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/search/search_view.dart';
+import 'package:duck_music/features/search/artist_detail_view.dart';
+import 'package:duck_music/features/playlists/playlist_detail_view.dart';
+import 'package:duck_music/widgets/song_row.dart';
 import 'package:duck_music/widgets/glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,23 +18,32 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-typedef _SearchRequest = ({String keyword, String type, int page});
+typedef _SearchRequest = ({
+  String keyword,
+  String type,
+  int page,
+  String source
+});
 
 late Future<http.Response> Function(_SearchRequest) _respond;
 final _requests = <_SearchRequest>[];
+final _detailRequests = <Uri>[];
 
 void main() {
   setUpAll(() {
     http.runWithClient(
       () => ApiClient.instance,
       () => MockClient((request) {
-        expect(request.url.path, '/api/v1/music/search');
-        expect(request.url.queryParameters['source'], 'netease');
+        if (request.url.path != '/api/v1/music/search') {
+          _detailRequests.add(request.url);
+          return Future.value(_emptyResults());
+        }
         expect(request.url.queryParameters['pageSize'], '30');
         final search = (
           keyword: request.url.queryParameters['keyword']!,
           type: request.url.queryParameters['type']!,
           page: int.parse(request.url.queryParameters['page']!),
+          source: request.url.queryParameters['source']!,
         );
         _requests.add(search);
         return _respond(search);
@@ -41,10 +54,118 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(const {});
     _requests.clear();
+    _detailRequests.clear();
     _respond = (request) async => request.type == 'SONG' && request.page == 1
         ? _songs(30)
         : _emptyResults();
   });
+
+  testWidgets('saved search source remains separate from the browsing source',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {
+      'music_source': 'kuwo',
+      'search_music_source': 'qq',
+    });
+    await _pumpSearch(tester);
+    expect(_requests.map((request) => request.source), everyElement('qq'));
+    expect(_requests, hasLength(4));
+
+    await tester.tap(find.byKey(const ValueKey('search_source_netease')));
+    await tester.pumpAndSettle();
+    expect(_requests, hasLength(8));
+    expect(_requests.skip(4).map((request) => request.source),
+        everyElement('netease'));
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('music_source'), 'kuwo');
+    expect(preferences.getString('search_music_source'), 'netease');
+    final restored = SettingsController();
+    addTearDown(restored.dispose);
+    await restored.load();
+    expect(restored.source, 'kuwo');
+    expect(restored.searchSource, 'netease');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('rapid source changes reset pages and reject stale results',
+      (tester) async {
+    final green = Completer<http.Response>();
+    _respond = (request) async => switch (request.source) {
+          'qq' => await green.future,
+          'kuwo' => _songs(1, start: 90, source: 'kuwo'),
+          _ => _songs(30, start: (request.page - 1) * 30),
+        };
+    await _pumpSearch(tester, size: const Size(390, 844));
+    await _tapPagination(tester, '下一页');
+    expect(find.text('第 2 页'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('search_source_qq')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('search_source_kuwo')));
+    await tester.pumpAndSettle();
+    green.complete(_songs(1, start: 60, source: 'qq'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('第 1 页'), findsOneWidget);
+    expect(find.text('歌曲 90'), findsOneWidget);
+    expect(find.text('歌曲 60'), findsNothing);
+    expect(tester.widget<SongRow>(find.byType(SongRow)).song.source, 'kuwo');
+    expect(_requests.map((request) => (request.source, request.page)),
+        [('netease', 1), ('netease', 2), ('qq', 1), ('kuwo', 1)]);
+    expect(
+        tester
+            .element(find.byType(SearchView))
+            .read<SettingsController>()
+            .source,
+        'netease');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final kind in ['歌手', '专辑', '歌单']) {
+    testWidgets(
+        '$kind details inherit the search source when metadata omits it',
+        (tester) async {
+      SharedPreferences.setMockInitialValues(const {
+        'music_source': 'netease',
+        'search_music_source': 'qq',
+      });
+      _respond = (request) async => switch (request.type) {
+            'ARTIST' => _artists(1, source: null),
+            'ALBUM' => _success(const {
+                'albums': [
+                  {'id': '22', 'name': '搜索专辑', 'artist': '测试歌手'}
+                ],
+              }),
+            'PLAYLIST' => _playlists(source: null),
+            _ => _emptyResults(),
+          };
+      await _pumpSearch(tester, size: const Size(390, 844));
+      await _tapType(tester, kind);
+      final title = switch (kind) {
+        '歌手' => '歌手 0',
+        '专辑' => '搜索专辑',
+        _ => '一张适合安静工作时聆听的精选歌单',
+      };
+      await tester.tap(find.text(title));
+      await tester.pumpAndSettle();
+      if (kind == '歌手') {
+        expect(
+            tester
+                .widget<ArtistDetailView>(find.byType(ArtistDetailView))
+                .source,
+            'qq');
+      } else {
+        expect(
+            tester
+                .widget<PlaylistDetailView>(find.byType(PlaylistDetailView))
+                .playlist
+                .source,
+            'qq');
+      }
+      expect(_detailRequests, isNotEmpty);
+      expect(_detailRequests.map((uri) => uri.queryParameters['source']),
+          everyElement('qq'));
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('an empty desktop next page retains the last successful results',
       (tester) async {
@@ -99,6 +220,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('large-text phone pagination keeps both directions usable',
+      (tester) async {
+    _respond = (request) async =>
+        _songs(request.page == 1 ? 30 : 1, start: request.page == 1 ? 0 : 30);
+    await _pumpSearch(tester, size: const Size(320, 700), textScale: 2);
+    final initialRequests = _requests.length;
+    await _tapPagination(tester, '上一页');
+    expect(_requests.length, initialRequests);
+    await _tapPagination(tester, '下一页');
+    expect(find.text('第 2 页'), findsOneWidget);
+    expect(find.text('歌曲 30'), findsOneWidget);
+    await _tapPagination(tester, '上一页');
+    expect(find.text('第 1 页'), findsOneWidget);
+    expect(find.text('歌曲 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shrinking completed combined results keeps artists visible',
       (tester) async {
     _respond = (request) async =>
@@ -134,7 +272,8 @@ void main() {
     await _tapPagination(tester, '下一页');
 
     expect(find.text('歌手 30'), findsOneWidget);
-    expect(_requests, [(keyword: '测试', type: 'ARTIST', page: 2)]);
+    expect(_requests,
+        [(keyword: '测试', type: 'ARTIST', page: 2, source: 'netease')]);
     expect(tester.takeException(), isNull);
   });
 
@@ -274,11 +413,14 @@ Future<void> _pumpSearch(
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   final settings = SettingsController();
+  await settings.load();
   final player = PlayerController(settings: settings);
+  final auth = AuthController();
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox.shrink());
     player.dispose();
     settings.dispose();
+    auth.dispose();
     tester.view.resetDevicePixelRatio();
     tester.view.resetPhysicalSize();
   });
@@ -288,6 +430,7 @@ Future<void> _pumpSearch(
       providers: [
         ChangeNotifierProvider<PlayerController>.value(value: player),
         ChangeNotifierProvider<SettingsController>.value(value: settings),
+        ChangeNotifierProvider<AuthController>.value(value: auth),
       ],
       child: MaterialApp(
         theme: AppTheme.byId('dark').data.copyWith(
@@ -333,22 +476,20 @@ Future<void> _tapPagination(WidgetTester tester, String label) async {
 }
 
 Future<void> _tapType(WidgetTester tester, String label) async {
-  final button = find.descendant(
-    of: find.byType(GSegmented),
-    matching: find.text(label),
-  );
+  final button = find.widgetWithText(GPressScale, label);
   await tester.ensureVisible(button);
   await tester.tap(button);
   await tester.pumpAndSettle();
 }
 
-http.Response _songs(int count, {int start = 0}) => _success({
+http.Response _songs(int count, {int start = 0, String source = 'netease'}) =>
+    _success({
       'list': List.generate(count, (index) {
         final id = start + index;
         return {
           'id': '$id',
           'name': '歌曲 $id',
-          'source': 'netease',
+          'source': source,
           'artist': '测试歌手',
           'artistId': '10',
           'artistIds': ['10'],
@@ -361,13 +502,15 @@ http.Response _songs(int count, {int start = 0}) => _success({
       }),
     });
 
-http.Response _artists(int count, {int start = 0}) => _success({
+http.Response _artists(int count,
+        {int start = 0, String? source = 'netease'}) =>
+    _success({
       'artists': List.generate(count, (index) {
         final id = start + index;
         return {
           'id': '$id',
           'name': '歌手 $id',
-          'source': 'netease',
+          'source': source,
           'coverUrl': null,
           'trackCount': 10,
         };
@@ -381,12 +524,12 @@ http.Response _emptyResults() => _success(const {
       'artists': [],
     });
 
-http.Response _playlists() => _success(const {
+http.Response _playlists({String? source = 'netease'}) => _success({
       'playlists': [
         {
           'id': '42',
           'name': '一张适合安静工作时聆听的精选歌单',
-          'source': 'netease',
+          'source': source,
           'coverUrl': null,
           'description': '适合专注与放松的音乐',
           'creatorName': '测试歌单创建者',

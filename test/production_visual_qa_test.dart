@@ -2,20 +2,28 @@
 // --dart-define=DUCKMUSIC_EXPORT_QA=true and
 // --dart-define=DUCKMUSIC_QA_FONT=/absolute/path/to/a/Chinese/font.ttf.
 // Fixtures never sign in to a real account or call the production service.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:duck_music/core/api/api_client.dart';
+import 'package:duck_music/core/api/music_api.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
+import 'package:duck_music/core/models/playlist.dart';
 import 'package:duck_music/core/player/player_controller.dart';
 import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/home/home_shell.dart';
+import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/player/player_view.dart';
+import 'package:duck_music/features/playlists/playlist_detail_view.dart';
+import 'package:duck_music/features/profile/user_library_view.dart';
+import 'package:duck_music/features/profile/user_playlists_view.dart';
+import 'package:duck_music/features/search/artist_names_link.dart';
 import 'package:duck_music/features/settings/settings_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -47,6 +55,19 @@ void main() {
   });
   setUp(() => SharedPreferences.setMockInitialValues(const {}));
 
+  testWidgets('visual QA independent home sections', (tester) async {
+    final daily = Completer<List<Song>>();
+    await _pump(tester,
+        size: const Size(390, 844),
+        child: DiscoverView(api: _PartialDiscoverApi(daily.future)));
+    expect(find.text('日落以后'), findsOneWidget);
+    await _verifyAndCapture(tester, 'home-albums-ready');
+    daily.completeError(StateError('offline fixture'));
+    await tester.pumpAndSettle();
+    expect(find.text('重试每日推荐'), findsOneWidget);
+    await _verifyAndCapture(tester, 'home-daily-error');
+  });
+
   for (final fixture in [
     (name: 'library-phone', size: const Size(390, 844), macOS: false),
     (name: 'library-mac-compact', size: const Size(700, 700), macOS: true),
@@ -66,6 +87,51 @@ void main() {
         await tester.pumpAndSettle();
       }
       await _verifyAndCapture(tester, fixture.name);
+    });
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets('visual QA secondary pages dark=$dark', (tester) async {
+      final mode = dark ? 'dark' : 'light';
+      await _pump(tester,
+          size: const Size(390, 844),
+          dark: dark,
+          child: const UserPlaylistsView());
+      await _verifyAndCapture(tester, 'playlist-directory-$mode');
+      await tester.tap(find.byTooltip('管理歌单'));
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'playlist-directory-selection-$mode');
+    });
+
+    testWidgets('visual QA phone primary pages ${dark ? 'dark' : 'light'}',
+        (tester) async {
+      await _pump(tester,
+          size: const Size(390, 844), dark: dark, child: const HomeShell());
+      final mode = dark ? 'dark' : 'light';
+      await _verifyAndCapture(tester, 'home-phone-$mode');
+      await tester.tap(find.text('资料库').last);
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'library-phone-$mode');
+      await tester.tap(find.text('搜索').last);
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'search-phone-$mode');
+      await tester.enterText(find.byType(TextField).last, '晚风');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'search-results-phone-$mode');
+      await tester.tap(find.byTooltip('更多：晚风轻轻').first);
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'song-menu-phone-$mode');
+      await tester.tapAt(const Offset(2, 80));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('我的').last);
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'profile-phone-$mode');
+      await tester.tap(find.byTooltip('设置'));
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'settings-phone-$mode');
     });
   }
 
@@ -120,12 +186,110 @@ void main() {
     });
   }
 
+  testWidgets('visual QA long artist chooser with large text', (tester) async {
+    await _pump(tester, size: const Size(320, 700), scale: 2,
+        child: Scaffold(body: Builder(builder: (context) {
+      return TextButton(
+        onPressed: () => openArtistInfo(context, artists: [
+          for (var index = 1; index <= 12; index++)
+            Artist(id: index, name: '合作歌手 $index'),
+        ]),
+        child: const Text('选择歌手'),
+      );
+    })));
+    await tester.tap(find.text('选择歌手'));
+    await tester.pumpAndSettle();
+    await _verifyAndCapture(tester, 'artist-chooser-large-text');
+  });
+
+  for (final fixture in [
+    (name: 'playlist-phone', size: const Size(390, 844), scale: 1.0),
+    (name: 'playlist-small-large-text', size: const Size(320, 700), scale: 1.5),
+    (name: 'playlist-landscape', size: const Size(812, 375), scale: 1.5),
+  ]) {
+    testWidgets('visual QA ${fixture.name}', (tester) async {
+      await _pump(tester,
+          size: fixture.size,
+          scale: fixture.scale,
+          dark: true,
+          child: PlaylistDetailView(
+            playlist: Playlist(
+                id: 42,
+                name: '让音乐陪你度过每一个日落',
+                creatorName: '城市漫游者',
+                trackCount: 3),
+            loader: () async => _songData.map(Song.fromV1).toList(),
+          ));
+      await _verifyAndCapture(tester, fixture.name);
+    });
+  }
+
   testWidgets('visual QA settings large text', (tester) async {
     await _pump(tester,
         size: const Size(390, 844), scale: 1.5, child: const SettingsView());
     expect(find.text('减弱动态效果'), findsOneWidget);
     await _verifyAndCapture(tester, 'settings-large-text');
   });
+
+  for (final fixture in [
+    (name: 'owned-playlist-phone', size: const Size(390, 844), scale: 1.0),
+    (name: 'owned-playlist-large-text', size: const Size(320, 700), scale: 2.0),
+  ]) {
+    testWidgets('visual QA ${fixture.name}', (tester) async {
+      await _pump(tester,
+          size: fixture.size,
+          scale: fixture.scale,
+          dark: true,
+          child: UserLibraryView(
+            title: '下班后的慢时光',
+            loader: () async => _songData.map(Song.fromV1).toList(),
+            onRemove: (_) async {},
+            onSync: () async {},
+          ));
+      await _verifyAndCapture(tester, fixture.name);
+      await tester.ensureVisible(find.byTooltip('更多：晚风轻轻'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('更多：晚风轻轻'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('从歌单移除'));
+      await tester.pumpAndSettle();
+      expect(find.text('从歌单移除').hitTestable(), findsOneWidget);
+      await _verifyAndCapture(
+          tester,
+          fixture.scale == 1
+              ? 'owned-playlist-song-menu'
+              : 'owned-menu-large-text');
+    });
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets('visual QA owned playlist loading states dark=$dark',
+        (tester) async {
+      final initial = Completer<List<Song>>();
+      final refresh = Completer<List<Song>>();
+      var loads = 0;
+      final mode = dark ? 'dark' : 'light';
+      await _pump(tester,
+          size: const Size(390, 844),
+          dark: dark,
+          child: UserLibraryView(
+            title: '下班后的慢时光',
+            loader: () => ++loads == 1 ? initial.future : refresh.future,
+          ));
+      await _verifyAndCapture(tester, 'owned-loading-$mode');
+      initial.complete(_songData.map(Song.fromV1).toList());
+      await tester.pumpAndSettle();
+      final refreshDone = tester
+          .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+          .onRefresh();
+      await tester.pump(const Duration(milliseconds: 200));
+      await _verifyAndCapture(tester, 'owned-refreshing-$mode');
+      refresh.completeError(StateError('offline fixture'));
+      await refreshDone;
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(tester, 'owned-refresh-error-$mode');
+    });
+  }
 }
 
 Future<void> _pump(WidgetTester tester,
@@ -177,6 +341,9 @@ Future<void> _pump(WidgetTester tester,
             padding: platform == TargetPlatform.macOS
                 ? EdgeInsets.zero
                 : const EdgeInsets.only(top: 24, bottom: 24),
+            viewPadding: platform == TargetPlatform.macOS
+                ? EdgeInsets.zero
+                : const EdgeInsets.only(top: 24, bottom: 24),
             disableAnimations: true,
             textScaler: TextScaler.linear(scale),
           ),
@@ -215,6 +382,20 @@ class _PreviewAuth extends AuthController {
   String get username => '音乐爱好者';
   @override
   bool get isLoggedIn => true;
+}
+
+class _PartialDiscoverApi extends MusicApi {
+  _PartialDiscoverApi(this.daily);
+  final Future<List<Song>> daily;
+
+  @override
+  Future<List<Song>> getDailyRecommend({String source = 'netease'}) => daily;
+
+  @override
+  Future<List<Album>> getNewestAlbums({String source = 'netease'}) async => [
+        const Album(id: 12, name: '日落以后'),
+        const Album(id: 13, name: '明天也要好好生活'),
+      ];
 }
 
 class _PreviewPlayer extends PlayerController {

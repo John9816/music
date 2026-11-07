@@ -58,6 +58,24 @@ void main() {
     expect(restored.shortcutBindings, contains('playPause'));
   });
 
+  test('legacy music source seeds search once without linking future changes',
+      () async {
+    SharedPreferences.setMockInitialValues(const {'music_source': 'qq'});
+    final settings = SettingsController();
+    addTearDown(settings.dispose);
+    await settings.load();
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('search_music_source'), 'qq');
+
+    await settings.setSource('kuwo');
+    final restored = SettingsController();
+    addTearDown(restored.dispose);
+    await restored.load();
+    expect(restored.source, 'kuwo');
+    expect(restored.searchSource, 'qq');
+    expect(preferences.getString('search_music_source'), 'qq');
+  });
+
   test('playback quality is saved independently for each music source',
       () async {
     SharedPreferences.setMockInitialValues(const {'quality': 'hires'});

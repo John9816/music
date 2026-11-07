@@ -95,7 +95,7 @@ class GPageHeader extends StatelessWidget {
     return Padding(
       padding: padding ??
           (compact
-              ? EdgeInsets.fromLTRB(18 + windowControlsInset, 18, 18, 12)
+              ? EdgeInsets.fromLTRB(20 + windowControlsInset, 18, 20, 12)
               : EdgeInsets.fromLTRB(24 + windowControlsInset, 24, 24, 14)),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -320,7 +320,6 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
     final back = onBack;
     final scheme = Theme.of(context).colorScheme;
     final seamlessMobile =
@@ -335,7 +334,7 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     final titleContent = MediaQuery.withNoTextScaling(
       child: DefaultTextStyle(
         style: Theme.of(context).textTheme.titleMedium!.copyWith(
-              fontSize: titleScaler.scale(TypeScale.subhead),
+              fontSize: titleScaler.scale(17),
               fontWeight: TypeScale.semibold,
               color: scheme.onSurface,
             ),
@@ -346,12 +345,15 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
     final toolbar = SizedBox(
       height: 56,
-      child: ios
+      child: seamlessMobile && windowControlsInset == 0
           ? Stack(
               alignment: Alignment.center,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 72),
+                  padding: EdgeInsets.symmetric(
+                    horizontal:
+                        actions != null && actions!.length > 1 ? 108 : 64,
+                  ),
                   child: Center(child: titleContent),
                 ),
                 if (back != null)
@@ -405,8 +407,7 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// 跨平台统一返回控件：iOS 使用系统 chevron，Android 使用 Material
-/// 返回箭头。视觉内容和触控区域保持在同一个按钮内。
+/// 统一的简洁返回控件，保留完整触控区域。
 class GBackButton extends StatelessWidget {
   const GBackButton({super.key, required this.onTap});
 
@@ -414,7 +415,6 @@ class GBackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ios = Theme.of(context).platform == TargetPlatform.iOS;
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
       button: true,
@@ -426,8 +426,8 @@ class GBackButton extends StatelessWidget {
           onTap: onTap,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              minWidth: 44,
-              minHeight: 44,
+              minWidth: 48,
+              minHeight: 48,
             ),
             child: Padding(
               padding: const EdgeInsets.all(10),
@@ -435,11 +435,9 @@ class GBackButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    ios
-                        ? cupertino.CupertinoIcons.chevron_back
-                        : Icons.arrow_back_rounded,
-                    size: ios ? 21 : 22,
-                    color: ios ? scheme.primary : scheme.onSurface,
+                    cupertino.CupertinoIcons.chevron_back,
+                    size: 21,
+                    color: scheme.onSurface,
                   ),
                 ],
               ),
@@ -500,7 +498,7 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 26, 18, 12),
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
       child: LayoutBuilder(
           builder: (context, constraints) => Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -599,7 +597,7 @@ class GButton extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: small ? TypeScale.body : TypeScale.bodyLarge,
+                  fontSize: small ? 14 : 16,
                   fontWeight: TypeScale.semibold,
                   color: filled ? scheme.onPrimary : scheme.primary,
                 ),
@@ -651,17 +649,9 @@ class GButton extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(RadiusToken.pill),
-              gradient: filled ? AppBrand.gradient(scheme.primary) : null,
-              color: filled ? null : scheme.primary.withValues(alpha: 0.12),
-              boxShadow: filled
-                  ? [
-                      BoxShadow(
-                        color: scheme.primary.withValues(alpha: 0.25),
-                        blurRadius: 16,
-                        offset: const Offset(0, 5),
-                      ),
-                    ]
-                  : null,
+              color: filled
+                  ? scheme.primary
+                  : scheme.primary.withValues(alpha: 0.10),
             ),
             child: Center(widthFactor: 1, heightFactor: 1, child: child),
           ),
@@ -712,7 +702,7 @@ class GIconButton extends StatelessWidget {
     final bg = backgroundColor ??
         (filled
             ? scheme.primary.withValues(alpha: 0.92)
-            : scheme.primary.withValues(alpha: 0.10));
+            : scheme.onSurface.withValues(alpha: 0.06));
     final enabled = !disabled && onTap != null;
     final button = SizedBox.square(
       dimension: targetSize,
@@ -764,6 +754,7 @@ class GListTile extends StatelessWidget {
     this.onTap,
     this.selected = false,
     this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    this.margin = const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
   });
 
   final Widget? leading;
@@ -773,6 +764,7 @@ class GListTile extends StatelessWidget {
   final VoidCallback? onTap;
   final bool selected;
   final EdgeInsets padding;
+  final EdgeInsets margin;
 
   @override
   Widget build(BuildContext context) {
@@ -783,12 +775,12 @@ class GListTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: PlatformMotion.duration(context, Motion.fast),
         constraints: BoxConstraints(minHeight: ios ? 56 : 0),
-        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        margin: margin,
         padding: padding,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(RadiusToken.md),
           color: selected
-              ? scheme.primary.withValues(alpha: 0.12)
+              ? scheme.onSurface.withValues(alpha: 0.07)
               : Colors.transparent,
         ),
         child: Row(
@@ -1133,11 +1125,7 @@ class GChoiceChip extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(RadiusToken.pill),
-          gradient: selected ? AppBrand.gradient(scheme.primary) : null,
-          color: selected ? null : glassFill(context, alpha: 0.05),
-          border: Border.all(
-            color: selected ? Colors.transparent : glassHairline(context),
-          ),
+          color: selected ? scheme.primary : scheme.surfaceContainerHigh,
         ),
         child: Text(
           label,
@@ -1172,9 +1160,8 @@ class GSegmented extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: glassFill(context, alpha: 0.06),
+        color: scheme.surfaceContainer,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: glassHairline(context)),
       ),
       // 选中滑块在轨道上滑动（对齐 Apple 分段控件），而不是逐项跳变底色。
       child: LayoutBuilder(

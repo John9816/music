@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -20,11 +21,17 @@ class SongActionButton extends StatelessWidget {
     required this.song,
     this.onPlay,
     this.queueIndex,
+    this.onRemove,
+    this.removeLabel = '从歌单移除',
+    this.showFavoriteAction = true,
   });
 
   final Song song;
   final FutureOr<void> Function()? onPlay;
   final int? queueIndex;
+  final FutureOr<void> Function()? onRemove;
+  final String removeLabel;
+  final bool showFavoriteAction;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +47,9 @@ class SongActionButton extends StatelessWidget {
           song: song,
           onPlay: onPlay,
           queueIndex: queueIndex,
+          onRemove: onRemove,
+          removeLabel: removeLabel,
+          showFavoriteAction: showFavoriteAction,
           anchor: _globalRect(buttonContext),
         ),
       ),
@@ -58,6 +68,9 @@ Future<void> showSongActions(
   required Song song,
   FutureOr<void> Function()? onPlay,
   int? queueIndex,
+  FutureOr<void> Function()? onRemove,
+  String removeLabel = '从歌单移除',
+  bool showFavoriteAction = true,
   Rect? anchor,
 }) {
   final platform = Theme.of(context).platform;
@@ -68,7 +81,7 @@ Future<void> showSongActions(
       true,
     _ => false,
   };
-  if (desktop && anchor != null && MediaQuery.sizeOf(context).width >= 720) {
+  if (anchor != null) {
     return showGeneralDialog<void>(
       context: context,
       useRootNavigator: true,
@@ -91,13 +104,17 @@ Future<void> showSongActions(
           ),
         );
       },
-      pageBuilder: (_, __, ___) => _DesktopSongActionRoute(
+      pageBuilder: (_, __, ___) => _AnchoredSongActionRoute(
         anchor: anchor,
         child: _SongActionSheet(
           song: song,
           onPlay: onPlay,
           queueIndex: queueIndex,
-          desktop: true,
+          onRemove: onRemove,
+          removeLabel: removeLabel,
+          showFavoriteAction: showFavoriteAction,
+          desktop: desktop,
+          anchored: true,
         ),
       ),
     );
@@ -112,6 +129,9 @@ Future<void> showSongActions(
       song: song,
       onPlay: onPlay,
       queueIndex: queueIndex,
+      onRemove: onRemove,
+      removeLabel: removeLabel,
+      showFavoriteAction: showFavoriteAction,
     ),
   );
 }
@@ -121,13 +141,21 @@ class _SongActionSheet extends StatefulWidget {
     required this.song,
     this.onPlay,
     this.queueIndex,
+    this.onRemove,
+    this.removeLabel = '从歌单移除',
+    this.showFavoriteAction = true,
     this.desktop = false,
+    this.anchored = false,
   });
 
   final Song song;
   final FutureOr<void> Function()? onPlay;
   final int? queueIndex;
+  final FutureOr<void> Function()? onRemove;
+  final String removeLabel;
+  final bool showFavoriteAction;
   final bool desktop;
+  final bool anchored;
 
   @override
   State<_SongActionSheet> createState() => _SongActionSheetState();
@@ -188,12 +216,13 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         '下一首播放',
         _playNext,
       ),
-      _action(
-        _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-        _liked ? '取消喜欢' : '喜欢',
-        _toggleFavorite,
-        color: _liked ? scheme.primary : null,
-      ),
+      if (widget.showFavoriteAction)
+        _action(
+          _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          _liked ? '取消喜欢' : '喜欢',
+          _toggleFavorite,
+          color: _liked ? scheme.primary : null,
+        ),
       _action(
         Icons.playlist_add_rounded,
         '收藏到歌单',
@@ -214,9 +243,22 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         downloading: downloading,
         downloaded: downloaded,
       ),
+      if (widget.onRemove != null) ...[
+        const Divider(indent: 12, endIndent: 12),
+        _action(
+          Icons.remove_circle_outline_rounded,
+          widget.removeLabel,
+          () {
+            final remove = widget.onRemove!;
+            Navigator.of(context).pop();
+            remove();
+          },
+          color: scheme.error,
+        ),
+      ],
     ];
 
-    if (widget.desktop) {
+    if (widget.anchored) {
       final dark = Theme.of(context).brightness == Brightness.dark;
       final scheme = Theme.of(context).colorScheme;
       return Container(
@@ -236,9 +278,41 @@ class _SongActionSheetState extends State<_SongActionSheet> {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: actions,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!widget.desktop) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(widget.song.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: TypeScale.semibold)),
+                              const SizedBox(height: 4),
+                              ArtistNamesLink(
+                                artists: widget.song.artists,
+                                source: widget.song.source,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(indent: 12, endIndent: 12),
+                      ],
+                      ...actions,
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -294,12 +368,14 @@ class _SongActionSheetState extends State<_SongActionSheet> {
       minTileHeight: widget.desktop ? 48 : 50,
       contentPadding:
           widget.desktop ? const EdgeInsets.symmetric(horizontal: 18) : null,
-      leading: Icon(icon, color: color, size: widget.desktop ? 21 : 24),
+      leading: Icon(icon,
+          color: color ?? Theme.of(context).colorScheme.onSurface,
+          size: widget.desktop ? 21 : 24),
       title: Text(
         title,
         style: TextStyle(
           color: color,
-          fontSize: widget.desktop ? 14 : null,
+          fontSize: widget.desktop ? 14 : 16,
           fontWeight: widget.desktop ? TypeScale.medium : null,
         ),
       ),
@@ -310,7 +386,8 @@ class _SongActionSheetState extends State<_SongActionSheet> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : downloaded
-              ? Icon(Icons.check_rounded, size: 18, color: Theme.of(context).colorScheme.primary)
+              ? Icon(Icons.check_rounded,
+                  size: 18, color: Theme.of(context).colorScheme.primary)
               : null,
       onTap: onTap,
     );
@@ -471,51 +548,59 @@ class _SongActionSheetState extends State<_SongActionSheet> {
   }
 }
 
-class _DesktopSongActionRoute extends StatelessWidget {
-  const _DesktopSongActionRoute({
-    required this.anchor,
-    required this.child,
-  });
-
-  static const menuWidth = 236.0;
-  static const _menuHeight = 256.0;
-  static const _margin = 12.0;
+class _AnchoredSongActionRoute extends StatelessWidget {
+  const _AnchoredSongActionRoute({required this.anchor, required this.child});
 
   final Rect anchor;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxLeft = (constraints.maxWidth - menuWidth - _margin)
-            .clamp(_margin, double.infinity)
-            .toDouble();
-        final left =
-            (anchor.right - menuWidth).clamp(_margin, maxLeft).toDouble();
-        final below = anchor.bottom + 6;
-        final above = anchor.top - _menuHeight - 6;
-        final preferredTop =
-            below + _menuHeight <= constraints.maxHeight - _margin
-                ? below
-                : above;
-        final maxTop = (constraints.maxHeight - _menuHeight - _margin)
-            .clamp(_margin, double.infinity)
-            .toDouble();
-        final top = preferredTop.clamp(_margin, maxTop).toDouble();
-        return Stack(
-          children: [
-            Positioned(
-              left: left,
-              top: top,
-              width: menuWidth,
-              child: child,
-            ),
-          ],
-        );
-      },
+    return CustomSingleChildLayout(
+      delegate: _SongMenuLayout(anchor, MediaQuery.paddingOf(context)),
+      child: child,
     );
   }
+}
+
+/// Measure the menu before positioning it: large text can grow or scroll
+/// without placing an action outside the safe area.
+class _SongMenuLayout extends SingleChildLayoutDelegate {
+  const _SongMenuLayout(this.anchor, this.safePadding);
+
+  final Rect anchor;
+  final EdgeInsets safePadding;
+  static const margin = 12.0;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final width = math.min(
+        280.0, constraints.maxWidth - safePadding.horizontal - margin * 2);
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: math.max(
+          0, constraints.maxHeight - safePadding.vertical - margin * 2),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final minLeft = safePadding.left + margin;
+    final maxLeft = math.max(
+        minLeft, size.width - safePadding.right - childSize.width - margin);
+    final minTop = safePadding.top + margin;
+    final maxTop = math.max(
+        minTop, size.height - safePadding.bottom - childSize.height - margin);
+    final below = anchor.bottom + 6;
+    final top = below <= maxTop ? below : anchor.top - childSize.height - 6;
+    return Offset((anchor.right - childSize.width).clamp(minLeft, maxLeft),
+        top.clamp(minTop, maxTop));
+  }
+
+  @override
+  bool shouldRelayout(_SongMenuLayout oldDelegate) =>
+      anchor != oldDelegate.anchor || safePadding != oldDelegate.safePadding;
 }
 
 class _PlaylistChooser extends StatelessWidget {

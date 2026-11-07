@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
+import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_action_menu.dart';
 import '../search/artist_names_link.dart';
@@ -47,7 +48,7 @@ class _QueueSheet extends StatelessWidget {
         context.select<PlayerController, int>((p) => p.queueIndex);
     final scheme = Theme.of(context).colorScheme;
     return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       child: ColoredBox(
         color: scheme.surfaceContainerLow,
         child: SafeArea(
@@ -69,7 +70,8 @@ class _QueueSheet extends StatelessWidget {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   sliver: SliverList.builder(
                     itemCount: queue.length,
                     itemBuilder: (context, i) {
@@ -78,33 +80,36 @@ class _QueueSheet extends StatelessWidget {
                       return GListTile(
                         key: ValueKey((song.source, song.id, i)),
                         selected: isCurrent,
-                        leading: SizedBox.square(
-                          dimension: 24,
-                          child: isCurrent
-                              ? const _NowPlayingEQ()
-                              : Center(
-                                  child: Text(
-                                    '${i + 1}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: scheme.outline,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                        leading: AsyncCover(
+                          url: song.album.picUrl,
+                          size: 42,
+                          radius: 8,
                         ),
-                        title: Text(song.name),
+                        title: Text(
+                          song.name,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                isCurrent ? FontWeight.w600 : FontWeight.w500,
+                          ),
+                        ),
                         subtitle: ArtistNamesLink(
                           artists: song.artists,
                           source: song.source,
                         ),
-                        trailing: SongActionButton(
-                          song: song,
-                          queueIndex: i,
-                          onPlay: () => player.playAt(i),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isCurrent) ...[
+                              const _NowPlayingEQ(),
+                              const SizedBox(width: 6),
+                            ],
+                            SongActionButton(
+                              song: song,
+                              queueIndex: i,
+                              onPlay: () => player.playAt(i),
+                            ),
+                          ],
                         ),
                         onTap: () => player.playAt(i),
                       );
@@ -158,8 +163,8 @@ class _QueueHeader extends SliverPersistentHeaderDelegate {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
                         letterSpacing: 0,
                       ),
                     ),

@@ -78,7 +78,7 @@ class _SearchViewState extends State<SearchView> {
     super.initState();
     _api = widget.api ?? MusicApi();
     _settings = context.read<SettingsController>();
-    _lastSource = _settings.source;
+    _lastSource = _settings.searchSource;
     _settings.addListener(_onSourceChanged);
     final initialQuery = widget.initialQuery?.trim() ?? '';
     if (initialQuery.isNotEmpty) {
@@ -121,7 +121,7 @@ class _SearchViewState extends State<SearchView> {
   }
 
   void _onSourceChanged() {
-    final source = _settings.source;
+    final source = _settings.searchSource;
     if (source == _lastSource) return;
     _lastSource = source;
     if (mounted && _keyword.isNotEmpty) {
@@ -149,13 +149,13 @@ class _SearchViewState extends State<SearchView> {
         Artist(id: 0, name: artist.name, picUrl: artist.coverUrl),
       ],
       artistId: artist.id,
-      source: artist.source ?? context.read<SettingsController>().source,
+      source: artist.source ?? _settings.searchSource,
       initialTrackCount: artist.trackCount,
     );
   }
 
   void _openAlbum(SearchAlbum album) {
-    final source = album.source ?? context.read<SettingsController>().source;
+    final source = album.source ?? _settings.searchSource;
     final numericId = int.tryParse(album.id) ?? album.id.hashCode;
     Navigator.of(context).push(
       buildAppRoute(
@@ -171,6 +171,31 @@ class _SearchViewState extends State<SearchView> {
             trackCount: album.trackCount,
           ),
           loader: () => _api.getAlbumDetail(album.id, source: source),
+        ),
+      ),
+    );
+  }
+
+  void _openPlaylist(Playlist playlist) {
+    final source = playlist.source ?? _settings.searchSource;
+    final resolved = playlist.source != null
+        ? playlist
+        : Playlist(
+            id: playlist.id,
+            name: playlist.name,
+            source: source,
+            coverUrl: playlist.coverUrl,
+            description: playlist.description,
+            creatorName: playlist.creatorName,
+            trackCount: playlist.trackCount,
+            playCount: playlist.playCount,
+          );
+    Navigator.of(context).push(
+      buildAppRoute(
+        context,
+        (_) => PlaylistDetailView(
+          playlist: resolved,
+          loader: () => _api.getPlaylistDetail(playlist.id, source: source),
         ),
       ),
     );
@@ -227,7 +252,7 @@ class _SearchViewState extends State<SearchView> {
   }) async {
     final requestVersion = ++_requestVersion;
     final type = _type;
-    final source = context.read<SettingsController>().source;
+    final source = _settings.searchSource;
     setState(() {
       _keyword = keyword;
       _searching = true;
@@ -412,15 +437,14 @@ class _SearchViewState extends State<SearchView> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final entries = AppConfig.musicSources.entries.toList();
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 0, 24, wide ? 14 : 8),
+      padding: EdgeInsets.fromLTRB(wide ? 24 : 20, 12, wide ? 24 : 20, 8),
       child: Container(
         height: (MediaQuery.textScalerOf(context).scale(13) * 1.5 + 12)
             .clamp(wide ? 48.0 : 44.0, double.infinity),
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: dark ? scheme.surfaceContainer : scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: glassHairline(context)),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
@@ -428,19 +452,17 @@ class _SearchViewState extends State<SearchView> {
               Expanded(
                 child: GPressScale(
                   key: ValueKey('search_source_${entries[i].key}'),
-                  onTap: () => settings.setSource(entries[i].key),
+                  onTap: () => settings.setSearchSource(entries[i].key),
                   child: AnimatedContainer(
                     height: double.infinity,
                     duration: Motion.fast,
                     decoration: BoxDecoration(
-                      color: settings.source == entries[i].key
-                          ? scheme.surface
+                      color: settings.searchSource == entries[i].key
+                          ? scheme.surfaceContainerHigh
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: settings.source == entries[i].key
-                          ? Border.all(color: glassHairline(context))
-                          : null,
-                      boxShadow: settings.source == entries[i].key && !dark
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: settings.searchSource == entries[i].key &&
+                              !dark
                           ? ShadowToken.card(context, radius: 8, opacity: 0.10)
                           : null,
                     ),
@@ -452,7 +474,7 @@ class _SearchViewState extends State<SearchView> {
                           height: 7,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: settings.source == entries[i].key
+                            color: settings.searchSource == entries[i].key
                                 ? scheme.primary
                                 : scheme.onSurfaceVariant
                                     .withValues(alpha: 0.45),
@@ -464,7 +486,7 @@ class _SearchViewState extends State<SearchView> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: TypeScale.semibold,
-                            color: settings.source == entries[i].key
+                            color: settings.searchSource == entries[i].key
                                 ? scheme.onSurface
                                 : scheme.onSurfaceVariant,
                           ),
@@ -487,7 +509,7 @@ class _SearchViewState extends State<SearchView> {
   }) async {
     return _api.searchSongs(
       keyword,
-      source: context.read<SettingsController>().source,
+      source: _settings.searchSource,
       offset: offset,
       limit: limit,
     );
@@ -500,7 +522,7 @@ class _SearchViewState extends State<SearchView> {
   }) async {
     return _api.searchPlaylists(
       keyword,
-      source: context.read<SettingsController>().source,
+      source: _settings.searchSource,
       offset: offset,
       limit: limit,
     );
@@ -513,7 +535,7 @@ class _SearchViewState extends State<SearchView> {
   }) async {
     return _api.searchArtists(
       keyword,
-      source: context.read<SettingsController>().source,
+      source: _settings.searchSource,
       offset: offset,
       limit: limit,
     );
@@ -526,7 +548,7 @@ class _SearchViewState extends State<SearchView> {
   }) async {
     return _api.searchAlbums(
       keyword,
-      source: context.read<SettingsController>().source,
+      source: _settings.searchSource,
       offset: offset,
       limit: limit,
     );
@@ -541,7 +563,7 @@ class _SearchViewState extends State<SearchView> {
     if (!mounted || requestVersion != _requestVersion) return false;
     return _keyword == keyword &&
         _type == type &&
-        context.read<SettingsController>().source == source;
+        _settings.searchSource == source;
   }
 
   bool get _currentResultsEmpty {
@@ -585,25 +607,36 @@ class _SearchViewState extends State<SearchView> {
   }) {
     final scheme = Theme.of(context).colorScheme;
     final header = <Widget>[
-      _contentFrame(
-        GPageHeader(
-          title: _keyword.isEmpty ? '搜索' : '搜索结果',
-          subtitle: '歌曲、歌手、专辑与歌单',
-          padding: EdgeInsets.fromLTRB(
-            24 + macOSWindowControlsInset(context),
-            wide ? 22 : 18,
-            24,
-            wide ? 12 : 10,
+      if (wide ||
+          switch (Theme.of(context).platform) {
+            TargetPlatform.macOS ||
+            TargetPlatform.windows ||
+            TargetPlatform.linux =>
+              true,
+            _ => false,
+          })
+        _contentFrame(
+          GPageHeader(
+            title: _keyword.isEmpty ? '搜索' : '搜索结果',
+            subtitle: '歌曲、歌手、专辑与歌单',
+            padding: EdgeInsets.fromLTRB(
+              24 + macOSWindowControlsInset(context),
+              wide ? 22 : 18,
+              24,
+              wide ? 12 : 10,
+            ),
           ),
         ),
-      ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
-        child: GSurface(
-          radius: RadiusToken.md,
-          alpha: 0.08,
+        padding: EdgeInsets.fromLTRB(
+            wide ? 24 : 20, wide ? 0 : 12, wide ? 24 : 20, 4),
+        child: Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: SizedBox(
-            height: 46,
+            height: MediaQuery.textScalerOf(context).scale(17) * 1.5 + 22,
             child: TextField(
               controller: _controller,
               focusNode: widget.focusNode,
@@ -613,12 +646,16 @@ class _SearchViewState extends State<SearchView> {
               ),
               cursorColor: scheme.primary,
               decoration: InputDecoration(
-                hintText: '输入歌曲、歌手、专辑或歌单名称',
+                hintText: '搜索音乐',
                 hintStyle: TextStyle(
                   fontSize: 15,
                   color: scheme.onSurfaceVariant,
                 ),
+                filled: false,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 prefixIcon: Icon(
                   Icons.search_rounded,
                   size: 20,
@@ -653,8 +690,8 @@ class _SearchViewState extends State<SearchView> {
           ),
         ),
       ),
-      _contentFrame(_buildTypeTabs()),
       _contentFrame(_buildSourceRow(wide: wide)),
+      _contentFrame(_buildTypeTabs()),
     ];
     final results = _contentFrame(
       _keyword.isEmpty
@@ -738,34 +775,42 @@ class _SearchViewState extends State<SearchView> {
       _SearchType.album,
       _SearchType.playlist,
     ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final minimumWidth =
-                  (MediaQuery.textScalerOf(context).scale(TypeScale.body) * 2 +
-                              32) *
-                          labels.length +
-                      6;
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width:
-                      constraints.maxWidth.clamp(minimumWidth, double.infinity),
-                  child: GSegmented(
-                    items: labels,
-                    selected: types.indexOf(_type),
-                    onSelected: (i) => _switchType(types[i]),
+    final scheme = Theme.of(context).colorScheme;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Semantics(
+                selected: _type == types[i],
+                child: GPressScale(
+                  onTap: () => _switchType(types[i]),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _type == types[i]
+                          ? scheme.onSurface
+                          : scheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(RadiusToken.pill),
+                    ),
+                    child: Text(labels[i],
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: TypeScale.semibold,
+                          color: _type == types[i]
+                              ? scheme.surface
+                              : scheme.onSurface,
+                        )),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -888,19 +933,7 @@ class _SearchViewState extends State<SearchView> {
             final playlist = _playlists[index];
             return PlaylistCard(
               playlist: playlist,
-              onTap: () => Navigator.of(context).push(
-                buildAppRoute(
-                  context,
-                  (_) => PlaylistDetailView(
-                    playlist: playlist,
-                    loader: () => _api.getPlaylistDetail(
-                      playlist.id,
-                      source: playlist.source ??
-                          context.read<SettingsController>().source,
-                    ),
-                  ),
-                ),
-              ),
+              onTap: () => _openPlaylist(playlist),
             );
           },
         );
@@ -909,6 +942,8 @@ class _SearchViewState extends State<SearchView> {
   }
 
   Widget _buildCombinedResults({bool shrinkWrap = false}) {
+    final compact =
+        MediaQuery.sizeOf(context).width < GBreakpoints.contentSplit;
     final sections = <Widget>[];
     if (_playlists.isNotEmpty) {
       sections.add(_SearchSection(
@@ -917,7 +952,7 @@ class _SearchViewState extends State<SearchView> {
           height: _playlistCardHeight(148).clamp(218.0, double.infinity),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: _playlists.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
@@ -926,19 +961,7 @@ class _SearchViewState extends State<SearchView> {
                 width: 148,
                 child: PlaylistCard(
                   playlist: playlist,
-                  onTap: () => Navigator.of(context).push(
-                    buildAppRoute(
-                      context,
-                      (_) => PlaylistDetailView(
-                        playlist: playlist,
-                        loader: () => _api.getPlaylistDetail(
-                          playlist.id,
-                          source: playlist.source ??
-                              context.read<SettingsController>().source,
-                        ),
-                      ),
-                    ),
-                  ),
+                  onTap: () => _openPlaylist(playlist),
                 ),
               );
             },
@@ -949,50 +972,60 @@ class _SearchViewState extends State<SearchView> {
     if (_artists.isNotEmpty) {
       sections.add(_SearchSection(
         title: '歌手',
-        child: SizedBox(
-          height: 90,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            itemCount: _artists.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 18),
-            itemBuilder: (_, index) {
-              final artist = _artists[index];
-              return _DesktopArtistCard(
-                artist: artist,
-                onTap: () => _openArtist(artist),
-              );
-            },
-          ),
-        ),
+        child: compact
+            ? Column(children: [
+                for (final artist in _artists)
+                  _ArtistRow(artist: artist, onTap: () => _openArtist(artist)),
+              ])
+            : SizedBox(
+                height: 90,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _artists.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 18),
+                  itemBuilder: (_, index) {
+                    final artist = _artists[index];
+                    return _DesktopArtistCard(
+                      artist: artist,
+                      onTap: () => _openArtist(artist),
+                    );
+                  },
+                ),
+              ),
       ));
     }
     if (_albums.isNotEmpty) {
       sections.add(_SearchSection(
         title: '专辑',
-        child: SizedBox(
-          height: 90,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            itemCount: _albums.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 18),
-            itemBuilder: (_, index) {
-              final album = _albums[index];
-              return _DesktopAlbumCard(
-                album: album,
-                onTap: () => _openAlbum(album),
-              );
-            },
-          ),
-        ),
+        child: compact
+            ? Column(children: [
+                for (final album in _albums)
+                  _AlbumRow(album: album, onTap: () => _openAlbum(album)),
+              ])
+            : SizedBox(
+                height: 90,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _albums.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 18),
+                  itemBuilder: (_, index) {
+                    final album = _albums[index];
+                    return _DesktopAlbumCard(
+                      album: album,
+                      onTap: () => _openAlbum(album),
+                    );
+                  },
+                ),
+              ),
       ));
     }
     if (_results.isNotEmpty) {
       sections.add(_SearchSection(
         title: '歌曲',
         child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.zero,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: _results.length,
@@ -1051,78 +1084,73 @@ class _SearchViewState extends State<SearchView> {
     final scheme = Theme.of(context).colorScheme;
     final canGoBack = !_searching && _page > 1;
     if (compact) {
+      final canGoNext = !_searching && (_pageError != null || _hasNextPage);
       return SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-          child: Row(
-            children: [
-              Expanded(
-                child: Tooltip(
-                  message: '上一页',
-                  child: GButton(
-                    label: '上一页',
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: Row(
+                children: [
+                  GIconButton(
                     icon: Icons.chevron_left_rounded,
-                    filled: false,
-                    small: true,
-                    expand: true,
+                    tooltip: '上一页',
+                    size: 24,
+                    padding: 12,
+                    backgroundColor: Colors.transparent,
+                    disabled: !canGoBack,
                     onTap: canGoBack
                         ? () => _search(_keyword, page: _page - 1)
                         : null,
                   ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              SizedBox(
-                width: 58,
-                child: _searching
-                    ? Center(
-                        child: SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.primary,
-                            semanticsLabel: '正在加载搜索结果',
+                  Expanded(
+                    child: _searching
+                        ? Center(
+                            child: SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                                semanticsLabel: '正在加载搜索结果',
+                              ),
+                            ),
+                          )
+                        : Text(
+                            '第 $_page 页',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _pageError == null
+                                  ? scheme.onSurfaceVariant
+                                  : scheme.error,
+                            ),
                           ),
-                        ),
-                      )
-                    : Text(
-                        '第 $_page 页',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: TypeScale.semibold,
-                          color: _pageError == null
-                              ? scheme.onSurfaceVariant
-                              : scheme.error,
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Tooltip(
-                  message: _pageError == null ? '下一页' : '重试第 $_retryPage 页',
-                  child: GButton(
-                    label: _pageError == null ? '下一页' : '重试',
-                    icon: Icons.chevron_right_rounded,
-                    filled: true,
-                    small: true,
-                    expand: true,
-                    onTap: _searching
+                  ),
+                  GIconButton(
+                    icon: _pageError == null
+                        ? Icons.chevron_right_rounded
+                        : Icons.refresh_rounded,
+                    tooltip: _pageError == null ? '下一页' : '重试第 $_retryPage 页',
+                    size: 24,
+                    padding: 12,
+                    backgroundColor: Colors.transparent,
+                    disabled: !canGoNext,
+                    onTap: !canGoNext
                         ? null
                         : _pageError != null
                             ? _retrySearch
-                            : _hasNextPage
-                                ? () => _search(_keyword, page: _page + 1)
-                                : null,
+                            : () => _search(_keyword, page: _page + 1),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
     }
+
     return SafeArea(
       top: false,
       child: Container(
@@ -1198,7 +1226,7 @@ class _SearchViewState extends State<SearchView> {
       shrinkWrap: shrinkWrap,
       primary: shrinkWrap ? false : null,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
         if (_history.isNotEmpty) ...[
           Padding(
@@ -1239,32 +1267,33 @@ class _SearchViewState extends State<SearchView> {
           ),
           const SizedBox(height: 24),
         ],
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
+        const Padding(
+          padding: EdgeInsets.only(bottom: 14),
+          child: Text('热门搜索',
+              style: TextStyle(fontSize: 22, fontWeight: TypeScale.bold)),
+        ),
+        LayoutBuilder(builder: (context, constraints) {
+          final columns = constraints.maxWidth >= 720 ? 4 : 2;
+          final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
+          final height =
+              108 + (MediaQuery.textScalerOf(context).scale(16) - 16) * 2;
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
-              Icon(Icons.trending_up_rounded,
-                  size: 16, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 6),
-              Text(
-                '热门搜索',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
+              for (var i = 0; i < _hotKeywords.length; i++)
+                SizedBox(
+                  width: width,
+                  height: height,
+                  child: _HotSearchCard(
+                    label: _hotKeywords[i],
+                    index: i,
+                    onTap: () => _submit(_hotKeywords[i]),
+                  ),
                 ),
-              ),
             ],
-          ),
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: _hotKeywords
-              .map(
-                  (kw) => _Chip(label: kw, onTap: () => _submit(kw), hot: true))
-              .toList(),
-        ),
+          );
+        }),
       ],
     );
   }
@@ -1396,13 +1425,17 @@ class _ArtistRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GListTile(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       onTap: onTap,
       leading: ClipOval(
-        child: AsyncCover(url: artist.coverUrl, size: 46, radius: 23),
+        child: AsyncCover(url: artist.coverUrl, size: 48, radius: 24),
       ),
-      title: Text(artist.name),
+      title: Text(artist.name,
+          style: const TextStyle(fontSize: 16, fontWeight: TypeScale.regular)),
       subtitle: Text(
         artist.trackCount != null ? '${artist.trackCount} 首歌曲' : '查看歌手',
+        style: const TextStyle(fontSize: 14),
       ),
       trailing: const Icon(Icons.chevron_right, size: 18),
     );
@@ -1423,10 +1456,14 @@ class _AlbumRow extends StatelessWidget {
       if (album.trackCount != null) '${album.trackCount} 首歌曲',
     ];
     return GListTile(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       onTap: onTap,
-      leading: AsyncCover(url: album.coverUrl, size: 46, radius: 8),
-      title: Text(album.name),
-      subtitle: Text(details.isEmpty ? '查看专辑' : details.join(' · ')),
+      leading: AsyncCover(url: album.coverUrl, size: 48, radius: 8),
+      title: Text(album.name,
+          style: const TextStyle(fontSize: 16, fontWeight: TypeScale.regular)),
+      subtitle: Text(details.isEmpty ? '查看专辑' : details.join(' · '),
+          style: const TextStyle(fontSize: 14)),
       trailing: const Icon(Icons.chevron_right, size: 18),
     );
   }
@@ -1437,12 +1474,10 @@ class _Chip extends StatelessWidget {
   const _Chip({
     required this.label,
     required this.onTap,
-    this.hot = false,
   });
 
   final String label;
   final VoidCallback onTap;
-  final bool hot;
 
   @override
   Widget build(BuildContext context) {
@@ -1452,20 +1487,76 @@ class _Chip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(RadiusToken.pill),
           color: Theme.of(context).brightness == Brightness.dark
               ? scheme.surfaceContainer
               : scheme.surfaceContainerLow,
-          border: Border.all(
-            color: glassHairline(context),
-          ),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 13,
-            fontWeight: hot ? FontWeight.w600 : FontWeight.w500,
-            color: hot ? scheme.onSurface : scheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HotSearchCard extends StatelessWidget {
+  const _HotSearchCard(
+      {required this.label, required this.index, required this.onTap});
+
+  final String label;
+  final int index;
+  final VoidCallback onTap;
+  static const _colors = [
+    Color(0xFF765B40),
+    Color(0xFFAF531A),
+    Color(0xFF1E5CA6),
+    Color(0xFF177B78),
+    Color(0xFFA62C67)
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      child: GPressScale(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            color: _colors[index % _colors.length],
+            child: Stack(
+              children: [
+                Positioned(
+                  top: -18,
+                  right: 12,
+                  child: ExcludeSemantics(
+                      child: Icon(Icons.music_note_rounded,
+                          size: 84,
+                          color: Colors.white.withValues(alpha: 0.18))),
+                ),
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Text(label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: TypeScale.semibold,
+                              color: Colors.white)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -111,21 +111,21 @@ class AppTheme {
   }) _neutralSurfaces({required bool dark}) {
     if (dark) {
       return const (
-        lowest: Color(0xFF0D1114),
-        surface: Color(0xFF111518),
-        low: Color(0xFF15191C),
-        container: Color(0xFF1A1F22),
-        high: Color(0xFF23292D),
-        highest: Color(0xFF2E363B),
+        lowest: Color(0xFF0A0A0B),
+        surface: Color(0xFF141416),
+        low: Color(0xFF161618),
+        container: Color(0xFF1C1C1E),
+        high: Color(0xFF2C2C2E),
+        highest: Color(0xFF3A3A3C),
       );
     }
     return const (
-      lowest: Color(0xFFF2F4F5),
+      lowest: Color(0xFFF2F2F7),
       surface: Colors.white,
-      low: Color(0xFFF8F9FA),
-      container: Color(0xFFF4F6F7),
-      high: Color(0xFFE9EDEF),
-      highest: Color(0xFFDEE4E7),
+      low: Color(0xFFF7F7FA),
+      container: Colors.white,
+      high: Color(0xFFECECEF),
+      highest: Color(0xFFE2E2E7),
     );
   }
 
@@ -158,16 +158,16 @@ class AppTheme {
     onError: Colors.white,
     errorContainer: Color(0x33FF453A),
     onErrorContainer: Color(0xFFFFD6D6),
-    surface: Color(0xFF102319),
-    onSurface: Color(0xFFF3F7F4),
-    surfaceContainerLowest: Color(0xFF0D2116),
-    surfaceContainerLow: Color(0xFF13271C),
-    surfaceContainer: Color(0xFF192E22),
-    surfaceContainerHigh: Color(0xFF21372A),
-    surfaceContainerHighest: Color(0xFF2D4235),
-    onSurfaceVariant: Color(0xFF929A95),
-    outline: Color(0xFF768078),
-    outlineVariant: Color(0x2EE7F7EC),
+    surface: Color(0xFF141416),
+    onSurface: Color(0xFFF5F5F7),
+    surfaceContainerLowest: Color(0xFF0A0A0B),
+    surfaceContainerLow: Color(0xFF161618),
+    surfaceContainer: Color(0xFF1C1C1E),
+    surfaceContainerHigh: Color(0xFF2C2C2E),
+    surfaceContainerHighest: Color(0xFF3A3A3C),
+    onSurfaceVariant: Color(0xFF99999F),
+    outline: Color(0xFF76767C),
+    outlineVariant: Color(0x1FFFFFFF),
     shadow: Colors.black,
     scrim: Colors.black,
     inverseSurface: Colors.white,
@@ -333,7 +333,7 @@ class AppTheme {
       hoverColor: Colors.transparent,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
-        centerTitle: false,
+        centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: Colors.transparent,
@@ -395,8 +395,8 @@ class AppTheme {
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: scheme.surfaceContainerLow,
-        modalBackgroundColor: scheme.surfaceContainerLow,
+        backgroundColor: scheme.surfaceContainer,
+        modalBackgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius:
@@ -430,7 +430,7 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: hairline),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

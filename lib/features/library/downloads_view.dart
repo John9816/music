@@ -20,6 +20,7 @@ class DownloadsView extends StatelessWidget {
       (total, entry) => total + entry.sizeBytes,
     );
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       appBar: GAppBar(
         title: '下载管理',
         onBack: () => Navigator.of(context).maybePop(),
@@ -30,6 +31,7 @@ class DownloadsView extends StatelessWidget {
               tooltip: '清空下载',
               size: 20,
               padding: 10,
+              backgroundColor: Colors.transparent,
               onTap: () => _clearAll(context, service),
             ),
         ],
@@ -57,7 +59,7 @@ class DownloadsView extends StatelessWidget {
                     text: '还没有下载的歌曲',
                   )
                 : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 30),
+                    padding: const EdgeInsets.only(top: 4, bottom: 30),
                     itemCount: downloads.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 2),
                     itemBuilder: (context, index) {
@@ -82,6 +84,8 @@ class DownloadsView extends StatelessWidget {
                               tooltip: '删除 ${entry.song.name}',
                               size: 19,
                               padding: 9,
+                              tint: Theme.of(context).colorScheme.outline,
+                              backgroundColor: Colors.transparent,
                               onTap: () => service.delete(entry),
                             ),
                           ],

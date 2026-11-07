@@ -7,6 +7,7 @@ import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/home/home_shell.dart';
+import 'package:duck_music/features/playlists/playlists_view.dart';
 import 'package:duck_music/features/search/search_view.dart';
 import 'package:duck_music/features/profile/user_library_view.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,40 @@ void main() {
     expect(find.descendant(of: navigation, matching: find.text('资料库')),
         findsOneWidget);
   });
+
+  for (final size in [const Size(390, 844), const Size(1280, 800)]) {
+    testWidgets(
+        'search source changes preserve home and discover at ${size.width}',
+        (tester) async {
+      await _pumpShell(tester, size);
+      final home = find.byType(DiscoverView, skipOffstage: false);
+      final homeState = tester.state(home);
+      await tester.tap(find.text('发现').last);
+      await tester.pumpAndSettle();
+      final discover = find.byType(PlaylistsView, skipOffstage: false);
+      final discoverState = tester.state(discover);
+      if (size.width < 900) {
+        await tester.tap(find.text('搜索').last);
+      } else {
+        await tester.tap(find.byKey(const ValueKey('sidebar_search_control')));
+      }
+      await tester.pumpAndSettle();
+      final settings =
+          tester.element(find.byType(HomeShell)).read<SettingsController>();
+      await tester.tap(find.byKey(const ValueKey('search_source_qq')));
+      await tester.pumpAndSettle();
+
+      expect(settings.source, 'netease',
+          reason: 'Searching another provider must not change browsing.');
+      await tester.tap(find.text('首页').last);
+      await tester.pumpAndSettle();
+      expect(tester.state(home), same(homeState));
+      await tester.tap(find.text('发现').last);
+      await tester.pumpAndSettle();
+      expect(tester.state(discover), same(discoverState));
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('switching tabs removes focus from the hidden search input',
       (tester) async {

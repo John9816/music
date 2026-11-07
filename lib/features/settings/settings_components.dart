@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
 import '../../widgets/glass.dart';
@@ -10,12 +11,12 @@ class SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 20, 4, 10),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title,
         style: TextStyle(
           fontSize: 13,
-          fontWeight: TypeScale.bold,
+          fontWeight: TypeScale.medium,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
@@ -33,8 +34,8 @@ class SettingsGroup extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: glassHairline(context)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: glassHairline(context), width: 0.7),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -43,8 +44,12 @@ class SettingsGroup extends StatelessWidget {
             children[i],
             if (i != children.length - 1)
               Padding(
-                padding: const EdgeInsets.only(left: 56),
-                child: Divider(height: 1, color: glassHairline(context)),
+                padding: const EdgeInsets.only(left: 58, right: 16),
+                child: Divider(
+                  height: 0.5,
+                  thickness: 0.5,
+                  color: glassHairline(context),
+                ),
               ),
           ],
         ],
@@ -65,6 +70,7 @@ class SettingsRow extends StatelessWidget {
     this.onToggle,
     this.toggleValue,
     this.destructive = false,
+    this.iconColor,
   });
 
   final IconData icon;
@@ -76,6 +82,7 @@ class SettingsRow extends StatelessWidget {
   final ValueChanged<bool>? onToggle;
   final bool? toggleValue;
   final bool destructive;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -93,34 +100,76 @@ class SettingsRow extends StatelessWidget {
     final row = GPressScale(
       onTap: effectiveOnTap,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 62),
+        constraints: BoxConstraints(minHeight: subtitle == null ? 52 : 64),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: LayoutBuilder(builder: (context, constraints) {
+            final textScaler = MediaQuery.textScalerOf(context);
+            final titleStyle = TextStyle(
+              fontSize: 16,
+              fontWeight: TypeScale.regular,
+              color: destructive ? scheme.error : scheme.onSurface,
+            );
+            final valueStyle = TextStyle(
+              fontSize: 15,
+              color: scheme.onSurfaceVariant,
+            );
+            double textWidth(String text, TextStyle style) {
+              final painter = TextPainter(
+                text: TextSpan(
+                  text: text,
+                  style: DefaultTextStyle.of(context).style.merge(style),
+                ),
+                textDirection: Directionality.of(context),
+                textScaler: textScaler,
+                maxLines: 1,
+              )..layout();
+              final width = painter.width;
+              painter.dispose();
+              return width;
+            }
+
+            final iconWidth = iconColor == null ? 24.0 : 29.0;
+            final trailingWidth = trailing != null
+                ? 64.0
+                : onTap != null
+                    ? 27.0
+                    : 0.0;
+            final textRoom =
+                constraints.maxWidth - iconWidth - 12 - trailingWidth;
             final stackValue = value != null &&
-                (constraints.maxWidth < 430 ||
-                    MediaQuery.textScalerOf(context).scale(14) > 20);
+                (textWidth(title, titleStyle) +
+                        textWidth(value!, valueStyle) +
+                        12 >
+                    textRoom);
             final valueText = value == null
                 ? null
                 : Text(
                     value!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: TypeScale.medium,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: valueStyle,
                   );
             return Row(
               children: [
-                SizedBox(
-                  width: 24,
-                  child: Icon(
-                    icon,
-                    size: 19,
-                    color: destructive ? scheme.error : scheme.onSurface,
+                if (iconColor != null)
+                  Container(
+                    width: 29,
+                    height: 29,
+                    decoration: BoxDecoration(
+                      color: iconColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 19, color: Colors.white),
+                  )
+                else
+                  SizedBox(
+                    width: 24,
+                    child: Icon(
+                      icon,
+                      size: 21,
+                      color: destructive ? scheme.error : scheme.onSurface,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,18 +177,15 @@ class SettingsRow extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: TypeScale.semibold,
-                          color: destructive ? scheme.error : scheme.onSurface,
-                        ),
+                        style: titleStyle,
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: 3),
                         Text(
                           subtitle!,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12.5,
+                            height: 1.35,
                             color: scheme.onSurfaceVariant,
                           ),
                         ),
@@ -153,7 +199,7 @@ class SettingsRow extends StatelessWidget {
                 ),
                 if (valueText != null && !stackValue) ...[
                   const SizedBox(width: 12),
-                  Flexible(child: valueText),
+                  valueText,
                 ],
                 if (trailing != null) ...[
                   const SizedBox(width: 12),
@@ -196,6 +242,14 @@ class SettingsSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.android || platform == TargetPlatform.iOS) {
+      return CupertinoSwitch(
+        value: value,
+        onChanged: onChanged,
+        activeTrackColor: Theme.of(context).colorScheme.primary,
+      );
+    }
     return Switch.adaptive(
       value: value,
       onChanged: onChanged,

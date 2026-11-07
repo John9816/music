@@ -34,7 +34,7 @@ void main() {
 
     final theme = AppTheme.forAccent('skyBlue', dark: true).data;
     final background = theme.colorScheme.surfaceContainerLowest;
-    final miniPlayerBackground = theme.colorScheme.surfaceContainerHigh;
+    final miniPlayerBackground = theme.colorScheme.surfaceContainer;
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -42,7 +42,8 @@ void main() {
           ChangeNotifierProvider<PlayerController>.value(value: player),
           ChangeNotifierProvider<AuthController>.value(value: auth),
           ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
+          ChangeNotifierProvider<DesktopIntegrationService>.value(
+              value: desktop),
         ],
         child: MaterialApp(
           theme: theme,
@@ -66,95 +67,114 @@ void main() {
       (miniPlayer.decoration! as BoxDecoration).color,
       miniPlayerBackground,
     );
+    final miniBounds = tester
+        .getRect(find.byKey(const ValueKey('mobile-mini-player-surface')));
+    final navBounds =
+        tester.getRect(find.byKey(const ValueKey('mobile-bottom-nav-surface')));
+    expect(miniBounds.left, 0);
+    expect(miniBounds.right, tester.view.physicalSize.width);
+    expect(miniBounds.bottom, navBounds.top);
+    expect(miniBounds.height, greaterThanOrEqualTo(48));
     expect(
-      tester.getSize(
-        find.byKey(const ValueKey('mobile-mini-player-surface')),
-      ),
-      const Size(358, 56),
-    );
-    expect(
-      tester
-          .getTopLeft(
-            find.byKey(const ValueKey('mobile-mini-player-surface')),
-          )
-          .dx,
-      16,
-    );
-    expect((bottomNav.decoration! as BoxDecoration).color, background);
+        (bottomNav.decoration! as BoxDecoration).color, miniPlayerBackground);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('mobile bottom navigation hides on nested pages', (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
+  for (final bottomInset in [0.0, 24.0]) {
+    testWidgets(
+        'nested pages keep playback above the $bottomInset system inset',
+        (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.viewPadding = FakeViewPadding(top: 24, bottom: bottomInset);
+      tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final settings = SettingsController();
-    final player = _CurrentSongPlayer(settings);
-    final auth = AuthController();
-    final timer = SleepTimer();
-    final desktop = DesktopIntegrationService(
-      settings: settings,
-      player: player,
-    );
-    addTearDown(settings.dispose);
-    addTearDown(player.dispose);
-    addTearDown(auth.dispose);
-    addTearDown(timer.dispose);
+      final settings = SettingsController();
+      final player = _CurrentSongPlayer(settings);
+      final auth = AuthController();
+      final timer = SleepTimer();
+      final desktop = DesktopIntegrationService(
+        settings: settings,
+        player: player,
+      );
+      addTearDown(settings.dispose);
+      addTearDown(player.dispose);
+      addTearDown(auth.dispose);
+      addTearDown(timer.dispose);
 
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<SettingsController>.value(value: settings),
-          ChangeNotifierProvider<PlayerController>.value(value: player),
-          ChangeNotifierProvider<AuthController>.value(value: auth),
-          ChangeNotifierProvider<SleepTimer>.value(value: timer),
-          ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.byId('dark').data,
-          home: const HomeShell(),
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsController>.value(value: settings),
+            ChangeNotifierProvider<PlayerController>.value(value: player),
+            ChangeNotifierProvider<AuthController>.value(value: auth),
+            ChangeNotifierProvider<SleepTimer>.value(value: timer),
+            ChangeNotifierProvider<DesktopIntegrationService>.value(
+                value: desktop),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.byId('dark').data,
+            home: const HomeShell(),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('我的').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('设置'));
-    await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('我的').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('设置'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('深浅模式'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('mobile-mini-player-surface')),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .getBottomRight(
-            find.byKey(const ValueKey('mobile-mini-player-surface')),
-          )
-          .dy,
-      818,
-    );
+      expect(find.text('深浅模式'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile-mini-player-surface')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .getBottomRight(
+              find.byKey(const ValueKey('mobile-mini-player-surface')),
+            )
+            .dy,
+        tester.view.physicalSize.height - bottomInset,
+      );
 
-    await tester.tap(find.byTooltip('返回'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isNull);
-  });
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      tester.view.padding = const FakeViewPadding(top: 24);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .getBottomRight(
+                find.byKey(const ValueKey('mobile-mini-player-surface')))
+            .dy,
+        tester.view.physicalSize.height - 300,
+      );
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('mobile app bar shares the page themed surface', (tester) async {
     tester.view.devicePixelRatio = 1;
