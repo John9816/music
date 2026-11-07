@@ -148,6 +148,7 @@ jobs:
           mkdir -p dist
           universal_apk="build/app/outputs/flutter-apk/app-release.apk"
           [[ -f "${universal_apk}" ]] || { echo "Missing Android universal APK: ${universal_apk}" >&2; exit 1; }
+          python3 scripts/verify_android_media_resources.py "${universal_apk}" --aapt "${build_tools}/aapt"
           "${build_tools}/apksigner" verify "${universal_apk}"
           universal_badging="$("${build_tools}/aapt" dump badging "${universal_apk}" | head -n1)"
           echo "universal: ${universal_badging}"
@@ -163,6 +164,7 @@ jobs:
           for abi in arm64-v8a armeabi-v7a x86_64; do
             apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
             [[ -f "${apk}" ]] || { echo "Missing Android ${abi} APK: ${apk}" >&2; exit 1; }
+            python3 scripts/verify_android_media_resources.py "${apk}" --aapt "${build_tools}/aapt"
             "${build_tools}/apksigner" verify "${apk}"
             badging="$("${build_tools}/aapt" dump badging "${apk}" | head -n1)"
             echo "${abi}: ${badging}"
