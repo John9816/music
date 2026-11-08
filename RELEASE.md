@@ -4,14 +4,39 @@
 
 当前发布方式：
 
-- Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
+- Android 默认使用本机正式签名构建，验证后直接上传 ECS，最后原子替换 `latest.json`。GitHub 仅同步同一份 APK 和旧客户端兼容 Release，不承担编译。下文的 Actions 构建保留为可选流程。
+- 可选 Actions Android 单独发布：推送 `android-ecs-v*` 标签，GitHub Actions 同时更新 ECS 升级清单并创建旧客户端可识别的 `flutter-v*` GitHub Release。
 - 四端联合发布：推送 `flutter-v*` 标签，由 GitHub Actions 构建 Android APK、unsigned iOS IPA、Developer ID 签名且经 Apple 公证的 macOS DMG 和 Windows EXE；Android 同时更新 ECS。
 - iOS Action 产物用于后续侧载签名或人工签名，不是 App Store 正式包；App Store 发布仍需使用分发证书重新导出并上传审核。
 - `.github/workflows/flutter-release.yml` 是自动发布流程的实现，`pubspec.yaml` 是版本号的唯一来源。
 
 ## 1. 发布速查
 
-Android 老用户直升 ECS 的固定链路：
+### 本地构建并直接发布 ECS（默认）
+
+本机正式签名保存在 `~/.config/duckmusic/android-signing/`；目录权限为 `0700`，`production.jks` 与 `key.properties` 权限为 `0600`。将已有配置复制到被 Git 忽略的 `android/key.properties`，其中 `storeFile` 指向仓库外的正式 keystore。不要生成替代签名或把签名配置提交到 Git。
+
+1. 提交、推送本次源码，同时增加 `pubspec.yaml` 的版本和构建号。直接发布时不推送会触发编译的 `android-ecs-v*` 或 `flutter-v*` 标签。
+2. 运行 `flutter analyze`、`flutter test`，再用同一份源码执行通用包和架构包构建：
+
+   ```bash
+   flutter build apk --release --build-name="$VERSION" --build-number="$BUILD_NUMBER" \
+     --dart-define="APP_VERSION=$VERSION" --dart-define=UPDATE_REPOSITORY=John9816/music
+   # 先保存通用包，再构建拆分包。
+   flutter build apk --release --split-per-abi --build-name="$VERSION" --build-number="$BUILD_NUMBER" \
+     --dart-define="APP_VERSION=$VERSION" --dart-define=UPDATE_REPOSITORY=John9816/music
+   ```
+
+3. 对四个 APK 执行 `aapt dump badging`、`apksigner verify --print-certs`、`scripts/verify_android_media_resources.py`，核验包名 `com.music.player`、版本、全部 8 个媒体资源和历史证书。架构包 versionCode 分别为构建号加 `1000`（armeabi-v7a）、`2000`（arm64-v8a）、`4000`（x86_64）；通用包使用原构建号。
+4. 生成每个文件的 SHA-256，先上传到 ECS 的非公开暂存目录，在服务器核对完整文件大小和哈希；校验通过后移入 `/opt/website/updates/`。不要覆盖已经发布过的同名版本包。
+5. 对四个正式 URL 检查 HTTP 206、APK MIME 和总文件大小。备份旧清单到 `/opt/backups/`，确认新构建号更大，最后用同一文件系统内的原子重命名更新 `/opt/website/updates/latest.json`。
+6. 清单保留 `version`、`buildNumber`、指向通用包的 `downloadUrl`、三个架构的 `downloads`、`description`、`forceUpdate` 和 `minBuildNumber`。较新客户端优先读取 ECS 并按设备架构下载；网页下载入口也读取该清单。
+7. 兼容仅访问 GitHub 的旧客户端：将同一批已校验 APK 同步到 `flutter-v<version>` Release，明确 `target_commitish` 为本次源码提交。可以用只上传现成产物的临时任务及其 `GITHUB_TOKEN` 创建桥接 Release，避免标签再触发编译；不得重新构建或更换资产。
+8. 从旧正式版实际检查更新、下载和覆盖安装，确认账号与数据保留；验证播放、进度、歌词及前后台切换。最后回读网页下载接口、ECS 清单和 GitHub 兼容清单。
+
+失败回滚只需原子恢复旧 `latest.json`，保留旧版本 APK；不要删除用户已开始下载的文件。一次完整的本地发布与验证记录见 `docs/superpowers/research/2026-11-08-android-1.1.53-release.md`。
+
+以下是保留的可选 Actions 链路；默认本地发布使用前述步骤：
 
 1. `pubspec.yaml` 同时递增版本号和构建号，且 `applicationId` 保持 `com.music.player`。
 2. 推送代码到 `flutter-migration`，再推送匹配的 `android-ecs-v<version>` 标签；该标签只构建 Android，不启动桌面任务。
@@ -23,9 +48,9 @@ Android 有两条更新通道：`1.1.27` Flutter 客户端只读取 GitHub Relea
 
 ECS 上传可配置其中一种 Actions Secret：`ECS_SSH_PRIVATE_KEY`，或 `ECS_PASSWORD`。密码只放在 GitHub Secret 中，不写入代码、日志或 `latest.json`。
 
-### Android-only 最短流程
+### 可选：Actions Android-only 流程
 
-以下命令在干净的 release checkout 中执行。当前发布分支是 `flutter-migration`，不要把 `main` 当作发布分支；正式 Android 更新不需要手工登录 ECS 或上传文件。
+以下命令在干净的 release checkout 中执行。当前发布分支是 `flutter-migration`，不要把 `main` 当作发布分支；仅选择 Actions 构建时使用本节；默认本地发布不推送触发编译的标签。
 
 ```bash
 VERSION=1.2.0

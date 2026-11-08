@@ -12,6 +12,7 @@ build/
 android/key.properties
 android/*.jks
 android/*.keystore
+android/.kotlin/
 
 # Flutter macOS 构建产生的临时目录
 flutter_app/

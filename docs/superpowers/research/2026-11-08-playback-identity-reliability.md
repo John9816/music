@@ -21,4 +21,4 @@
 
 测试使用已有的 `build/qa/tunefree-alignment-2026-11-07/tool-bin` 包装器与 CommandLineTools 环境，没有修改系统 Xcode 许可。最终日志及 `verification-summary.json` 位于 `build/qa/music-reliability-2026-11-08/`。
 
-本轮尚未打包新版 APK、进行 Android 真机回归、提交、推送或部署。之前的两个 macOS 研究文档改动不属于本任务，已保留。
+本轮已提交、推送并部署后端与 Android `1.1.53+64`；Android 使用本机正式签名构建并上传 ECS，已验证模拟器覆盖升级。完整证据见 [发布记录](2026-11-08-android-1.1.53-release.md)。本次未进行 Android 真机回归。之前的两个 macOS 研究文档改动不属于本任务，已保留。
