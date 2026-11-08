@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import '../config/audio_quality_policy.dart';
 import '../theme/app_theme.dart';
+import 'lyric_appearance.dart';
 
 /// 柒伍壹壹音乐的统一设置模型。
 ///
@@ -20,6 +21,8 @@ class SettingsController extends ChangeNotifier {
   static const _qualityKey = 'quality';
   static const _glassQualityKey = 'glass_quality';
   static const _reduceMotionKey = 'reduce_motion';
+  static const _lyricFontSizeKey = 'lyric_font_size';
+  static const _lyricFontStyleKey = 'lyric_font_style';
   static const _automaticAudioCacheKey = 'automatic_audio_cache';
   static const _audioCacheLimitKey = 'audio_cache_limit';
   static const _audioCacheValidityKey = 'audio_cache_validity';
@@ -35,6 +38,8 @@ class SettingsController extends ChangeNotifier {
   final Map<String, String> _qualityBySource = {};
   String _glassQuality = 'smooth';
   bool _reduceMotion = false;
+  int _lyricFontSize = defaultLyricFontSize;
+  LyricFontStyle _lyricFontStyle = LyricFontStyle.bold;
   bool _automaticAudioCache = true;
   int _audioCacheLimitBytes = 0;
   int _audioCacheValidityDays = 30;
@@ -63,6 +68,8 @@ class SettingsController extends ChangeNotifier {
   String get quality => qualityForSource(_source);
   String get glassQuality => _glassQuality;
   bool get reduceMotion => _reduceMotion;
+  int get lyricFontSize => _lyricFontSize;
+  LyricFontStyle get lyricFontStyle => _lyricFontStyle;
   bool get automaticAudioCache => _automaticAudioCache;
   int get audioCacheLimitBytes => _audioCacheLimitBytes;
   int get audioCacheValidityDays => _audioCacheValidityDays;
@@ -98,6 +105,9 @@ class SettingsController extends ChangeNotifier {
       _accentId = prefs.getString(_accentKey) ?? 'forestGreen';
       _glassQuality = prefs.getString(_glassQualityKey) ?? 'smooth';
       _reduceMotion = prefs.getBool(_reduceMotionKey) ?? false;
+      _lyricFontSize = normalizeLyricFontSize(prefs.get(_lyricFontSizeKey));
+      _lyricFontStyle =
+          LyricFontStyle.fromStored(prefs.get(_lyricFontStyleKey));
       _automaticAudioCache = prefs.getBool(_automaticAudioCacheKey) ?? true;
       _audioCacheLimitBytes = prefs.getInt(_audioCacheLimitKey) ?? 0;
       _audioCacheValidityDays = prefs.getInt(_audioCacheValidityKey) ?? 30;
@@ -204,6 +214,32 @@ class SettingsController extends ChangeNotifier {
         () => _automaticAudioCache,
         (v) => _automaticAudioCache = v,
       );
+
+  Future<void> setLyricFontSize(int value) => _setInt(
+        _lyricFontSizeKey,
+        normalizeLyricFontSize(value),
+        () => _lyricFontSize,
+        (v) => _lyricFontSize = v,
+      );
+
+  Future<void> setLyricFontStyle(LyricFontStyle value) async {
+    if (_lyricFontStyle == value) return;
+    _lyricFontStyle = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lyricFontStyleKey, value.name);
+  }
+
+  Future<void> resetLyricAppearance() async {
+    _lyricFontSize = defaultLyricFontSize;
+    _lyricFontStyle = LyricFontStyle.bold;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setInt(_lyricFontSizeKey, defaultLyricFontSize),
+      prefs.setString(_lyricFontStyleKey, LyricFontStyle.bold.name),
+    ]);
+  }
 
   Future<void> setAudioCacheLimitBytes(int value) => _setInt(
         _audioCacheLimitKey,

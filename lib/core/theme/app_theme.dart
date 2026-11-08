@@ -111,21 +111,21 @@ class AppTheme {
   }) _neutralSurfaces({required bool dark}) {
     if (dark) {
       return const (
-        lowest: Color(0xFF0A0A0B),
-        surface: Color(0xFF141416),
-        low: Color(0xFF161618),
-        container: Color(0xFF1C1C1E),
+        lowest: Color(0xFF101113),
+        surface: Color(0xFF181A1E),
+        low: Color(0xFF181A1E),
+        container: Color(0xFF1B1D21),
         high: Color(0xFF2C2C2E),
         highest: Color(0xFF3A3A3C),
       );
     }
     return const (
-      lowest: Color(0xFFF2F2F7),
+      lowest: Color(0xFFF7F8FA),
       surface: Colors.white,
-      low: Color(0xFFF7F7FA),
+      low: Color(0xFFF2F3F5),
       container: Colors.white,
-      high: Color(0xFFECECEF),
-      highest: Color(0xFFE2E2E7),
+      high: Color(0xFFEFF1F4),
+      highest: Color(0xFFE4E7EB),
     );
   }
 
@@ -194,13 +194,13 @@ class AppTheme {
     errorContainer: Color(0x33FF3B30),
     onErrorContainer: Color(0xFF7A0018),
     surface: Colors.white,
-    onSurface: Color(0xFF1C1C1E),
-    surfaceContainerLowest: Color(0xFFF2F2F7),
+    onSurface: Color(0xFF202126),
+    surfaceContainerLowest: Color(0xFFF7F8FA),
     surfaceContainerLow: Color(0xFFF2F2F7),
     surfaceContainer: Color(0xFFF7F7FA),
     surfaceContainerHigh: Color(0xFFEBEBF0),
     surfaceContainerHighest: Color(0xFFE1E1E6),
-    onSurfaceVariant: Color(0xFF6E6E73),
+    onSurfaceVariant: Color(0xFF737780),
     outline: Color(0xFF98989D),
     outlineVariant: Color(0x263C3C43),
     shadow: Color(0x143C3C43),
@@ -399,8 +399,7 @@ class AppTheme {
         modalBackgroundColor: scheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(RadiusToken.xl)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
       dialogTheme: DialogThemeData(
@@ -474,8 +473,8 @@ class AppTheme {
   static TextTheme _textTheme(ColorScheme scheme) {
     const Color primary = Color(0xFFF5F5F7);
     const Color secondary = Color(0xFFA1A1A6);
-    const Color lightPrimary = Color(0xFF1C1C1E);
-    const Color lightSecondary = Color(0xFF6E6E73);
+    const Color lightPrimary = LightPalette.textPrimary;
+    const Color lightSecondary = LightPalette.textSecondary;
     final bool dark = scheme.brightness == Brightness.dark;
     final onSurface = dark ? primary : lightPrimary;
     final onSurfaceVariant = dark ? secondary : lightSecondary;

@@ -2022,6 +2022,9 @@ void main() {
     await tester.tapAt(const Offset(8, 330));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
+    await tester.tap(find.byTooltip('返回封面'));
+    await tester.pumpAndSettle();
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('查看歌词'));
@@ -2557,12 +2560,12 @@ void main() {
     );
     await tester.pump();
 
-    final navLabels = ['首页', '发现', '搜索', '资料库', '我的'];
+    final navLabels = ['首页', '发现', '搜索', '我的'];
     final labelCenters = [
       for (final label in navLabels) tester.getCenter(find.text(label).last).dx,
     ];
     expect(labelCenters, orderedEquals([...labelCenters]..sort()));
-    expect(find.text('资料库'), findsOneWidget);
+    expect(find.text('资料库'), findsNothing);
     expect(find.text('影视'), findsNothing);
     expect(find.text('直播'), findsNothing);
 

@@ -458,13 +458,9 @@ class _SearchViewState extends State<SearchView> {
                     duration: Motion.fast,
                     decoration: BoxDecoration(
                       color: settings.searchSource == entries[i].key
-                          ? scheme.surfaceContainerHigh
+                          ? scheme.surface
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(9),
-                      boxShadow: settings.searchSource == entries[i].key &&
-                              !dark
-                          ? ShadowToken.card(context, radius: 8, opacity: 0.10)
-                          : null,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -485,7 +481,7 @@ class _SearchViewState extends State<SearchView> {
                           entries[i].value,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: TypeScale.semibold,
+                            fontWeight: TypeScale.medium,
                             color: settings.searchSource == entries[i].key
                                 ? scheme.onSurface
                                 : scheme.onSurfaceVariant,
@@ -607,29 +603,21 @@ class _SearchViewState extends State<SearchView> {
   }) {
     final scheme = Theme.of(context).colorScheme;
     final header = <Widget>[
-      if (wide ||
-          switch (Theme.of(context).platform) {
-            TargetPlatform.macOS ||
-            TargetPlatform.windows ||
-            TargetPlatform.linux =>
-              true,
-            _ => false,
-          })
-        _contentFrame(
-          GPageHeader(
-            title: _keyword.isEmpty ? '搜索' : '搜索结果',
-            subtitle: '歌曲、歌手、专辑与歌单',
-            padding: EdgeInsets.fromLTRB(
-              24 + macOSWindowControlsInset(context),
-              wide ? 22 : 18,
-              24,
-              wide ? 12 : 10,
-            ),
+      _contentFrame(
+        GPageHeader(
+          title: _keyword.isEmpty ? '搜索' : '搜索结果',
+          subtitle: wide ? '歌曲、歌手、专辑与歌单' : null,
+          padding: EdgeInsets.fromLTRB(
+            (MediaQuery.sizeOf(context).width >= 600 ? 24 : 20) +
+                macOSWindowControlsInset(context),
+            wide ? 22 : 18,
+            24,
+            wide ? 12 : 10,
           ),
         ),
+      ),
       Padding(
-        padding: EdgeInsets.fromLTRB(
-            wide ? 24 : 20, wide ? 0 : 12, wide ? 24 : 20, 4),
+        padding: EdgeInsets.fromLTRB(wide ? 24 : 20, 0, wide ? 24 : 20, 4),
         child: Container(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
@@ -795,13 +783,13 @@ class _SearchViewState extends State<SearchView> {
                     decoration: BoxDecoration(
                       color: _type == types[i]
                           ? scheme.onSurface
-                          : scheme.surfaceContainerHigh,
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(RadiusToken.pill),
                     ),
                     child: Text(labels[i],
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: TypeScale.semibold,
+                          fontWeight: TypeScale.medium,
                           color: _type == types[i]
                               ? scheme.surface
                               : scheme.onSurface,
@@ -1270,13 +1258,14 @@ class _SearchViewState extends State<SearchView> {
         const Padding(
           padding: EdgeInsets.only(bottom: 14),
           child: Text('热门搜索',
-              style: TextStyle(fontSize: 22, fontWeight: TypeScale.bold)),
+              style: TextStyle(
+                  fontSize: TypeScale.section, fontWeight: TypeScale.semibold)),
         ),
         LayoutBuilder(builder: (context, constraints) {
           final columns = constraints.maxWidth >= 720 ? 4 : 2;
           final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
           final height =
-              108 + (MediaQuery.textScalerOf(context).scale(16) - 16) * 2;
+              68 + (MediaQuery.textScalerOf(context).scale(16) - 16) * 2;
           return Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -1317,7 +1306,7 @@ class _SearchSection extends StatelessWidget {
             style: const TextStyle(
               fontSize: 19,
               height: 1.15,
-              fontWeight: FontWeight.w800,
+              fontWeight: TypeScale.semibold,
             ),
           ),
         ),
@@ -1512,49 +1501,33 @@ class _HotSearchCard extends StatelessWidget {
   final String label;
   final int index;
   final VoidCallback onTap;
-  static const _colors = [
-    Color(0xFF765B40),
-    Color(0xFFAF531A),
-    Color(0xFF1E5CA6),
-    Color(0xFF177B78),
-    Color(0xFFA62C67)
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       label: label,
       child: GPressScale(
         onTap: onTap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: Container(
-            color: _colors[index % _colors.length],
-            child: Stack(
+            color: scheme.surfaceContainer,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
               children: [
-                Positioned(
-                  top: -18,
-                  right: 12,
-                  child: ExcludeSemantics(
-                      child: Icon(Icons.music_note_rounded,
-                          size: 84,
-                          color: Colors.white.withValues(alpha: 0.18))),
+                Expanded(
+                  child: Text(label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: TypeScale.medium,
+                          color: scheme.onSurface)),
                 ),
-                Positioned.fill(
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Text(label,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: TypeScale.semibold,
-                              color: Colors.white)),
-                    ),
-                  ),
-                ),
+                const SizedBox(width: 6),
+                Icon(Icons.north_west_rounded,
+                    size: 15,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.65)),
               ],
             ),
           ),

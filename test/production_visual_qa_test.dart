@@ -16,15 +16,18 @@ import 'package:duck_music/core/player/player_controller.dart';
 import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
+import 'package:duck_music/core/settings/lyric_appearance.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/home/home_shell.dart';
 import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/player/player_view.dart';
 import 'package:duck_music/features/playlists/playlist_detail_view.dart';
 import 'package:duck_music/features/profile/user_library_view.dart';
+import 'package:duck_music/features/profile/profile_view.dart';
 import 'package:duck_music/features/profile/user_playlists_view.dart';
 import 'package:duck_music/features/search/artist_names_link.dart';
 import 'package:duck_music/features/settings/settings_view.dart';
+import 'package:duck_music/features/settings/lyric_settings_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +39,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _exportImages = bool.fromEnvironment('DUCKMUSIC_EXPORT_QA');
 const _fontPath = String.fromEnvironment('DUCKMUSIC_QA_FONT');
+const _exportDirectory = String.fromEnvironment('DUCKMUSIC_QA_DIRECTORY',
+    defaultValue: 'build/qa/production-readiness');
 const _captureKey = ValueKey('production-qa-capture');
 
 void main() {
@@ -69,9 +74,9 @@ void main() {
   });
 
   for (final fixture in [
-    (name: 'library-phone', size: const Size(390, 844), macOS: false),
-    (name: 'library-mac-compact', size: const Size(700, 700), macOS: true),
-    (name: 'library-desktop', size: const Size(1440, 900), macOS: true),
+    (name: 'my-playlists-phone', size: const Size(390, 844), macOS: false),
+    (name: 'my-playlists-mac-compact', size: const Size(700, 700), macOS: true),
+    (name: 'my-playlists-desktop', size: const Size(1440, 900), macOS: true),
   ]) {
     testWidgets('visual QA ${fixture.name}', (tester) async {
       await _pump(tester,
@@ -79,7 +84,10 @@ void main() {
           platform:
               fixture.macOS ? TargetPlatform.macOS : TargetPlatform.android,
           child: const HomeShell());
-      await tester.tap(find.text('资料库').last);
+      await tester
+          .tap(find.text(fixture.size.width > 1000 ? '音乐爱好者' : '我的').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('我的歌单').last);
       await tester.pumpAndSettle();
       expect(find.text('下班后的慢时光'), findsWidgets);
       if (fixture.size.width > 1000) {
@@ -87,6 +95,14 @@ void main() {
         await tester.pumpAndSettle();
       }
       await _verifyAndCapture(tester, fixture.name);
+      if (fixture.size.width > 1000) {
+        await tester.tap(find.text('下班后的慢时光').first);
+        await tester.pumpAndSettle();
+        expect(find.byType(UserLibraryView), findsOneWidget);
+        await tester.tap(find.byTooltip('返回'));
+        await tester.pumpAndSettle();
+        expect(find.byType(ProfileView), findsOneWidget);
+      }
     });
   }
 
@@ -109,9 +125,6 @@ void main() {
           size: const Size(390, 844), dark: dark, child: const HomeShell());
       final mode = dark ? 'dark' : 'light';
       await _verifyAndCapture(tester, 'home-phone-$mode');
-      await tester.tap(find.text('资料库').last);
-      await tester.pumpAndSettle();
-      await _verifyAndCapture(tester, 'library-phone-$mode');
       await tester.tap(find.text('搜索').last);
       await tester.pumpAndSettle();
       await _verifyAndCapture(tester, 'search-phone-$mode');
@@ -183,6 +196,16 @@ void main() {
           child: const PlayerView());
       expect(find.byTooltip('播放'), findsOneWidget);
       await _verifyAndCapture(tester, fixture.name);
+      await tester.tap(find.bySemanticsLabel('查看歌词'));
+      await tester.pumpAndSettle();
+      expect(find.text('让晚风把心事带走'), findsOneWidget);
+      await _verifyAndCapture(tester, '${fixture.name}-lyrics');
+      if (fixture.name == 'player-phone') {
+        await tester.drag(find.byType(ListView), const Offset(0, -100));
+        await tester.pumpAndSettle();
+        expect(find.text('回到当前'), findsOneWidget);
+        await _verifyAndCapture(tester, '${fixture.name}-lyrics-browsing');
+      }
     });
   }
 
@@ -229,6 +252,36 @@ void main() {
         size: const Size(390, 844), scale: 1.5, child: const SettingsView());
     expect(find.text('减弱动态效果'), findsOneWidget);
     await _verifyAndCapture(tester, 'settings-large-text');
+  });
+
+  for (final dark in [false, true]) {
+    testWidgets('visual QA lyric appearance dark=$dark', (tester) async {
+      await _pump(tester,
+          size: const Size(390, 844), dark: dark, child: const SettingsView());
+      await tester.scrollUntilVisible(find.text('歌词显示'), 150);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('歌词显示'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LyricSettingsView), findsOneWidget);
+      await _verifyAndCapture(
+          tester, 'lyric-appearance-${dark ? 'dark' : 'light'}');
+    });
+  }
+
+  testWidgets('visual QA lyric appearance max size and large system text',
+      (tester) async {
+    await _pump(tester,
+        size: const Size(320, 700), scale: 2, child: const LyricSettingsView());
+    final settings = tester
+        .element(find.byType(LyricSettingsView))
+        .read<SettingsController>();
+    await settings.setLyricFontSize(40);
+    await settings.setLyricFontStyle(LyricFontStyle.soft);
+    await tester.pumpAndSettle();
+    await _verifyAndCapture(tester, 'lyric-appearance-large-preview');
+    await tester.scrollUntilVisible(find.text('恢复默认'), 180);
+    await tester.pumpAndSettle();
+    await _verifyAndCapture(tester, 'lyric-appearance-large-controls');
   });
 
   for (final fixture in [
@@ -365,7 +418,7 @@ Future<void> _verifyAndCapture(WidgetTester tester, String name) async {
     final frame = await boundary.toImage(pixelRatio: 1);
     try {
       final bytes = await frame.toByteData(format: ui.ImageByteFormat.png);
-      final directory = Directory('build/qa/production-readiness');
+      final directory = Directory(_exportDirectory);
       await directory.create(recursive: true);
       await File('${directory.path}/$name.png')
           .writeAsBytes(bytes!.buffer.asUint8List());

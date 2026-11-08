@@ -11,12 +11,63 @@ import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/home/home_shell.dart';
 import 'package:duck_music/features/player/player_view.dart';
+import 'package:duck_music/widgets/glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  for (final routeName in ['player', 'app']) {
+    for (final reducedMotion in [false, true]) {
+      testWidgets(
+          'rebuilding $routeName transitions releases animation listeners '
+          '(reduced motion: $reducedMotion)', (tester) async {
+        final animation = _TrackedRouteAnimation();
+        PageRouteBuilder<void>? route;
+        final rebuild = ValueNotifier<int>(0);
+        addTearDown(rebuild.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.android),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                disableAnimations: reducedMotion,
+              ),
+              child: child!,
+            ),
+            home: ValueListenableBuilder<int>(
+              valueListenable: rebuild,
+              builder: (context, value, _) {
+                route ??= (routeName == 'player'
+                    ? buildPlayerRoute(reducedMotion: reducedMotion)
+                    : buildAppRoute<void>(
+                        context,
+                        (_) => const SizedBox.expand(),
+                      )) as PageRouteBuilder<void>;
+                return route!.transitionsBuilder(
+                  context,
+                  animation,
+                  const AlwaysStoppedAnimation<double>(0),
+                  const SizedBox.expand(),
+                );
+              },
+            ),
+          ),
+        );
+        for (var i = 1; i <= 12; i++) {
+          rebuild.value = i;
+          await tester.pump();
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+
+        expect(animation.statusListeners, isEmpty);
+        expect(animation.valueListeners, isEmpty);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   testWidgets('switching tabs keeps inactive root pages unchanged',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {});
@@ -106,6 +157,31 @@ void main() {
     expect(image.memCacheHeight, 256);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _TrackedRouteAnimation extends Animation<double> {
+  final statusListeners = <AnimationStatusListener>{};
+  final valueListeners = <VoidCallback>{};
+
+  @override
+  double get value => 0.5;
+
+  @override
+  AnimationStatus get status => AnimationStatus.forward;
+
+  @override
+  void addListener(VoidCallback listener) => valueListeners.add(listener);
+
+  @override
+  void removeListener(VoidCallback listener) => valueListeners.remove(listener);
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) =>
+      statusListeners.add(listener);
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) =>
+      statusListeners.remove(listener);
 }
 
 Future<_PlayerHarness> _pumpPlayer(WidgetTester tester) async {

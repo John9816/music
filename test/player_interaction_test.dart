@@ -7,12 +7,16 @@ import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/player/player_controller.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
+import 'package:duck_music/core/settings/lyric_appearance.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/player/mini_player.dart';
 import 'package:duck_music/features/player/player_view.dart';
+import 'package:duck_music/features/player/karaoke_lyric_text.dart';
+import 'package:duck_music/features/player/desktop_player_panel.dart';
 import 'package:duck_music/widgets/glass.dart';
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -32,6 +36,266 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(const {});
     _handleRequest = (_) async => _response(const {'items': []});
+  });
+
+  testWidgets(
+      'lyrics stay open on blank taps and have an explicit cover action',
+      (tester) async {
+    await _pumpPlayer(tester);
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    final pages = tester.getRect(find.byType(PageView));
+    await tester.tapAt(Offset(pages.left + 8, pages.center.dy));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
+    await tester.tap(find.byTooltip('返回封面'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('mobile-player-artwork')).hitTestable(),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'tapping a browsed lyric immediately resumes following its timestamp',
+      (tester) async {
+    final harness = await _pumpPlayer(tester);
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.pumpAndSettle();
+    expect(find.text('回到当前'), findsOneWidget);
+    final target = find.text('Lyric line 10');
+    await tester.scrollUntilVisible(target, 120,
+        scrollable: find.descendant(
+            of: find.byType(ListView), matching: find.byType(Scrollable)));
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+    expect(harness.player.soughtTo, const Duration(seconds: 100));
+    expect(find.text('回到当前'), findsNothing);
+    expect(tester.getCenter(target).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long lyrics remain readable and centered with large text',
+      (tester) async {
+    const longLine =
+        'This is a deliberately long lyric line that needs several lines to remain fully readable';
+    final harness = await _pumpPlayer(tester, textScale: 2);
+    harness.player.lyricOverride =
+        '[00:00.00]Intro\n[01:00.00]$longLine\n[02:00.00]Outro';
+    harness.player.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    final text = find.text(longLine);
+    final paragraph = tester.renderObject<RenderParagraph>(text);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    final textWidget = tester.widget<Text>(text);
+    final style = DefaultTextStyle.of(tester.element(text)).style;
+    final painter = TextPainter(
+      text: TextSpan(text: textWidget.data, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: const TextScaler.linear(2),
+    )..layout(maxWidth: tester.getSize(text).width);
+    expect(
+        tester.getSize(text).height, greaterThanOrEqualTo(painter.height - 1));
+    painter.dispose();
+    expect(tester.getCenter(text).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('changing lyric appearance preserves word timing and centering',
+      (tester) async {
+    final harness = await _pumpPlayer(tester, textScale: 1.5);
+    harness.player.lyricOverride = '[0,1000](0,1000,0)序曲\n'
+        '[60000,10000](60000,5000,0)沿着这条很长很长的路，(65000,5000,0)走到有光的地方\n'
+        '[70000,1000](70000,1000,0)下一句';
+    harness.player.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    await harness.player.seek(const Duration(seconds: 62));
+    await tester.pumpAndSettle();
+    final position = harness.player.position;
+    for (final style in LyricFontStyle.values) {
+      await harness.settings.setLyricFontSize(40);
+      await harness.settings.setLyricFontStyle(style);
+      await tester.pumpAndSettle();
+      final text = find.byType(KaraokeLyricText);
+      final widget = tester.widget<KaraokeLyricText>(text);
+      expect(widget.style.fontSize, 40);
+      expect(widget.style.fontWeight, style.weight);
+      expect(widget.position, position);
+      expect(tester.getCenter(text).dy,
+          closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+      expect(tester.takeException(), isNull);
+    }
+    await harness.settings.resetLyricAppearance();
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<KaraokeLyricText>(find.byType(KaraokeLyricText))
+            .style
+            .fontSize,
+        28);
+  });
+
+  testWidgets('desktop lyrics remeasure wrapped rows after font changes',
+      (tester) async {
+    final harness = await _pumpPlayer(tester,
+        desktopLyrics: true, size: const Size(380, 700), textScale: 1.5);
+    harness.player.lyricOverride = List.generate(
+            10,
+            (i) =>
+                '[${i ~/ 6}:${(i % 6 * 10).toString().padLeft(2, '0')}.00]长句歌词第$i行，沿着这条路一直走到有光的地方')
+        .join('\n');
+    harness.player.notifyListeners();
+    await tester.pumpAndSettle();
+    await harness.settings.setLyricFontSize(40);
+    await harness.settings.setLyricFontStyle(LyricFontStyle.soft);
+    await tester.pumpAndSettle();
+    final active = find.text('长句歌词第6行，沿着这条路一直走到有光的地方');
+    expect(active, findsOneWidget);
+    expect(tester.widget<Text>(active).style!.fontWeight, FontWeight.w300);
+    expect(tester.getCenter(active).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    await harness.player.seek(const Duration(seconds: 70));
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(find.text('长句歌词第7行，沿着这条路一直走到有光的地方')).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lyrics keep their wrapping when playback advances',
+      (tester) async {
+    const line = '沿着这条很长很长的路，走到有光的地方';
+    final harness = await _pumpPlayer(tester);
+    harness.player.lyricOverride =
+        '[00:00.00]序曲\n[01:00.00]$line\n[01:10.00]下一句';
+    harness.player.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    final activeSize = tester.getSize(find.text(line));
+
+    await harness.player.seek(const Duration(seconds: 70));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.text(line)), activeSize,
+        reason: 'Highlighting must not change text wrapping or row geometry');
+    expect(tester.getCenter(find.text('下一句')).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('karaoke lyrics render clean text and seek with absolute time',
+      (tester) async {
+    final harness = await _pumpPlayer(tester);
+    harness.player.lyricOverride =
+        '[60000,2000](60000,1000,0)晚(61000,1000,0)风\n'
+        '[62000,2000](62000,1000,0)明(63000,1000,0)天';
+    harness.player.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    expect(find.text('晚风'), findsOneWidget);
+    await harness.player.seek(const Duration(milliseconds: 60100));
+    await tester.pumpAndSettle();
+    final before = tester.widget<ShaderMask>(find.byType(ShaderMask));
+    await harness.player.seek(const Duration(milliseconds: 60500));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ShaderMask>(find.byType(ShaderMask)), same(before),
+        reason: 'Word progress must not rebuild the lyric list');
+    await tester.tap(find.text('明天'));
+    await tester.pumpAndSettle();
+    expect(harness.player.soughtTo, const Duration(seconds: 62));
+    expect(tester.getCenter(find.text('明天')).dy,
+        closeTo(tester.getCenter(find.byType(ListView)).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+        'browsing clears lyric blur until following resumes reduced=$reducedMotion',
+        (tester) async {
+      await _pumpPlayer(tester, reducedMotion: reducedMotion);
+      await tester.tap(find.bySemanticsLabel('查看歌词'));
+      await tester.pumpAndSettle();
+      final surroundingLine = find.text('Lyric line 8');
+      final filter = find.ancestor(
+          of: surroundingLine, matching: find.byType(ImageFiltered));
+      expect(filter, findsOneWidget);
+      expect(tester.widget<ImageFiltered>(filter).enabled, isTrue);
+
+      await tester.drag(find.byType(ListView), const Offset(0, -120));
+      await tester.pumpAndSettle();
+      expect(find.text('回到当前'), findsOneWidget);
+      expect(tester.widget<ImageFiltered>(filter).enabled, isFalse,
+          reason: 'Browsing lyrics must be legible away from the playing line');
+
+      await tester.tap(find.text('回到当前'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<ImageFiltered>(filter).enabled, isTrue);
+      final currentFilter = find.ancestor(
+          of: find.text('Lyric line 6'), matching: find.byType(ImageFiltered));
+      expect(tester.widget<ImageFiltered>(currentFilter).enabled, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('player transport press feedback follows its circular button',
+      (tester) async {
+    await _pumpPlayer(tester);
+    final play = find.byTooltip('播放');
+    final gesture = await tester.startGesture(tester.getCenter(play));
+    await tester.pump(const Duration(milliseconds: 180));
+    final feedback = tester.widget<AnimatedContainer>(find
+        .descendant(of: play, matching: find.byType(AnimatedContainer))
+        .first);
+    final decoration = feedback.foregroundDecoration! as BoxDecoration;
+    final bounds = tester.getRect(play);
+    final radius =
+        decoration.borderRadius!.resolve(TextDirection.ltr).topLeft.x;
+    expect(radius, greaterThanOrEqualTo(bounds.shortestSide / 2));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('播放'), findsOneWidget);
+  });
+
+  testWidgets('untimed lyrics can scroll without overflowing the player',
+      (tester) async {
+    final harness = await _pumpPlayer(tester, textScale: 1.5);
+    harness.player.lyricOverride =
+        List.generate(40, (i) => 'Untimed lyric $i').join('\n');
+    harness.player.notifyListeners();
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('查看歌词'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final pages = tester.getRect(find.byType(PageView));
+    final lyricsScroll = find
+        .descendant(
+            of: find.byType(PageView), matching: find.byType(Scrollable))
+        .last;
+    await tester.dragFrom(pages.center, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(tester.state<ScrollableState>(lyricsScroll).position.pixels,
+        greaterThan(100));
+    expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
+    expect(harness.player.soughtTo, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Android player actions retain 48 pixel touch targets',
+      (tester) async {
+    await _pumpPlayer(tester, size: const Size(320, 700));
+    for (final label in ['收藏歌曲', '更多', '随机播放', '播放队列']) {
+      expect(tester.getSize(find.byTooltip(label)).shortestSide,
+          greaterThanOrEqualTo(48),
+          reason: label);
+    }
   });
 
   testWidgets('top drag follows the finger and returns below the threshold',
@@ -58,6 +322,120 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final surface in ['cover', 'lyrics', 'desktop', 'mini']) {
+    testWidgets(
+        '$surface time labels agree at fractional seconds and unknown duration',
+        (tester) async {
+      final wide = surface == 'desktop' || surface == 'mini';
+      final harness = await _pumpPlayer(tester,
+          size: wide ? const Size(1280, 800) : const Size(390, 844),
+          platform: wide ? TargetPlatform.macOS : TargetPlatform.android,
+          mini: surface == 'mini',
+          desktopMini: surface == 'mini');
+      if (surface == 'lyrics') {
+        await tester.tap(find.bySemanticsLabel('查看歌词'));
+        await tester.pumpAndSettle();
+      }
+      await harness.player.seek(const Duration(milliseconds: 119900));
+      await tester.pumpAndSettle();
+      expect(find.text(surface == 'mini' ? '1:59' : '01:59'), findsOneWidget);
+      expect(find.text(surface == 'mini' ? '-2:01' : '-02:01'), findsOneWidget);
+      harness.player.timelineDuration = null;
+      harness.player.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.text('--:--'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        '$surface scrubbing previews times and cancellation restores them',
+        (tester) async {
+      final wide = surface == 'desktop' || surface == 'mini';
+      final harness = await _pumpPlayer(tester,
+          size: wide ? const Size(1280, 800) : const Size(390, 844),
+          platform: wide ? TargetPlatform.macOS : TargetPlatform.android,
+          mini: surface == 'mini',
+          desktopMini: surface == 'mini');
+      if (surface == 'lyrics') {
+        await tester.tap(find.bySemanticsLabel('查看歌词'));
+        await tester.pumpAndSettle();
+      }
+      final bar = tester.getRect(find.byType(GProgressBar));
+      final gesture = await tester
+          .startGesture(Offset(bar.left + bar.width * .25, bar.center.dy));
+      await gesture.moveTo(Offset(bar.left + bar.width * .5, bar.center.dy));
+      await tester.pump();
+      await gesture.moveTo(Offset(bar.left + bar.width * .75, bar.center.dy));
+      await tester.pumpAndSettle();
+      expect(find.text(surface == 'mini' ? '3:00' : '03:00'), findsOneWidget);
+      expect(find.text(surface == 'mini' ? '-1:00' : '-01:00'), findsOneWidget);
+      expect(harness.player.soughtTo, isNull);
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(find.text(surface == 'mini' ? '1:00' : '01:00'), findsOneWidget);
+      expect(find.text(surface == 'mini' ? '-3:00' : '-03:00'), findsOneWidget);
+      expect(harness.player.soughtTo, isNull);
+    });
+  }
+
+  testWidgets('released progress stays at the target while seek is pending',
+      (tester) async {
+    final harness = await _pumpPlayer(tester);
+    final gate = Completer<void>();
+    harness.player.seekGate = gate;
+    final bar = tester.getRect(find.byType(GProgressBar));
+    await tester.tapAt(Offset(bar.left + bar.width * .75, bar.center.dy));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('03:00'), findsOneWidget);
+    expect(find.text('-01:00'), findsOneWidget);
+    expect(
+        tester
+            .getSemantics(find.bySemanticsLabel('播放进度'))
+            .getSemanticsData()
+            .value,
+        '3:00 / 4:00');
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('03:00'), findsOneWidget);
+    expect(harness.player.soughtTo, const Duration(minutes: 3));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed seek restores live time and leaves progress usable',
+      (tester) async {
+    final harness = await _pumpPlayer(tester);
+    final gate = Completer<void>();
+    harness.player.seekGate = gate;
+    final bar = tester.getRect(find.byType(GProgressBar));
+    await tester.tapAt(Offset(bar.left + bar.width * .75, bar.center.dy));
+    await tester.pump();
+    gate.completeError(StateError('Native seek failed'));
+    await tester.pumpAndSettle();
+    expect(find.text('01:00'), findsOneWidget);
+    expect(find.text('暂时无法调整播放进度，请重试'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    harness.player.seekGate = null;
+    await tester.tapAt(Offset(bar.center.dx, bar.center.dy));
+    await tester.pumpAndSettle();
+    expect(find.text('02:00'), findsOneWidget);
+  });
+
+  testWidgets('changing songs clears an old drag preview', (tester) async {
+    final harness = await _pumpPlayer(tester);
+    final bar = tester.getRect(find.byType(GProgressBar));
+    final gesture = await tester.startGesture(bar.center);
+    await gesture.moveTo(Offset(bar.left + bar.width * .75, bar.center.dy));
+    await tester.pump();
+    expect(find.text('03:00'), findsOneWidget);
+    harness.player.replaceCurrent(_song(id: 'replacement'));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('01:00'), findsOneWidget);
+    expect(harness.player.soughtTo, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a deliberate downward drag dismisses the player route',
       (tester) async {
     await _pumpPlayer(tester, route: true);
@@ -73,6 +451,110 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('rapid queue taps open only one dismissible sheet',
+      (tester) async {
+    await _pumpPlayer(tester);
+    final queue = find.byTooltip('播放队列');
+    final queuePoint = tester.getCenter(queue);
+    await tester.tap(queue);
+    await tester.tapAt(queuePoint);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('关闭播放队列').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(DraggableScrollableSheet), findsNothing);
+
+    await tester.tap(queue);
+    await tester.pumpAndSettle();
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('quality selection does not restart a replacement song',
+      (tester) async {
+    final harness = await _pumpPlayer(tester);
+    await tester.tap(find.byTooltip('切换音质'));
+    await tester.pumpAndSettle();
+
+    harness.player.replaceCurrent(_song(source: 'qq'));
+    await tester.pump();
+    await tester.tap(find.text('标准音质'));
+    await tester.pumpAndSettle();
+
+    expect(harness.player.retryCount, 0);
+    expect(harness.player.soughtTo, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('canceling mini player volume leaves playback unchanged',
+      (tester) async {
+    final harness = await _pumpPlayer(
+      tester,
+      mini: true,
+      desktopMini: true,
+      size: const Size(1280, 800),
+    );
+    final volumeGesture = find
+        .descendant(
+          of: find.byType(MiniPlayer),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is GestureDetector &&
+                widget.onHorizontalDragUpdate != null,
+          ),
+        )
+        .last;
+    final volume = tester.getRect(volumeGesture);
+    expect(volume.height, greaterThanOrEqualTo(44));
+    final gesture = await tester.startGesture(
+      Offset(volume.left + volume.width * 0.2, volume.center.dy),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+
+    expect(harness.player.volumeChanges, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [const Size(320, 640), const Size(844, 390)]) {
+    testWidgets('quality choices fit $size with large text', (tester) async {
+      await _pumpPlayer(tester, size: size, textScale: 2);
+      await tester.ensureVisible(find.byTooltip('切换音质'));
+      await tester.tap(find.byTooltip('切换音质'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Hi-Res'));
+      await tester.pumpAndSettle();
+      expect(find.text('Hi-Res').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('Hi-Res'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('Hi-Res'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('sleep timer choices fit $size with large text',
+        (tester) async {
+      final harness = await _pumpPlayer(tester, size: size, textScale: 2);
+      await tester.ensureVisible(find.byTooltip('睡眠定时'));
+      await tester.tap(find.byTooltip('睡眠定时'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('90 分钟后暂停'));
+      await tester.pumpAndSettle();
+      expect(find.text('90 分钟后暂停').hitTestable(), findsOneWidget);
+      await tester.tap(find.text('90 分钟后暂停'));
+      await tester.pumpAndSettle();
+      expect(find.text('90 分钟后暂停'), findsNothing);
+      expect(harness.timer.isActive, isTrue);
+      harness.timer.stop();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('lyrics scroll and progress scrubbing keep the player open',
       (tester) async {
     final harness = await _pumpPlayer(tester, route: true);
@@ -85,6 +567,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.byTooltip('收起播放器')), closeTop);
     expect(find.byType(PlayerView), findsOneWidget);
+    expect(harness.player.soughtTo, isNull);
 
     final progress = tester.getRect(find.byType(GProgressBar));
     await tester.dragFrom(
@@ -392,6 +875,8 @@ Future<_PlayerHarness> _pumpPlayer(
   bool reducedMotion = false,
   bool loggedIn = false,
   bool mini = false,
+  bool desktopMini = false,
+  bool desktopLyrics = false,
   int queueLength = 1,
   Size size = const Size(390, 844),
   double textScale = 1,
@@ -429,22 +914,30 @@ Future<_PlayerHarness> _pumpPlayer(
           ),
           child: child!,
         ),
-        home: mini
-            ? const Scaffold(body: Align(child: MiniPlayer()))
-            : route
-                ? Builder(
-                    builder: (context) => Scaffold(
-                      body: Center(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                            buildPlayerRoute(reducedMotion: reducedMotion),
-                          ),
-                          child: const Text('Open player'),
-                        ),
-                      ),
+        home: desktopLyrics
+            ? Scaffold(
+                body: DesktopPlayerPanel(
+                    panel: MiniPlayerPanel.lyrics, onClose: () {}))
+            : mini
+                ? Scaffold(
+                    body: Align(
+                      child: MiniPlayer(sidebarWidth: desktopMini ? 264 : null),
                     ),
                   )
-                : const PlayerView(),
+                : route
+                    ? Builder(
+                        builder: (context) => Scaffold(
+                          body: Center(
+                            child: TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                buildPlayerRoute(reducedMotion: reducedMotion),
+                              ),
+                              child: const Text('Open player'),
+                            ),
+                          ),
+                        ),
+                      )
+                    : const PlayerView(),
       ),
     ),
   );
@@ -454,13 +947,15 @@ Future<_PlayerHarness> _pumpPlayer(
     await tester.pump(const Duration(milliseconds: 500));
   }
   await tester.pump();
-  return _PlayerHarness(player);
+  return _PlayerHarness(player, timer, settings);
 }
 
 class _PlayerHarness {
-  const _PlayerHarness(this.player);
+  const _PlayerHarness(this.player, this.timer, this.settings);
 
   final _InteractionPlayer player;
+  final SleepTimer timer;
+  final SettingsController settings;
 }
 
 class _InteractionAuth extends AuthController {
@@ -480,7 +975,14 @@ class _InteractionPlayer extends PlayerController {
   final List<Song> _queue;
   Song _current = _song();
   bool _playing = false;
+  Duration _position = const Duration(seconds: 60);
+  final _positions = StreamController<Duration>.broadcast();
+  String? lyricOverride;
+  Duration? timelineDuration = const Duration(minutes: 4);
   Duration? soughtTo;
+  Completer<void>? seekGate;
+  int retryCount = 0;
+  final volumeChanges = <double>[];
 
   @override
   Song get current => _current;
@@ -498,16 +1000,18 @@ class _InteractionPlayer extends PlayerController {
   bool get playing => _playing;
 
   @override
-  Duration get position => const Duration(seconds: 60);
+  Duration get position => _position;
 
   @override
-  Stream<Duration> get positionStream => const Stream.empty();
+  Stream<Duration> get positionStream => _positions.stream;
 
   @override
-  Duration get duration => const Duration(minutes: 4);
+  Duration? get duration => timelineDuration;
 
   @override
-  String get lyric => List.generate(
+  String get lyric =>
+      lyricOverride ??
+      List.generate(
         24,
         (index) => '[${(index ~/ 6).toString().padLeft(2, '0')}:'
             '${(index % 6 * 10).toString().padLeft(2, '0')}.00]Lyric line $index',
@@ -526,6 +1030,28 @@ class _InteractionPlayer extends PlayerController {
   @override
   Future<void> seek(Duration position) async {
     soughtTo = position;
+    await seekGate?.future;
+    _position = position;
+    _positions.add(position);
+  }
+
+  @override
+  void dispose() {
+    _positions.close();
+    super.dispose();
+  }
+
+  @override
+  Future<void> retry() async {
+    retryCount++;
+  }
+
+  @override
+  Future<void> pause() async => setPlaying(false);
+
+  @override
+  Future<void> setVolume(double value) async {
+    volumeChanges.add(value);
   }
 }
 

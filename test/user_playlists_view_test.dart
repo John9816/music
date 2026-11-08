@@ -4,6 +4,7 @@ import 'package:duck_music/core/api/user_api.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/player/player_controller.dart';
+import 'package:duck_music/core/services/user_playlist_library.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/profile/user_library_view.dart';
@@ -16,6 +17,77 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+      'playlist toolbar keeps its title outside actions on small screens',
+      (tester) async {
+    await _pumpPlaylistDirectory(tester, _PlaylistApi());
+    tester.view.physicalSize = const Size(320, 640);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+    final title =
+        find.descendant(of: find.byType(GAppBar), matching: find.text('我的歌单'));
+    expect(tester.getRect(title).right,
+        lessThanOrEqualTo(tester.getRect(find.byTooltip('新建歌单')).left));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('owned playlists can be created once and appear in the directory',
+      (tester) async {
+    final api = _PlaylistApi()..creation = Completer<void>();
+    await _pumpPlaylistDirectory(tester, api);
+    await tester.tap(find.byTooltip('新建歌单'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, '创建'))
+            .onPressed,
+        isNull);
+    await tester.enterText(
+        find.descendant(of: dialog, matching: find.byType(TextField)),
+        '  清晨散步  ');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, '创建'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新建歌单'));
+    await tester.pump();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(api.createdNames, ['清晨散步']);
+    api.creation!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('清晨散步'), findsOneWidget);
+    expect(find.byTooltip('导入歌单'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'failed playlist creation recovers and cancellation does not create',
+      (tester) async {
+    final api = _PlaylistApi()..creation = Completer<void>();
+    await _pumpPlaylistDirectory(tester, api);
+    await tester.tap(find.byTooltip('新建歌单'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.descendant(
+            of: find.byType(AlertDialog), matching: find.byType(TextField)),
+        '失败的歌单');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, '创建'));
+    await tester.pumpAndSettle();
+    api.creation!.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('歌单创建失败，请稍后重试'), findsOneWidget);
+    await tester.tap(find.byTooltip('新建歌单'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(api.createdNames, ['失败的歌单']);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final current in [
     (id: '一', source: 'qq', staysLiked: false),
@@ -471,9 +543,29 @@ class _LibraryPlayer extends PlayerController {
 class _PlaylistApi extends UserApi {
   final deletedOwned = <String>[];
   final removedFavorites = <(String, String)>[];
+  final createdNames = <String>[];
+  final created = <Map<String, dynamic>>[];
+  Completer<void>? creation;
+
+  @override
+  Future<Map<String, dynamic>> createPlaylist(
+      String name, String? description, String token) async {
+    createdNames.add(name);
+    await creation?.future;
+    final playlist = <String, dynamic>{
+      'id': 'created-${created.length}',
+      'name': name,
+      'source': 'local',
+      'songCount': 0,
+    };
+    created.add(playlist);
+    UserPlaylistLibrary.instance.markChanged();
+    return playlist;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> getUserPlaylists(String token) async => [
+        ...created,
         {
           'id': 1,
           'name': '我的歌单',
@@ -501,4 +593,23 @@ class _PlaylistApi extends UserApi {
   ) async {
     removedFavorites.add((source, playlistId));
   }
+}
+
+Future<void> _pumpPlaylistDirectory(
+    WidgetTester tester, _PlaylistApi api) async {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(390, 844);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetPhysicalSize);
+  SharedPreferences.setMockInitialValues(
+      const {'auth_token': 'playlist-token'});
+  final auth = AuthController();
+  await auth.load();
+  addTearDown(auth.dispose);
+  await tester.pumpWidget(ChangeNotifierProvider<AuthController>.value(
+    value: auth,
+    child: MaterialApp(
+        home: UserPlaylistsView(api: api, filter: UserPlaylistFilter.owned)),
+  ));
+  await tester.pumpAndSettle();
 }

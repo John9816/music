@@ -64,7 +64,7 @@ double macOSWindowControlsInset(BuildContext context) {
 TextStyle pageTitleStyle(BuildContext context) => TextStyle(
       fontSize:
           MediaQuery.sizeOf(context).width < 600 ? 27 : TypeScale.pageTitle,
-      fontWeight: TypeScale.heavy,
+      fontWeight: TypeScale.semibold,
       letterSpacing: 0,
       color: Theme.of(context).colorScheme.onSurface,
       height: 1.08,
@@ -79,6 +79,7 @@ class GPageHeader extends StatelessWidget {
     this.trailing,
     this.padding,
     this.actions,
+    this.inlineActions = false,
   });
 
   final String title;
@@ -86,6 +87,9 @@ class GPageHeader extends StatelessWidget {
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
   final List<Widget>? actions;
+
+  /// Compact icon actions may share the title baseline on a phone.
+  final bool inlineActions;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +103,11 @@ class GPageHeader extends StatelessWidget {
               : EdgeInsets.fromLTRB(24 + windowControlsInset, 24, 24, 14)),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final stackActions = trailing != null && constraints.maxWidth < 420;
+          final hasActions = actions != null && actions!.isNotEmpty;
+          final stackActions = (trailing != null || hasActions) &&
+              constraints.maxWidth < 420 &&
+              (!inlineActions ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.5);
           final heading = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -118,15 +126,12 @@ class GPageHeader extends StatelessWidget {
               ],
             ],
           );
-          final effectiveTrailing = actions != null && actions!.isNotEmpty
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (int i = 0; i < actions!.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      actions![i],
-                    ],
-                  ],
+          final effectiveTrailing = hasActions
+              ? Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: actions!,
                 )
               : trailing;
           if (stackActions && effectiveTrailing != null) {
@@ -141,7 +146,9 @@ class GPageHeader extends StatelessWidget {
             );
           }
           return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: inlineActions
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.end,
             children: [
               Expanded(child: heading),
               if (effectiveTrailing != null) ...[
@@ -185,14 +192,18 @@ class GPressScale extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.scale = 0.965,
+    this.scale = 0.98,
     this.disabled = false,
+    this.borderRadius = const BorderRadius.all(Radius.circular(RadiusToken.sm)),
+    this.feedbackColor,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final double scale;
   final bool disabled;
+  final BorderRadiusGeometry borderRadius;
+  final Color? feedbackColor;
 
   @override
   State<GPressScale> createState() => _GPressScaleState();
@@ -202,11 +213,49 @@ class _GPressScaleState extends State<GPressScale> {
   bool _pressed = false;
   bool _focused = false;
   bool _hovered = false;
+  Timer? _releaseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_highlightModeChanged);
+  }
+
+  void _highlightModeChanged(FocusHighlightMode mode) {
+    if (mounted) setState(() {});
+  }
+
+  void _press() {
+    _releaseTimer?.cancel();
+    setState(() => _pressed = true);
+  }
+
+  void _release() {
+    _releaseTimer?.cancel();
+    // A down/up pair can arrive before the next frame. Hold the accepted tap
+    // briefly so quick taps have visible feedback as well as held presses.
+    _releaseTimer = Timer(const Duration(milliseconds: 80), () {
+      if (mounted) setState(() => _pressed = false);
+    });
+  }
+
+  void _cancelPress() {
+    _releaseTimer?.cancel();
+    setState(() => _pressed = false);
+  }
+
+  @override
+  void dispose() {
+    _releaseTimer?.cancel();
+    FocusManager.instance.removeHighlightModeListener(_highlightModeChanged);
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(GPressScale oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.disabled || widget.onTap == null) {
+      _releaseTimer?.cancel();
       _pressed = false;
       _hovered = false;
     }
@@ -252,20 +301,23 @@ class _GPressScaleState extends State<GPressScale> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? _activate : null,
-          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-          onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+          onTapDown: enabled ? (_) => _press() : null,
+          onTapUp: enabled ? (_) => _release() : null,
+          onTapCancel: enabled ? _cancelPress : null,
           child: AnimatedContainer(
             duration: duration,
             foregroundDecoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(RadiusToken.sm),
-              color: _hovered
-                  ? Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.055)
+              borderRadius: widget.borderRadius,
+              color: _hovered || _pressed
+                  ? widget.feedbackColor ??
+                      Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.055)
                   : null,
-              border: _focused
+              border: _focused &&
+                      FocusManager.instance.highlightMode ==
+                          FocusHighlightMode.traditional
                   ? Border.all(
                       color: Theme.of(context).colorScheme.primary,
                       width: 2,
@@ -345,7 +397,9 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
     final toolbar = SizedBox(
       height: 56,
-      child: seamlessMobile && windowControlsInset == 0
+      child: seamlessMobile &&
+              windowControlsInset == 0 &&
+              (actions?.length ?? 0) <= 2
           ? Stack(
               alignment: Alignment.center,
               children: [
@@ -513,7 +567,7 @@ class SectionHeader extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: TypeScale.section,
-                            fontWeight: TypeScale.bold,
+                            fontWeight: TypeScale.semibold,
                             letterSpacing: 0,
                             height: 1.1,
                           ),
@@ -572,7 +626,12 @@ class GButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = onTap != null && !loading;
-    final foreground = filled ? scheme.onPrimary : scheme.primary;
+    final inactive = onTap == null && !loading;
+    final foreground = inactive
+        ? scheme.onSurface.withValues(alpha: 0.35)
+        : filled
+            ? scheme.onPrimary
+            : scheme.primary;
     // Keep the label in layout while loading so surrounding controls do not move.
     final child = Stack(
       alignment: Alignment.center,
@@ -587,7 +646,7 @@ class GButton extends StatelessWidget {
                 Icon(
                   icon!,
                   size: small ? 15 : 18,
-                  color: filled ? scheme.onPrimary : scheme.primary,
+                  color: foreground,
                 ),
                 const SizedBox(width: 6),
               ],
@@ -599,7 +658,7 @@ class GButton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: small ? 14 : 16,
                   fontWeight: TypeScale.semibold,
-                  color: filled ? scheme.onPrimary : scheme.primary,
+                  color: foreground,
                 ),
               )),
             ],
@@ -633,6 +692,7 @@ class GButton extends StatelessWidget {
         child: GPressScale(
           onTap: enabled ? onTap : null,
           disabled: !enabled,
+          borderRadius: BorderRadius.circular(RadiusToken.pill),
           child: AnimatedContainer(
             duration: PlatformMotion.duration(context, Motion.fast),
             width: expand ? double.infinity : null,
@@ -649,9 +709,11 @@ class GButton extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(RadiusToken.pill),
-              color: filled
-                  ? scheme.primary
-                  : scheme.primary.withValues(alpha: 0.10),
+              color: inactive
+                  ? scheme.onSurface.withValues(alpha: 0.06)
+                  : filled
+                      ? scheme.primary
+                      : scheme.primary.withValues(alpha: 0.10),
             ),
             child: Center(widthFactor: 1, heightFactor: 1, child: child),
           ),
@@ -698,17 +760,22 @@ class GIconButton extends StatelessWidget {
     final visualSize = size + padding * 2;
     final targetSize =
         visualSize > minimumTargetSize ? visualSize : minimumTargetSize;
-    final color = tint ?? (disabled ? scheme.outlineVariant : scheme.onSurface);
-    final bg = backgroundColor ??
-        (filled
-            ? scheme.primary.withValues(alpha: 0.92)
-            : scheme.onSurface.withValues(alpha: 0.06));
     final enabled = !disabled && onTap != null;
+    final color = enabled
+        ? (filled ? scheme.onPrimary : tint ?? scheme.onSurface)
+        : scheme.onSurface.withValues(alpha: 0.30);
+    final bg = !enabled && filled
+        ? scheme.onSurface.withValues(alpha: 0.06)
+        : backgroundColor ??
+            (filled
+                ? scheme.primary.withValues(alpha: 0.92)
+                : scheme.onSurface.withValues(alpha: 0.06));
     final button = SizedBox.square(
       dimension: targetSize,
       child: GPressScale(
         onTap: enabled ? onTap : null,
         disabled: !enabled,
+        borderRadius: BorderRadius.circular(RadiusToken.pill),
         child: Center(
           child: Container(
             padding: EdgeInsets.all(padding),
@@ -719,7 +786,7 @@ class GIconButton extends StatelessWidget {
             child: Icon(
               icon,
               size: size,
-              color: filled ? scheme.onPrimary : color,
+              color: color,
             ),
           ),
         ),
@@ -772,6 +839,7 @@ class GListTile extends StatelessWidget {
     final ios = Theme.of(context).platform == TargetPlatform.iOS;
     return GPressScale(
       onTap: onTap,
+      scale: 1,
       child: AnimatedContainer(
         duration: PlatformMotion.duration(context, Motion.fast),
         constraints: BoxConstraints(minHeight: ios ? 56 : 0),
@@ -833,6 +901,7 @@ class GProgressBar extends StatefulWidget {
     required this.position,
     required this.duration,
     required this.onSeek,
+    this.onPreviewChanged,
     this.bufferedPosition,
     this.height = 4,
     this.showThumb = true,
@@ -843,7 +912,10 @@ class GProgressBar extends StatefulWidget {
 
   final Duration position;
   final Duration duration;
-  final ValueChanged<Duration> onSeek;
+  final FutureOr<void> Function(Duration) onSeek;
+
+  /// Preview while scrubbing or waiting for a seek; null resumes the live clock.
+  final ValueChanged<Duration?>? onPreviewChanged;
 
   /// 已缓冲进度，绘制为轨道上的二级进度。为空则不显示。
   final Duration? bufferedPosition;
@@ -866,21 +938,53 @@ double playbackProgressFraction(Duration position, Duration duration) {
 
 class _GProgressBarState extends State<GProgressBar> {
   double? _dragFraction;
+  Duration? _pendingPosition;
+  int _seekGeneration = 0;
   final FocusNode _focusNode = FocusNode(debugLabel: 'playback-progress');
   bool _focused = false;
 
   @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_highlightModeChanged);
+  }
+
+  void _highlightModeChanged(FocusHighlightMode mode) {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_highlightModeChanged);
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _seekTo(int milliseconds) {
+  Future<void> _seekTo(int milliseconds) async {
     final total = widget.duration.inMilliseconds;
     if (total <= 0) return;
     final target = milliseconds.clamp(0, total);
-    if (target == widget.position.inMilliseconds) return;
-    widget.onSeek(Duration(milliseconds: target));
+    final position = Duration(milliseconds: target);
+    final generation = ++_seekGeneration;
+    setState(() {
+      _dragFraction = null;
+      _pendingPosition = position;
+    });
+    widget.onPreviewChanged?.call(position);
+    try {
+      await widget.onSeek(position);
+    } catch (_) {
+      if (mounted && generation == _seekGeneration) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('暂时无法调整播放进度，请重试')),
+        );
+      }
+    } finally {
+      if (mounted && generation == _seekGeneration) {
+        setState(() => _pendingPosition = null);
+        widget.onPreviewChanged?.call(null);
+      }
+    }
   }
 
   String _timeLabel(int milliseconds) {
@@ -896,7 +1000,8 @@ class _GProgressBarState extends State<GProgressBar> {
     final scheme = Theme.of(context).colorScheme;
     final active = widget.activeColor ?? scheme.primary;
     final total = widget.duration.inMilliseconds.toDouble();
-    final fraction = playbackProgressFraction(widget.position, widget.duration);
+    final fraction = playbackProgressFraction(
+        _pendingPosition ?? widget.position, widget.duration);
     final displayedFraction = _dragFraction ?? fraction;
     final buffered = widget.bufferedPosition == null
         ? 0.0
@@ -964,7 +1069,11 @@ class _GProgressBarState extends State<GProgressBar> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(RadiusToken.sm),
-            border: _focused ? Border.all(color: active, width: 2) : null,
+            border: _focused &&
+                    FocusManager.instance.highlightMode ==
+                        FocusHighlightMode.traditional
+                ? Border.all(color: active, width: 2)
+                : null,
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -978,111 +1087,124 @@ class _GProgressBarState extends State<GProgressBar> {
                 if (ratio == null) return;
                 PlatformMotion.selectionFeedback(context);
                 _focusNode.requestFocus();
-                widget.onSeek(Duration(milliseconds: (total * ratio).round()));
+                _seekTo((total * ratio).round());
               }
 
               void previewAt(double dx) {
                 final ratio = fractionAt(dx);
                 if (ratio == null) return;
                 setState(() => _dragFraction = ratio);
+                widget.onPreviewChanged
+                    ?.call(Duration(milliseconds: (total * ratio).round()));
               }
 
               void commitDrag() {
                 final ratio = _dragFraction;
                 if (ratio == null || total <= 0) return;
                 PlatformMotion.selectionFeedback(context);
-                widget.onSeek(Duration(milliseconds: (total * ratio).round()));
-                setState(() => _dragFraction = null);
+                _seekTo((total * ratio).round());
               }
 
               void cancelDrag() {
-                if (_dragFraction != null) setState(() => _dragFraction = null);
+                if (_dragFraction == null) return;
+                setState(() => _dragFraction = null);
+                widget.onPreviewChanged?.call(null);
               }
 
-              return GestureDetector(
-                excludeFromSemantics: true,
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (details) => commitAt(details.localPosition.dx),
-                onHorizontalDragStart: total <= 0
-                    ? null
-                    : (_) => setState(() => _dragFraction = fraction),
-                onHorizontalDragUpdate: total <= 0
-                    ? null
-                    : (details) => previewAt(details.localPosition.dx),
-                onHorizontalDragEnd: total <= 0 ? null : (_) => commitDrag(),
-                onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
-                child: SizedBox(
-                  height: touchTargetHeight,
-                  child: Center(
-                    child: AnimatedContainer(
-                      duration: motion,
-                      curve: Motion.standard,
-                      height: trackHeight,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.centerLeft,
-                        children: [
-                          // 轨道
-                          Container(
-                            height: trackHeight,
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.55),
-                              borderRadius:
-                                  BorderRadius.circular(trackHeight / 2),
+              return Listener(
+                // An accepted drag may end on a canceled pointer. Clear its
+                // preview before the drag recognizer can commit that position.
+                onPointerCancel: (_) => cancelDrag(),
+                child: GestureDetector(
+                  excludeFromSemantics: true,
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) => commitAt(details.localPosition.dx),
+                  onHorizontalDragStart: total <= 0
+                      ? null
+                      : (details) {
+                          ++_seekGeneration;
+                          _pendingPosition = null;
+                          previewAt(details.localPosition.dx);
+                        },
+                  onHorizontalDragUpdate: total <= 0
+                      ? null
+                      : (details) => previewAt(details.localPosition.dx),
+                  onHorizontalDragEnd: total <= 0 ? null : (_) => commitDrag(),
+                  onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
+                  child: SizedBox(
+                    height: touchTargetHeight,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: motion,
+                        curve: Motion.standard,
+                        height: trackHeight,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            // 轨道
+                            Container(
+                              height: trackHeight,
+                              decoration: BoxDecoration(
+                                color: scheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.55),
+                                borderRadius:
+                                    BorderRadius.circular(trackHeight / 2),
+                              ),
                             ),
-                          ),
-                          // 已缓冲（二级进度）
-                          if (buffered > displayedFraction)
+                            // 已缓冲（二级进度）
+                            if (buffered > displayedFraction)
+                              FractionallySizedBox(
+                                widthFactor: buffered,
+                                heightFactor: 1,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: scheme.onSurface
+                                        .withValues(alpha: 0.22),
+                                    borderRadius:
+                                        BorderRadius.circular(trackHeight / 2),
+                                  ),
+                                ),
+                              ),
+                            // 已播放
                             FractionallySizedBox(
-                              widthFactor: buffered,
+                              widthFactor: displayedFraction,
                               heightFactor: 1,
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color:
-                                      scheme.onSurface.withValues(alpha: 0.22),
+                                  gradient: AppBrand.gradient(active),
                                   borderRadius:
                                       BorderRadius.circular(trackHeight / 2),
                                 ),
                               ),
                             ),
-                          // 已播放
-                          FractionallySizedBox(
-                            widthFactor: displayedFraction,
-                            heightFactor: 1,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: AppBrand.gradient(active),
-                                borderRadius:
-                                    BorderRadius.circular(trackHeight / 2),
-                              ),
-                            ),
-                          ),
-                          if (widget.showThumb)
-                            Positioned(
-                              left: (constraints.maxWidth * displayedFraction) -
-                                  thumbSize / 2,
-                              top: (trackHeight - thumbSize) / 2,
-                              child: AnimatedContainer(
-                                duration: motion,
-                                curve: Motion.standard,
-                                width: thumbSize,
-                                height: thumbSize,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: scheme.onPrimary,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: scheme.shadow.withValues(
-                                          alpha: dragging ? 0.36 : 0.28),
-                                      blurRadius: dragging ? 6 : 4,
-                                      offset: const Offset(0, 1),
-                                    ),
-                                  ],
+                            if (widget.showThumb || dragging)
+                              Positioned(
+                                left:
+                                    (constraints.maxWidth * displayedFraction) -
+                                        thumbSize / 2,
+                                top: (trackHeight - thumbSize) / 2,
+                                child: AnimatedContainer(
+                                  duration: motion,
+                                  curve: Motion.standard,
+                                  width: thumbSize,
+                                  height: thumbSize,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: scheme.onPrimary,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: scheme.shadow.withValues(
+                                            alpha: dragging ? 0.36 : 0.28),
+                                        blurRadius: dragging ? 6 : 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1561,12 +1683,14 @@ class GListEntrance extends StatefulWidget {
 class _GListEntranceState extends State<GListEntrance>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final CurvedAnimation _curved;
   Timer? _startTimer;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: Motion.slow);
+    _curved = CurvedAnimation(parent: _controller, curve: Motion.standard);
   }
 
   @override
@@ -1589,20 +1713,20 @@ class _GListEntranceState extends State<GListEntrance>
   @override
   void dispose() {
     _startTimer?.cancel();
+    _curved.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final curved = CurvedAnimation(parent: _controller, curve: Motion.standard);
     return FadeTransition(
-      opacity: curved,
+      opacity: _curved,
       child: SlideTransition(
         position: Tween<Offset>(
           begin: const Offset(0, 0.08),
           end: Offset.zero,
-        ).animate(curved),
+        ).animate(_curved),
         child: widget.child,
       ),
     );
@@ -1630,23 +1754,63 @@ Route<T> buildAppRoute<T>(
     pageBuilder: (context, animation, secondaryAnimation) => builder(context),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       if (reduceMotion) return child;
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Motion.standard,
-        reverseCurve: Motion.standard.flipped,
-      );
-      return FadeTransition(
-        opacity: curved,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.035),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
-      );
+      return _AppRouteTransition(animation: animation, child: child);
     },
   );
+}
+
+/// Keep the curve alive across route frames, including a reversal before the
+/// entrance finishes. Disposing it also releases its parent status listener.
+class _AppRouteTransition extends StatefulWidget {
+  const _AppRouteTransition({required this.animation, required this.child});
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_AppRouteTransition> createState() => _AppRouteTransitionState();
+}
+
+class _AppRouteTransitionState extends State<_AppRouteTransition> {
+  late CurvedAnimation _curve;
+
+  void _createCurve() {
+    _curve = CurvedAnimation(
+        parent: widget.animation,
+        curve: Motion.standard,
+        reverseCurve: Motion.standard.flipped);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _createCurve();
+  }
+
+  @override
+  void didUpdateWidget(_AppRouteTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _curve.dispose();
+      _createCurve();
+    }
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _curve,
+        child: SlideTransition(
+          position:
+              Tween<Offset>(begin: const Offset(0, 0.035), end: Offset.zero)
+                  .animate(_curve),
+          child: widget.child,
+        ),
+      );
 }
 
 /// 通用空状态 / 错误提示（图标 + 文字 + 可选重试按钮）

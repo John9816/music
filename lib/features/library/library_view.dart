@@ -13,6 +13,7 @@ import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../playlists/create_playlist_dialog.dart';
 import '../playlists/playlist_import_view.dart';
 import '../profile/user_playlists_view.dart';
 import '../profile/user_library_view.dart';
@@ -145,7 +146,7 @@ class _LibraryViewState extends State<LibraryView> {
       final session = _auth.sessionGeneration;
       final name = await showDialog<String>(
         context: context,
-        builder: (_) => const _CreatePlaylistDialog(),
+        builder: (_) => const CreatePlaylistDialog(),
       );
       final token = _auth.token;
       if (name == null ||
@@ -403,52 +404,6 @@ class _LibraryData {
   final int? favoriteCount;
 }
 
-class _CreatePlaylistDialog extends StatefulWidget {
-  const _CreatePlaylistDialog();
-
-  @override
-  State<_CreatePlaylistDialog> createState() => _CreatePlaylistDialogState();
-}
-
-class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final name = _controller.text.trim();
-    if (name.isNotEmpty) Navigator.of(context).pop(name);
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('新建歌单'),
-        scrollable: true,
-        content: TextField(
-          controller: _controller,
-          autofocus: true,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(hintText: '输入歌单名称'),
-          onChanged: (_) => setState(() {}),
-          onSubmitted: (_) => _submit(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: _controller.text.trim().isEmpty ? null : _submit,
-            child: const Text('创建'),
-          ),
-        ],
-      );
-}
-
 class _LibraryHeader extends StatelessWidget {
   const _LibraryHeader({
     required this.desktop,
@@ -465,8 +420,9 @@ class _LibraryHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (mobile) {
-      return GAppBar(
+      return GPageHeader(
         title: '资料库',
+        inlineActions: true,
         actions: [
           GIconButton(
             icon: CupertinoIcons.link,
@@ -735,7 +691,9 @@ class _LibraryCard extends StatelessWidget {
             children: [
               SizedBox(
                 width: 28,
-                child: Icon(icon, size: 27, color: scheme.primary),
+                child: Icon(icon,
+                    size: 24,
+                    color: accent ? scheme.primary : scheme.onSurfaceVariant),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -745,7 +703,7 @@ class _LibraryCard extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: 19,
+                        fontSize: 17,
                         height: 1.25,
                         color: scheme.onSurface,
                       ),

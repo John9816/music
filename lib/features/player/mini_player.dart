@@ -8,6 +8,7 @@ import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
+import '../../core/player/playback_time.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../search/artist_names_link.dart';
@@ -306,7 +307,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
               children: [
                 _transportControls(context, player),
                 const SizedBox(height: 2),
-                const _PlaybackTimeline(showTimes: true),
+                _PlaybackTimeline(
+                    key: ValueKey((current.source, current.id)),
+                    showTimes: true),
               ],
             ),
           ),
@@ -624,6 +627,8 @@ class _PlayerIconButton extends StatelessWidget {
     };
     Widget button = GPressScale(
       onTap: onTap,
+      scale: 0.92,
+      borderRadius: BorderRadius.circular(RadiusToken.pill),
       child: SizedBox.square(
         dimension: targetSize,
         child: Center(
@@ -769,7 +774,7 @@ class _CompactTrackIdentity extends StatelessWidget {
           AsyncCover(
             key: const ValueKey('mobile-mini-player-artwork'),
             url: song.album.picUrl,
-            size: 40,
+            size: 44,
             radius: 7,
           ),
           const SizedBox(width: 12),
@@ -869,6 +874,8 @@ class _PlayButton extends StatelessWidget {
         excludeSemantics: true,
         child: GPressScale(
           onTap: loading ? null : player.togglePlay,
+          scale: 0.94,
+          borderRadius: BorderRadius.circular(RadiusToken.pill),
           child: SizedBox.square(
             dimension: targetSize,
             child: Center(
@@ -916,10 +923,17 @@ class _PlayButton extends StatelessWidget {
   }
 }
 
-class _PlaybackTimeline extends StatelessWidget {
-  const _PlaybackTimeline({required this.showTimes});
+class _PlaybackTimeline extends StatefulWidget {
+  const _PlaybackTimeline({super.key, required this.showTimes});
 
   final bool showTimes;
+
+  @override
+  State<_PlaybackTimeline> createState() => _PlaybackTimelineState();
+}
+
+class _PlaybackTimelineState extends State<_PlaybackTimeline> {
+  Duration? _previewPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -933,20 +947,21 @@ class _PlaybackTimeline extends StatelessWidget {
       stream: player.positionStream,
       initialData: player.position,
       builder: (context, snapshot) {
-        final position = snapshot.data ?? player.position;
-        final remaining =
-            duration > position ? duration - position : Duration.zero;
+        final position = _previewPosition ?? snapshot.data ?? player.position;
+        final time = PlaybackTime(
+            position: position, duration: duration, padMinutes: false);
         final bar = GProgressBar(
-          position: position,
+          position: snapshot.data ?? player.position,
           duration: duration,
           bufferedPosition: player.bufferedPosition,
           onSeek: player.seek,
-          height: showTimes ? 4 : 3,
+          onPreviewChanged: (value) => setState(() => _previewPosition = value),
+          height: widget.showTimes ? 4 : 3,
           showThumb: false,
           activeColor: scheme.onSurface.withValues(alpha: 0.88),
         );
 
-        if (!showTimes) return bar;
+        if (!widget.showTimes) return bar;
         final timeStyle = TextStyle(
           fontSize: 10.5,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -954,12 +969,12 @@ class _PlaybackTimeline extends StatelessWidget {
         );
         return Row(
           children: [
-            Text(_formatDuration(position), style: timeStyle, maxLines: 1),
+            Text(time.elapsed, style: timeStyle, maxLines: 1),
             const SizedBox(width: 10),
             Expanded(child: bar),
             const SizedBox(width: 10),
             Text(
-              '-${_formatDuration(remaining)}',
+              time.remaining,
               maxLines: 1,
               textAlign: TextAlign.end,
               style: timeStyle,
@@ -1001,7 +1016,7 @@ class _VolumeBarState extends State<_VolumeBar> {
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: (details) => update(details.localPosition.dx),
+            onTapUp: (details) => update(details.localPosition.dx),
             onHorizontalDragStart: (_) =>
                 setState(() => _dragFraction = widget.value),
             onHorizontalDragUpdate: (details) =>
@@ -1009,7 +1024,7 @@ class _VolumeBarState extends State<_VolumeBar> {
             onHorizontalDragEnd: (_) => setState(() => _dragFraction = null),
             onHorizontalDragCancel: () => setState(() => _dragFraction = null),
             child: SizedBox(
-              height: 18,
+              height: 44,
               child: Center(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(3),
@@ -1036,10 +1051,4 @@ class _VolumeBarState extends State<_VolumeBar> {
       ),
     );
   }
-}
-
-String _formatDuration(Duration duration) {
-  final minutes = duration.inMinutes;
-  final seconds = duration.inSeconds.remainder(60);
-  return '$minutes:${seconds.toString().padLeft(2, '0')}';
 }

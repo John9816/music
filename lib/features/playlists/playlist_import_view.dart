@@ -96,11 +96,13 @@ class _PlaylistImportViewState extends State<PlaylistImportView> {
                         Icon(Icons.playlist_add_rounded,
                             color: scheme.primary, size: 24),
                         const SizedBox(width: 10),
-                        const Text(
-                          '导入外部歌单',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
+                        const Expanded(
+                          child: Text(
+                            '导入外部歌单',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: TypeScale.semibold,
+                            ),
                           ),
                         ),
                       ],

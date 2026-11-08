@@ -10,6 +10,7 @@ import 'package:duck_music/features/home/home_shell.dart';
 import 'package:duck_music/features/playlists/playlists_view.dart';
 import 'package:duck_music/features/search/search_view.dart';
 import 'package:duck_music/features/profile/user_library_view.dart';
+import 'package:duck_music/features/profile/profile_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,11 +38,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('mobile navigation exposes the library directly', (tester) async {
+  testWidgets('mobile music entries live under profile after navigation merges',
+      (tester) async {
     await _pumpShell(tester, const Size(390, 844));
     final navigation = find.byKey(const ValueKey('mobile-bottom-nav-surface'));
     expect(find.descendant(of: navigation, matching: find.text('资料库')),
-        findsOneWidget);
+        findsNothing);
+    await tester
+        .tap(find.descendant(of: navigation, matching: find.text('我的')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProfileView), findsOneWidget);
+    for (final label in ['喜欢的音乐', '我的歌单', '收藏的歌单', '播放历史', '下载管理']) {
+      expect(
+          find.descendant(
+              of: find.byType(ProfileView), matching: find.text(label)),
+          findsOneWidget);
+    }
+    tester.view.physicalSize = const Size(1280, 800);
+    await tester.pumpAndSettle();
+    expect(find.text('资料库'), findsNothing);
+    expect(find.byType(ProfileView), findsOneWidget);
+    await tester.tap(find.text('发现').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaylistsView), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   for (final size in [const Size(390, 844), const Size(1280, 800)]) {

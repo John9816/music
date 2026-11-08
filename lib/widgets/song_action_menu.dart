@@ -88,21 +88,9 @@ Future<void> showSongActions(
       barrierDismissible: true,
       barrierLabel: '关闭歌曲操作菜单',
       barrierColor: Colors.transparent,
-      transitionDuration: Motion.normal,
+      transitionDuration: PlatformMotion.duration(context, Motion.normal),
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Motion.standard,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-            alignment: Alignment.topRight,
-            child: child,
-          ),
-        );
+        return _SongMenuTransition(animation: animation, child: child);
       },
       pageBuilder: (_, __, ___) => _AnchoredSongActionRoute(
         anchor: anchor,
@@ -125,15 +113,77 @@ Future<void> showSongActions(
     useSafeArea: true,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => _SongActionSheet(
-      song: song,
-      onPlay: onPlay,
-      queueIndex: queueIndex,
-      onRemove: onRemove,
-      removeLabel: removeLabel,
-      showFavoriteAction: showFavoriteAction,
+    sheetAnimationStyle: AnimationStyle(
+      duration: PlatformMotion.duration(context, Motion.normal),
+      reverseDuration: PlatformMotion.duration(context, Motion.normal),
+    ),
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+      ),
+      child: _SongActionSheet(
+        song: song,
+        onPlay: onPlay,
+        queueIndex: queueIndex,
+        onRemove: onRemove,
+        removeLabel: removeLabel,
+        showFavoriteAction: showFavoriteAction,
+      ),
     ),
   );
+}
+
+class _SongMenuTransition extends StatefulWidget {
+  const _SongMenuTransition({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_SongMenuTransition> createState() => _SongMenuTransitionState();
+}
+
+class _SongMenuTransitionState extends State<_SongMenuTransition> {
+  late CurvedAnimation _curve;
+
+  void _createCurve() {
+    _curve = CurvedAnimation(
+      parent: widget.animation,
+      curve: Motion.standard,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _createCurve();
+  }
+
+  @override
+  void didUpdateWidget(_SongMenuTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _curve.dispose();
+      _createCurve();
+    }
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _curve,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(_curve),
+          alignment: Alignment.topRight,
+          child: widget.child,
+        ),
+      );
 }
 
 class _SongActionSheet extends StatefulWidget {
@@ -164,12 +214,18 @@ class _SongActionSheet extends StatefulWidget {
 class _SongActionSheetState extends State<_SongActionSheet> {
   final UserApi _userApi = UserApi();
   bool _liked = false;
+  bool _favoriteRequested = false;
   bool _favoriteLoading = false;
+  bool _playlistBusy = false;
+  bool _playlistLoading = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_favoriteLoading) unawaited(_loadFavorite());
+    if (!_favoriteRequested && widget.showFavoriteAction) {
+      _favoriteRequested = true;
+      unawaited(_loadFavorite());
+    }
   }
 
   Future<void> _loadFavorite() async {
@@ -189,6 +245,8 @@ class _SongActionSheetState extends State<_SongActionSheet> {
       });
     } catch (_) {
       // 喜欢状态不影响其他歌曲操作。
+    } finally {
+      if (mounted) setState(() => _favoriteLoading = false);
     }
   }
 
@@ -220,13 +278,15 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         _action(
           _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           _liked ? '取消喜欢' : '喜欢',
-          _toggleFavorite,
+          _favoriteLoading ? null : _toggleFavorite,
           color: _liked ? scheme.primary : null,
+          loading: _favoriteLoading,
         ),
       _action(
         Icons.playlist_add_rounded,
         '收藏到歌单',
-        _addToPlaylist,
+        _playlistBusy ? null : _addToPlaylist,
+        loading: _playlistLoading,
       ),
       _action(
         downloading
@@ -240,7 +300,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
                 ? '已下载'
                 : '下载',
         downloading || downloaded ? null : _download,
-        downloading: downloading,
+        loading: downloading,
         downloaded: downloaded,
       ),
       if (widget.onRemove != null) ...[
@@ -264,7 +324,11 @@ class _SongActionSheetState extends State<_SongActionSheet> {
       return Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          boxShadow: ShadowToken.card(context, radius: 28, opacity: 0.24),
+          boxShadow: ShadowToken.card(
+            context,
+            radius: 24,
+            opacity: dark ? 0.22 : 0.10,
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
@@ -361,7 +425,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
     String title,
     VoidCallback? onTap, {
     Color? color,
-    bool downloading = false,
+    bool loading = false,
     bool downloaded = false,
   }) {
     return ListTile(
@@ -376,10 +440,10 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         style: TextStyle(
           color: color,
           fontSize: widget.desktop ? 14 : 16,
-          fontWeight: widget.desktop ? TypeScale.medium : null,
+          fontWeight: TypeScale.regular,
         ),
       ),
-      trailing: downloading
+      trailing: loading
           ? const SizedBox(
               width: 18,
               height: 18,
@@ -413,11 +477,14 @@ class _SongActionSheetState extends State<_SongActionSheet> {
   }
 
   Future<void> _toggleFavorite() async {
+    if (_favoriteLoading) return;
     final token = context.read<AuthController>().token;
     if (token == null) {
       _message('请先登录后再喜欢歌曲');
       return;
     }
+    setState(() => _favoriteLoading = true);
+    final nextLiked = !_liked;
     try {
       if (_liked) {
         await _userApi.removeFavorite(
@@ -429,7 +496,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         await _userApi.addFavorite(widget.song, token);
       }
       if (!mounted) return;
-      setState(() => _liked = !_liked);
+      setState(() => _liked = nextLiked);
       final player = context.read<PlayerController>();
       if (player.current?.id == widget.song.id &&
           player.current?.source == widget.song.source) {
@@ -438,23 +505,35 @@ class _SongActionSheetState extends State<_SongActionSheet> {
       _message(_liked ? '已加入喜欢的音乐' : '已取消喜欢');
     } catch (error) {
       _message(_errorText(error, '喜欢操作失败'));
+    } finally {
+      if (mounted) setState(() => _favoriteLoading = false);
     }
   }
 
   Future<void> _addToPlaylist() async {
+    if (_playlistBusy) return;
     final token = context.read<AuthController>().token;
     if (token == null) {
       _message('请先登录后再收藏到歌单');
       return;
     }
+    setState(() {
+      _playlistBusy = true;
+      _playlistLoading = true;
+    });
     try {
       final playlists = await _userApi.getOwnedPlaylists(token);
       if (!mounted) return;
+      setState(() => _playlistLoading = false);
       final selection = await showModalBottomSheet<Object>(
         context: context,
         useRootNavigator: true,
         useSafeArea: true,
         showDragHandle: true,
+        sheetAnimationStyle: AnimationStyle(
+          duration: PlatformMotion.duration(context, Motion.normal),
+          reverseDuration: PlatformMotion.duration(context, Motion.normal),
+        ),
         builder: (context) => _PlaylistChooser(playlists: playlists),
       );
       if (!mounted || selection == null) return;
@@ -464,6 +543,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
       if (selection == _PlaylistChooser.createNew) {
         final name = await _createPlaylistName();
         if (!mounted || name == null) return;
+        setState(() => _playlistLoading = true);
         final created = await _userApi.createPlaylist(name, null, token);
         playlistId = _playlistId(created);
         playlistName = name;
@@ -472,10 +552,18 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         playlistName = _playlistName(selection);
       }
       if (playlistId == null) throw Exception('歌单数据缺少 ID');
+      if (mounted) setState(() => _playlistLoading = true);
       await _userApi.addSongToPlaylist(playlistId, widget.song, token);
       _message('已收藏到歌单“${playlistName ?? '未命名歌单'}”');
     } catch (error) {
       _message(_errorText(error, '收藏到歌单失败'));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _playlistBusy = false;
+          _playlistLoading = false;
+        });
+      }
     }
   }
 
@@ -556,8 +644,18 @@ class _AnchoredSongActionRoute extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final padding = MediaQuery.paddingOf(context);
+    final insets = MediaQuery.viewInsetsOf(context);
     return CustomSingleChildLayout(
-      delegate: _SongMenuLayout(anchor, MediaQuery.paddingOf(context)),
+      delegate: _SongMenuLayout(
+        anchor,
+        EdgeInsets.fromLTRB(
+          math.max(padding.left, insets.left),
+          math.max(padding.top, insets.top),
+          math.max(padding.right, insets.right),
+          math.max(padding.bottom, insets.bottom),
+        ),
+      ),
       child: child,
     );
   }
@@ -624,7 +722,7 @@ class _PlaylistChooser extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 '收藏到歌单',
-                style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+                style: TextStyle(fontSize: 18, fontWeight: TypeScale.semibold),
               ),
             ),
           ),

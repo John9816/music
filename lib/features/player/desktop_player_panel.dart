@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited, Timer;
 import 'dart:ui' show ImageFilter;
+import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,8 @@ import '../../core/player/lrc_parser.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/services/song_download_service.dart';
 import '../../core/settings/settings_controller.dart';
+import '../../core/settings/lyric_appearance.dart';
+import 'karaoke_lyric_text.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../search/artist_names_link.dart';
@@ -124,6 +127,10 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
   int _lastLine = -1;
   bool _userScrolling = false;
   Timer? _scrollResumeTimer;
+  Object? _layoutSignature;
+  final List<double> _lineHeights = [];
+  final List<double> _lineOffsets = [];
+  double _topPadding = 0;
 
   @override
   void dispose() {
@@ -135,16 +142,26 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerController>();
+    final appearance =
+        context.select<SettingsController, (int, LyricFontStyle)>(
+            (s) => (s.lyricFontSize, s.lyricFontStyle));
     final lyric = player.lyric;
     if (_source != lyric) {
       _source = lyric;
       _lines = parseLrc(lyric);
+      _layoutSignature = null;
       _lastLine = -1;
       _userScrolling = false;
       _scrollResumeTimer?.cancel();
     }
     final song = player.current;
     final scheme = Theme.of(context).colorScheme;
+    final style = lyricTextStyle(
+      DefaultTextStyle.of(context).style.copyWith(color: scheme.onSurface),
+      fontSize: appearance.$1,
+      fontStyle: appearance.$2,
+      scale: 18 / 28,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -163,89 +180,150 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
         Expanded(
           child: _lines.isEmpty
               ? _EmptyLyrics(loading: player.loading && lyric.isEmpty)
-              : StreamBuilder<Duration>(
-                  stream: player.positionStream,
-                  initialData: player.position,
-                  builder: (context, snapshot) {
-                    final position = snapshot.data ?? player.position;
-                    final current = _currentLine(position);
-                    _scrollToCurrent(current);
-                    return Stack(
-                      children: [
-                        NotificationListener<ScrollNotification>(
-                          onNotification: (notification) {
-                            if (notification is UserScrollNotification) {
-                              if (notification.direction != ScrollDirection.idle) {
-                                setState(() => _userScrolling = true);
-                                _scrollResumeTimer?.cancel();
-                                _scrollResumeTimer = Timer(const Duration(seconds: 5), () {
-                                  if (mounted) setState(() => _userScrolling = false);
-                                });
-                              }
-                            }
-                            return false;
-                          },
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(24, 70, 24, 110),
-                      itemCount: _lines.length,
-                      itemBuilder: (context, index) {
-                        final line = _lines[index];
-                        final selected = index == current;
-                        return Semantics(
-                          button: true,
-                          selected: selected,
-                          label: '跳转到 ${_formatTime(line.time)} ${line.text}',
-                          child: GPressScale(
-                            onTap: () => player.seek(line.time),
-                            child: AnimatedContainer(
-                              duration: Motion.fast,
-                              constraints: const BoxConstraints(minHeight: 58),
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Text(
-                                line.text.isEmpty ? '· · ·' : line.text,
-                                style: TextStyle(
-                                  fontSize: selected ? 18 : 14.5,
-                                  height: 1.35,
-                                  fontWeight: selected
-                                      ? TypeScale.bold
-                                      : TypeScale.medium,
-                                  color: selected
-                                      ? scheme.onSurface
-                                      : scheme.onSurface
-                                          .withValues(alpha: 0.30),
-                                ),
-                              ),
+              : LayoutBuilder(builder: (context, constraints) {
+                  _measureLines(context, constraints, style);
+                  return StreamBuilder<int>(
+                    stream: player.positionStream.map(_currentLine).distinct(),
+                    initialData: _currentLine(player.position),
+                    builder: (context, snapshot) {
+                      final current =
+                          snapshot.data ?? _currentLine(player.position);
+                      _scrollToCurrent(current);
+                      return Stack(
+                        children: [
+                          NotificationListener<ScrollNotification>(
+                            onNotification: _handleScroll,
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              physics: const BouncingScrollPhysics(),
+                              padding: EdgeInsets.fromLTRB(
+                                  24,
+                                  _topPadding,
+                                  24,
+                                  math.max(
+                                      0,
+                                      (constraints.maxHeight -
+                                              _lineHeights.last) /
+                                          2)),
+                              itemCount: _lines.length,
+                              itemExtentBuilder: (index, _) =>
+                                  _lineHeights[index],
+                              itemBuilder: (context, index) {
+                                final line = _lines[index];
+                                final selected = index == current;
+                                return Semantics(
+                                  button: true,
+                                  selected: selected,
+                                  label: '跳转到 ${_formatTime(line.time)}',
+                                  child: GPressScale(
+                                    onTap: () async {
+                                      await player.seek(line.time);
+                                      if (mounted) _resumeFollowing();
+                                    },
+                                    scale: 1,
+                                    child: Container(
+                                      height: _lineHeights[index],
+                                      alignment: Alignment.centerLeft,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                      child: selected && line.words.isNotEmpty
+                                          ? KaraokeLyricText(
+                                              line: line,
+                                              style: style,
+                                              position: player.position,
+                                              positionStream:
+                                                  player.positionStream,
+                                              playing: player.playing)
+                                          : Text(
+                                              line.text.isEmpty
+                                                  ? '· · ·'
+                                                  : line.text,
+                                              style: style.copyWith(
+                                                color: selected
+                                                    ? scheme.onSurface
+                                                    : scheme.onSurface
+                                                        .withValues(
+                                                            alpha:
+                                                                _userScrolling
+                                                                    ? 0.7
+                                                                    : 0.35),
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (_userScrolling)
-                    Positioned(
-                      right: 16,
-                      bottom: 16,
-                      child: GButton(
-                        label: '回到当前',
-                        filled: false,
-                        small: true,
-                        onTap: () {
-                          setState(() => _userScrolling = false);
-                          _scrollResumeTimer?.cancel();
-                          _scrollToCurrent(current);
-                        },
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
+                          if (_userScrolling)
+                            Positioned(
+                              right: 16,
+                              bottom: 16,
+                              child: GButton(
+                                label: '回到当前',
+                                filled: false,
+                                small: true,
+                                onTap: _resumeFollowing,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  );
+                }),
         ),
       ],
     );
+  }
+
+  void _measureLines(
+      BuildContext context, BoxConstraints constraints, TextStyle style) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final locale = Localizations.maybeLocaleOf(context);
+    final signature = (constraints, scaler, direction, locale, style);
+    if (_layoutSignature == signature) return;
+    _layoutSignature = signature;
+    _lastLine = -1;
+    _lineHeights.clear();
+    _lineOffsets.clear();
+    final painter = TextPainter(
+        textDirection: direction, textScaler: scaler, locale: locale);
+    var offset = 0.0;
+    for (final line in _lines) {
+      painter.text =
+          TextSpan(text: line.text.isEmpty ? '· · ·' : line.text, style: style);
+      painter.layout(maxWidth: math.max(1, constraints.maxWidth - 48));
+      final height = math.max(58.0, painter.height.ceilToDouble() + 24);
+      _lineOffsets.add(offset);
+      _lineHeights.add(height);
+      offset += height;
+    }
+    painter.dispose();
+    _topPadding = math.max(0, (constraints.maxHeight - _lineHeights.first) / 2);
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    if ((notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        (notification is UserScrollNotification &&
+            notification.direction != ScrollDirection.idle)) {
+      _scrollResumeTimer?.cancel();
+      if (!_userScrolling) setState(() => _userScrolling = true);
+    } else if (notification is ScrollEndNotification && _userScrolling) {
+      _scrollResumeTimer?.cancel();
+      _scrollResumeTimer = Timer(const Duration(seconds: 5), _resumeFollowing);
+    }
+    return false;
+  }
+
+  void _resumeFollowing() {
+    _scrollResumeTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _userScrolling = false;
+      _lastLine = -1;
+    });
   }
 
   int _currentLine(Duration position) {
@@ -258,21 +336,34 @@ class _DesktopLyricsState extends State<_DesktopLyrics> {
   }
 
   void _scrollToCurrent(int index) {
-    if (index == _lastLine || !_scrollController.hasClients) return;
+    if (index == _lastLine) return;
     if (_userScrolling) return; // Don't auto-scroll when user is scrolling
+    final initial = _lastLine == -1;
     _lastLine = index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      if (_userScrolling) return;
-      final target = (index * 58.0 - 70).clamp(
+      if (!mounted || _userScrolling || index != _lastLine) return;
+      if (!_scrollController.hasClients) {
+        _lastLine = -1;
+        return;
+      }
+      final target = (_topPadding +
+              _lineOffsets[index] +
+              _lineHeights[index] / 2 -
+              _scrollController.position.viewportDimension / 2)
+          .clamp(
         0.0,
         _scrollController.position.maxScrollExtent,
       );
-      _scrollController.animateTo(
-        target,
-        duration: Motion.normal,
-        curve: Curves.easeOutCubic,
-      );
+      final duration = PlatformMotion.duration(context, Motion.normal);
+      if (initial || duration == Duration.zero) {
+        _scrollController.jumpTo(target);
+      } else {
+        _scrollController.animateTo(
+          target,
+          duration: duration,
+          curve: Curves.easeOutCubic,
+        );
+      }
     });
   }
 

@@ -25,8 +25,10 @@ class SleepTimer extends ChangeNotifier {
       if (_remaining == null) return;
       _remaining = _remaining! - const Duration(seconds: 1);
       if (_remaining!.inSeconds <= 0) {
+        final onTimeout = _onTimeout;
         stop();
-        _onTimeout?.call();
+        onTimeout?.call();
+        return;
       }
       notifyListeners();
     });

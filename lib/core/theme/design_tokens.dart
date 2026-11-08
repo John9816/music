@@ -47,9 +47,9 @@ class AppBrand {
 class DarkPalette {
   DarkPalette._();
 
-  static const Color background = Color(0xFF000000);
+  static const Color background = Color(0xFF101113);
   static const Color surface = Color(0xFF111113);
-  static const Color surfaceRaised = Color(0xFF1B1B1E);
+  static const Color surfaceRaised = Color(0xFF1B1D21);
   static const Color surfaceHigh = Color(0xFF2C2C2E);
   static const Color textPrimary = Color(0xFFF5F5F7);
   static const Color textSecondary = Color(0xFFA1A1A6);
@@ -65,12 +65,12 @@ class DarkPalette {
 class LightPalette {
   LightPalette._();
 
-  static const Color background = Color(0xFFF2F2F7);
+  static const Color background = Color(0xFFF7F8FA);
   static const Color surface = Color(0xFFFFFFFF);
   static const Color surfaceRaised = Color(0xFFF7F7FA);
   static const Color surfaceHigh = Color(0xFFEBEBF0);
-  static const Color textPrimary = Color(0xFF1C1C1E);
-  static const Color textSecondary = Color(0xFF6E6E73);
+  static const Color textPrimary = Color(0xFF202126);
+  static const Color textSecondary = Color(0xFF737780);
   static const Color textTertiary = Color(0xFF98989D);
   static const Color hairline = Color(0x143C3C43); // 8%
   static const Color hairlineStrong = Color(0x263C3C43); // 15%
@@ -89,7 +89,7 @@ class TypeScale {
   static const double bodyLarge = 14;
   static const double subhead = 16;
   static const double title = 18;
-  static const double section = 22;
+  static const double section = 20;
   static const double pageTitle = 28;
 
   static const FontWeight regular = FontWeight.w400;

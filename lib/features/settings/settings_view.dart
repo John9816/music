@@ -14,6 +14,7 @@ import '../../widgets/glass.dart';
 import 'about_view.dart';
 import 'desktop_settings_view.dart';
 import 'ios_sideload_view.dart';
+import 'lyric_settings_view.dart';
 import 'notifications_view.dart';
 import 'settings_components.dart';
 import 'storage_settings_view.dart';
@@ -86,6 +87,15 @@ class SettingsView extends StatelessWidget {
                     }[settings.glassQuality] ??
                     '流畅',
                 onTap: () => _pickGlassQuality(context, settings),
+              ),
+              SettingsRow(
+                icon: Icons.text_fields_rounded,
+                iconColor: const Color(0xFF818188),
+                title: '歌词显示',
+                subtitle: '字体大小、字形样式与实时预览',
+                value:
+                    '${settings.lyricFontSize} · ${settings.lyricFontStyle.label}',
+                onTap: () => _open(context, const LyricSettingsView()),
               ),
               SettingsRow(
                 icon: Icons.auto_awesome_rounded,
@@ -269,40 +279,50 @@ class SettingsView extends StatelessWidget {
     await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      sheetAnimationStyle: AnimationStyle(
+        duration: PlatformMotion.duration(context, Motion.normal),
+        reverseDuration: PlatformMotion.duration(context, Motion.normal),
+      ),
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                '睡眠定时',
-                style: TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+        top: false,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '睡眠定时',
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: TypeScale.semibold),
+                ),
               ),
-            ),
-            GListTile(
-              leading: const Icon(Icons.timer_off_rounded),
-              title: const Text('取消定时'),
-              selected: !timer.isActive,
-              onTap: () {
-                timer.stop();
-                Navigator.of(sheetContext).pop();
-              },
-            ),
-            for (final minutes in [15, 30, 45, 60, 90])
               GListTile(
-                leading: const Icon(Icons.timer_outlined),
-                title: Text('$minutes 分钟后暂停'),
+                leading: const Icon(Icons.timer_off_rounded),
+                title: const Text('取消定时'),
+                selected: !timer.isActive,
                 onTap: () {
-                  timer.start(
-                    Duration(minutes: minutes),
-                    onTimeout: player.pause,
-                  );
+                  timer.stop();
                   Navigator.of(sheetContext).pop();
                 },
               ),
-            const SizedBox(height: 8),
-          ],
+              for (final minutes in [15, 30, 45, 60, 90])
+                GListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: Text('$minutes 分钟后暂停'),
+                  onTap: () {
+                    timer.start(
+                      Duration(minutes: minutes),
+                      onTimeout: player.pause,
+                    );
+                    Navigator.of(sheetContext).pop();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );

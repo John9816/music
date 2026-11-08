@@ -2,6 +2,7 @@ import '../config/app_config.dart';
 import '../models/artist_info.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
+import '../player/lrc_parser.dart';
 import 'api_client.dart';
 
 /// 搜索歌手结果（api/v1/music/search type=ARTIST）
@@ -400,7 +401,7 @@ class MusicApi {
     return _textOrNull(data['playUrl']);
   }
 
-  /// 获取歌词（字段 lineLyrics）
+  /// Prefer verified word timing; keep ordinary lyrics for unsupported formats.
   Future<String?> getLyric(
     String id, {
     String source = _defaultSource,
@@ -410,6 +411,8 @@ class MusicApi {
       'id': id,
       'timestamp': '${DateTime.now().millisecondsSinceEpoch}',
     });
+    final karaoke = _textOrNull(data['karaokeLyrics']);
+    if (karaoke != null && parseKaraokeLrc(karaoke).isNotEmpty) return karaoke;
     return _textOrNull(data['lineLyrics']);
   }
 

@@ -65,11 +65,12 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _playingSub = _player.playingStream.distinct().listen((playing) {
       if (playing) {
-        if (_lastEmittedPosition != null) {
-          _lastPositionEmissionTime = DateTime.now();
-        }
+        _resumeGuardUntil = _lastEmittedPosition == null
+            ? null
+            : DateTime.now().add(const Duration(milliseconds: 250));
         _startPositionSampling();
       } else {
+        _resumeGuardUntil = null;
         _stopPositionSampling();
         _emitNativePosition(force: true);
       }
@@ -98,7 +99,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<Duration?>? _durationSub;
   Timer? _positionSampler;
   Duration? _lastEmittedPosition;
-  DateTime? _lastPositionEmissionTime;
+  DateTime? _resumeGuardUntil;
   Timer? _seekTimer;
   Duration? _pendingSeek;
   Duration? _deferredSeek;
@@ -193,27 +194,33 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Duration _guardPosition(Duration nativePosition) {
-    final previous = _lastEmittedPosition;
-    if (previous == null || nativePosition >= previous) return nativePosition;
-    if (!_player.playing) return previous;
-
-    // Some native players restart their reported clock at zero after resume.
-    // Keep a monotonic UI clock until the native value catches up, so progress
-    // and lyrics continue moving instead of freezing at the paused position.
-    final emittedAt = _lastPositionEmissionTime;
-    final elapsed = emittedAt == null
-        ? Duration.zero
-        : DateTime.now().difference(emittedAt);
-    final projected = previous + elapsed;
     final total = duration;
-    return total != null && projected > total ? total : projected;
+    final clamped = nativePosition < Duration.zero
+        ? Duration.zero
+        : total != null && nativePosition > total
+            ? total
+            : nativePosition;
+    final previous = _lastEmittedPosition;
+    final guardUntil = _resumeGuardUntil;
+    // A resume can briefly report the old zero anchor. Hold the last observed
+    // position for at most 250ms; never invent progress. Buffering, paused seeks
+    // and persistent native resets must immediately use the actual timeline.
+    if (previous != null &&
+        clamped < previous &&
+        _player.playing &&
+        _player.processingState == ProcessingState.ready &&
+        !_seekInFlight &&
+        guardUntil != null &&
+        DateTime.now().isBefore(guardUntil)) {
+      return total != null && previous > total ? total : previous;
+    }
+    return clamped;
   }
 
   void _emitPosition(Duration nativePosition, {bool force = false}) {
     if (_positionController.isClosed) return;
     if (!force && nativePosition == _lastEmittedPosition) return;
     _lastEmittedPosition = nativePosition;
-    _lastPositionEmissionTime = DateTime.now();
     _positionController.add(nativePosition);
   }
 
@@ -307,7 +314,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _loading = false;
     _positionSourceReady = false;
     _lastEmittedPosition = null;
-    _lastPositionEmissionTime = null;
+    _resumeGuardUntil = null;
     _emitNativePosition(force: true);
     notifyListeners();
     onSongChanged?.call(song);
@@ -376,7 +383,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _effectiveQuality = null;
     _positionSourceReady = false;
     _lastEmittedPosition = null;
-    _lastPositionEmissionTime = null;
+    _resumeGuardUntil = null;
     _emitNativePosition(force: true);
     notifyListeners();
     onSongChanged?.call(_current!);
@@ -546,7 +553,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         event.processingState == ProcessingState.completed &&
         _queue.isNotEmpty) {
       // 如果是"不循环"模式且播完最后一首，停在末尾不再自动播放
-      if (_loopMode == LoopMode.off && _index == _queue.length - 1 && !_shuffle) {
+      if (_loopMode == LoopMode.off &&
+          _index == _queue.length - 1 &&
+          !_shuffle) {
         unawaited(_player.pause());
         unawaited(_player.seek(Duration.zero));
         notifyListeners();
@@ -643,7 +652,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     final previousSeek = _resetSeekSession();
     _positionSourceReady = false;
     _lastEmittedPosition = null;
-    _lastPositionEmissionTime = null;
+    _resumeGuardUntil = null;
     _emitNativePosition(force: true);
     if (previousSeek != null) {
       try {
@@ -767,7 +776,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _activeSeek = operation;
     try {
       await operation;
-      if (seq == _playSeq) _emitPosition(target, force: true);
+      if (seq == _playSeq) _emitNativePosition(force: true);
     } finally {
       if (identical(_activeSeek, operation)) _activeSeek = null;
       _seekInFlight = false;

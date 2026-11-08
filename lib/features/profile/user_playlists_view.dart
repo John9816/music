@@ -7,6 +7,7 @@ import '../../core/models/playlist.dart';
 import '../../core/services/user_playlist_library.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../playlists/create_playlist_dialog.dart';
 import '../playlists/playlist_import_view.dart';
 import 'user_library_view.dart';
 
@@ -35,6 +36,7 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
   final Set<String> _selected = <String>{};
   bool _selectionMode = false;
   bool _mutating = false;
+  bool _creating = false;
 
   UserApi get _api => widget.api ?? UserApi();
 
@@ -94,6 +96,34 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlaylistImportView()),
     );
+  }
+
+  Future<void> _openCreatePlaylist() async {
+    if (_creating) return;
+    final auth = context.read<AuthController>();
+    final token = auth.token;
+    if (token == null) return;
+    final session = auth.sessionGeneration;
+    setState(() => _creating = true);
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (_) => const CreatePlaylistDialog(),
+      );
+      if (!mounted || name == null || session != auth.sessionGeneration) return;
+      await _api.createPlaylist(name, null, token);
+      if (!mounted || session != auth.sessionGeneration) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('歌单已创建')),
+      );
+    } catch (_) {
+      if (!mounted || session != auth.sessionGeneration) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('歌单创建失败，请稍后重试')),
+      );
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
   }
 
   void _openPlaylist(Map<String, dynamic> playlist) {
@@ -160,6 +190,15 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
                 ),
               ]
             : [
+                if (canImport)
+                  GIconButton(
+                    icon: Icons.add_rounded,
+                    tooltip: '新建歌单',
+                    size: 18,
+                    padding: 9,
+                    backgroundColor: Colors.transparent,
+                    onTap: _creating ? null : _openCreatePlaylist,
+                  ),
                 GIconButton(
                   icon: Icons.checklist_rounded,
                   tooltip: '管理歌单',

@@ -112,7 +112,7 @@ class _ProfileViewState extends State<ProfileView> {
                 }
               : () => _openLogin(context),
         ),
-        const SettingsSection('音乐资料库'),
+        const SettingsSection('我的音乐'),
         SettingsGroup(
           children: [
             SettingsRow(
@@ -442,7 +442,6 @@ class _AccountCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: glassHairline(context), width: 0.7),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -547,9 +546,9 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GAppBar(
+    return GPageHeader(
       title: '我的',
-      transparent: true,
+      inlineActions: true,
       actions: [
         GIconButton(
           icon: Icons.settings_outlined,

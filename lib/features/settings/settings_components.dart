@@ -35,7 +35,6 @@ class SettingsGroup extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: glassHairline(context), width: 0.7),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -129,7 +128,7 @@ class SettingsRow extends StatelessWidget {
               return width;
             }
 
-            final iconWidth = iconColor == null ? 24.0 : 29.0;
+            final iconWidth = iconColor == null ? 24.0 : 30.0;
             final trailingWidth = trailing != null
                 ? 64.0
                 : onTap != null
@@ -152,13 +151,22 @@ class SettingsRow extends StatelessWidget {
               children: [
                 if (iconColor != null)
                   Container(
-                    width: 29,
-                    height: 29,
+                    width: 30,
+                    height: 30,
                     decoration: BoxDecoration(
-                      color: iconColor,
+                      color: scheme.onSurface.withValues(
+                        alpha: Theme.of(context).brightness == Brightness.dark
+                            ? 0.07
+                            : 0.045,
+                      ),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(icon, size: 19, color: Colors.white),
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color:
+                          destructive ? scheme.error : scheme.onSurfaceVariant,
+                    ),
                   )
                 else
                   SizedBox(
@@ -306,8 +314,8 @@ Future<T?> showSettingsPicker<T>(
               padding: const EdgeInsets.all(16),
               child: Text(
                 title,
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: TypeScale.bold),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: TypeScale.semibold),
               ),
             ),
             for (final option in options)

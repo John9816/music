@@ -124,7 +124,7 @@ void main() {
     expect(positions.last, greaterThan(pausedAt));
   });
 
-  test('resume keeps advancing when the native clock restarts at zero',
+  test('a persistent native clock reset cannot create a fictional UI timeline',
       () async {
     final settings = SettingsController();
     final nativePlayer = _ControllableAudioPlayer();
@@ -158,9 +158,44 @@ void main() {
 
     expect(nativePlayer.position, lessThan(const Duration(seconds: 2)));
     expect(positions, isNotEmpty);
-    expect(positions, everyElement(greaterThanOrEqualTo(pausedAt)));
-    expect(positions.last,
-        greaterThan(pausedAt + const Duration(milliseconds: 350)));
+    expect(positions.last, lessThan(pausedAt));
+    expect((player.position - nativePlayer.position).inMilliseconds.abs(),
+        lessThan(50));
+  });
+
+  test(
+      'buffering and paused native seeks cannot keep a projected clock running',
+      () async {
+    final settings = SettingsController();
+    final nativePlayer = _ControllableAudioPlayer();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: nativePlayer,
+      musicApi: _FakePlaybackMusicApi(),
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player
+        .playQueue([_playbackSong('buffer', const Duration(minutes: 4))]);
+    await player.seek(const Duration(seconds: 70));
+    nativePlayer.bufferAt(const Duration(milliseconds: 69900));
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    expect(player.position, const Duration(milliseconds: 69900));
+    await player.pause();
+    await nativePlayer.seek(const Duration(seconds: 20));
+    expect(player.position, const Duration(seconds: 20));
+    final positions = <Duration>[];
+    final subscription = player.positionStream.listen(positions.add);
+    addTearDown(subscription.cancel);
+    nativePlayer.nextSeekResult = const Duration(milliseconds: 29980);
+    await player.seek(const Duration(seconds: 30));
+    expect(positions.last, nativePlayer.position,
+        reason: 'A paused seek must report the actual resolved media position');
   });
 
   test('startup restore prefers recent history without loading audio',
@@ -608,6 +643,7 @@ class _ControllableAudioPlayer extends AudioPlayer {
   int _zeroReadsOnNextPlay = 0;
   int _remainingZeroReads = 0;
   bool _restartClockOnNextPlay = false;
+  Duration? nextSeekResult;
   int loadCount = 0;
 
   @override
@@ -667,6 +703,12 @@ class _ControllableAudioPlayer extends AudioPlayer {
 
   void restartClockOnNextPlay() {
     _restartClockOnNextPlay = true;
+  }
+
+  void bufferAt(Duration position) {
+    _positionAnchor = position;
+    _processingState = ProcessingState.buffering;
+    _emitEvent();
   }
 
   @override
@@ -738,7 +780,8 @@ class _ControllableAudioPlayer extends AudioPlayer {
       await heldSeek.future;
       _heldSeek = null;
     }
-    _positionAnchor = target;
+    _positionAnchor = nextSeekResult ?? target;
+    nextSeekResult = null;
     _positionAnchorTime = DateTime.now();
     _emitEvent();
   }

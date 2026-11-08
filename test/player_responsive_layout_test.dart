@@ -208,7 +208,8 @@ void _expectVisibleTargets(
     final target = tester.getRect(find.byTooltip(label));
     expect(target.shortestSide, greaterThanOrEqualTo(44 - 1e-6), reason: label);
     expect(viewport.contains(target.topLeft), isTrue, reason: label);
-    expect(viewport.contains(target.bottomRight), isTrue, reason: label);
+    expect(viewport.contains(target.bottomRight), isTrue,
+        reason: '$label: $target within $viewport');
   }
 }
 

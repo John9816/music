@@ -105,6 +105,9 @@ class _DiscoverViewState extends State<DiscoverView> {
   }
 
   double _featureHeight(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width < GBreakpoints.compact) {
+      return 268 + (MediaQuery.textScalerOf(context).scale(22) - 22) * 4;
+    }
     final minimum =
         MediaQuery.sizeOf(context).width < GBreakpoints.compact ? 144.0 : 160.0;
     return (MediaQuery.textScalerOf(context).scale(20) * 5 + 24)
@@ -282,6 +285,16 @@ class _DiscoverViewState extends State<DiscoverView> {
   }
 
   Widget _buildHeroSkeleton(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width < GBreakpoints.compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: GSkeleton(
+          width: double.infinity,
+          height: _featureHeight(context),
+          radius: 20,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: SizedBox(
@@ -395,7 +408,11 @@ class _DiscoverViewState extends State<DiscoverView> {
 
   Widget _buildHeader(BuildContext context, {bool refreshing = false}) {
     if (_mobileLayout(context)) {
-      return GAppBar(title: widget.title);
+      return GPageHeader(
+        title: widget.title,
+        subtitle: widget.subtitle ?? '${_greeting()}，听点喜欢的',
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+      );
     }
     return GPageHeader(
       title: widget.title,
@@ -456,6 +473,9 @@ class _DiscoverViewState extends State<DiscoverView> {
 
   Widget _buildHero(BuildContext context, List<Song> daily) {
     if (daily.isEmpty) return const SizedBox.shrink();
+    if (MediaQuery.sizeOf(context).width < GBreakpoints.compact) {
+      return _buildFeaturedArtwork(context, daily);
+    }
     final scheme = Theme.of(context).colorScheme;
     final hero = daily.first;
     return Padding(
@@ -527,6 +547,98 @@ class _DiscoverViewState extends State<DiscoverView> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedArtwork(BuildContext context, List<Song> daily) {
+    final song = daily.first;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: SizedBox(
+        height: _featureHeight(context),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AsyncCover(
+                  url: song.album.picUrl, size: double.infinity, radius: 0),
+              const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xA6000000),
+                        Color(0xA6000000),
+                        Color(0x73000000),
+                        Color(0xF2000000)
+                      ],
+                      stops: [0, 0.18, 0.4, 1],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('今日主推',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: TypeScale.medium,
+                          color: Colors.white,
+                          height: 1.3,
+                        )),
+                    const Spacer(),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                            child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(song.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: TypeScale.semibold,
+                                    height: 1.18,
+                                    color: Colors.white)),
+                            const SizedBox(height: 8),
+                            ArtistNamesLink(
+                                artists: song.artists,
+                                source: song.source,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    height: 1.3,
+                                    color: Color(0xDDFFFFFF))),
+                          ],
+                        )),
+                        const SizedBox(width: 14),
+                        GIconButton(
+                            icon: Icons.play_arrow_rounded,
+                            tooltip: '播放每日推荐',
+                            size: 27,
+                            padding: 12,
+                            tint: const Color(0xFF202126),
+                            backgroundColor: Colors.white,
+                            onTap: () => _play(context, daily, 0)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

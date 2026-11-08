@@ -16,7 +16,6 @@ import '../../core/utils/toast_helper.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/user_avatar.dart';
 import '../discover/discover_view.dart';
-import '../library/library_view.dart';
 import '../playlists/playlists_view.dart';
 import '../playlists/playlist_import_view.dart';
 import '../player/mini_player.dart';
@@ -35,10 +34,11 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  static const _favoritesIndex = 4;
-  static const _historyIndex = 5;
-  static const _profileIndex = 6;
-  static const _pageCount = 7;
+  static const _discoverIndex = 2;
+  static const _favoritesIndex = 3;
+  static const _historyIndex = 4;
+  static const _profileIndex = 5;
+  static const _pageCount = 6;
 
   int _index = 0;
   String? _pendingSearchQuery;
@@ -63,7 +63,7 @@ class _HomeShellState extends State<HomeShell> {
   late int _lastAuthGeneration;
   int _authVersion = 0;
 
-  static const _tabToPageIndex = [0, 3, 1, 2, 6];
+  static const _tabToPageIndex = [0, _discoverIndex, 1, _profileIndex];
 
   static const _tabs = [
     (
@@ -80,11 +80,6 @@ class _HomeShellState extends State<HomeShell> {
       label: '搜索',
       icon: CupertinoIcons.search,
       selectedIcon: CupertinoIcons.search
-    ),
-    (
-      label: '资料库',
-      icon: CupertinoIcons.square_stack,
-      selectedIcon: CupertinoIcons.square_stack_fill,
     ),
     (
       label: '我的',
@@ -210,7 +205,6 @@ class _HomeShellState extends State<HomeShell> {
     _lastAuthGeneration = _auth.sessionGeneration;
     setState(() {
       _authVersion++;
-      _pageCache[2] = null;
       _activePlaylistId = null;
       if (!_auth.isLoggedIn &&
           (_index == _favoritesIndex || _index == _historyIndex)) {
@@ -220,7 +214,7 @@ class _HomeShellState extends State<HomeShell> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      for (final index in [2, _favoritesIndex, _historyIndex, _profileIndex]) {
+      for (final index in [_favoritesIndex, _historyIndex, _profileIndex]) {
         _tabKeys[index].currentState?.popToRoot();
       }
     });
@@ -248,8 +242,7 @@ class _HomeShellState extends State<HomeShell> {
       setState(() {
         _sourceVersion++;
         _pageCache[0] = null;
-        _pageCache[2] = null;
-        _pageCache[3] = null;
+        _pageCache[_discoverIndex] = null;
       });
     }
   }
@@ -270,7 +263,7 @@ class _HomeShellState extends State<HomeShell> {
       _index = index;
       _visitedPages.add(index);
       // 切换到其他页面时清空活跃歌单ID
-      if (index != 2) {
+      if (index != _profileIndex) {
         _activePlaylistId = null;
       }
     });
@@ -636,13 +629,7 @@ class _HomeShellState extends State<HomeShell> {
           initialQuery: _pendingSearchQuery,
           focusNode: _searchFocusNode,
         );
-      case 2:
-        return LibraryView(
-          key: ValueKey('library_${_sourceVersion}_$_authVersion'),
-          onOpenFavorites: () => _openUserLibraryFromLibrary(favorites: true),
-          onOpenHistory: () => _openUserLibraryFromLibrary(favorites: false),
-        );
-      case 3:
+      case _discoverIndex:
         return PlaylistsView(
           key: ValueKey('discover_$_sourceVersion'),
           title: '发现',
@@ -710,53 +697,10 @@ class _HomeShellState extends State<HomeShell> {
     switchTo(index);
   }
 
-  void _openUserLibraryFromLibrary({required bool favorites}) {
-    final token = _auth.token;
-    if (token == null) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const LoginView()),
-      );
-      return;
-    }
-
-    final page = UserLibraryView(
-      title: favorites ? '喜欢的音乐' : '播放历史',
-      kind: favorites ? UserLibraryKind.favorites : UserLibraryKind.history,
-      loader: () => _loadUserSongs(favorites: favorites),
-      onRemove: (song) async {
-        if (favorites) {
-          await UserApi().removeFavorite(song.id, song.source, token);
-          return;
-        }
-        final recordId = song.libraryId;
-        if (recordId != null) await UserApi().deleteHistory(recordId, token);
-      },
-      onClear: favorites
-          ? null
-          : (songs) async {
-              for (final song in songs) {
-                final recordId = song.libraryId;
-                if (recordId != null) {
-                  await UserApi().deleteHistory(recordId, token);
-                }
-              }
-            },
-    );
-
-    switchTo(2);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _tabKeys[2].currentState?.push(page);
-    });
-  }
-
   void _openUserPlaylist(Map<String, dynamic> item) {
     final token = _auth.token;
     final id = userPlaylistId(item);
     if (token == null || id == null) return;
-
-    setState(() {
-      _activePlaylistId = id.toString();
-    });
 
     final source = item['source']?.toString().trim();
     final sourceId = item['sourceId']?.toString().trim();
@@ -779,10 +723,10 @@ class _HomeShellState extends State<HomeShell> {
           : null,
     );
 
+    switchTo(_profileIndex);
     setState(() => _activePlaylistId = id);
-    switchTo(2);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _tabKeys[2].currentState?.push(page);
+      if (mounted) _tabKeys[_profileIndex].currentState?.push(page);
     });
   }
 
@@ -1263,15 +1207,8 @@ class _SidebarState extends State<_Sidebar> {
             icon: CupertinoIcons.compass,
             selectedIcon: CupertinoIcons.compass_fill,
             label: '发现',
-            selected: widget.selected == 3,
-            onTap: () => widget.onSelect(3),
-          ),
-          _SidebarItem(
-            icon: CupertinoIcons.music_albums,
-            selectedIcon: CupertinoIcons.music_albums_fill,
-            label: '资料库',
-            selected: widget.selected == 2,
-            onTap: () => widget.onSelect(2),
+            selected: widget.selected == _HomeShellState._discoverIndex,
+            onTap: () => widget.onSelect(_HomeShellState._discoverIndex),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 12, 5),
@@ -1622,7 +1559,7 @@ class _BottomNav extends StatelessWidget {
                                   _HomeShellState._tabToPageIndex[i] == selected
                                       ? _HomeShellState._tabs[i].selectedIcon
                                       : _HomeShellState._tabs[i].icon,
-                                  size: 25,
+                                  size: 23,
                                   key: ValueKey(
                                       _HomeShellState._tabToPageIndex[i] ==
                                           selected),
@@ -1637,7 +1574,7 @@ class _BottomNav extends StatelessWidget {
                             Text(
                               _HomeShellState._tabs[i].label,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10.5,
                                 height: 1.1,
                                 fontWeight:
                                     _HomeShellState._tabToPageIndex[i] ==
@@ -1646,7 +1583,7 @@ class _BottomNav extends StatelessWidget {
                                         : TypeScale.medium,
                                 color: _HomeShellState._tabToPageIndex[i] ==
                                         selected
-                                    ? scheme.primary
+                                    ? scheme.onSurface
                                     : scheme.onSurfaceVariant,
                               ),
                             ),

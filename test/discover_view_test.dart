@@ -284,7 +284,10 @@ void main() {
       platform: TargetPlatform.android,
     );
 
-    expect(tester.getTopLeft(find.text('最新专辑')).dy, lessThan(320));
+    // The featured artwork is now the primary surface; the complete first
+    // album and its label must still fit before the playback/navigation area.
+    expect(
+        tester.getBottomRight(find.text('测试新专辑')).dy, lessThanOrEqualTo(640));
     expect(find.byTooltip('播放每日推荐'), findsOneWidget);
     expect(find.text('测试新专辑').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
