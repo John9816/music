@@ -9,7 +9,7 @@
 
 ## Constraints
 
-- Current deployed Android version remains 1.1.55+66 until a separate vehicle release is verified.
+- Release baseline was Android 1.1.55+66; locally signed 1.1.56+67 is now verified and published, with 1.1.55 retained for rollback.
 - Do not operate the user's emulator or ADB. Preserve unrelated macOS documents.
 - Favorites stay red; search source stays independent.
 - No dependency upgrades (rxdart is promoted from the already locked transitive version) or second player/login subsystem.
@@ -35,9 +35,9 @@ Files: new core/player/car_media_library.dart; SystemMediaController, app.dart, 
 ## Task 3: Shared verification and local artifact (root)
 
 - [x] Review all changes, run targeted and full tests plus analyze.
-- [ ] Build a distinct next-version local signed APK and inspect package/signature/manifest/media resources then publish a new version after verification, keeping 1.1.55 for rollback.
+- [x] Build a distinct next-version local signed APK and inspect package/signature/manifest/media resources then publish a new version after verification, keeping 1.1.55 for rollback.
 - [x] Document tested behavior, screenshot paths and remaining physical-head-unit/OEM validation.
-- [ ] Complete ECS publication, GitHub artifact mirror and online verification.
+- [x] Complete ECS publication, GitHub artifact mirror and online verification.
 
 ## Latest scope (2026-11-09)
 - Preserve production identity; validate package/signature/version before install, distinguish development app and guard its updater.
@@ -47,3 +47,5 @@ Files: new core/player/car_media_library.dart; SystemMediaController, app.dart, 
 - Complete both car modes, commit and push source, build locally with production signing, publish ECS and mirror identical artifacts to GitHub.
 
 Implementation and qualification boundaries: ../research/2026-11-09-android-update-car-media.md. Physical-device testing remains outside the verified evidence; no emulator operations were performed.
+
+Publication evidence: ../research/2026-11-09-android-1.1.56-release.md. Android 1.1.56+67 uses source f408fd6; ECS/web/GitHub checks passed and artifact-only mirror run 42503868805 succeeded.
