@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/song.dart';
+import '../models/playback_info.dart';
 import '../settings/settings_controller.dart';
 
 enum CacheCategory { songs, images, lyrics, pageData }
@@ -74,14 +77,46 @@ class CacheService {
     return directory;
   }
 
-  Future<File> audioFileFor(Song song, String quality) async {
+  Future<File> audioFileFor(
+    Song song,
+    String quality, {
+    AudioIdentity? identity,
+  }) async {
     final directory = await audioCacheDirectory;
     // QQ URLs require source headers on macOS; rotate its cache key so files
     // produced by the old headerless request cannot be reused as audio.
     final cacheVersion = song.source.toLowerCase() == 'qq' ? 'v2' : 'v1';
-    final key = '${song.source}_${song.id}_${quality}_$cacheVersion'
-        .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+    // A fresh recording must never reuse a previous fallback's audio bytes.
+    // The new key also leaves legacy caches with unknown provenance unused.
+    final recordingKey = identity == null
+        ? ''
+        : '_${sha256.convert(utf8.encode(jsonEncode([
+                  identity.source,
+                  identity.id,
+                  identity.lyricMatch.name,
+                ]))).toString()}';
+    final key =
+        '${song.source}_${song.id}_${quality}_$cacheVersion$recordingKey'
+            .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     return File('${directory.path}/$key.audio');
+  }
+
+  Future<AudioIdentity?> audioIdentityFor(File audioFile) async {
+    try {
+      final file = File('${audioFile.path}.identity.json');
+      if (!await file.exists()) return null;
+      final json = jsonDecode(await file.readAsString());
+      return AudioIdentity.fromJson(Map<String, dynamic>.from(json as Map));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveAudioIdentity(File audioFile, AudioIdentity identity) async {
+    final file = File('${audioFile.path}.identity.json');
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(jsonEncode(identity.toJson()), flush: true);
+    await temporary.rename(file.path);
   }
 
   Future<int> totalSizeBytes() async => (await snapshot()).totalBytes;

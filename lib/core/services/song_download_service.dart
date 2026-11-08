@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 
 import '../api/music_api.dart';
 import '../models/song.dart';
+import '../models/playback_info.dart';
+import '../player/audio_source_policy.dart';
 import 'cache_service.dart';
 
 class SongDownloadResult {
@@ -16,6 +18,18 @@ class SongDownloadResult {
   final bool alreadyExists;
 }
 
+class LocalAudio {
+  const LocalAudio({
+    required this.file,
+    required this.identity,
+    required this.quality,
+  });
+
+  final File file;
+  final AudioIdentity identity;
+  final String quality;
+}
+
 class DownloadedSong {
   const DownloadedSong({
     required this.song,
@@ -23,6 +37,7 @@ class DownloadedSong {
     required this.quality,
     required this.sizeBytes,
     required this.downloadedAt,
+    this.audioIdentity,
   });
 
   final Song song;
@@ -30,6 +45,7 @@ class DownloadedSong {
   final String quality;
   final int sizeBytes;
   final DateTime downloadedAt;
+  final AudioIdentity? audioIdentity;
 
   Map<String, dynamic> toJson() => {
         'song': {
@@ -51,6 +67,7 @@ class DownloadedSong {
         'quality': quality,
         'sizeBytes': sizeBytes,
         'downloadedAt': downloadedAt.toIso8601String(),
+        if (audioIdentity != null) 'audioIdentity': audioIdentity!.toJson(),
       };
 
   factory DownloadedSong.fromJson(Map<String, dynamic> json) {
@@ -84,6 +101,11 @@ class DownloadedSong {
       sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
       downloadedAt: DateTime.tryParse(json['downloadedAt']?.toString() ?? '') ??
           DateTime.now(),
+      audioIdentity: json['audioIdentity'] is Map
+          ? AudioIdentity.fromJson(
+              Map<String, dynamic>.from(json['audioIdentity'] as Map),
+            )
+          : null,
     );
   }
 }
@@ -133,11 +155,22 @@ class SongDownloadService extends ChangeNotifier {
   Future<void> initialize() => _initializing ??= _loadManifest();
 
   Future<File?> localFileFor(Song song) async {
+    return (await localAudioFor(song))?.file;
+  }
+
+  Future<LocalAudio?> localAudioFor(Song song) async {
     await initialize();
     final entry = _downloads[keyFor(song)];
     if (entry == null) return null;
     final file = File(entry.path);
-    if (await file.exists() && await file.length() > 0) return file;
+    if (await file.exists() && await file.length() > 0) {
+      return LocalAudio(
+        file: file,
+        // Old manifests may contain audio from a fallback source.
+        identity: entry.audioIdentity ?? AudioIdentity(source: song.source),
+        quality: entry.quality,
+      );
+    }
     _downloads.remove(keyFor(song));
     await _saveManifest();
     notifyListeners();
@@ -162,13 +195,16 @@ class SongDownloadService extends ChangeNotifier {
     File? partial;
     IOSink? sink;
     try {
-      final url = await _musicApi.getSongUrl(
+      final info = await _musicApi.getPlaybackInfo(
         song.id,
         source: song.source,
         quality: quality,
+        prefetch: true,
       );
+      final url = info.playUrl;
       if (url == null || url.isEmpty) throw Exception('未获取到下载地址');
       final request = http.Request('GET', Uri.parse(url));
+      request.headers.addAll(audioHeadersFor(info.audioIdentity.source));
       final response = await _client.send(request).timeout(
             const Duration(seconds: 25),
           );
@@ -210,6 +246,7 @@ class SongDownloadService extends ChangeNotifier {
         quality: quality,
         sizeBytes: await file.length(),
         downloadedAt: DateTime.now(),
+        audioIdentity: info.audioIdentity,
       );
       await _saveManifest();
       onProgress?.call(1);

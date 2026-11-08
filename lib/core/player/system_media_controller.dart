@@ -42,7 +42,8 @@ class SystemMediaController extends BaseAudioHandler {
   static const Duration _androidNotificationPermissionTimeout =
       Duration(minutes: 2);
 
-  final Future<dynamic> Function() _androidNotificationPermissionRequester;  final bool Function() _isAndroid;
+  final Future<dynamic> Function() _androidNotificationPermissionRequester;
+  final bool Function() _isAndroid;
   bool _androidNotificationPermissionRequested = false;
   Future<dynamic>? _androidNotificationPermissionRequest;
   List<String> _publishedQueueKeys = const [];
@@ -156,11 +157,15 @@ class SystemMediaController extends BaseAudioHandler {
     }
 
     final queueIndex = player.queueIndex;
-    final currentItem = queueIndex >= 0 && queueIndex < items.length
-        ? items[queueIndex]
-        : player.current == null
-            ? null
-            : _mediaItem(player.current!, 0);
+    final hasQueueItem = queueIndex >= 0 && queueIndex < songs.length;
+    final currentSong = hasQueueItem ? songs[queueIndex] : player.current;
+    final currentItem = currentSong == null
+        ? null
+        : _mediaItem(
+            currentSong,
+            hasQueueItem ? queueIndex : 0,
+            duration: player.duration,
+          );
     final mediaKey = currentItem == null
         ? null
         : '${currentItem.id}\u001f${currentItem.title}\u001f'
@@ -295,7 +300,7 @@ class SystemMediaController extends BaseAudioHandler {
     _sync();
   }
 
-  MediaItem _mediaItem(Song song, int index) {
+  MediaItem _mediaItem(Song song, int index, {Duration? duration}) {
     final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
     final artworkHeaders = imageRequestHeaders(artworkUrl);
     return MediaItem(
@@ -305,8 +310,10 @@ class SystemMediaController extends BaseAudioHandler {
       album: song.album.name,
       artUri: artworkUrl == null ? null : Uri.tryParse(artworkUrl),
       artHeaders: artworkHeaders.isEmpty ? null : artworkHeaders,
-      duration:
-          song.durationMs > 0 ? Duration(milliseconds: song.durationMs) : null,
+      duration: duration ??
+          (song.durationMs > 0
+              ? Duration(milliseconds: song.durationMs)
+              : null),
     );
   }
 

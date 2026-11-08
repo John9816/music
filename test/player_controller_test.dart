@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:duck_music/core/api/music_api.dart';
@@ -9,6 +10,9 @@ import 'package:duck_music/core/player/player_controller.dart';
 import 'package:duck_music/core/player/last_playback_store.dart';
 import 'package:duck_music/core/player/system_media_controller.dart';
 import 'package:duck_music/core/models/song.dart';
+import 'package:duck_music/core/models/playback_info.dart';
+import 'package:duck_music/core/services/song_download_service.dart';
+import 'package:duck_music/core/services/cache_service.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
@@ -369,6 +373,368 @@ void main() {
     expect(usesNativeAudioHeaders(TargetPlatform.windows), isFalse);
   });
 
+  test('resolved audio selects lyric identity, headers and duration metadata',
+      () async {
+    final api = _IdentityMusicApi({
+      'selected': {
+        'actualSource': 'kuwo',
+        'actualId': 'recording',
+        'lyricMatch': 'exact',
+        'durationSec': 185,
+      },
+    });
+    final native = _ControllableAudioPlayer(withNativeDuration: false);
+    final settings = SettingsController();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    final handler = SystemMediaController()..attach(player);
+    addTearDown(() {
+      handler.detach(player);
+      player.dispose();
+      settings.dispose();
+    });
+    final selected = _playbackSong('selected', const Duration(minutes: 3),
+        source: 'netease');
+
+    await player.playQueue([selected]);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(player.current, same(selected));
+    expect(api.lyricRequests, ['kuwo:recording']);
+    expect(player.lyric, '[00:01.00]kuwo:recording');
+    final source = native.lastSource! as UriAudioSource;
+    expect(source.headers?['Referer'], 'https://www.kuwo.cn/');
+    expect((source.tag as MediaItem).duration, const Duration(seconds: 185));
+    expect(player.duration, const Duration(seconds: 185));
+    expect(handler.mediaItem.value?.duration, const Duration(seconds: 185));
+  });
+
+  test('clearing playback discards resolved audio duration and quality',
+      () async {
+    final settings = SettingsController();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(withNativeDuration: false),
+      musicApi: _IdentityMusicApi({
+        'selected': {
+          'actualSource': 'kuwo',
+          'actualId': 'recording',
+          'lyricMatch': 'exact',
+          'durationSec': 185
+        },
+      }),
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player
+        .playQueue([_playbackSong('selected', const Duration(minutes: 3))]);
+    expect(player.duration, const Duration(seconds: 185));
+
+    await player.stopAndClear();
+
+    expect(player.current, isNull);
+    expect(player.duration, isNull);
+    expect(player.effectiveQuality, isNull);
+    expect(player.lyric, isEmpty);
+  });
+
+  test('restore after clearing uses the restored song duration', () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer(withNativeDuration: false);
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: _IdentityMusicApi({
+        'selected': {
+          'actualSource': 'kuwo',
+          'actualId': 'recording',
+          'lyricMatch': 'exact',
+          'durationSec': 185
+        },
+      }),
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player
+        .playQueue([_playbackSong('selected', const Duration(minutes: 3))]);
+    await player.stopAndClear();
+    final restored = _playbackSong('restored', const Duration(minutes: 2));
+
+    await player.restoreLastPlayback(preferredLoader: () async => restored);
+
+    expect(player.current, same(restored));
+    expect(player.duration, const Duration(minutes: 2));
+    expect(player.effectiveQuality, isNull);
+    expect(player.lyric, isEmpty);
+    expect(native.loadCount, 1);
+  });
+
+  test('failed audio load discards the resolved recording metadata', () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer(withNativeDuration: false)
+      ..nextLoadError = StateError('decoder rejected source');
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: _IdentityMusicApi({
+        'selected': {
+          'actualSource': 'kuwo',
+          'actualId': 'recording',
+          'lyricMatch': 'exact',
+          'durationSec': 185
+        },
+      }),
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player
+        .playQueue([_playbackSong('selected', const Duration(minutes: 3))]);
+
+    expect(player.error, contains('decoder rejected source'));
+    expect(player.duration, const Duration(minutes: 3));
+    expect(player.effectiveQuality, isNull);
+    expect(player.lyric, isEmpty);
+  });
+
+  test('late lyrics cannot repopulate metadata after playback fails', () async {
+    final lyrics = Completer<String?>();
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer(withNativeDuration: false)
+      ..nextPlayError = StateError('audio could not start');
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: _IdentityMusicApi({
+        'selected': {
+          'actualSource': 'kuwo',
+          'actualId': 'recording',
+          'lyricMatch': 'exact',
+          'durationSec': 185
+        },
+      }, heldLyrics: {
+        'kuwo:recording': lyrics
+      }),
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player
+        .playQueue([_playbackSong('selected', const Duration(minutes: 3))]);
+    await Future<void>.delayed(Duration.zero);
+    expect(player.error, contains('audio could not start'));
+
+    lyrics.complete('[00:01.00]late lyrics');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(player.lyric, isEmpty);
+    expect(player.duration, const Duration(minutes: 3));
+    expect(player.effectiveQuality, isNull);
+  });
+
+  test(
+      'automatic audio cache persists identity and suppresses lyrics if metadata is lost',
+      () async {
+    final directory = await Directory.systemTemp.createTemp('player-cache-');
+    final cache = CacheService.forTesting(
+      temporaryDirectory: () async => directory,
+      documentsDirectory: () async => directory,
+    );
+    final api = _IdentityMusicApi({
+      'selected': {
+        'actualSource': 'netease',
+        'actualId': 'cached-recording',
+        'lyricMatch': 'exact'
+      },
+    });
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: api,
+      cacheService: cache,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() async {
+      player.dispose();
+      settings.dispose();
+      await directory.delete(recursive: true);
+    });
+    final song = _playbackSong('selected', const Duration(minutes: 3));
+    await player.playQueue([song]);
+    await Future<void>.delayed(Duration.zero);
+    // ignore: experimental_member_use
+    final source = native.lastSource! as LockCachingAudioSource;
+    final cachedFile = await source.cacheFile;
+    expect(source.headers?['Referer'], 'https://music.163.com/');
+    expect((await cache.audioIdentityFor(cachedFile))?.id, 'cached-recording');
+    expect(api.lyricRequests, ['netease:cached-recording']);
+
+    cachedFile.writeAsBytesSync([1]);
+    await File('${cachedFile.path}.identity.json').delete();
+    await player.playAt(0);
+    await Future<void>.delayed(Duration.zero);
+    // ignore: experimental_member_use
+    final reusedSource = native.lastSource! as LockCachingAudioSource;
+    expect((await reusedSource.cacheFile).path, cachedFile.path);
+    expect(player.lyric, isEmpty);
+    expect(api.lyricRequests, ['netease:cached-recording']);
+  });
+
+  test(
+      'unverified and legacy cross-source playback suppress synchronized lyrics',
+      () async {
+    final api = _IdentityMusicApi({
+      'unverified': {
+        'actualSource': 'qq',
+        'actualId': 'candidate',
+        'lyricMatch': 'unverified'
+      },
+      'legacy-cross': {'actualSource': 'kuwo'},
+      'legacy-same': {},
+    });
+    final settings = SettingsController();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player.playQueue([
+      for (final id in ['unverified', 'legacy-cross', 'legacy-same'])
+        _playbackSong(id, const Duration(minutes: 3)),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+    expect(player.lyric, isEmpty);
+    await player.next();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.lyric, isEmpty);
+    expect(api.lyricRequests, isEmpty);
+    await player.next();
+    await Future<void>.delayed(Duration.zero);
+    expect(api.lyricRequests, ['qq:legacy-same']);
+  });
+
+  test(
+      'late lyrics from the previous actual recording cannot overwrite the next song',
+      () async {
+    final oldLyrics = Completer<String?>();
+    final api = _IdentityMusicApi({
+      'first': {
+        'actualSource': 'kuwo',
+        'actualId': 'old-recording',
+        'lyricMatch': 'exact'
+      },
+      'second': {
+        'actualSource': 'kuwo',
+        'actualId': 'new-recording',
+        'lyricMatch': 'exact'
+      },
+    }, heldLyrics: {
+      'kuwo:old-recording': oldLyrics
+    });
+    final settings = SettingsController();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+    await player.playQueue([
+      _playbackSong('first', const Duration(minutes: 3)),
+      _playbackSong('second', const Duration(minutes: 3)),
+    ]);
+    expect(api.lyricRequests, ['kuwo:old-recording']);
+    await player.next();
+    await Future<void>.delayed(Duration.zero);
+    oldLyrics.complete('[00:01.00]stale lyrics');
+    await Future<void>.delayed(Duration.zero);
+    expect(api.lyricRequests, ['kuwo:old-recording', 'kuwo:new-recording']);
+    expect(player.lyric, '[00:01.00]kuwo:new-recording');
+  });
+
+  test(
+      'downloaded audio uses persisted identity and legacy files suppress lyrics',
+      () async {
+    final directory = await Directory.systemTemp.createTemp('player-local-');
+    final file = File('${directory.path}/audio.mp3')..writeAsBytesSync([1]);
+    final api = _IdentityMusicApi({});
+    final settings = SettingsController();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localAudioFor: (song) async => LocalAudio(
+        file: file,
+        quality: 'exhigh',
+        identity: song.id == 'known'
+            ? const AudioIdentity(
+                source: 'kuwo',
+                id: 'saved-recording',
+                lyricMatch: LyricMatch.exact)
+            : const AudioIdentity(source: 'qq'),
+      ),
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() async {
+      player.dispose();
+      settings.dispose();
+      await directory.delete(recursive: true);
+    });
+    await player.playQueue([
+      _playbackSong('known', const Duration(minutes: 3)),
+      _playbackSong('legacy', const Duration(minutes: 3)),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+    expect(api.lyricRequests, ['kuwo:saved-recording']);
+    await player.next();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.lyric, isEmpty);
+    expect(api.lyricRequests, ['kuwo:saved-recording']);
+    expect(api.playRequests, isEmpty);
+  });
+
   test('system media artwork uses a secure NetEase cover URL', () {
     expect(
       normalizeRemoteImageUrl(
@@ -578,10 +944,11 @@ void main() {
   });
 }
 
-Song _playbackSong(String id, Duration duration) => Song(
+Song _playbackSong(String id, Duration duration, {String source = 'qq'}) =>
+    Song(
       id: id,
       name: id,
-      source: 'qq',
+      source: source,
       artists: const [Artist(id: 1, name: '测试歌手')],
       album: const Album(id: 1, name: '测试专辑'),
       durationMs: duration.inMilliseconds,
@@ -589,16 +956,54 @@ Song _playbackSong(String id, Duration duration) => Song(
 
 class _FakePlaybackMusicApi extends MusicApi {
   @override
-  Future<String?> getSongUrl(
+  Future<PlaybackInfo> getPlaybackInfo(
     String id, {
     String source = 'netease',
     String quality = 'exhigh',
+    bool prefetch = false,
   }) async =>
-      'https://media.example.com/$id.m4a';
+      PlaybackInfo.fromJson(
+        {'playUrl': 'https://media.example.com/$id.m4a'},
+        id: id,
+        source: source,
+      );
 
   @override
-  Future<String?> getLyric(String id, {String source = 'netease'}) async =>
+  Future<String?> getLyric(String id,
+          {String source = 'netease', bool requireVerified = false}) async =>
       id == 'second' ? '[01:15.00]第二首歌词\n[01:16.00]继续播放' : '[00:20.00]第一首歌词';
+}
+
+class _IdentityMusicApi extends MusicApi {
+  _IdentityMusicApi(this.responses, {this.heldLyrics = const {}});
+  final Map<String, Map<String, dynamic>> responses;
+  final Map<String, Completer<String?>> heldLyrics;
+  final List<String> lyricRequests = [];
+  final List<String> playRequests = [];
+
+  @override
+  Future<PlaybackInfo> getPlaybackInfo(
+    String id, {
+    String source = 'netease',
+    String quality = 'exhigh',
+    bool prefetch = false,
+  }) async {
+    expect(prefetch, isFalse);
+    playRequests.add('$source:$id');
+    return PlaybackInfo.fromJson({
+      'playUrl': 'https://media.example.com/$id.mp3',
+      ...?responses[id],
+    }, id: id, source: source);
+  }
+
+  @override
+  Future<String?> getLyric(String id,
+      {String source = 'netease', bool requireVerified = false}) async {
+    expect(requireVerified, isTrue);
+    final key = '$source:$id';
+    lyricRequests.add(key);
+    return heldLyrics[key]?.future ?? Future.value('[00:01.00]$key');
+  }
 }
 
 class _MemoryLastPlaybackStore implements LastPlaybackStore {
@@ -625,7 +1030,10 @@ class _MemoryLastPlaybackStore implements LastPlaybackStore {
 }
 
 class _ControllableAudioPlayer extends AudioPlayer {
-  _ControllableAudioPlayer();
+  _ControllableAudioPlayer({this.withNativeDuration = true});
+
+  final bool withNativeDuration;
+  AudioSource? lastSource;
 
   final _events = StreamController<PlaybackEvent>.broadcast(sync: true);
   final _playingEvents = StreamController<bool>.broadcast(sync: true);
@@ -644,6 +1052,8 @@ class _ControllableAudioPlayer extends AudioPlayer {
   int _remainingZeroReads = 0;
   bool _restartClockOnNextPlay = false;
   Duration? nextSeekResult;
+  Object? nextLoadError;
+  Object? nextPlayError;
   int loadCount = 0;
 
   @override
@@ -718,12 +1128,16 @@ class _ControllableAudioPlayer extends AudioPlayer {
     int? initialIndex,
     Duration? initialPosition,
   }) async {
+    lastSource = source;
     loadCount++;
     _playing = false;
     _playingEvents.add(false);
     _processingState = ProcessingState.loading;
     _positionAnchor = initialPosition ?? Duration.zero;
     _emitEvent();
+    final loadError = nextLoadError;
+    nextLoadError = null;
+    if (loadError != null) throw loadError;
     final heldLoad = _heldLoad;
     if (heldLoad != null && !heldLoad.isCompleted) {
       _heldLoadStarted?.complete();
@@ -731,7 +1145,8 @@ class _ControllableAudioPlayer extends AudioPlayer {
       _heldLoad = null;
       _heldLoadStarted = null;
     }
-    _duration = Duration(minutes: loadCount == 1 ? 3 : 4);
+    _duration =
+        withNativeDuration ? Duration(minutes: loadCount == 1 ? 3 : 4) : null;
     _durationEvents.add(_duration);
     _processingState = ProcessingState.ready;
     _positionAnchorTime = DateTime.now();
@@ -741,6 +1156,9 @@ class _ControllableAudioPlayer extends AudioPlayer {
 
   @override
   Future<void> play() async {
+    final playError = nextPlayError;
+    nextPlayError = null;
+    if (playError != null) throw playError;
     _positionAnchor = position;
     if (_restartClockOnNextPlay) {
       _positionAnchor = Duration.zero;

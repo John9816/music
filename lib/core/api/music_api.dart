@@ -1,6 +1,7 @@
 import '../config/app_config.dart';
 import '../models/artist_info.dart';
 import '../models/playlist.dart';
+import '../models/playback_info.dart';
 import '../models/song.dart';
 import '../player/lrc_parser.dart';
 import 'api_client.dart';
@@ -126,7 +127,9 @@ const List<PlaylistCategoryGroup> kPlaylistCategories =
 
 /// 音乐接口，对应 macOS 版 MusicApiService。
 class MusicApi {
-  final ApiClient _client = ApiClient.instance;
+  MusicApi({ApiClient? client}) : _client = client ?? ApiClient.instance;
+
+  final ApiClient _client;
 
   static const _defaultSource = 'netease';
 
@@ -383,11 +386,28 @@ class MusicApi {
     );
   }
 
-  /// 获取播放地址（字段 playUrl）
+  /// Convenience for callers that only need the audio URL.
   Future<String?> getSongUrl(
     String id, {
     String source = _defaultSource,
     String quality = 'exhigh',
+    bool prefetch = false,
+  }) async {
+    return (await getPlaybackInfo(
+      id,
+      source: source,
+      quality: quality,
+      prefetch: prefetch,
+    ))
+        .playUrl;
+  }
+
+  /// Resolve audio together with the recording identity used for its lyrics.
+  Future<PlaybackInfo> getPlaybackInfo(
+    String id, {
+    String source = _defaultSource,
+    String quality = 'exhigh',
+    bool prefetch = false,
   }) async {
     final data = await _client.getJson(
       'api/v1/music/play',
@@ -395,22 +415,25 @@ class MusicApi {
         'source': source,
         'id': id,
         'quality': AppConfig.qualityValues[quality] ?? '320k',
+        if (prefetch) 'prefetch': 'true',
       },
       retry: false,
     );
-    return _textOrNull(data['playUrl']);
+    return PlaybackInfo.fromJson(data, id: id, source: source);
   }
 
   /// Prefer verified word timing; keep ordinary lyrics for unsupported formats.
   Future<String?> getLyric(
     String id, {
     String source = _defaultSource,
+    bool requireVerified = false,
   }) async {
     final data = await _client.getJson('api/v1/music/lyric', params: {
       'source': source,
       'id': id,
       'timestamp': '${DateTime.now().millisecondsSinceEpoch}',
     });
+    if (requireVerified && data['official'] == false) return null;
     final karaoke = _textOrNull(data['karaokeLyrics']);
     if (karaoke != null && parseKaraokeLrc(karaoke).isNotEmpty) return karaoke;
     return _textOrNull(data['lineLyrics']);

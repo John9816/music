@@ -10,6 +10,7 @@ import 'package:just_audio/just_audio.dart';
 import '../api/api_client.dart';
 import '../api/music_api.dart';
 import '../models/song.dart';
+import '../models/playback_info.dart';
 import '../network/image_request_policy.dart';
 import '../services/cache_service.dart';
 import '../services/song_download_service.dart';
@@ -29,6 +30,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     AudioPlayer? audioPlayer,
     MusicApi? musicApi,
     Future<File?> Function(Song song)? localFileFor,
+    Future<LocalAudio?> Function(Song song)? localAudioFor,
+    CacheService? cacheService,
     Future<void> Function(SettingsController settings)? maintainAudioCache,
     LastPlaybackStore? lastPlaybackStore,
     Future<void> Function()? beforePlayback,
@@ -39,10 +42,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
                   !usesNativeAudioHeaders(defaultTargetPlatform),
             ),
         _api = musicApi ?? MusicApi(),
-        _localFileFor =
-            localFileFor ?? SongDownloadService.instance.localFileFor,
+        _localFileFor = localFileFor,
+        _localAudioFor =
+            localAudioFor ?? SongDownloadService.instance.localAudioFor,
+        _cacheService = cacheService ?? CacheService.instance,
         _maintainAudioCache = maintainAudioCache ??
-            ((settings) => CacheService.instance.maintainAudioCache(settings)),
+            ((settings) => (cacheService ?? CacheService.instance)
+                .maintainAudioCache(settings)),
         _lastPlaybackStore =
             lastPlaybackStore ?? SharedPreferencesLastPlaybackStore(),
         _beforePlayback = beforePlayback {
@@ -86,7 +92,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   final SettingsController _settings;
   final AudioPlayer _player;
   final MusicApi _api;
-  final Future<File?> Function(Song song) _localFileFor;
+  final Future<File?> Function(Song song)? _localFileFor;
+  final Future<LocalAudio?> Function(Song song) _localAudioFor;
+  final CacheService _cacheService;
   final Future<void> Function(SettingsController settings) _maintainAudioCache;
   final LastPlaybackStore _lastPlaybackStore;
   final Future<void> Function()? _beforePlayback;
@@ -119,6 +127,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Song? _current;
   String _lyric = '';
   String? _effectiveQuality;
+  AudioIdentity? _audioIdentity;
   bool _loading = false;
   bool _liked = false;
   bool _shuffle = false;
@@ -178,7 +187,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Duration? _effectiveDuration(Duration? loaded) {
     if (loaded != null && loaded > Duration.zero) return loaded;
-    final fallbackMs = _current?.durationMs ?? 0;
+    final actualMs = _audioIdentity?.durationMs ?? 0;
+    final fallbackMs = actualMs > 0 ? actualMs : _current?.durationMs ?? 0;
     return fallbackMs > 0 ? Duration(milliseconds: fallbackMs) : loaded;
   }
 
@@ -311,6 +321,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _queueSnapshot = null;
     _index = 0;
     _current = song;
+    _clearResolvedAudio();
     _loading = false;
     _positionSourceReady = false;
     _lastEmittedPosition = null;
@@ -379,8 +390,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _loading = true;
     _error = null;
     _errorKind = PlaybackErrorKind.none;
-    _lyric = '';
-    _effectiveQuality = null;
+    _clearResolvedAudio();
     _positionSourceReady = false;
     _lastEmittedPosition = null;
     _resumeGuardUntil = null;
@@ -401,10 +411,62 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       await _player.stop();
       if (seq != _playSeq) return;
       final song = _current!;
+      final LocalAudio? downloaded;
+      if (_localFileFor != null) {
+        final file = await _localFileFor(song);
+        downloaded = file == null
+            ? null
+            : LocalAudio(
+                file: file,
+                identity: AudioIdentity(source: song.source),
+                quality: _settings.qualityForSource(song.source),
+              );
+      } else {
+        downloaded = await _localAudioFor(song);
+      }
+      if (seq != _playSeq) return; // 已被更新的操作取代
+      late AudioIdentity identity;
+      late Uri audioUri;
+      File? cacheFile;
+      if (downloaded != null) {
+        identity = downloaded.identity;
+        audioUri = downloaded.file.uri;
+        _effectiveQuality = downloaded.quality;
+      } else {
+        final resolved = await _resolveAudioUrl(song);
+        if (seq != _playSeq) return;
+        identity = resolved.info.audioIdentity;
+        audioUri = Uri.parse(resolved.url);
+        _effectiveQuality = resolved.quality;
+        if (_settings.automaticAudioCache &&
+            CacheService.supportsAutomaticAudioCache(identity.source)) {
+          final file = await _cacheService.audioFileFor(
+            song,
+            resolved.quality,
+            identity: identity,
+          );
+          if (await file.exists() && await file.length() > 0) {
+            // The cached bytes determine their lyric identity, even if a new
+            // play response now resolves to another recording.
+            identity = await _cacheService.audioIdentityFor(file) ??
+                AudioIdentity(source: identity.source);
+            cacheFile = file;
+          } else {
+            try {
+              await _cacheService.saveAudioIdentity(file, identity);
+              cacheFile = file;
+            } catch (_) {
+              // Streaming can proceed when persistence is unavailable.
+            }
+          }
+        }
+      }
+      if (seq != _playSeq) return;
+      _audioIdentity = identity;
       final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
       final artworkHeaders = imageRequestHeaders(artworkUrl);
-      final downloadedFile = await _localFileFor(song);
-      if (seq != _playSeq) return; // 已被更新的操作取代
+      final metadataDurationMs =
+          identity.durationMs > 0 ? identity.durationMs : song.durationMs;
       final mediaItem = MediaItem(
         id: song.id,
         title: song.name,
@@ -412,41 +474,27 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         album: song.album.name,
         artUri: artworkUrl == null ? null : Uri.tryParse(artworkUrl),
         artHeaders: artworkHeaders.isEmpty ? null : artworkHeaders,
-        duration: song.durationMs > 0
-            ? Duration(milliseconds: song.durationMs)
+        duration: metadataDurationMs > 0
+            ? Duration(milliseconds: metadataDurationMs)
             : null,
       );
       final AudioSource source;
-      final audioHeaders = _audioHeadersFor(song.source);
-      if (downloadedFile != null) {
-        source = AudioSource.uri(downloadedFile.uri, tag: mediaItem);
+      final audioHeaders = audioHeadersFor(identity.source);
+      if (cacheFile != null) {
+        // just_audio's supported progressive audio cache API.
+        // ignore: experimental_member_use
+        source = LockCachingAudioSource(
+          audioUri,
+          cacheFile: cacheFile,
+          headers: audioHeaders,
+          tag: mediaItem,
+        );
       } else {
-        final resolved = await _resolveAudioUrl(song);
-        if (seq != _playSeq) return;
-        final url = resolved.url;
-        _effectiveQuality = resolved.quality;
-        if (_settings.automaticAudioCache &&
-            CacheService.supportsAutomaticAudioCache(song.source)) {
-          final cacheFile = await CacheService.instance.audioFileFor(
-            song,
-            resolved.quality,
-          );
-          // just_audio still marks its disk-backed cache source experimental,
-          // but it is the package's supported API for progressive audio caching.
-          // ignore: experimental_member_use
-          source = LockCachingAudioSource(
-            Uri.parse(url),
-            cacheFile: cacheFile,
-            headers: audioHeaders,
-            tag: mediaItem,
-          );
-        } else {
-          source = AudioSource.uri(
-            Uri.parse(url),
-            headers: audioHeaders,
-            tag: mediaItem,
-          );
-        }
+        source = AudioSource.uri(
+          audioUri,
+          headers: audioUri.scheme == 'file' ? null : audioHeaders,
+          tag: mediaItem,
+        );
       }
       // 带 MediaItem 标签：系统通知栏/锁屏显示歌名、歌手、封面。
       await _player.setAudioSource(source).timeout(const Duration(seconds: 20));
@@ -458,7 +506,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         await _seekNative(deferredSeek, seq);
       }
       if (seq != _playSeq) return;
-      _loadLyric(seq);
+      _loadLyric(seq, identity);
       _loading = false;
       _emitNativePosition(force: true);
       notifyListeners();
@@ -485,29 +533,15 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Map<String, String> _audioHeadersFor(String source) {
-    final referer = switch (source.toLowerCase()) {
-      'qq' => 'https://y.qq.com/',
-      'kuwo' => 'https://www.kuwo.cn/',
-      _ => 'https://music.163.com/',
-    };
-    return {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-          'AppleWebKit/537.36',
-      'Referer': referer,
-      'Accept': 'audio/*,*/*;q=0.8',
-    };
-  }
-
-  Future<ResolvedPlaybackUrl> _resolveAudioUrl(Song song) async {
+  Future<ResolvedPlaybackInfo> _resolveAudioUrl(Song song) async {
     Object? lastError;
     final requestedQuality = _settings.qualityForSource(song.source);
     try {
-      final resolved = await resolvePlaybackUrl(
+      final resolved = await resolvePlaybackInfo(
         source: song.source,
         requestedQuality: requestedQuality,
-        loadUrl: (quality) => _api
-            .getSongUrl(song.id, source: song.source, quality: quality)
+        loadInfo: (quality) => _api
+            .getPlaybackInfo(song.id, source: song.source, quality: quality)
             .timeout(const Duration(seconds: 12)),
       );
       if (resolved != null) return resolved;
@@ -524,11 +558,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     throw Exception('未获取到播放地址，请切换音乐源后重试');
   }
 
-  void _loadLyric(int seq) {
+  void _loadLyric(int seq, AudioIdentity identity) {
     final song = _current;
-    if (song == null) return;
-    _api.getLyric(song.id, source: song.source).then((lrc) {
-      if (seq != _playSeq) return;
+    if (song == null || !identity.canLoadLyrics) return;
+    _api
+        .getLyric(identity.id!, source: identity.source, requireVerified: true)
+        .then((lrc) {
+      if (seq != _playSeq || !identical(_audioIdentity, identity)) return;
       if (lrc != null && lrc.isNotEmpty && identical(_current, song)) {
         _lyric = lrc;
         notifyListeners();
@@ -577,6 +613,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _setPlaybackError(int seq, Object error) {
     if (seq != _playSeq) return;
+    _clearResolvedAudio();
     _loading = false;
     final apiError = error is ApiException ? error : null;
     final rawMessage = apiError?.message ?? error.toString();
@@ -650,6 +687,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     ++_playSeq;
     _restoreLastPlaybackFuture = null;
     final previousSeek = _resetSeekSession();
+    _clearResolvedAudio();
     _positionSourceReady = false;
     _lastEmittedPosition = null;
     _resumeGuardUntil = null;
@@ -664,7 +702,6 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _queueSnapshot = null;
     _index = -1;
     _current = null;
-    _lyric = '';
     _loading = false;
     _liked = false;
     _error = null;
@@ -675,6 +712,12 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         await _lastPlaybackStore.clear();
       } catch (_) {}
     }
+  }
+
+  void _clearResolvedAudio() {
+    _audioIdentity = null;
+    _effectiveQuality = null;
+    _lyric = '';
   }
 
   Future<void> next() async {
@@ -833,6 +876,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _clearResolvedAudio();
     WidgetsBinding.instance.removeObserver(this);
     PlaybackCoordinator.instance.unregister(this);
     _playbackSub?.cancel();

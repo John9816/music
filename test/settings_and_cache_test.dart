@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:duck_music/core/services/cache_service.dart';
+import 'package:duck_music/core/models/song.dart';
+import 'package:duck_music/core/models/playback_info.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -181,5 +183,48 @@ void main() {
 
     expect(await song.exists(), isTrue);
     expect(await cache.downloadsSizeBytes(), 64);
+  });
+
+  test('audio cache keeps provenance and isolates different actual recordings',
+      () async {
+    final directory = await Directory.systemTemp.createTemp('audio-identity-');
+    addTearDown(() => directory.delete(recursive: true));
+    final cache = CacheService.forTesting(
+      temporaryDirectory: () async => directory,
+      documentsDirectory: () async => directory,
+    );
+    final song = Song(
+      id: 'selected',
+      name: 'Song',
+      source: 'qq',
+      artists: const [],
+      album: const Album(id: 0, name: ''),
+      durationMs: 180000,
+    );
+    const identity = AudioIdentity(
+      source: 'netease',
+      id: 'recording-a',
+      lyricMatch: LyricMatch.exact,
+      durationMs: 182000,
+    );
+    final first = await cache.audioFileFor(song, 'exhigh', identity: identity);
+    final second = await cache.audioFileFor(song, 'exhigh',
+        identity: const AudioIdentity(
+          source: 'netease',
+          id: 'recording-b',
+          lyricMatch: LyricMatch.exact,
+        ));
+    expect(first.path, isNot(second.path));
+    expect(await cache.audioIdentityFor(first), isNull);
+    await cache.saveAudioIdentity(first, identity);
+    first.writeAsBytesSync([1]);
+    final restored = await cache.audioIdentityFor(first);
+    expect(restored?.source, 'netease');
+    expect(restored?.id, 'recording-a');
+    expect(restored?.canLoadLyrics, isTrue);
+    expect(restored?.durationMs, 182000);
+    await cache.clearCategory(CacheCategory.songs);
+    expect(await first.exists(), isFalse);
+    expect(await cache.audioIdentityFor(first), isNull);
   });
 }
