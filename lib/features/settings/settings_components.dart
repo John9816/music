@@ -70,6 +70,7 @@ class SettingsRow extends StatelessWidget {
     this.toggleValue,
     this.destructive = false,
     this.iconColor,
+    this.fixedIconColor,
   });
 
   final IconData icon;
@@ -82,6 +83,9 @@ class SettingsRow extends StatelessWidget {
   final bool? toggleValue;
   final bool destructive;
   final Color? iconColor;
+
+  /// Semantic icon colors, such as favorite red, survive the neutral row style.
+  final Color? fixedIconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -164,8 +168,9 @@ class SettingsRow extends StatelessWidget {
                     child: Icon(
                       icon,
                       size: 20,
-                      color:
-                          destructive ? scheme.error : scheme.onSurfaceVariant,
+                      color: destructive
+                          ? scheme.error
+                          : fixedIconColor ?? scheme.onSurfaceVariant,
                     ),
                   )
                 else
@@ -174,7 +179,9 @@ class SettingsRow extends StatelessWidget {
                     child: Icon(
                       icon,
                       size: 21,
-                      color: destructive ? scheme.error : scheme.onSurface,
+                      color: destructive
+                          ? scheme.error
+                          : fixedIconColor ?? scheme.onSurface,
                     ),
                   ),
                 const SizedBox(width: 12),

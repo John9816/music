@@ -607,13 +607,6 @@ class _SearchViewState extends State<SearchView> {
         GPageHeader(
           title: _keyword.isEmpty ? '搜索' : '搜索结果',
           subtitle: wide ? '歌曲、歌手、专辑与歌单' : null,
-          padding: EdgeInsets.fromLTRB(
-            (MediaQuery.sizeOf(context).width >= 600 ? 24 : 20) +
-                macOSWindowControlsInset(context),
-            wide ? 22 : 18,
-            24,
-            wide ? 12 : 10,
-          ),
         ),
       ),
       Padding(
@@ -624,7 +617,8 @@ class _SearchViewState extends State<SearchView> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: SizedBox(
-            height: MediaQuery.textScalerOf(context).scale(17) * 1.5 + 22,
+            height: (MediaQuery.textScalerOf(context).scale(17) * 1.5 + 22)
+                .clamp(GToolbarButton.extent, double.infinity),
             child: TextField(
               controller: _controller,
               focusNode: widget.focusNode,
@@ -650,23 +644,21 @@ class _SearchViewState extends State<SearchView> {
                   color: scheme.onSurfaceVariant,
                 ),
                 prefixIconConstraints:
-                    const BoxConstraints.tightFor(width: 46, height: 46),
+                    const BoxConstraints.tightFor(width: 48, height: 48),
                 suffixIcon: _keyword.isEmpty
                     ? null
                     : SizedBox(
-                        width: 46,
-                        height: 46,
-                        child: GIconButton(
+                        width: 48,
+                        height: 48,
+                        child: GToolbarButton(
                           icon: Icons.cancel_rounded,
                           tooltip: '清除搜索',
-                          size: 18,
-                          padding: 8,
                           backgroundColor: Colors.transparent,
                           onTap: _clearSearch,
                         ),
                       ),
                 suffixIconConstraints:
-                    const BoxConstraints.tightFor(width: 46, height: 46),
+                    const BoxConstraints.tightFor(width: 48, height: 48),
               ),
               textInputAction: TextInputAction.search,
               onSubmitted: (value) {

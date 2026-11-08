@@ -15,6 +15,7 @@ class KaraokeLyricText extends StatefulWidget {
     required this.position,
     required this.positionStream,
     required this.playing,
+    this.textAlign = TextAlign.left,
   });
 
   final LrcLine line;
@@ -22,6 +23,7 @@ class KaraokeLyricText extends StatefulWidget {
   final Duration position;
   final Stream<Duration> positionStream;
   final bool playing;
+  final TextAlign textAlign;
 
   @override
   State<KaraokeLyricText> createState() => _KaraokeLyricTextState();
@@ -104,6 +106,7 @@ class _KaraokeLyricTextState extends State<KaraokeLyricText>
     return RepaintBoundary(
       child: CustomPaint(
         foregroundPainter: _KaraokeHighlightPainter(
+          textAlign: widget.textAlign,
           line: widget.line,
           style: widget.style,
           position: _position,
@@ -114,7 +117,7 @@ class _KaraokeLyricTextState extends State<KaraokeLyricText>
         child: SizedBox(
           width: double.infinity,
           child: Text(widget.line.text,
-              textAlign: TextAlign.left,
+              textAlign: widget.textAlign,
               style: widget.style.copyWith(
                   color: widget.style.color!.withValues(alpha: 0.38))),
         ),
@@ -128,6 +131,7 @@ class _KaraokeHighlightPainter extends CustomPainter {
     required this.line,
     required this.style,
     required this.position,
+    required this.textAlign,
     required this.direction,
     required this.scaler,
     required this.locale,
@@ -136,6 +140,7 @@ class _KaraokeHighlightPainter extends CustomPainter {
   final LrcLine line;
   final TextStyle style;
   final ValueNotifier<Duration> position;
+  final TextAlign textAlign;
   final TextDirection direction;
   final TextScaler scaler;
   final Locale? locale;
@@ -144,11 +149,11 @@ class _KaraokeHighlightPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final painter = TextPainter(
       text: TextSpan(text: line.text, style: style),
-      textAlign: TextAlign.left,
+      textAlign: textAlign,
       textDirection: direction,
       textScaler: scaler,
       locale: locale,
-    )..layout(maxWidth: size.width);
+    )..layout(minWidth: size.width, maxWidth: size.width);
     final clip = Path();
     var offset = 0;
     for (final word in line.words) {
@@ -181,6 +186,7 @@ class _KaraokeHighlightPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _KaraokeHighlightPainter oldDelegate) =>
+      textAlign != oldDelegate.textAlign ||
       line != oldDelegate.line ||
       style != oldDelegate.style ||
       position != oldDelegate.position ||

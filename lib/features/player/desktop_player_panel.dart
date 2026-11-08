@@ -57,7 +57,8 @@ class DesktopPlayerPanel extends StatelessWidget {
           ),
           child: Column(
             children: [
-              _PanelHeader(panel: panel, onClose: onClose),
+              GWindowControlsSafeRegion(
+                  child: _PanelHeader(panel: panel, onClose: onClose)),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: Motion.fast,
@@ -84,31 +85,18 @@ class _PanelHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 68,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 18, 8, 6),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                panel == MiniPlayerPanel.lyrics ? '歌词' : '播放队列',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: TypeScale.bold,
-                ),
-              ),
-            ),
-            GIconButton(
-              icon: Icons.close_rounded,
-              tooltip: panel == MiniPlayerPanel.lyrics ? '关闭歌词' : '关闭播放队列',
-              size: 18,
-              padding: 2,
-              onTap: onClose,
-            ),
-          ],
-        ),
+    return GToolbar(
+      centerTitle: false,
+      title: Text(
+        panel == MiniPlayerPanel.lyrics ? '歌词' : '播放队列',
       ),
+      actions: [
+        GToolbarButton(
+          icon: Icons.close_rounded,
+          tooltip: panel == MiniPlayerPanel.lyrics ? '关闭歌词' : '关闭播放队列',
+          onTap: onClose,
+        ),
+      ],
     );
   }
 }
@@ -813,7 +801,7 @@ class _QueueRow extends StatelessWidget {
                 _QueueSongAction.favorite,
                 liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 liked ? '取消喜欢' : '喜欢',
-                color: liked ? scheme.primary : null,
+                color: liked ? AppBrand.favoriteRed : null,
               ),
               _menuItem(
                 _QueueSongAction.playlist,

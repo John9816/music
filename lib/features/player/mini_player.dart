@@ -268,7 +268,6 @@ class _MiniPlayerState extends State<MiniPlayer> {
   Widget _desktopBar(BuildContext context, Song current) {
     final player = context.read<PlayerController>();
     final liked = context.select<PlayerController, bool>((p) => p.liked);
-    final scheme = Theme.of(context).colorScheme;
     final trackAreaWidth =
         ((widget.sidebarWidth ?? 264) + 64).clamp(220.0, 360.0);
     return Row(
@@ -293,7 +292,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               padding: 8,
               tooltip: liked ? '取消收藏' : '收藏歌曲',
               selected: liked,
-              tint: liked ? scheme.primary : null,
+              tint: liked ? AppBrand.favoriteRed : null,
               onTap:
                   _favoriteBusy ? null : () => _toggleFavorite(current, player),
             ),

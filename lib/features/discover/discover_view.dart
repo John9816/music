@@ -411,14 +411,13 @@ class _DiscoverViewState extends State<DiscoverView> {
       return GPageHeader(
         title: widget.title,
         subtitle: widget.subtitle ?? '${_greeting()}，听点喜欢的',
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
       );
     }
     return GPageHeader(
       title: widget.title,
       subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
       actions: [
-        GIconButton(
+        GToolbarButton(
           icon: Icons.refresh_rounded,
           tooltip: '刷新',
           disabled: refreshing,

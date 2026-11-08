@@ -215,82 +215,94 @@ class _VideosViewState extends State<VideosView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: GAppBar(
+        title: '影视',
+        onBack: () => Navigator.of(context).maybePop(),
+        actions: [
+          GToolbarButton(
+            tooltip: '刷新',
+            onTap: _loading ? null : _load,
+            icon: Icons.refresh_rounded,
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
-                child: GPageHeader(
-              title: '影视',
-              subtitle: _source == null
-                  ? '电影、剧集、动漫和综艺'
-                  : '${_source!.name} · 电影、剧集、动漫和综艺',
-              trailing: IconButton(
-                tooltip: '刷新',
-                onPressed: _loading ? null : _load,
-                icon: const Icon(Icons.refresh),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Text(
+                  _source == null
+                      ? '电影、剧集、动漫和综艺'
+                      : '${_source!.name} · 电影、剧集、动漫和综艺',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-            )),
+            ),
             if (_sources.isNotEmpty)
               SliverToBoxAdapter(child: _buildSourceSelector(context)),
             if (_source?.isUnsupported == true)
               SliverFillRemaining(child: _buildUnsupportedSource(context))
             else ...[
-            SliverToBoxAdapter(child: _buildSearch(context)),
-            SliverToBoxAdapter(child: _buildCategories(context)),
-            SliverToBoxAdapter(child: _buildFilters(context)),
-            if (_loading && _items.isEmpty)
-              const SliverFillRemaining(child: GLoading())
-            else if (_error != null && _items.isEmpty)
-              SliverFillRemaining(
-                  child: GEmptyState(
-                icon: Icons.wifi_off,
-                text: '影视服务暂时不可用',
-                onRetry: _load,
-              ))
-            else if (_items.isEmpty)
-              const SliverFillRemaining(
-                  child: GEmptyState(
-                icon: Icons.movie_outlined,
-                text: '没有找到相关影视',
-              ))
-            else ...[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
-                sliver: SliverGrid.builder(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 190,
-                    mainAxisExtent: 270,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 14,
-                  ),
-                  itemCount: _items.length,
-                  itemBuilder: (_, index) => _VideoCard(
-                    item: _items[index],
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) =>
-                          VideoDetailView(
-                            api: _api,
-                            videoId: _items[index].id,
-                            source: _source?.id,
-                          ),
-                    )),
+              SliverToBoxAdapter(child: _buildSearch(context)),
+              SliverToBoxAdapter(child: _buildCategories(context)),
+              SliverToBoxAdapter(child: _buildFilters(context)),
+              if (_loading && _items.isEmpty)
+                const SliverFillRemaining(child: GLoading())
+              else if (_error != null && _items.isEmpty)
+                SliverFillRemaining(
+                    child: GEmptyState(
+                  icon: Icons.wifi_off,
+                  text: '影视服务暂时不可用',
+                  onRetry: _load,
+                ))
+              else if (_items.isEmpty)
+                const SliverFillRemaining(
+                    child: GEmptyState(
+                  icon: Icons.movie_outlined,
+                  text: '没有找到相关影视',
+                ))
+              else ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+                  sliver: SliverGrid.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 190,
+                      mainAxisExtent: 270,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 14,
+                    ),
+                    itemCount: _items.length,
+                    itemBuilder: (_, index) => _VideoCard(
+                      item: _items[index],
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => VideoDetailView(
+                          api: _api,
+                          videoId: _items[index].id,
+                          source: _source?.id,
+                        ),
+                      )),
+                    ),
                   ),
                 ),
-              ),
-              if (_hasMore)
-                SliverToBoxAdapter(
-                    child: Padding(
-                  padding: const EdgeInsets.only(bottom: 30),
-                  child: Center(
-                      child: OutlinedButton.icon(
-                    onPressed: _loading ? null : () => _load(append: true),
-                    icon: const Icon(Icons.expand_more),
-                    label: const Text('加载更多'),
-                  )),
+                if (_hasMore)
+                  SliverToBoxAdapter(
+                      child: Padding(
+                    padding: const EdgeInsets.only(bottom: 30),
+                    child: Center(
+                        child: OutlinedButton.icon(
+                      onPressed: _loading ? null : () => _load(append: true),
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('加载更多'),
                     )),
-            ],
+                  )),
+              ],
             ],
           ],
         ),

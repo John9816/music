@@ -311,36 +311,12 @@ class _GreetingHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
-    final scheme = Theme.of(context).colorScheme;
-    final name = auth.username;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 28, 18, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _greeting(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: TypeScale.semibold,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  auth.isLoggedIn ? name ?? '欢迎回来' : '今天想听点什么？',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: pageTitleStyle(context),
-                ),
-              ],
-            ),
-          ),
-          if (!auth.isLoggedIn)
-            GButton(
+    return GPageHeader(
+      title: auth.isLoggedIn ? auth.username ?? '欢迎回来' : '今天想听点什么？',
+      subtitle: _greeting(),
+      trailing: auth.isLoggedIn
+          ? null
+          : GButton(
               label: '登录',
               small: true,
               filled: false,
@@ -348,8 +324,6 @@ class _GreetingHeader extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const LoginView()),
               ),
             ),
-        ],
-      ),
     );
   }
 }

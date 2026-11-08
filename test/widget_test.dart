@@ -1343,7 +1343,7 @@ void main() {
 
     expect(
       tester.getSize(find.byType(GAppBar)).height,
-      inInclusiveRange(103, 104),
+      inInclusiveRange(111, 112),
     );
     expect(tester.getSize(find.byType(GBackButton)).shortestSide,
         greaterThanOrEqualTo(44));
@@ -1423,7 +1423,7 @@ void main() {
       ),
     );
 
-    expect(tester.getTopLeft(find.byTooltip('返回')).dx, lessThan(20));
+    expect(tester.getTopLeft(find.byTooltip('返回')).dx, closeTo(24, 0.5));
     expect(tester.getTopLeft(find.text('搜索')).dx, closeTo(24, 0.5));
     expect(tester.takeException(), isNull);
   });
@@ -1820,7 +1820,7 @@ void main() {
     final favoriteIcon = tester.widget<Icon>(
       find.byIcon(Icons.favorite_rounded).first,
     );
-    expect(favoriteIcon.color, theme.colorScheme.primary);
+    expect(favoriteIcon.color, AppBrand.favoriteRed);
     expect(tester.takeException(), isNull);
   });
 
@@ -1882,11 +1882,14 @@ void main() {
     await tester.tap(find.text('播放历史'));
     expect(favoritesOpened, isTrue);
     expect(historyOpened, isTrue);
+    for (final icon in [Icons.favorite_rounded, Icons.bookmark_rounded]) {
+      expect(
+          tester.widget<Icon>(find.byIcon(icon)).color, AppBrand.favoriteRed);
+    }
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'iOS player swipes between artwork and lyrics with fixed controls',
+  testWidgets('iOS player swipes between artwork and immersive lyrics',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {});
     final player = _PreviewPlayerController();
@@ -1931,7 +1934,7 @@ void main() {
     expect(find.byKey(const ValueKey('mobile-player-artwork')), findsOneWidget);
     expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
-    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
     expect(find.byTooltip('播放队列'), findsOneWidget);
     expect(find.byTooltip('切换音质'), findsOneWidget);
     expect(find.byTooltip('返回封面'), findsNothing);
@@ -1969,7 +1972,9 @@ void main() {
     await tester.pump();
     expect(player.soughtTo, const Duration(milliseconds: 103500));
 
-    await tester.tap(find.byTooltip('歌曲百科'));
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('歌曲百科'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('歌曲百科'), findsOneWidget);
@@ -1981,6 +1986,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('歌曲操作'));
     await tester.pumpAndSettle();
     expect(find.text('播放'), findsOneWidget);
     expect(find.text('收藏到歌单'), findsOneWidget);
@@ -1995,29 +2002,32 @@ void main() {
     expect(settings.quality, 'lossless');
     expect(find.text('无损音质'), findsOneWidget);
 
-    final queueCenter = tester.getCenter(find.byTooltip('播放队列'));
-    final playCenter = tester.getCenter(find.byTooltip('播放'));
     await tester.drag(find.byType(PageView), const Offset(-340, 0));
     await tester.pump(const Duration(milliseconds: 400));
     final fullLyricLine = find.descendant(
       of: find.byType(ListView),
       matching: find.text('穿过人海只为与你相见'),
     );
+    await tester.scrollUntilVisible(fullLyricLine, 120,
+        scrollable: find
+            .descendant(
+                of: find.byType(ListView), matching: find.byType(Scrollable))
+            .first);
     expect(fullLyricLine, findsOneWidget);
     expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
-    expect(tester.getCenter(find.byTooltip('播放队列')), queueCenter);
-    expect(tester.getCenter(find.byTooltip('播放')), playCenter);
+    expect(find.byTooltip('播放队列').hitTestable(), findsNothing);
+    expect(find.byTooltip('播放').hitTestable(), findsNothing);
 
     await tester.ensureVisible(fullLyricLine);
     await tester.pump();
     await tester.tap(fullLyricLine);
     await tester.pump();
     expect(player.soughtTo, const Duration(minutes: 2, seconds: 49));
-    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
 
     await tester.drag(find.byType(ListView), const Offset(0, -80));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
 
     await tester.tapAt(const Offset(8, 330));
     await tester.pump();
@@ -2030,8 +2040,8 @@ void main() {
     await tester.tap(find.bySemanticsLabel('查看歌词'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('穿过人海只为与你相见'), findsOneWidget);
-    expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
+    expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -2151,32 +2161,25 @@ void main() {
             tester.getSize(find.byKey(const ValueKey('mobile-player-artwork')));
         expect(coverSize.width, closeTo(coverSize.height, 0.01));
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
-        expect(find.byTooltip('AirPlay 或蓝牙'), findsOneWidget);
-        expect(find.byTooltip('睡眠定时'), findsOneWidget);
+        expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
+        expect(find.byTooltip('播放设置'), findsOneWidget);
         expect(find.byTooltip('播放队列'), findsOneWidget);
-        expect(
-          find.byTooltip(switch (player.loopMode.name) {
-            'one' => '单曲循环',
-            'all' => '列表循环',
-            _ => '不循环',
-          }),
-          findsOneWidget,
-        );
-        expect(find.byTooltip('歌曲百科'), findsOneWidget);
+        expect(find.byTooltip('歌曲百科'), findsNothing);
         expect(find.byTooltip('更多'), findsOneWidget);
 
         final viewport = Offset.zero & size;
         for (final finder in [
           find.byTooltip('播放'),
-          find.byTooltip('AirPlay 或蓝牙'),
-          find.byTooltip('睡眠定时'),
+          find.byTooltip('播放设置'),
           find.byTooltip('播放队列'),
         ]) {
           expect(viewport.contains(tester.getCenter(finder)), isTrue);
         }
         expect(tester.takeException(), isNull);
 
-        await tester.tap(find.byTooltip('歌曲百科'));
+        await tester.tap(find.byTooltip('更多'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('歌曲百科'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         await tester.ensureVisible(find.text('当前音质'));

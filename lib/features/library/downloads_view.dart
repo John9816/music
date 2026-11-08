@@ -26,11 +26,9 @@ class DownloadsView extends StatelessWidget {
         onBack: () => Navigator.of(context).maybePop(),
         actions: [
           if (downloads.isNotEmpty)
-            GIconButton(
+            GToolbarButton(
               icon: Icons.delete_sweep_outlined,
               tooltip: '清空下载',
-              size: 20,
-              padding: 10,
               backgroundColor: Colors.transparent,
               onTap: () => _clearAll(context, service),
             ),

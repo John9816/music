@@ -30,11 +30,8 @@ void main() {
         '上一首',
         '下一首',
         '收藏歌曲',
-        '随机播放',
-        '不循环',
-        'AirPlay 或蓝牙',
-        '睡眠定时',
-        '歌曲百科',
+        '播放设置',
+        '添加到歌单',
         '播放队列',
         '更多',
         '切换音质',
@@ -79,7 +76,10 @@ void main() {
       await tester.tap(find.bySemanticsLabel('查看歌词'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('lyric-title')), findsOneWidget);
-      expect(tester.getRect(find.byTooltip('暂停')), play);
+      expect(find.byTooltip('暂停').hitTestable(), findsNothing);
+      await tester.tap(find.byTooltip('返回封面'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('暂停').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -120,7 +120,11 @@ void main() {
     try {
       await _pumpPlayer(tester, const Size(390, 844));
 
-      await tester.tap(find.byTooltip('随机播放'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('随机播放'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('更多'));
       await tester.pumpAndSettle();
 
       final node = tester.getSemantics(find.bySemanticsLabel('随机播放（已开启）'));
@@ -128,7 +132,9 @@ void main() {
       expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
       node.owner!.performAction(node.id, SemanticsAction.tap);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('随机播放'), findsOneWidget);
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      expect(find.text('随机播放'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();

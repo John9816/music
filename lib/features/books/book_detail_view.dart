@@ -91,7 +91,7 @@ class _BookDetailViewState extends State<BookDetailView> {
         title: widget.book.name,
         onBack: () => Navigator.of(context).maybePop(),
         actions: [
-          GIconButton(
+          GToolbarButton(
             icon: _inBookshelf
                 ? Icons.bookmark_rounded
                 : Icons.bookmark_border_rounded,

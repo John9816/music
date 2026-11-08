@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -248,8 +247,6 @@ class _LibraryViewState extends State<LibraryView> {
                 slivers: [
                   SliverToBoxAdapter(
                     child: _LibraryHeader(
-                      desktop: desktop,
-                      mobile: mobile,
                       onImport: _openImport,
                       onCreate: _openCreatePlaylist,
                     ),
@@ -405,121 +402,28 @@ class _LibraryData {
 }
 
 class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader({
-    required this.desktop,
-    required this.mobile,
-    required this.onImport,
-    required this.onCreate,
-  });
+  const _LibraryHeader({required this.onImport, required this.onCreate});
 
-  final bool desktop;
-  final bool mobile;
   final VoidCallback onImport;
   final VoidCallback onCreate;
 
   @override
-  Widget build(BuildContext context) {
-    if (mobile) {
-      return GPageHeader(
+  Widget build(BuildContext context) => GPageHeader(
         title: '资料库',
         inlineActions: true,
         actions: [
-          GIconButton(
+          GToolbarButton(
             icon: CupertinoIcons.link,
             tooltip: '导入歌单',
-            backgroundColor: Colors.transparent,
             onTap: onImport,
           ),
-          GIconButton(
+          GToolbarButton(
             icon: CupertinoIcons.add,
             tooltip: '新建歌单',
-            backgroundColor: Colors.transparent,
             onTap: onCreate,
           ),
         ],
       );
-    }
-    final textScaler = MediaQuery.textScalerOf(context);
-    final titleSize = desktop ? 28.0 : 27.0;
-    final scaledHeight = textScaler.scale(titleSize);
-    final minHeight = math.max(desktop ? 77.0 : 72.0, scaledHeight + 40);
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: minHeight),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          (desktop ? 20 : 18) + macOSWindowControlsInset(context),
-          0,
-          desktop ? 20 : 18,
-          0,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-                child: Text(
-              '资料库',
-              style: pageTitleStyle(context).copyWith(fontSize: titleSize),
-            )),
-            _HeaderButton(
-              icon: CupertinoIcons.link,
-              tooltip: '导入歌单',
-              onTap: onImport,
-            ),
-            const SizedBox(width: 8),
-            _HeaderButton(
-              icon: CupertinoIcons.add,
-              tooltip: '新建歌单',
-              emphasized: true,
-              onTap: onCreate,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderButton extends StatelessWidget {
-  const _HeaderButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.emphasized = false,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool emphasized;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        label: tooltip,
-        child: GPressScale(
-          onTap: onTap,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: emphasized
-                  ? scheme.primary
-                  : scheme.onSurface.withValues(alpha: 0.055),
-            ),
-            child: Icon(
-              icon,
-              size: emphasized ? 25 : 19,
-              color: emphasized ? scheme.onPrimary : scheme.onSurface,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _LibraryGrid extends StatelessWidget {
@@ -693,7 +597,9 @@ class _LibraryCard extends StatelessWidget {
                 width: 28,
                 child: Icon(icon,
                     size: 24,
-                    color: accent ? scheme.primary : scheme.onSurfaceVariant),
+                    color: accent
+                        ? AppBrand.favoriteRed
+                        : scheme.onSurfaceVariant),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -751,13 +657,13 @@ class _LibraryCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: accent
-                        ? scheme.primary.withValues(alpha: 0.12)
+                        ? AppBrand.favoriteRed.withValues(alpha: 0.12)
                         : scheme.onSurface.withValues(alpha: 0.12),
                   ),
                   child: Icon(
                     icon,
                     size: 14,
-                    color: accent ? scheme.primary : scheme.onSurface,
+                    color: accent ? AppBrand.favoriteRed : scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 18),

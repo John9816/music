@@ -180,39 +180,31 @@ class _UserPlaylistsViewState extends State<UserPlaylistsView> {
         onBack: () => Navigator.of(context).maybePop(),
         actions: _selectionMode
             ? [
-                GIconButton(
+                GToolbarButton(
                   icon: Icons.close_rounded,
                   tooltip: '退出管理',
-                  size: 18,
-                  padding: 9,
                   backgroundColor: Colors.transparent,
                   onTap: _exitSelection,
                 ),
               ]
             : [
                 if (canImport)
-                  GIconButton(
+                  GToolbarButton(
                     icon: Icons.add_rounded,
                     tooltip: '新建歌单',
-                    size: 18,
-                    padding: 9,
                     backgroundColor: Colors.transparent,
                     onTap: _creating ? null : _openCreatePlaylist,
                   ),
-                GIconButton(
+                GToolbarButton(
                   icon: Icons.checklist_rounded,
                   tooltip: '管理歌单',
-                  size: 18,
-                  padding: 9,
                   backgroundColor: Colors.transparent,
                   onTap: _enterSelection,
                 ),
                 if (canImport)
-                  GIconButton(
+                  GToolbarButton(
                     icon: Icons.file_download_outlined,
                     tooltip: '导入歌单',
-                    size: 18,
-                    padding: 9,
                     backgroundColor: Colors.transparent,
                     onTap: _openImport,
                   ),

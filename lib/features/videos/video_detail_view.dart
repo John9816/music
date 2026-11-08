@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/video_api.dart';
 import '../../core/models/video.dart';
 import '../../core/services/video_history_service.dart';
+import '../../widgets/glass.dart';
 import 'video_player_view.dart';
 
 class VideoDetailView extends StatefulWidget {
@@ -53,7 +54,10 @@ class _VideoDetailViewState extends State<VideoDetailView> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('影视详情')),
+        appBar: GAppBar(
+          title: '影视详情',
+          onBack: () => Navigator.of(context).maybePop(),
+        ),
         body: FutureBuilder<VideoDetail>(
           future: _future,
           builder: (context, snapshot) {
@@ -63,11 +67,10 @@ class _VideoDetailViewState extends State<VideoDetailView> {
             if (snapshot.hasError || !snapshot.hasData) {
               return Center(
                 child: FilledButton.icon(
-                  onPressed: () => setState(
-                      () => _future = widget.api.detail(
-                            widget.videoId,
-                            source: widget.source,
-                          )),
+                  onPressed: () => setState(() => _future = widget.api.detail(
+                        widget.videoId,
+                        source: widget.source,
+                      )),
                   icon: const Icon(Icons.refresh),
                   label: const Text('重新加载'),
                 ),

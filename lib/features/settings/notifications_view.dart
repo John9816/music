@@ -36,7 +36,7 @@ class _NotificationsViewState extends State<NotificationsView> {
         title: '通知',
         onBack: () => Navigator.of(context).maybePop(),
         actions: [
-          GIconButton(
+          GToolbarButton(
             icon: Icons.refresh_rounded,
             tooltip: '刷新通知',
             onTap: _reload,

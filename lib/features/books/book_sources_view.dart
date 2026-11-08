@@ -219,10 +219,10 @@ class _BookSourcesViewState extends State<BookSourcesView> {
         title: '小说阅读',
         onBack: () => Navigator.of(context).maybePop(),
         actions: [
-          IconButton(
+          GToolbarButton(
             tooltip: '书源管理',
-            onPressed: _showSourceManager,
-            icon: const Icon(Icons.tune_rounded),
+            onTap: _showSourceManager,
+            icon: Icons.tune_rounded,
           ),
         ],
       ),
@@ -625,9 +625,7 @@ class _SourceManagerSheetState extends State<_SourceManagerSheet> {
                         source.ready
                             ? Icons.check_circle_rounded
                             : Icons.info_outline_rounded,
-                        color: source.ready
-                            ? scheme.primary
-                            : scheme.outline),
+                        color: source.ready ? scheme.primary : scheme.outline),
                     title: Text(source.name),
                     subtitle: Text(
                         source.ready ? '可用 · ${source.url}' : source.message,

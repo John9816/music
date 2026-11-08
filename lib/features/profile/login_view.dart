@@ -451,9 +451,11 @@ class _RegisterViewState extends State<RegisterView> {
             children: [
               Checkbox(
                 value: _agreedToTerms,
-                onChanged: (value) => setState(() => _agreedToTerms = value ?? false),
+                onChanged: (value) =>
+                    setState(() => _agreedToTerms = value ?? false),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                visualDensity:
+                    const VisualDensity(horizontal: -4, vertical: -4),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -852,7 +854,8 @@ class _AuthPage extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final compact = size.width < GBreakpoints.compact;
     final back = onBack;
-    final topPadding = compact ? 28.0 : 34.0;
+    final topPadding =
+        (compact ? 28.0 : 34.0) + (back == null ? 0 : GToolbar.height);
     const bottomPadding = 36.0;
     return Scaffold(
       body: Stack(
@@ -924,9 +927,13 @@ class _AuthPage extends StatelessWidget {
           ),
           if (back != null)
             Positioned(
-              top: 8,
-              left: 6 + macOSWindowControlsInset(context),
-              child: GBackButton(onTap: back),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: GToolbar(leading: GBackButton(onTap: back)),
+              ),
             ),
         ],
       ),

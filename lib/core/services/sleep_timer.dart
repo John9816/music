@@ -6,11 +6,15 @@ class SleepTimer extends ChangeNotifier {
   Timer? _timer;
   Duration? _remaining;
   VoidCallback? _onTimeout;
+  VoidCallback? _cancelTrackEnd;
+  bool _atTrackEnd = false;
+  bool get atTrackEnd => _atTrackEnd;
 
   Duration? get remaining => _remaining;
-  bool get isActive => _remaining != null;
+  bool get isActive => _remaining != null || _atTrackEnd;
 
   String get displayText {
+    if (_atTrackEnd) return '本曲结束';
     if (_remaining == null) return '';
     final m = _remaining!.inMinutes;
     final s = _remaining!.inSeconds % 60;
@@ -35,7 +39,24 @@ class SleepTimer extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> startAtTrackEnd(
+      {required Future<void> Function(VoidCallback?) configure}) async {
+    stop();
+    _atTrackEnd = true;
+    _cancelTrackEnd = () => unawaited(configure(null));
+    notifyListeners();
+    await configure(() {
+      _cancelTrackEnd = null;
+      _atTrackEnd = false;
+      notifyListeners();
+    });
+  }
+
   void stop() {
+    final cancel = _cancelTrackEnd;
+    _cancelTrackEnd = null;
+    _atTrackEnd = false;
+    cancel?.call();
     _timer?.cancel();
     _timer = null;
     _remaining = null;
@@ -46,6 +67,7 @@ class SleepTimer extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelTrackEnd?.call();
     super.dispose();
   }
 }

@@ -44,6 +44,84 @@ void main() {
     },
   );
 
+  test('sleep at track end pauses without advancing queued songs', () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    await player.playQueue([
+      _playbackSong('one', const Duration(minutes: 4)),
+      _playbackSong('two', const Duration(minutes: 4))
+    ]);
+    var stopped = 0;
+    await player.setStopAtTrackEnd(() => stopped++);
+    native.completeTrack();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.current!.id, 'one');
+    expect(player.playing, isFalse);
+    expect(stopped, 1);
+    native.completeTrack();
+    await Future<void>.delayed(Duration.zero);
+    expect(stopped, 1);
+    expect(player.current!.id, 'one');
+  });
+
+  test('sleep completion preserves a later seek when playback resumes',
+      () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    await player.playQueue([_playbackSong('one', const Duration(minutes: 4))]);
+    await player.setStopAtTrackEnd(() {});
+    native.completeTrack();
+    await Future<void>.delayed(Duration.zero);
+    await player.seek(const Duration(minutes: 1));
+    await player.togglePlay();
+    expect(native.loadCount, 1);
+    expect(player.position.inSeconds, 60);
+    expect(player.playing, isTrue);
+  });
+
+  test('new sleep request survives prior completion cleanup', () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    await player.playQueue([_playbackSong('one', const Duration(minutes: 4))]);
+    await player.cycleLoopMode();
+    await player.cycleLoopMode();
+    await player.setStopAtTrackEnd(() {});
+    native.pauseGate = Completer<void>();
+    native.completeTrack();
+    await Future<void>.delayed(Duration.zero);
+    await player.setStopAtTrackEnd(() {});
+    native.pauseGate!.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(native.nativeLoop, LoopMode.off);
+  });
+
   test('position stream remains stable across UI rebuilds', () {
     final player = PlayerController(settings: SettingsController());
     addTearDown(player.dispose);
@@ -1054,6 +1132,8 @@ class _ControllableAudioPlayer extends AudioPlayer {
   Duration? nextSeekResult;
   Object? nextLoadError;
   Object? nextPlayError;
+  Completer<void>? pauseGate;
+  LoopMode nativeLoop = LoopMode.off;
   int loadCount = 0;
 
   @override
@@ -1174,6 +1254,7 @@ class _ControllableAudioPlayer extends AudioPlayer {
 
   @override
   Future<void> pause() async {
+    await pauseGate?.future;
     _positionAnchor = position;
     _playing = false;
     _playingEvents.add(false);
@@ -1198,10 +1279,21 @@ class _ControllableAudioPlayer extends AudioPlayer {
       await heldSeek.future;
       _heldSeek = null;
     }
+    _processingState = ProcessingState.ready;
     _positionAnchor = nextSeekResult ?? target;
     nextSeekResult = null;
     _positionAnchorTime = DateTime.now();
     _emitEvent();
+  }
+
+  void completeTrack() {
+    _processingState = ProcessingState.completed;
+    _emitEvent();
+  }
+
+  @override
+  Future<void> setLoopMode(LoopMode mode) async {
+    nativeLoop = mode;
   }
 
   void _emitEvent() {

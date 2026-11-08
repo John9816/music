@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart' as video_player;
 
 import '../../core/models/live_tv.dart';
 import '../../core/player/playback_coordinator.dart';
+import '../../widgets/glass.dart';
 import 'live_line_failover.dart';
 import 'live_open_queue.dart';
 
@@ -201,13 +202,14 @@ class _LivePlayerViewState extends State<LivePlayerView> {
             : '直播中';
     return Scaffold(
       key: const ValueKey('live-player-view'),
-      appBar: AppBar(
-        title: Text(widget.channel.name),
+      appBar: GAppBar(
+        title: widget.channel.name,
+        onBack: () => Navigator.of(context).maybePop(),
         actions: [
-          IconButton(
+          GToolbarButton(
             tooltip: '切换线路',
-            onPressed: widget.channel.lines.isEmpty ? null : _showLines,
-            icon: const Icon(Icons.route),
+            onTap: widget.channel.lines.isEmpty ? null : _showLines,
+            icon: Icons.route,
           ),
         ],
       ),

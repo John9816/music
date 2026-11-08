@@ -132,6 +132,16 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   bool _liked = false;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
+  VoidCallback? _onSleepTrackEnd;
+  int? _sleepCompletedPlaySeq;
+
+  Future<void> setStopAtTrackEnd(VoidCallback? onEnd) async {
+    _onSleepTrackEnd = onEnd;
+    await _player.setLoopMode(onEnd == null && _loopMode == LoopMode.one
+        ? LoopMode.one
+        : LoopMode.off);
+  }
+
   String? _error;
   PlaybackErrorKind _errorKind = PlaybackErrorKind.none;
 
@@ -167,6 +177,10 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   List<Song> get queue => _queueSnapshot ??= List.unmodifiable(_queue);
   Song? get current => _current;
   bool get playing => _player.playing;
+
+  /// Native session for Android playback visualization; null until available.
+  int? get audioSessionId => _player.androidAudioSessionId;
+  Stream<int?> get audioSessionIdStream => _player.androidAudioSessionIdStream;
   Duration get position {
     if (!_positionSourceReady) return Duration.zero;
     return _guardPosition(_player.position);
@@ -588,6 +602,25 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         !_loading &&
         event.processingState == ProcessingState.completed &&
         _queue.isNotEmpty) {
+      if (_sleepCompletedPlaySeq == _playSeq) return;
+      final sleepCallback = _onSleepTrackEnd;
+      if (sleepCallback != null) {
+        final completedSeq = _playSeq;
+        _sleepCompletedPlaySeq = completedSeq;
+        _onSleepTrackEnd = null;
+        unawaited(Future<void>.microtask(() async {
+          if (completedSeq != _playSeq) return;
+          await _player.pause();
+          if (completedSeq != _playSeq) return;
+          await _player.setLoopMode(
+              _loopMode == LoopMode.one && _onSleepTrackEnd == null
+                  ? LoopMode.one
+                  : LoopMode.off);
+        }));
+        sleepCallback();
+        notifyListeners();
+        return;
+      }
       // 如果是"不循环"模式且播完最后一首，停在末尾不再自动播放
       if (_loopMode == LoopMode.off &&
           _index == _queue.length - 1 &&
@@ -652,7 +685,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> togglePlay() async {
     if (_current == null || _loading) return;
-    if (_error != null || _player.processingState == ProcessingState.idle) {
+    if (_error != null ||
+        _player.processingState == ProcessingState.idle ||
+        _sleepCompletedPlaySeq == _playSeq) {
       await playAt(_index);
       return;
     }
@@ -750,7 +785,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       LoopMode.one => LoopMode.off,
     };
     await _player.setLoopMode(
-      _loopMode == LoopMode.one ? LoopMode.one : LoopMode.off,
+      _loopMode == LoopMode.one && _onSleepTrackEnd == null
+          ? LoopMode.one
+          : LoopMode.off,
     );
     notifyListeners();
   }
@@ -819,7 +856,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _activeSeek = operation;
     try {
       await operation;
-      if (seq == _playSeq) _emitNativePosition(force: true);
+      if (seq == _playSeq) {
+        if (_sleepCompletedPlaySeq == seq &&
+            target < (duration ?? Duration.zero)) {
+          _sleepCompletedPlaySeq = null;
+        }
+        _emitNativePosition(force: true);
+      }
     } finally {
       if (identical(_activeSeek, operation)) _activeSeek = null;
       _seekInFlight = false;

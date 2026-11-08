@@ -143,41 +143,33 @@ class _UserLibraryViewState extends State<UserLibraryView> {
             onBack:
                 widget.embedded ? null : () => Navigator.of(context).maybePop(),
             actions: [
-              GIconButton(
+              GToolbarButton(
                 icon: _searchOpen ? Icons.close_rounded : Icons.search_rounded,
                 tooltip: _searchOpen ? '关闭搜索' : '搜索歌曲',
-                size: 22,
-                padding: 9,
                 backgroundColor: Colors.transparent,
                 onTap: _toggleSearch,
               ),
               Builder(
-                builder: (buttonContext) => GIconButton(
-                  icon: Icons.more_vert_rounded,
+                builder: (buttonContext) => GToolbarButton(
+                  icon: Icons.more_horiz_rounded,
                   tooltip: '更多',
-                  size: 22,
-                  padding: 9,
                   backgroundColor: Colors.transparent,
                   onTap: () => _showMoreActions(buttonContext),
                 ),
               ),
               if (widget.onRemove != null)
-                GIconButton(
+                GToolbarButton(
                   icon: _selectionMode
                       ? Icons.close_rounded
                       : Icons.checklist_rounded,
                   tooltip: _selectionMode ? '退出管理' : '管理歌曲',
-                  size: 18,
-                  padding: 9,
                   backgroundColor: Colors.transparent,
                   onTap: _selectionMode ? _exitSelection : _enterSelection,
                 ),
               if (widget.onSync != null)
-                GIconButton(
+                GToolbarButton(
                   icon: Icons.sync_rounded,
                   tooltip: '同步歌单',
-                  size: 18,
-                  padding: 9,
                   backgroundColor: Colors.transparent,
                   onTap: _syncPlaylist,
                 ),
@@ -787,6 +779,9 @@ class _LibraryHero extends StatelessWidget {
       UserLibraryKind.favorites => Icons.favorite_rounded,
       UserLibraryKind.playlist => Icons.queue_music_rounded,
     };
+    final placeholderColor = kind == UserLibraryKind.favorites
+        ? AppBrand.favoriteRed
+        : scheme.primary;
     if (!desktop) {
       final viewport = MediaQuery.sizeOf(context);
       final artworkSpace = (viewport.width * 0.46)
@@ -804,7 +799,7 @@ class _LibraryHero extends StatelessWidget {
                           child: Icon(
                             placeholderIcon,
                             size: 80,
-                            color: scheme.primary,
+                            color: placeholderColor,
                           ),
                         ),
                       )
@@ -892,7 +887,7 @@ class _LibraryHero extends StatelessWidget {
                       child: Icon(
                         placeholderIcon,
                         size: coverSize * 0.34,
-                        color: scheme.primary,
+                        color: placeholderColor,
                       ),
                     )
                   : AsyncCover(

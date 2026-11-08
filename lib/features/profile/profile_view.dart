@@ -56,11 +56,9 @@ class _ProfileViewState extends State<ProfileView> {
               onBack: () => Navigator.of(context).maybePop(),
               transparent: true,
               actions: [
-                GIconButton(
+                GToolbarButton(
                   icon: Icons.settings_outlined,
                   tooltip: '设置',
-                  size: 20,
-                  padding: 10,
                   onTap: () => _openSettings(context),
                 ),
               ],
@@ -117,7 +115,8 @@ class _ProfileViewState extends State<ProfileView> {
           children: [
             SettingsRow(
               icon: Icons.favorite_rounded,
-              iconColor: Theme.of(context).colorScheme.primary,
+              iconColor: AppBrand.favoriteRed,
+              fixedIconColor: AppBrand.favoriteRed,
               title: '喜欢的音乐',
               onTap: widget.onOpenFavorites ??
                   () => _openSongLibrary(context, favorites: true),
@@ -133,7 +132,8 @@ class _ProfileViewState extends State<ProfileView> {
             ),
             SettingsRow(
               icon: Icons.bookmark_rounded,
-              iconColor: const Color(0xFFF5A000),
+              iconColor: AppBrand.favoriteRed,
+              fixedIconColor: AppBrand.favoriteRed,
               title: '收藏的歌单',
               onTap: () => _openPlaylists(
                 context,
@@ -550,11 +550,9 @@ class _ProfileHeader extends StatelessWidget {
       title: '我的',
       inlineActions: true,
       actions: [
-        GIconButton(
+        GToolbarButton(
           icon: Icons.settings_outlined,
           tooltip: '设置',
-          size: 22,
-          padding: 10,
           backgroundColor: Colors.transparent,
           onTap: onSettings,
         ),

@@ -15,6 +15,10 @@ void main() {
       (tester) async {
     await _pumpPlaylist(tester);
 
+    final searchIcon = find.descendant(
+        of: find.byTooltip('搜索歌曲'), matching: find.byType(Icon));
+    expect(tester.widget<Icon>(searchIcon).color, Colors.white);
+
     expect(find.text('播放全部'), findsOneWidget);
     expect(find.text('176首 · 32分钟'), findsOneWidget);
     expect(find.byTooltip('收藏歌单').hitTestable(), findsOneWidget);

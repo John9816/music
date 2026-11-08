@@ -236,7 +236,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
     final hero = _mobileHeroKey.currentContext?.findRenderObject();
     if (hero is! RenderBox || !hero.hasSize) return;
     final pinned = _mobileScrollController.hasClients &&
-        _mobileScrollController.offset >= hero.size.height - 64;
+        _mobileScrollController.offset >= hero.size.height - GToolbar.height;
     if ((pinned != _mobileTitleVisible || pinned != _mobilePlayHeaderPinned) &&
         mounted) {
       setState(() {
@@ -276,14 +276,16 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Padding(
-              padding: EdgeInsets.only(top: 56),
-              child: GSkeletonList(itemCount: 8),
+            return Padding(
+              padding: EdgeInsets.only(
+                  top: GToolbar.height + MediaQuery.paddingOf(context).top),
+              child: const GSkeletonList(itemCount: 8),
             );
           }
           if (snapshot.hasError) {
             return Padding(
-              padding: const EdgeInsets.only(top: 56),
+              padding: EdgeInsets.only(
+                  top: GToolbar.height + MediaQuery.paddingOf(context).top),
               child: GEmptyState(
                 icon: Icons.error_outline_rounded,
                 text: '加载失败，请检查网络后重试',
@@ -313,7 +315,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(
                       horizontal,
-                      desktop ? 70 : 74,
+                      (desktop ? 78 : 82) + MediaQuery.paddingOf(context).top,
                       horizontal,
                       0,
                     ),
@@ -432,7 +434,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                       Positioned(
                         left: 0,
                         right: 0,
-                        top: 64,
+                        top: GToolbar.height,
                         child: Container(
                           key: const ValueKey(
                             'mobile-play-panel-pinned-surface',
@@ -673,7 +675,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       context: context,
       position: RelativeRect.fromLTRB(
         MediaQuery.sizeOf(context).width - 20,
-        MediaQuery.paddingOf(context).top + 56,
+        MediaQuery.paddingOf(context).top + GToolbar.height,
         20,
         0,
       ),
@@ -734,103 +736,61 @@ class _MobilePlaylistTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final overArtwork = !titleVisible && !searchOpen;
+    final foreground = overArtwork ? Colors.white : scheme.onSurface;
+    final buttonBackground =
+        overArtwork ? Colors.black.withValues(alpha: 0.36) : Colors.transparent;
     final bar = AnimatedContainer(
       key: const ValueKey('mobile-playlist-top-bar-surface'),
       duration: Motion.fast,
-      height: 64,
-      color: titleVisible || searchOpen
-          ? scheme.surfaceContainerLowest
-          : null,
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        height: 56,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (!searchOpen)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: titleVisible ? 1 : 0,
-                    duration: Motion.fast,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 96),
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: TypeScale.semibold,
-                          ),
-                        ),
-                      ),
-                    ),
+      height: GToolbar.height,
+      color: titleVisible || searchOpen ? scheme.surfaceContainerLowest : null,
+      child: GToolbar(
+        leading: GBackButton(
+            onTap: onBack, tint: foreground, backgroundColor: buttonBackground),
+        centerTitle: !searchOpen,
+        title: searchOpen
+            ? TextField(
+                autofocus: true,
+                onChanged: onSearchChanged,
+                style: const TextStyle(fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: '搜索歌曲或歌手',
+                  hintStyle: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.56),
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+              )
+            : IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: titleVisible ? 1 : 0,
+                  duration: Motion.fast,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
-            Row(
-              children: [
-                const SizedBox(width: 12),
-                GIconButton(
-                  icon: Icons.arrow_back_ios_new_rounded,
-                  tooltip: '返回',
-                  size: 23,
-                  padding: 10,
-                  tint: titleVisible || searchOpen ? null : Colors.white,
-                  backgroundColor: titleVisible || searchOpen
-                      ? Colors.transparent
-                      : Colors.black.withValues(alpha: 0.18),
-                  onTap: onBack,
-                ),
-                if (searchOpen) ...[
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: TextField(
-                      autofocus: true,
-                      onChanged: onSearchChanged,
-                      style: const TextStyle(fontSize: 16),
-                      decoration: InputDecoration(
-                        hintText: '搜索歌曲或歌手',
-                        hintStyle: TextStyle(
-                          color: scheme.onSurface.withValues(alpha: 0.56),
-                        ),
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                ] else
-                  const Spacer(),
-                GIconButton(
-                  icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
-                  tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
-                  size: searchOpen ? 25 : 27,
-                  padding: 8,
-                  tint: titleVisible || searchOpen ? null : Colors.white,
-                  backgroundColor: titleVisible || searchOpen
-                      ? Colors.transparent
-                      : Colors.black.withValues(alpha: 0.18),
-                  onTap: onSearch,
-                ),
-                GIconButton(
-                  icon: Icons.more_horiz_rounded,
-                  tooltip: '更多',
-                  size: 26,
-                  padding: 8,
-                  tint: titleVisible || searchOpen ? null : Colors.white,
-                  backgroundColor: titleVisible || searchOpen
-                      ? Colors.transparent
-                      : Colors.black.withValues(alpha: 0.18),
-                  onTap: onMore,
-                ),
-                const SizedBox(width: 12),
-              ],
-            ),
-          ],
-        ),
+        actions: [
+          GToolbarButton(
+            icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
+            tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
+            tint: foreground,
+            backgroundColor: buttonBackground,
+            onTap: onSearch,
+          ),
+          GToolbarButton(
+            icon: Icons.more_horiz_rounded,
+            tooltip: '更多',
+            tint: foreground,
+            backgroundColor: buttonBackground,
+            onTap: onMore,
+          ),
+        ],
       ),
     );
     if (!titleVisible) return bar;
@@ -1041,6 +1001,7 @@ class _MobilePlayAllPanel extends StatelessWidget {
                     tooltip: isFavorite ? '取消收藏' : '收藏歌单',
                     busy: favoriteLoading,
                     selected: isFavorite,
+                    selectedColor: AppBrand.favoriteRed,
                     onTap: onFavorite,
                   );
             if (stackActions) {
@@ -1088,6 +1049,7 @@ class _MobileToolButton extends StatelessWidget {
     required this.onTap,
     this.busy = false,
     this.selected = false,
+    this.selectedColor,
   });
 
   final IconData icon;
@@ -1095,6 +1057,7 @@ class _MobileToolButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool busy;
   final bool selected;
+  final Color? selectedColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1110,7 +1073,7 @@ class _MobileToolButton extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: selected
-                ? scheme.onSurface
+                ? selectedColor?.withValues(alpha: 0.14) ?? scheme.onSurface
                 : scheme.onSurface.withValues(alpha: 0.10),
             border: Border.all(
               color: scheme.onSurface.withValues(alpha: 0.12),
@@ -1126,7 +1089,7 @@ class _MobileToolButton extends StatelessWidget {
                   icon,
                   size: 25,
                   color: selected
-                      ? scheme.surfaceContainerLowest
+                      ? selectedColor ?? scheme.surfaceContainerLowest
                       : scheme.onSurface.withValues(
                           alpha: onTap == null ? 0.38 : 0.86,
                         ),
@@ -1380,70 +1343,53 @@ class _PlaylistTopBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onMore;
 
   @override
-  Size get preferredSize => const Size.fromHeight(56);
+  Size get preferredSize => const Size.fromHeight(GToolbar.height);
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final windowControlsInset = macOSWindowControlsInset(context);
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
         child: Container(
-          height: 56,
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor.withValues(
                   alpha: dark ? 0.72 : 0.78,
                 ),
-            border: Border(
-              bottom: BorderSide(color: glassHairline(context)),
-            ),
           ),
-          child: Row(
-            children: [
-              SizedBox(width: 4 + windowControlsInset),
-              GBackButton(onTap: onBack),
-              const SizedBox(width: 19),
-              Expanded(
-                child: searchOpen
-                    ? TextField(
-                        autofocus: true,
-                        onChanged: onSearchChanged,
-                        style: const TextStyle(fontSize: 15),
-                        decoration: const InputDecoration(
-                          hintText: '搜索歌曲或歌手',
-                          border: InputBorder.none,
-                          isDense: true,
-                        ),
-                      )
-                    : Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: TypeScale.semibold,
-                        ),
+          foregroundDecoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: glassHairline(context))),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: GToolbar(
+              leading: GBackButton(onTap: onBack),
+              centerTitle: !searchOpen,
+              title: searchOpen
+                  ? TextField(
+                      autofocus: true,
+                      onChanged: onSearchChanged,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        hintText: '搜索歌曲或歌手',
+                        border: InputBorder.none,
+                        isDense: true,
                       ),
-              ),
-              GIconButton(
-                icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
-                tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
-                size: 21,
-                padding: 9,
-                backgroundColor: Colors.transparent,
-                onTap: onSearch,
-              ),
-              GIconButton(
-                icon: Icons.more_vert_rounded,
-                tooltip: '更多',
-                size: 21,
-                padding: 9,
-                backgroundColor: Colors.transparent,
-                onTap: onMore,
-              ),
-              const SizedBox(width: 8),
-            ],
+                    )
+                  : Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              actions: [
+                GToolbarButton(
+                  icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
+                  tooltip: searchOpen ? '关闭搜索' : '搜索歌曲',
+                  onTap: onSearch,
+                ),
+                GToolbarButton(
+                  icon: Icons.more_horiz_rounded,
+                  tooltip: '更多',
+                  onTap: onMore,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1746,7 +1692,7 @@ class _HeaderActions extends StatelessWidget {
             icon: isFavorite
                 ? Icons.favorite_rounded
                 : Icons.favorite_outline_rounded,
-            color: isFavorite ? scheme.primary : null,
+            color: isFavorite ? AppBrand.favoriteRed : null,
             compact: desktop,
             loading: favoriteLoading,
             tooltip: isFavorite ? '取消收藏' : '收藏歌单',

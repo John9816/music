@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Visualizer reads this app's playback session, never microphone input.
+         Requested only after the user enables the spectrum in the player. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 应用内自更新安装 APK 所需。属于 Google Play 受限权限，
          上架 Play 需单独申报用途；侧载/自有渠道分发不受影响。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>

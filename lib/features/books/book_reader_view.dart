@@ -502,54 +502,41 @@ class _BookReaderViewState extends State<BookReaderView> {
           duration: PlatformMotion.duration(context, Motion.normal),
           child: SafeArea(
             bottom: false,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 color: readerBackground.withValues(alpha: 0.94),
                 border: Border(
                   bottom: BorderSide(color: glassHairline(context)),
                 ),
               ),
-              child: Row(
-                children: [
-                  GIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    tooltip: '返回',
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.book.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: TypeScale.body,
-                            fontWeight: TypeScale.semibold,
-                          ),
-                        ),
-                        Text(
-                          chapterTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: TypeScale.caption,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+              child: GToolbar(
+                leading:
+                    GBackButton(onTap: () => Navigator.of(context).maybePop()),
+                title: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.book.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      chapterTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: TypeScale.caption,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
+                  ],
+                ),
+                actions: [
                   if (widget.chapters.isNotEmpty)
-                    GIconButton(
+                    GToolbarButton(
                       icon: Icons.list_alt_rounded,
                       tooltip: '章节目录',
                       onTap: _showChapterList,
                     ),
-                  GIconButton(
+                  GToolbarButton(
                     icon: Icons.tune_rounded,
                     tooltip: '阅读设置',
                     onTap: _showSettings,

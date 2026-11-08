@@ -25,8 +25,8 @@ class AppBrand {
   /// 兼容旧调用方；新代码应使用主题色或 [green]。
   static const Color redDeep = Color(0xFF20B950);
 
-  /// 收藏状态跟随主题强调色时的品牌回退色。
-  static const Color favoriteRed = green;
+  /// 收藏爱心固定红色，不跟随主题或封面配色。
+  static const Color favoriteRed = Color(0xFFFF3B30);
 
   /// iOS 系统绿（语音/在线状态）
   static const Color systemGreen = Color(0xFF34C759);

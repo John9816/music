@@ -1,6 +1,13 @@
-# Lotus 设计参考核对
+# Lotus 设计参考核对（后续已纠正参考对象）
 
 日期：2026-11-08。用户要求并行任务最多 2 个。
+
+## 后续纠正
+
+用户随后提供四张截图及原视频 `https://www.youtube.com/watch?v=9q1yhqX2DD4`。实查 YouTube 简介，02:10 是 Obsidian Music（链接指向 `Varun7009/Obsidian-Music/releases`），02:57 是独立应用 LyricGlow。本记录之前根据另一张 LOTUS 截图推定整体参考对象的判断不充分；用户新截图明确覆盖先前浅色居中方案，不能再把下面的 Lotus 方向当成本次验收标准。
+
+视频站点要求登录机器人验证，未能观看片段，无法断言四张截图各自来自哪一应用或其动态参数。现以用户提供的四张图为视觉验收依据，进展见 `2026-11-08-reference-player-implementation.md`。
+
 
 ## 参考对象修正
 

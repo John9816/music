@@ -73,6 +73,9 @@ Future<void> showSongActions(
   bool showFavoriteAction = true,
   Rect? anchor,
 }) {
+  // App overlays use the complete app palette, outside the player's local
+  // artwork theme, whose light container surfaces may be left unchanged.
+  final overlayContext = Navigator.of(context, rootNavigator: true).context;
   final platform = Theme.of(context).platform;
   final desktop = switch (platform) {
     TargetPlatform.macOS ||
@@ -83,7 +86,7 @@ Future<void> showSongActions(
   };
   if (anchor != null) {
     return showGeneralDialog<void>(
-      context: context,
+      context: overlayContext,
       useRootNavigator: true,
       barrierDismissible: true,
       barrierLabel: '关闭歌曲操作菜单',
@@ -108,7 +111,7 @@ Future<void> showSongActions(
     );
   }
   return showModalBottomSheet<void>(
-    context: context,
+    context: overlayContext,
     useRootNavigator: true,
     useSafeArea: true,
     showDragHandle: true,
@@ -279,7 +282,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
           _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           _liked ? '取消喜欢' : '喜欢',
           _favoriteLoading ? null : _toggleFavorite,
-          color: _liked ? scheme.primary : null,
+          color: _liked ? AppBrand.favoriteRed : null,
           loading: _favoriteLoading,
         ),
       _action(
@@ -759,4 +762,89 @@ class _PlaylistChooser extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Direct playlist entry shared by the player's plus button.
+Future<void> showAddSongToPlaylist(BuildContext context,
+    {required Song song}) async {
+  final token = context.read<AuthController>().token;
+  final messenger = ScaffoldMessenger.of(context);
+  if (token == null) {
+    messenger.showSnackBar(const SnackBar(content: Text('请先登录后再收藏到歌单')));
+    return;
+  }
+  try {
+    final api = UserApi();
+    final playlists = await api.getOwnedPlaylists(token);
+    if (!context.mounted) return;
+    final overlayContext = Navigator.of(context, rootNavigator: true).context;
+    final selection = await showModalBottomSheet<Object>(
+        context: overlayContext,
+        useRootNavigator: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (_) => _PlaylistChooser(playlists: playlists));
+    if (!context.mounted || !overlayContext.mounted || selection == null) {
+      return;
+    }
+    Map<String, dynamic>? selected;
+    String? name;
+    if (selection == _PlaylistChooser.createNew) {
+      name = await showDialog<String>(
+          context: overlayContext, builder: (_) => const _NewPlaylistDialog());
+      if (!context.mounted || name == null) return;
+      selected = await api.createPlaylist(name, null, token);
+    } else if (selection is Map<String, dynamic>) {
+      selected = selection;
+      name = (selection['name'] ?? selection['playlistName'])?.toString();
+    }
+    final nested = selected?['playlist'];
+    final id = selected?['id'] ??
+        selected?['playlistId'] ??
+        (nested is Map ? nested['id'] : null);
+    if (id == null) throw Exception('歌单数据缺少 ID');
+    await api.addSongToPlaylist(id.toString(), song, token);
+    if (context.mounted) {
+      messenger
+          .showSnackBar(SnackBar(content: Text('已收藏到歌单“${name ?? '未命名歌单'}”')));
+    }
+  } catch (_) {
+    if (context.mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('收藏到歌单失败，请重试')));
+    }
+  }
+}
+
+class _NewPlaylistDialog extends StatefulWidget {
+  const _NewPlaylistDialog();
+  @override
+  State<_NewPlaylistDialog> createState() => _NewPlaylistDialogState();
+}
+
+class _NewPlaylistDialogState extends State<_NewPlaylistDialog> {
+  final input = TextEditingController();
+  @override
+  void dispose() {
+    input.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    if (input.text.trim().isNotEmpty) Navigator.pop(context, input.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+          title: const Text('新建歌单'),
+          content: TextField(
+              controller: input,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '歌单名称'),
+              onSubmitted: (_) => submit()),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消')),
+            FilledButton(onPressed: submit, child: const Text('创建'))
+          ]);
 }

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../core/settings/settings_controller.dart';
 import '../core/theme/design_tokens.dart';
 import '../core/theme/platform_motion.dart';
+import 'wave_progress_track.dart';
 
 export '../core/theme/design_tokens.dart';
 export '../core/theme/platform_motion.dart';
@@ -70,7 +71,7 @@ TextStyle pageTitleStyle(BuildContext context) => TextStyle(
       height: 1.08,
     );
 
-/// 主框架内容页头。保持各栏目标题、说明和右侧操作在同一基线上。
+/// 主框架标题的第一行与播放器、详情工具栏共享基线。
 class GPageHeader extends StatelessWidget {
   const GPageHeader({
     super.key,
@@ -87,78 +88,63 @@ class GPageHeader extends StatelessWidget {
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
   final List<Widget>? actions;
-
-  /// Compact icon actions may share the title baseline on a phone.
   final bool inlineActions;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final compact = MediaQuery.sizeOf(context).width < 600;
-    final windowControlsInset = macOSWindowControlsInset(context);
+    final inset = GToolbar.horizontalInset(context);
     return Padding(
       padding: padding ??
-          (compact
-              ? EdgeInsets.fromLTRB(20 + windowControlsInset, 18, 20, 12)
-              : EdgeInsets.fromLTRB(24 + windowControlsInset, 24, 24, 14)),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final hasActions = actions != null && actions!.isNotEmpty;
-          final stackActions = (trailing != null || hasActions) &&
-              constraints.maxWidth < 420 &&
-              (!inlineActions ||
-                  MediaQuery.textScalerOf(context).scale(1) > 1.5);
-          final heading = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: pageTitleStyle(context), maxLines: 2),
-              if (subtitle != null) ...[
-                const SizedBox(height: 5),
-                Text(
-                  subtitle!,
+          EdgeInsets.fromLTRB(
+              inset + macOSWindowControlsInset(context), 8, inset, 8),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final hasActions = actions != null && actions!.isNotEmpty;
+        final effectiveTrailing = hasActions
+            ? Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.end,
+                children: actions!)
+            : trailing;
+        final stackActions = effectiveTrailing != null &&
+            constraints.maxWidth < 420 &&
+            (!inlineActions || MediaQuery.textScalerOf(context).scale(1) > 1.5);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints:
+                  const BoxConstraints(minHeight: GToolbarButton.extent),
+              child: Row(children: [
+                Expanded(
+                    child: Text(title,
+                        style: pageTitleStyle(context),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis)),
+                if (!stackActions && effectiveTrailing != null) ...[
+                  const SizedBox(width: 16),
+                  effectiveTrailing,
+                ],
+              ]),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle!,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: TypeScale.body,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+                      fontSize: TypeScale.body,
+                      color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 4),
             ],
-          );
-          final effectiveTrailing = hasActions
-              ? Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  children: actions!,
-                )
-              : trailing;
-          if (stackActions && effectiveTrailing != null) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                heading,
-                const SizedBox(height: 12),
-                Align(
-                    alignment: Alignment.centerRight, child: effectiveTrailing),
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: inlineActions
-                ? CrossAxisAlignment.center
-                : CrossAxisAlignment.end,
-            children: [
-              Expanded(child: heading),
-              if (effectiveTrailing != null) ...[
-                const SizedBox(width: 16),
-                effectiveTrailing,
-              ],
+            if (stackActions) ...[
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerRight, child: effectiveTrailing),
             ],
-          );
-        },
-      ),
+          ],
+        );
+      }),
     );
   }
 }
@@ -350,16 +336,124 @@ class _GPressScaleState extends State<GPressScale> {
   }
 }
 
-/// 自定义顶栏（替代 AppBar，无 InkWell/MouseRegion，规避 macOS 鼠标断言卡死）
+/// Shared toolbar geometry. SafeArea belongs to the containing page or GAppBar.
+class GToolbar extends StatelessWidget {
+  const GToolbar(
+      {super.key,
+      this.leading,
+      this.title,
+      this.actions = const [],
+      this.centerTitle = true});
+
+  static const double height = 64;
+  static double horizontalInset(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < GBreakpoints.compact ? 20 : 24;
+
+  final Widget? leading;
+  final Widget? title;
+  final List<Widget> actions;
+  final bool centerTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = horizontalInset(context);
+    final windowInset = macOSWindowControlsInset(context);
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(inset + windowInset, 8, inset, 8),
+        child: NavigationToolbar(
+          leading: leading,
+          middle: title == null
+              ? null
+              : MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.3,
+                  child: DefaultTextStyle(
+                      style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                          fontSize: 17,
+                          fontWeight: TypeScale.semibold,
+                          color: Theme.of(context).colorScheme.onSurface),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      child: title!),
+                ),
+          trailing: actions.isEmpty
+              ? null
+              : Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    actions[i],
+                  ],
+                ]),
+          centerMiddle: centerTitle && windowInset == 0,
+          middleSpacing: 8,
+        ),
+      ),
+    );
+  }
+}
+
+/// A single touch target and feedback style for every navigation action.
+class GToolbarButton extends StatelessWidget {
+  const GToolbarButton(
+      {super.key,
+      required this.icon,
+      this.onTap,
+      this.tooltip,
+      this.tint,
+      this.backgroundColor,
+      this.disabled = false});
+
+  static const double extent = 48;
+  static const double iconSize = 22;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? tooltip;
+  final Color? tint;
+  final Color? backgroundColor;
+  final bool disabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = !disabled && onTap != null;
+    final foreground = tint ?? Theme.of(context).colorScheme.onSurface;
+    final button = Semantics(
+      button: true,
+      enabled: enabled,
+      label: tooltip,
+      onTap: enabled ? onTap : null,
+      excludeSemantics: tooltip != null,
+      child: GPressScale(
+        onTap: enabled ? onTap : null,
+        disabled: !enabled,
+        scale: 0.92,
+        borderRadius: BorderRadius.circular(RadiusToken.pill),
+        feedbackColor: foreground.withValues(alpha: .08),
+        child: Container(
+          width: extent,
+          height: extent,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: backgroundColor ?? Colors.transparent),
+          child: Icon(icon,
+              size: iconSize,
+              color: enabled ? foreground : foreground.withValues(alpha: .3)),
+        ),
+      ),
+    );
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
+  }
+}
+
+/// Themed toolbar surface with exactly one top safe area.
 class GAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const GAppBar({
-    super.key,
-    this.title,
-    this.titleWidget,
-    this.onBack,
-    this.actions,
-    this.transparent = false,
-  });
+  const GAppBar(
+      {super.key,
+      this.title,
+      this.titleWidget,
+      this.onBack,
+      this.actions,
+      this.transparent = false});
 
   final String? title;
   final Widget? titleWidget;
@@ -368,139 +462,52 @@ class GAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool transparent;
 
   @override
-  Size get preferredSize => const Size.fromHeight(56);
+  Size get preferredSize => const Size.fromHeight(GToolbar.height);
 
   @override
   Widget build(BuildContext context) {
-    final back = onBack;
     final scheme = Theme.of(context).colorScheme;
-    final seamlessMobile =
-        MediaQuery.sizeOf(context).width < GBreakpoints.sidebar;
-    final windowControlsInset = macOSWindowControlsInset(context);
-    // preferredSize 无法感知 context，顶栏高度必须固定为 56。
-    // 因此在栏内限制字号放大倍数，让大字号仍能放大但不撑破固定高度。
-    final titleScaler = MediaQuery.textScalerOf(context).clamp(
-      minScaleFactor: 1.0,
-      maxScaleFactor: 1.3,
-    );
-    final titleContent = MediaQuery.withNoTextScaling(
-      child: DefaultTextStyle(
-        style: Theme.of(context).textTheme.titleMedium!.copyWith(
-              fontSize: titleScaler.scale(17),
-              fontWeight: TypeScale.semibold,
-              color: scheme.onSurface,
-            ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        child: titleWidget ?? Text(title ?? ''),
-      ),
-    );
-    final toolbar = SizedBox(
-      height: 56,
-      child: seamlessMobile &&
-              windowControlsInset == 0 &&
-              (actions?.length ?? 0) <= 2
-          ? Stack(
-              alignment: Alignment.center,
-              children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal:
-                        actions != null && actions!.length > 1 ? 108 : 64,
-                  ),
-                  child: Center(child: titleContent),
-                ),
-                if (back != null)
-                  Positioned(
-                    left: 4,
-                    child: GBackButton(onTap: back),
-                  ),
-                if (actions != null)
-                  Positioned(
-                    right: 4,
-                    child:
-                        Row(mainAxisSize: MainAxisSize.min, children: actions!),
-                  ),
-              ],
-            )
-          : Row(
-              children: [
-                SizedBox(width: 6 + windowControlsInset),
-                if (back != null)
-                  GBackButton(onTap: back)
-                else
-                  const SizedBox(width: 12),
-                const SizedBox(width: 4),
-                Expanded(child: titleContent),
-                if (actions != null) ...actions!,
-                const SizedBox(width: 12),
-              ],
-            ),
-    );
+    final mobile = MediaQuery.sizeOf(context).width < GBreakpoints.sidebar;
     return Container(
       key: const ValueKey('g-app-bar-surface'),
       decoration: BoxDecoration(
         color: transparent
             ? Colors.transparent
-            : seamlessMobile
+            : mobile
                 ? scheme.surfaceContainerLowest
-                : glassFill(context, alpha: 0.06),
-        border: Border(
-          bottom: BorderSide(
-            color: transparent || seamlessMobile
-                ? Colors.transparent
-                : glassHairline(context),
-          ),
-        ),
+                : glassFill(context, alpha: .06),
       ),
+      foregroundDecoration: transparent || mobile
+          ? null
+          : BoxDecoration(
+              border:
+                  Border(bottom: BorderSide(color: glassHairline(context)))),
       child: SafeArea(
-        bottom: false,
-        child: toolbar,
-      ),
+          bottom: false,
+          child: GToolbar(
+            leading: onBack == null ? null : GBackButton(onTap: onBack!),
+            title: titleWidget ?? (title == null ? null : Text(title!)),
+            actions: actions ?? const [],
+            centerTitle: mobile,
+          )),
     );
   }
 }
 
-/// 统一的简洁返回控件，保留完整触控区域。
 class GBackButton extends StatelessWidget {
-  const GBackButton({super.key, required this.onTap});
-
+  const GBackButton(
+      {super.key, required this.onTap, this.tint, this.backgroundColor});
   final VoidCallback onTap;
+  final Color? tint;
+  final Color? backgroundColor;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      enabled: true,
-      label: '返回',
-      child: Tooltip(
-        message: '返回',
-        child: GPressScale(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: 48,
-              minHeight: 48,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    cupertino.CupertinoIcons.chevron_back,
-                    size: 21,
-                    color: scheme.onSurface,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => GToolbarButton(
+      icon: cupertino.CupertinoIcons.chevron_back,
+      tooltip: '返回',
+      onTap: onTap,
+      tint: tint,
+      backgroundColor: backgroundColor);
 }
 
 /// 玻璃卡片容器：统一毛玻璃质感 + 细边框 + 圆角
@@ -775,7 +782,9 @@ class GIconButton extends StatelessWidget {
       child: GPressScale(
         onTap: enabled ? onTap : null,
         disabled: !enabled,
+        scale: 0.92,
         borderRadius: BorderRadius.circular(RadiusToken.pill),
+        feedbackColor: color.withValues(alpha: 0.08),
         child: Center(
           child: Container(
             padding: EdgeInsets.all(padding),
@@ -908,6 +917,8 @@ class GProgressBar extends StatefulWidget {
     this.activeColor,
     this.semanticLabel = '播放进度',
     this.touchTargetHeight,
+    this.wave = false,
+    this.playing = false,
   });
 
   final Duration position;
@@ -924,6 +935,8 @@ class GProgressBar extends StatefulWidget {
   final Color? activeColor;
   final String semanticLabel;
   final double? touchTargetHeight;
+  final bool wave;
+  final bool playing;
 
   @override
   State<GProgressBar> createState() => _GProgressBarState();
@@ -1133,80 +1146,91 @@ class _GProgressBarState extends State<GProgressBar> {
                   onHorizontalDragCancel: total <= 0 ? null : cancelDrag,
                   child: SizedBox(
                     height: touchTargetHeight,
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: motion,
-                        curve: Motion.standard,
-                        height: trackHeight,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            // 轨道
-                            Container(
+                    child: widget.wave
+                        ? WaveProgressTrack(
+                            fraction: displayedFraction,
+                            buffered: buffered,
+                            playing: widget.playing && enabled,
+                            dragging: dragging,
+                            activeColor: active,
+                            trackColor: scheme.onSurface.withValues(alpha: .10),
+                            height: touchTargetHeight,
+                          )
+                        : Center(
+                            child: AnimatedContainer(
+                              duration: motion,
+                              curve: Motion.standard,
                               height: trackHeight,
-                              decoration: BoxDecoration(
-                                color: scheme.surfaceContainerHighest
-                                    .withValues(alpha: 0.55),
-                                borderRadius:
-                                    BorderRadius.circular(trackHeight / 2),
-                              ),
-                            ),
-                            // 已缓冲（二级进度）
-                            if (buffered > displayedFraction)
-                              FractionallySizedBox(
-                                widthFactor: buffered,
-                                heightFactor: 1,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: scheme.onSurface
-                                        .withValues(alpha: 0.22),
-                                    borderRadius:
-                                        BorderRadius.circular(trackHeight / 2),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  // 轨道
+                                  Container(
+                                    height: trackHeight,
+                                    decoration: BoxDecoration(
+                                      color: scheme.surfaceContainerHighest
+                                          .withValues(alpha: 0.55),
+                                      borderRadius: BorderRadius.circular(
+                                          trackHeight / 2),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            // 已播放
-                            FractionallySizedBox(
-                              widthFactor: displayedFraction,
-                              heightFactor: 1,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: AppBrand.gradient(active),
-                                  borderRadius:
-                                      BorderRadius.circular(trackHeight / 2),
-                                ),
-                              ),
-                            ),
-                            if (widget.showThumb || dragging)
-                              Positioned(
-                                left:
-                                    (constraints.maxWidth * displayedFraction) -
-                                        thumbSize / 2,
-                                top: (trackHeight - thumbSize) / 2,
-                                child: AnimatedContainer(
-                                  duration: motion,
-                                  curve: Motion.standard,
-                                  width: thumbSize,
-                                  height: thumbSize,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: scheme.onPrimary,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: scheme.shadow.withValues(
-                                            alpha: dragging ? 0.36 : 0.28),
-                                        blurRadius: dragging ? 6 : 4,
-                                        offset: const Offset(0, 1),
+                                  // 已缓冲（二级进度）
+                                  if (buffered > displayedFraction)
+                                    FractionallySizedBox(
+                                      widthFactor: buffered,
+                                      heightFactor: 1,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: scheme.onSurface
+                                              .withValues(alpha: 0.22),
+                                          borderRadius: BorderRadius.circular(
+                                              trackHeight / 2),
+                                        ),
                                       ),
-                                    ],
+                                    ),
+                                  // 已播放
+                                  FractionallySizedBox(
+                                    widthFactor: displayedFraction,
+                                    heightFactor: 1,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        gradient: AppBrand.gradient(active),
+                                        borderRadius: BorderRadius.circular(
+                                            trackHeight / 2),
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  if (widget.showThumb || dragging)
+                                    Positioned(
+                                      left: (constraints.maxWidth *
+                                              displayedFraction) -
+                                          thumbSize / 2,
+                                      top: (trackHeight - thumbSize) / 2,
+                                      child: AnimatedContainer(
+                                        duration: motion,
+                                        curve: Motion.standard,
+                                        width: thumbSize,
+                                        height: thumbSize,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: scheme.onPrimary,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: scheme.shadow.withValues(
+                                                  alpha:
+                                                      dragging ? 0.36 : 0.28),
+                                              blurRadius: dragging ? 6 : 4,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                          ],
-                        ),
-                      ),
-                    ),
+                            ),
+                          ),
                   ),
                 ),
               );

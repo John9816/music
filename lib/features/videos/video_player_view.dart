@@ -6,6 +6,7 @@ import '../../core/api/video_api.dart';
 import '../../core/models/video.dart';
 import '../../core/services/cast_service.dart';
 import '../../core/services/video_history_service.dart';
+import '../../widgets/glass.dart';
 import 'video_media_session.dart';
 
 class VideoPlayerView extends StatefulWidget {
@@ -89,27 +90,28 @@ class _VideoPlayerViewState extends State<VideoPlayerView>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title),
+        appBar: GAppBar(
+          title: widget.title,
+          onBack: () => Navigator.of(context).maybePop(),
           actions: [
             if (widget.play.isInlinePlayable)
               AnimatedBuilder(
                 animation: _cast,
-                builder: (_, __) => IconButton(
+                builder: (_, __) => GToolbarButton(
                   tooltip: '投屏',
-                  icon: Icon(_cast.status == CastStatus.connected
+                  icon: _cast.status == CastStatus.connected
                       ? Icons.cast_connected
-                      : Icons.cast),
-                  onPressed:
+                      : Icons.cast,
+                  onTap:
                       _cast.status == CastStatus.connecting ? null : _startCast,
                 ),
               ),
             if (widget.play.isInlinePlayable)
-              IconButton(
+              GToolbarButton(
                 key: const ValueKey('vod-fullscreen-button'),
                 tooltip: '全屏',
-                onPressed: _media.toggleFullscreen,
-                icon: const Icon(Icons.fullscreen),
+                onTap: _media.toggleFullscreen,
+                icon: Icons.fullscreen,
               ),
           ],
         ),

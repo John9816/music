@@ -1224,6 +1224,7 @@ class _SidebarState extends State<_Sidebar> {
           _SidebarItem(
             icon: CupertinoIcons.heart,
             selectedIcon: CupertinoIcons.heart_fill,
+            fixedIconColor: AppBrand.favoriteRed,
             label: '喜欢的音乐',
             selected: widget.selected == _HomeShellState._favoritesIndex,
             onTap: () => widget.onSelect(_HomeShellState._favoritesIndex),
@@ -1451,10 +1452,12 @@ class _SidebarItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.fixedIconColor,
   });
 
   final IconData icon;
   final IconData selectedIcon;
+  final Color? fixedIconColor;
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -1462,8 +1465,8 @@ class _SidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final iconColor =
-        selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.63);
+    final iconColor = fixedIconColor ??
+        (selected ? scheme.primary : scheme.onSurface.withValues(alpha: 0.63));
     final textColor =
         selected ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.82);
     return GPressScale(

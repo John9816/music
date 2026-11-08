@@ -10,8 +10,9 @@ import '../search/artist_names_link.dart';
 
 /// 弹出播放队列面板（底部弹层，不再整窗跳转）
 Future<void> showQueueSheet(BuildContext context) {
+  final overlayContext = Navigator.of(context, rootNavigator: true).context;
   return showModalBottomSheet<void>(
-    context: context,
+    context: overlayContext,
     useRootNavigator: true,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
@@ -88,6 +89,7 @@ class _QueueSheet extends StatelessWidget {
                         title: Text(
                           song.name,
                           style: TextStyle(
+                            color: scheme.onSurface,
                             fontSize: 15,
                             fontWeight:
                                 isCurrent ? FontWeight.w600 : FontWeight.w500,
@@ -96,6 +98,9 @@ class _QueueSheet extends StatelessWidget {
                         subtitle: ArtistNamesLink(
                           artists: song.artists,
                           source: song.source,
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.72),
+                          ),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -130,10 +135,10 @@ class _QueueHeader extends SliverPersistentHeaderDelegate {
   final int count;
 
   @override
-  double get minExtent => 72;
+  double get minExtent => 83;
 
   @override
-  double get maxExtent => 72;
+  double get maxExtent => 83;
 
   @override
   Widget build(
@@ -152,34 +157,18 @@ class _QueueHeader extends SliverPersistentHeaderDelegate {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 20, right: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '播放队列 ($count)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-                  GIconButton(
-                    icon: Icons.close_rounded,
-                    tooltip: '关闭播放队列',
-                    size: 18,
-                    padding: 2,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                ],
+          GWindowControlsSafeRegion(
+              child: GToolbar(
+            centerTitle: false,
+            title: Text('播放队列 ($count)'),
+            actions: [
+              GToolbarButton(
+                icon: Icons.close_rounded,
+                tooltip: '关闭播放队列',
+                onTap: () => Navigator.of(context).maybePop(),
               ),
-            ),
-          ),
+            ],
+          )),
           const Divider(height: 1),
         ],
       ),

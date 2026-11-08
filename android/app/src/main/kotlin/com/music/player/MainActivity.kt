@@ -17,9 +17,12 @@ import java.io.File
 class MainActivity : AudioServiceActivity() {
     private var pendingApkPath: String? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
+    private var audioSpectrumBridge: AudioSpectrumBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        audioSpectrumBridge?.dispose()
+        audioSpectrumBridge = AudioSpectrumBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         val legacyAuthStore = LegacyAuthSessionStore.fromContext(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LEGACY_AUTH_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -125,6 +128,7 @@ class MainActivity : AudioServiceActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (audioSpectrumBridge?.onRequestPermissionsResult(requestCode) == true) return
         if (requestCode != NOTIFICATION_PERMISSION_REQUEST_CODE) return
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         pendingNotificationPermissionResult?.success(granted)
@@ -132,6 +136,8 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        audioSpectrumBridge?.dispose()
+        audioSpectrumBridge = null
         // 权限弹窗期间 Activity 可能被系统回收，此时 onRequestPermissionsResult
         // 不会再触发。若不在这里兜底回调，Dart 侧的 await 会永久挂起，
         // 导致通知权限再也不会被请求第二次。
@@ -151,6 +157,7 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onResume() {
         super.onResume()
+        audioSpectrumBridge?.onResume()
         val path = pendingApkPath ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
             packageManager.canRequestPackageInstalls()
@@ -158,6 +165,22 @@ class MainActivity : AudioServiceActivity() {
             pendingApkPath = null
             openPackageInstaller(path)
         }
+    }
+
+    override fun onPause() {
+        audioSpectrumBridge?.onPause()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        audioSpectrumBridge?.onStop()
+        super.onStop()
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        audioSpectrumBridge?.dispose()
+        audioSpectrumBridge = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun openPackageInstaller(path: String): Boolean {

@@ -8,6 +8,51 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('short centered lyric highlight stays over the centered text',
+      (tester) async {
+    const key = ValueKey('centered-capture');
+    final line = parseLrc('[100000,2000](100000,2000,0)AAA').single;
+    await tester.pumpWidget(MaterialApp(
+        home: Center(
+            child: RepaintBoundary(
+                key: key,
+                child: ColoredBox(
+                    color: Colors.black,
+                    child: SizedBox(
+                        width: 300,
+                        child: KaraokeLyricText(
+                            line: line,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 24),
+                            position: const Duration(seconds: 103),
+                            positionStream: const Stream.empty(),
+                            playing: false,
+                            textAlign: TextAlign.center)))))));
+    final boundary =
+        tester.renderObject<RenderRepaintBoundary>(find.byKey(key));
+    final bounds = await tester.runAsync(() async {
+      final image = await boundary.toImage();
+      final bytes =
+          (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      var left = image.width;
+      var right = -1;
+      for (var y = 0; y < image.height; y++) {
+        for (var x = 0; x < image.width; x++) {
+          final offset = (y * image.width + x) * 4;
+          if (bytes.getUint8(offset) > 230) {
+            if (x < left) left = x;
+            if (x > right) right = x;
+          }
+        }
+      }
+      image.dispose();
+      return (left, right);
+    });
+    expect(bounds!.$1, greaterThan(100));
+    expect(bounds.$2, lessThan(200));
+    expect(bounds.$2, greaterThan(bounds.$1));
+  });
+
   for (final reducedMotion in [false, true]) {
     testWidgets(
         'playing highlight stops at the last native time reduced=$reducedMotion',
