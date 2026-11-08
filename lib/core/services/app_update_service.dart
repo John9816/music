@@ -14,6 +14,20 @@ enum UpdateTarget { android, ios, macos, windows, unsupported }
 
 enum UpdateCheckStatus { updateAvailable, upToDate, failed }
 
+class AppInstallIdentity {
+  const AppInstallIdentity(
+      {required this.packageName,
+      required this.version,
+      required this.buildNumber,
+      required this.production});
+  final String packageName;
+  final String version;
+  final int buildNumber;
+  final bool production;
+  String get description =>
+      '$version ($buildNumber) · ${production ? '正式版' : '开发版'}';
+}
+
 class UpdateRelease {
   const UpdateRelease({
     required this.version,
@@ -62,10 +76,33 @@ class UpdateCheckResult {
 /// DMG/PKG and Windows opens an EXE/MSI. iOS is required to update through the
 /// App Store, so it never downloads an installer inside the app.
 class AppUpdateService {
-  AppUpdateService({http.Client? client}) : _client = client ?? http.Client();
+  AppUpdateService(
+      {http.Client? client,
+      Future<AppInstallIdentity?> Function()? androidIdentityLoader})
+      : _client = client ?? http.Client(),
+        _androidIdentityLoader = androidIdentityLoader ?? androidIdentity;
 
   static const _androidUpdateChannel = MethodChannel('duckmusic/update');
   final http.Client _client;
+  final Future<AppInstallIdentity?> Function() _androidIdentityLoader;
+  String? installError;
+
+  static Future<AppInstallIdentity?> androidIdentity() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final data = await _androidUpdateChannel
+          .invokeMapMethod<String, dynamic>('getAppIdentity');
+      if (data == null) return null;
+      return AppInstallIdentity(
+        packageName: data['packageName'] as String,
+        version: data['version'] as String,
+        buildNumber: (data['buildNumber'] as num).toInt(),
+        production: data['production'] == true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<UpdateCheckResult> checkLatest({
     String currentVersion = AppConfig.appVersion,
@@ -81,6 +118,12 @@ class AppUpdateService {
     }
 
     if (resolvedTarget == UpdateTarget.android) {
+      final identity = await _androidIdentityLoader();
+      if (identity != null && !identity.production) {
+        return const UpdateCheckResult.failed(
+            '当前是开发版，不能通过正式通道覆盖更新。请打开名称不带「开发版」的正式应用。');
+      }
+      currentVersion = identity?.version ?? currentVersion;
       final ecsResult = await _checkAndroidManifest(currentVersion);
       if (ecsResult != null) return ecsResult;
     }
@@ -271,13 +314,15 @@ class AppUpdateService {
     }
   }
 
-  Future<bool> installUpdate(String filePath) async {
-    if (currentTarget == UpdateTarget.ios ||
-        currentTarget == UpdateTarget.unsupported) {
+  Future<bool> installUpdate(String filePath, {UpdateTarget? target}) async {
+    installError = null;
+    final resolvedTarget = target ?? currentTarget;
+    if (resolvedTarget == UpdateTarget.ios ||
+        resolvedTarget == UpdateTarget.unsupported) {
       return false;
     }
     try {
-      if (currentTarget == UpdateTarget.android) {
+      if (resolvedTarget == UpdateTarget.android) {
         return await _androidUpdateChannel.invokeMethod<bool>(
               'installApk',
               {'path': filePath},
@@ -288,7 +333,11 @@ class AppUpdateService {
         Uri.file(filePath),
         mode: launcher.LaunchMode.externalApplication,
       );
+    } on PlatformException catch (error) {
+      installError = error.message ?? '安装包校验失败';
+      return false;
     } catch (_) {
+      installError = '无法打开系统安装器，请重试';
       return false;
     }
   }

@@ -20,11 +20,15 @@ class _AboutViewState extends State<AboutView> {
   double? _downloadProgress;
   String _updateText = '点击检查新版本';
   String _serviceStatus = '检查中';
+  AppInstallIdentity? _identity;
 
   @override
   void initState() {
     super.initState();
     _checkService();
+    AppUpdateService.androidIdentity().then((value) {
+      if (mounted) setState(() => _identity = value);
+    });
   }
 
   Future<void> _checkService() async {
@@ -107,7 +111,7 @@ class _AboutViewState extends State<AboutView> {
       return;
     }
     if (!await service.installUpdate(path)) {
-      _message('无法打开系统安装器');
+      _message(service.installError ?? '无法打开系统安装器');
     }
   }
 
@@ -139,10 +143,10 @@ class _AboutViewState extends State<AboutView> {
             style: TextStyle(fontSize: 24, fontWeight: TypeScale.heavy),
           ),
           const SizedBox(height: 5),
-          const Text(
-            '版本 ${AppConfig.appVersion}',
+          Text(
+            '版本 ${_identity?.description ?? AppConfig.appVersion}',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5),
+            style: const TextStyle(fontSize: 12.5),
           ),
           const SettingsSection('版本与服务'),
           SettingsGroup(

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,9 +14,11 @@ import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.security.MessageDigest
 
 class MainActivity : AudioServiceActivity() {
     private var pendingApkPath: String? = null
+    private var pendingInstallResult: MethodChannel.Result? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var audioSpectrumBridge: AudioSpectrumBridge? = null
 
@@ -37,26 +40,49 @@ class MainActivity : AudioServiceActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
             .setMethodCallHandler { call, result ->
+                if (call.method == "getAppIdentity") {
+                    val info = packageManager.getPackageInfo(packageName, 0)
+                    result.success(mapOf(
+                        "packageName" to packageName,
+                        "version" to info.versionName,
+                        "buildNumber" to versionCode(info),
+                        "production" to (packageName == "com.music.player"),
+                    ))
+                    return@setMethodCallHandler
+                }
                 if (call.method != "installApk") {
                     result.notImplemented()
                     return@setMethodCallHandler
                 }
                 val path = call.argument<String>("path")
                 if (path.isNullOrBlank() || !File(path).isFile) {
-                    result.success(false)
+                    result.error("INVALID_APK", "安装包不存在，请重新下载", null)
+                    return@setMethodCallHandler
+                }
+                val rejection = validateUpdate(path)
+                if (rejection != null) {
+                    result.error(rejection.code, rejection.message, null)
+                    return@setMethodCallHandler
+                }
+                if (pendingInstallResult != null) {
+                    result.error("INSTALL_PENDING", "请先完成当前安装授权", null)
                     return@setMethodCallHandler
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                     !packageManager.canRequestPackageInstalls()
                 ) {
                     pendingApkPath = path
-                    startActivity(
+                    pendingInstallResult = result
+                    try { startActivity(
                         Intent(
                             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                             Uri.parse("package:$packageName"),
                         ),
-                    )
-                    result.success(true)
+                    ) } catch (_: Exception) {
+                        pendingInstallResult = null
+                        pendingApkPath = null
+                        result.error("INSTALL_PERMISSION", "无法打开安装授权页面", null)
+                    }
                     return@setMethodCallHandler
                 }
                 result.success(openPackageInstaller(path))
@@ -136,6 +162,9 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        pendingInstallResult?.error("INSTALL_INTERRUPTED", "安装已中断，请重新检查更新", null)
+        pendingInstallResult = null
+        pendingApkPath = null
         audioSpectrumBridge?.dispose()
         audioSpectrumBridge = null
         // 权限弹窗期间 Activity 可能被系统回收，此时 onRequestPermissionsResult
@@ -159,11 +188,20 @@ class MainActivity : AudioServiceActivity() {
         super.onResume()
         audioSpectrumBridge?.onResume()
         val path = pendingApkPath ?: return
+        val result = pendingInstallResult
+        pendingApkPath = null
+        pendingInstallResult = null
+        val rejection = validateUpdate(path)
+        if (rejection != null) {
+            result?.error(rejection.code, rejection.message, null)
+            return
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
             packageManager.canRequestPackageInstalls()
         ) {
-            pendingApkPath = null
-            openPackageInstaller(path)
+            result?.success(openPackageInstaller(path))
+        } else {
+            result?.error("INSTALL_PERMISSION", "未允许安装应用，可重新检查更新后授权", null)
         }
     }
 
@@ -185,6 +223,7 @@ class MainActivity : AudioServiceActivity() {
 
     private fun openPackageInstaller(path: String): Boolean {
         return try {
+            if (validateUpdate(path) != null) return false
             val file = File(path)
             val uri = FileProvider.getUriForFile(
                 this,
@@ -202,6 +241,35 @@ class MainActivity : AudioServiceActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun versionCode(info: PackageInfo): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+
+    @Suppress("DEPRECATION")
+    private fun apkIdentity(info: PackageInfo): InstalledApk {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners
+        } else { info.signatures }
+        val hashes = signatures.orEmpty().map { signature ->
+            MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }.toSet()
+        return InstalledApk(info.packageName, versionCode(info), hashes)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun validateUpdate(path: String): UpdateRejection? = try {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val archive = packageManager.getPackageArchiveInfo(path, flags)
+        if (archive == null) UpdateRejection("INVALID_APK", "安装包无法解析，请重新下载")
+        else ApkUpdatePolicy.rejection(
+            apkIdentity(packageManager.getPackageInfo(packageName, flags)), apkIdentity(archive)
+        )
+    } catch (_: Exception) {
+        UpdateRejection("INVALID_APK", "安装包校验失败，请重新下载")
     }
 
     companion object {

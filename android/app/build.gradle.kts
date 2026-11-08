@@ -28,6 +28,7 @@ android {
     defaultConfig {
         // Preserve the native Android app identity so existing users can update in place.
         applicationId = "com.music.player"
+        manifestPlaceholders["appLabel"] = "柒伍壹壹音乐"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -51,6 +52,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "柒伍壹壹音乐 · 开发版"
         }
         release {
             if (releaseBuildRequested && !keystorePropertiesFile.exists()) {

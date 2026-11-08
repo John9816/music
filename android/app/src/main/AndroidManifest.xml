@@ -13,7 +13,7 @@
          上架 Play 需单独申报用途；侧载/自有渠道分发不受影响。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
-        android:label="柒伍壹壹音乐"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -47,6 +47,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.update_file_provider"

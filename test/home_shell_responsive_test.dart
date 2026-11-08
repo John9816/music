@@ -1,6 +1,10 @@
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/player/player_controller.dart';
+import 'package:duck_music/core/player/car_media_library.dart';
+import 'package:duck_music/core/services/song_download_service.dart';
+import 'package:duck_music/features/car/car_home_view.dart';
+import 'package:duck_music/widgets/floating_dock_surface.dart';
 import 'package:duck_music/core/services/desktop_integration_service.dart';
 import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
@@ -19,6 +23,61 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues(const {}));
+
+  testWidgets(
+      'car mode switches presentation without replacing player or shell',
+      (tester) async {
+    await _pumpShell(tester, const Size(800, 480),
+        platform: TargetPlatform.android);
+    final element = tester.element(find.byType(HomeShell));
+    final player = element.read<PlayerController>();
+    final settings = element.read<SettingsController>();
+    final shell = tester.state(find.byType(HomeShell));
+    await settings.setCarModeEnabled(true);
+    await tester.pumpAndSettle();
+    expect(find.byType(CarHomeView), findsOneWidget);
+    expect(tester.element(find.byType(CarHomeView)).read<PlayerController>(),
+        same(player));
+    await tester.tap(find.byKey(const ValueKey('car-exit')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CarHomeView), findsNothing);
+    expect(tester.state(find.byType(HomeShell)), same(shell));
+    expect(element.read<PlayerController>(), same(player));
+    expect(player.current, isNotNull);
+  });
+
+  testWidgets(
+      'dock blur stays enabled despite legacy quality and selector moves',
+      (tester) async {
+    await _pumpShell(tester, const Size(390, 844),
+        platform: TargetPlatform.android);
+    final settings =
+        tester.element(find.byType(HomeShell)).read<SettingsController>();
+    await settings.setGlassQuality('smooth');
+    await settings.setReduceMotion(true);
+    await tester.pumpAndSettle();
+    final dock = find.byType(FloatingDockSurface).first;
+    final blur = tester.widget<BackdropFilter>(
+        find.descendant(of: dock, matching: find.byType(BackdropFilter)));
+    expect(blur.enabled, true);
+    expect(tester.getRect(find.byType(DiscoverView)).bottom, 844,
+        reason:
+            'The page paints behind the floating dock so its blur samples content.');
+    final selector = find.byKey(const ValueKey('mobile-nav-glass-selector'));
+    final before = tester.getRect(find.descendant(
+        of: selector, matching: find.byType(FractionallySizedBox)));
+    await tester.tap(_navigationItem(tester, '我的'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final during = tester.getRect(find.descendant(
+        of: selector, matching: find.byType(FractionallySizedBox)));
+    await tester.pumpAndSettle();
+    final after = tester.getRect(find.descendant(
+        of: selector, matching: find.byType(FractionallySizedBox)));
+    expect(during.left, greaterThan(before.left));
+    expect(during.left, lessThan(after.left));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('closing the dock on resize returns its space to content',
       (tester) async {
@@ -280,7 +339,8 @@ void main() {
 }
 
 Future<void> _pumpShell(WidgetTester tester, Size size,
-    {AuthController? authOverride}) async {
+    {AuthController? authOverride,
+    TargetPlatform platform = TargetPlatform.windows}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -289,6 +349,12 @@ Future<void> _pumpShell(WidgetTester tester, Size size,
   final player = _CurrentSongPlayer(settings);
   final auth = authOverride ?? AuthController();
   final timer = SleepTimer();
+  final library = CarMediaLibrary(
+      auth: auth,
+      player: player,
+      settings: settings,
+      downloads: SongDownloadService.instance);
+  addTearDown(library.dispose);
   final desktop = DesktopIntegrationService(settings: settings, player: player);
   addTearDown(settings.dispose);
   addTearDown(player.dispose);
@@ -299,13 +365,14 @@ Future<void> _pumpShell(WidgetTester tester, Size size,
       ChangeNotifierProvider<SettingsController>.value(value: settings),
       ChangeNotifierProvider<PlayerController>.value(value: player),
       ChangeNotifierProvider<AuthController>.value(value: auth),
+      ChangeNotifierProvider<CarMediaLibrary>.value(value: library),
       ChangeNotifierProvider<SleepTimer>.value(value: timer),
       ChangeNotifierProvider<DesktopIntegrationService>.value(value: desktop),
     ],
     child: MaterialApp(
       theme: AppTheme.forAccent('forestGreen', dark: false)
           .data
-          .copyWith(platform: TargetPlatform.windows),
+          .copyWith(platform: platform),
       home: const HomeShell(),
     ),
   ));

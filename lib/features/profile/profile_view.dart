@@ -104,7 +104,8 @@ class _ProfileViewState extends State<ProfileView> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+      padding: EdgeInsets.fromLTRB(
+          20, 4, 20, 40 + FloatingDockInsets.bottomOf(context)),
       children: [
         const SettingsSection('账户'),
         _AccountCard(

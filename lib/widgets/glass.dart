@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 
-import '../core/settings/settings_controller.dart';
 import '../core/theme/design_tokens.dart';
 import '../core/theme/platform_motion.dart';
 import 'wave_progress_track.dart';
@@ -13,6 +11,7 @@ import 'wave_progress_track.dart';
 export '../core/theme/design_tokens.dart';
 export '../core/theme/platform_motion.dart';
 export '../core/theme/app_theme.dart' show GlassTokens, GlassTheme;
+export 'floating_dock_surface.dart' show FloatingDockInsets;
 
 const double _macOSWindowControlsInset = 76;
 
@@ -153,16 +152,7 @@ class GPageHeader extends StatelessWidget {
 Color glassFill(BuildContext context, {double alpha = 0.06}) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   final base = dark ? Colors.white : Colors.black;
-  var quality = 'auto';
-  try {
-    quality =
-        Provider.of<SettingsController>(context, listen: false).glassQuality;
-  } catch (_) {}
-  final multiplier = switch (quality) {
-    'smooth' => 0.66,
-    'detailed' => 1.35,
-    _ => MediaQuery.devicePixelRatioOf(context) >= 2 ? 1.0 : 0.78,
-  };
+  final multiplier = MediaQuery.devicePixelRatioOf(context) >= 2 ? 1.0 : 0.78;
   return base.withValues(alpha: (alpha * multiplier).clamp(0.0, 1.0));
 }
 

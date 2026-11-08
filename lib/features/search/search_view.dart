@@ -739,6 +739,9 @@ class _SearchViewState extends State<SearchView> {
                     ))
               else
                 ..._buildResultSlivers(compact: !wide),
+              SliverToBoxAdapter(
+                  child:
+                      SizedBox(height: FloatingDockInsets.bottomOf(context))),
             ],
           ),
         ),

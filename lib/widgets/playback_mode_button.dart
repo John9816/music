@@ -7,12 +7,14 @@ import 'glass.dart';
 extension PlaybackModePresentation on PlaybackMode {
   String get label => switch (this) {
         PlaybackMode.listLoop => '列表循环',
+        PlaybackMode.sequential => '顺序播放',
         PlaybackMode.singleLoop => '单曲循环',
         PlaybackMode.shuffle => '随机播放',
       };
 
   IconData get icon => switch (this) {
         PlaybackMode.listLoop => Icons.repeat_rounded,
+        PlaybackMode.sequential => Icons.arrow_forward_rounded,
         PlaybackMode.singleLoop => Icons.repeat_one_rounded,
         PlaybackMode.shuffle => Icons.shuffle_rounded,
       };

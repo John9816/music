@@ -9,13 +9,11 @@ import '../../core/player/player_controller.dart';
 import '../../core/player/system_media_controller.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
-import '../../core/theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import 'about_view.dart';
 import 'desktop_settings_view.dart';
 import 'ios_sideload_view.dart';
 import 'lyric_settings_view.dart';
-import 'notifications_view.dart';
 import 'settings_components.dart';
 import 'storage_settings_view.dart';
 
@@ -44,7 +42,7 @@ class SettingsView extends StatelessWidget {
                 icon: Icons.language_rounded,
                 iconColor: const Color(0xFF30A9D8),
                 title: '音乐源',
-                subtitle: '推荐、搜索、歌单与播放使用的数据源',
+                subtitle: '首页推荐与发现使用的数据源；搜索独立选择',
                 value:
                     AppConfig.musicSources[settings.source] ?? settings.source,
                 onTap: () => _pickSource(context, settings),
@@ -68,27 +66,6 @@ class SettingsView extends StatelessWidget {
                 onTap: () => _pickThemeMode(context, settings),
               ),
               SettingsRow(
-                icon: Icons.palette_outlined,
-                iconColor: const Color(0xFFAD54D8),
-                title: '主题色',
-                subtitle: '调整强调色与界面氛围',
-                value: AppAccent.byId(settings.accentId).name,
-                onTap: () => _pickAccent(context, settings),
-              ),
-              SettingsRow(
-                icon: Icons.blur_circular_rounded,
-                iconColor: const Color(0xFF509DE0),
-                title: '液态玻璃质量',
-                subtitle: '影响导航、播放栏与弹出菜单',
-                value: const {
-                      'smooth': '流畅',
-                      'detailed': '精细',
-                      'auto': '自动',
-                    }[settings.glassQuality] ??
-                    '流畅',
-                onTap: () => _pickGlassQuality(context, settings),
-              ),
-              SettingsRow(
                 icon: Icons.text_fields_rounded,
                 iconColor: const Color(0xFF818188),
                 title: '歌词显示',
@@ -96,18 +73,6 @@ class SettingsView extends StatelessWidget {
                 value:
                     '${settings.lyricFontSize} · ${settings.lyricFontStyle.label}',
                 onTap: () => _open(context, const LyricSettingsView()),
-              ),
-              SettingsRow(
-                icon: Icons.auto_awesome_rounded,
-                iconColor: const Color(0xFF818188),
-                title: '减弱动态效果',
-                subtitle: '减少封面、歌词和页面过渡动画',
-                trailing: SettingsSwitch(
-                  value: settings.reduceMotion,
-                  onChanged: settings.setReduceMotion,
-                ),
-                onToggle: settings.setReduceMotion,
-                toggleValue: settings.reduceMotion,
               ),
             ],
           ),
@@ -148,6 +113,18 @@ class SettingsView extends StatelessWidget {
                 subtitle: '下载音质、缓存上限、有效期与分类清理',
                 onTap: () => _open(context, const StorageSettingsView()),
               ),
+              if (Theme.of(context).platform == TargetPlatform.android)
+                SettingsRow(
+                  icon: Icons.directions_car_rounded,
+                  title: '车载模式',
+                  subtitle: '适合车机直装的大按钮界面；Android Auto 自动使用系统界面',
+                  trailing: SettingsSwitch(
+                    value: settings.carModeEnabled,
+                    onChanged: settings.setCarModeEnabled,
+                  ),
+                  onToggle: settings.setCarModeEnabled,
+                  toggleValue: settings.carModeEnabled,
+                ),
               if (desktop)
                 SettingsRow(
                   icon: Icons.desktop_mac_outlined,
@@ -169,14 +146,8 @@ class SettingsView extends StatelessWidget {
           const SettingsSection('通知与支持'),
           SettingsGroup(
             children: [
-              if (Platform.isAndroid) const AndroidMediaStatusRow(),
-              SettingsRow(
-                icon: Icons.notifications_rounded,
-                iconColor: const Color(0xFFFF453A),
-                title: '通知',
-                subtitle: '查看服务通知与重要公告',
-                onTap: () => _open(context, const NotificationsView()),
-              ),
+              if (Theme.of(context).platform == TargetPlatform.android)
+                const AndroidMediaStatusRow(),
               SettingsRow(
                 icon: Icons.info_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
@@ -221,38 +192,6 @@ class SettingsView extends StatelessWidget {
       ],
     );
     if (value != null) await settings.setThemeMode(value);
-  }
-
-  Future<void> _pickAccent(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '主题色',
-      current: settings.accentId,
-      options: AppAccent.all
-          .map((accent) => (value: accent.id, label: accent.name, detail: null))
-          .toList(),
-    );
-    if (value != null) await settings.setAccentColor(value);
-  }
-
-  Future<void> _pickGlassQuality(
-    BuildContext context,
-    SettingsController settings,
-  ) async {
-    final value = await showSettingsPicker<String>(
-      context,
-      title: '液态玻璃质量',
-      current: settings.glassQuality,
-      options: const [
-        (value: 'smooth', label: '流畅', detail: '省电'),
-        (value: 'detailed', label: '精细', detail: null),
-        (value: 'auto', label: '自动', detail: '跟随屏幕'),
-      ],
-    );
-    if (value != null) await settings.setGlassQuality(value);
   }
 
   Future<void> _pickQuality(
@@ -385,12 +324,14 @@ class _AndroidMediaStatusRowState extends State<AndroidMediaStatusRow>
         ? '检查媒体控制'
         : _enabled == true
             ? '媒体通知已开启'
-            : '媒体通知未开启';
+            : _enabled == false
+                ? '媒体通知未开启'
+                : '媒体通知';
     final subtitle = _loading
         ? '正在检查通知权限'
         : _enabled == true
-            ? '锁屏、通知中心和系统媒体卡可显示播放控制'
-            : '开启后才能显示锁屏与通知中心的上一首、播放和下一首';
+            ? '歌曲、歌手、封面与播放控制会同步到系统媒体卡；灵动岛展示由系统决定'
+            : '管理系统媒体通知、锁屏与悬浮展示；不同手机的入口可能不同';
     return SettingsRow(
       icon: _enabled == true
           ? Icons.multitrack_audio_rounded

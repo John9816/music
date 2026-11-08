@@ -277,7 +277,9 @@ class _DiscoverViewState extends State<DiscoverView> {
                   },
                 ),
               ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            SliverToBoxAdapter(
+                child: SizedBox(
+                    height: 24 + FloatingDockInsets.bottomOf(context))),
           ],
         ),
       ),

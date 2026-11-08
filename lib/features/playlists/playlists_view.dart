@@ -272,6 +272,8 @@ class _PlaylistsViewState extends State<PlaylistsView> {
               SliverToBoxAdapter(child: _buildFooter()),
               const SliverToBoxAdapter(child: SizedBox(height: 20)),
             ],
+            SliverToBoxAdapter(
+                child: SizedBox(height: FloatingDockInsets.bottomOf(context))),
           ],
         ),
       ),

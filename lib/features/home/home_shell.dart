@@ -1,3 +1,4 @@
+import '../car/car_home_view.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -63,6 +64,7 @@ class _HomeShellState extends State<HomeShell> {
   late final AuthController _auth;
   late int _lastAuthGeneration;
   int _authVersion = 0;
+  bool _favoriteBusy = false;
 
   static const _tabToPageIndex = [0, 1, _discoverIndex, _profileIndex];
 
@@ -97,8 +99,8 @@ class _HomeShellState extends State<HomeShell> {
     _auth = context.read<AuthController>();
     _lastAuthGeneration = _auth.sessionGeneration;
     _lastSource = _settings.source;
-    _player.onSongPlayed = _recordPlayedSong;
-    _player.onSongChanged = _syncFavoriteState;
+    _player.onSongPlayed ??= _recordPlayedSong;
+    _player.onSongChanged ??= _syncFavoriteState;
     _player.onMembershipRequired = _openMembershipCenter;
     context.read<DesktopIntegrationService>().onFavorite = _toggleFavorite;
     unawaited(_restoreLastPlayback());
@@ -126,12 +128,14 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _syncFavoriteState(Song song) async {
     final token = _auth.token;
+    final generation = _auth.sessionGeneration;
     if (!_auth.isLoggedIn || token == null) {
       _player.setLiked(false);
       return;
     }
     try {
       final items = await UserApi().getFavorites(token);
+      if (!mounted || generation != _auth.sessionGeneration) return;
       final current = _player.current;
       if (current?.id != song.id || current?.source != song.source) return;
       _player.setLiked(
@@ -147,6 +151,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _toggleFavorite() async {
+    if (_favoriteBusy) return;
     final song = _player.current;
     final token = _auth.token;
     if (song == null) return;
@@ -155,6 +160,8 @@ class _HomeShellState extends State<HomeShell> {
       showAppToast(context, '请先登录后再收藏');
       return;
     }
+    _favoriteBusy = true;
+    final generation = _auth.sessionGeneration;
     final wasLiked = _player.liked;
     try {
       if (wasLiked) {
@@ -162,9 +169,19 @@ class _HomeShellState extends State<HomeShell> {
       } else {
         await UserApi().addFavorite(song, token);
       }
+      if (!mounted ||
+          generation != _auth.sessionGeneration ||
+          _player.current?.id != song.id ||
+          _player.current?.source != song.source) {
+        return;
+      }
       _player.setLiked(!wasLiked);
     } catch (_) {
-      // 快捷键触发，不显示错误提示，保持当前状态
+      if (mounted && generation == _auth.sessionGeneration) {
+        showAppToast(context, '收藏操作失败，请重试');
+      }
+    } finally {
+      _favoriteBusy = false;
     }
   }
 
@@ -272,6 +289,11 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (Theme.of(context).platform == TargetPlatform.android &&
+        context.select<SettingsController, bool>(
+            (settings) => settings.carModeEnabled)) {
+      return CarHomeView(onFavorite: _toggleFavorite);
+    }
     final windowWidth = MediaQuery.sizeOf(context).width;
     final bottomSystemInset = MediaQuery.paddingOf(context).bottom;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
@@ -498,17 +520,24 @@ class _HomeShellState extends State<HomeShell> {
                                                             bottomSystemInset
                                                         : bottomSystemInset
                                                     : 80.0 + bottomSystemInset;
-                                            return AnimatedPadding(
-                                              duration: PlatformMotion.duration(
-                                                  context, Motion.normal),
-                                              curve: Motion.standard,
-                                              padding: EdgeInsets.only(
-                                                bottom: dockInset,
-                                              ),
-                                              child: MediaQuery.removePadding(
-                                                context: context,
-                                                removeBottom: !wide,
-                                                child: child!,
+                                            return FloatingDockInsets(
+                                              bottom:
+                                                  nestedCanPop ? 0 : dockInset,
+                                              child: AnimatedPadding(
+                                                duration:
+                                                    PlatformMotion.duration(
+                                                        context, Motion.normal),
+                                                curve: Motion.standard,
+                                                padding: EdgeInsets.only(
+                                                  bottom: nestedCanPop
+                                                      ? dockInset
+                                                      : 0,
+                                                ),
+                                                child: MediaQuery.removePadding(
+                                                  context: context,
+                                                  removeBottom: !wide,
+                                                  child: child!,
+                                                ),
                                               ),
                                             );
                                           },
@@ -777,6 +806,7 @@ class _AnimatedTabStackState extends State<_AnimatedTabStack>
 
   /// 正在淡出的旧 Tab。过渡期间它必须保持可见，否则会看到闪白。
   int? _outgoing;
+  double _direction = 1;
 
   @override
   void initState() {
@@ -812,6 +842,7 @@ class _AnimatedTabStackState extends State<_AnimatedTabStack>
       _controller.value = 1;
       return;
     }
+    _direction = widget.index > oldWidget.index ? 1 : -1;
     _outgoing = oldWidget.index;
     _controller.forward(from: 0);
   }
@@ -854,7 +885,15 @@ class _AnimatedTabStackState extends State<_AnimatedTabStack>
                           enabled: active,
                           child: Opacity(
                             opacity: opacity.clamp(0.0, 1.0),
-                            child: child,
+                            child: Transform.translate(
+                              offset: Offset(
+                                _direction *
+                                    22 *
+                                    (active ? 1 - progress : -progress),
+                                0,
+                              ),
+                              child: child,
+                            ),
                           ),
                         ),
                       ),
@@ -1538,64 +1577,121 @@ class _BottomNav extends StatelessWidget {
                   height: 60,
                   child: Padding(
                     padding: const EdgeInsets.all(6),
-                    child: Row(
+                    child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        for (var i = 0; i < _HomeShellState._tabs.length; i++)
-                          Expanded(
-                            child: Semantics(
-                              button: true,
-                              selected: _HomeShellState._tabToPageIndex[i] ==
-                                  selected,
-                              label: _HomeShellState._tabs[i].label,
-                              onTap: () =>
-                                  onSelect(_HomeShellState._tabToPageIndex[i]),
-                              child: ExcludeSemantics(
-                                child: Tooltip(
-                                  message: _HomeShellState._tabs[i].label,
-                                  child: GPressScale(
-                                    onTap: () => onSelect(
-                                        _HomeShellState._tabToPageIndex[i]),
-                                    scale: .93,
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: AnimatedContainer(
-                                      duration:
-                                          PlatformMotion.tabDuration(context),
-                                      curve: Motion.standard,
-                                      height: 48,
-                                      decoration: BoxDecoration(
+                        AnimatedAlign(
+                          key: const ValueKey('mobile-nav-glass-selector'),
+                          alignment: Alignment(
+                            -1 +
+                                2 *
+                                    _HomeShellState._tabToPageIndex
+                                        .indexOf(selected)
+                                        .clamp(0,
+                                            _HomeShellState._tabs.length - 1) /
+                                    (_HomeShellState._tabs.length - 1),
+                            0,
+                          ),
+                          duration: PlatformMotion.duration(
+                              context, const Duration(milliseconds: 320)),
+                          curve: Curves.easeOutCubic,
+                          child: FractionallySizedBox(
+                            widthFactor: 1 / _HomeShellState._tabs.length,
+                            heightFactor: 1,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Colors.white
+                                        .withValues(alpha: dark ? .22 : .72),
+                                    Colors.white
+                                        .withValues(alpha: dark ? .07 : .18),
+                                  ],
+                                ),
+                                border: Border.all(
+                                    color: Colors.white
+                                        .withValues(alpha: dark ? .24 : .65),
+                                    width: .8),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: .06),
+                                      blurRadius: 5,
+                                      offset: const Offset(0, 2))
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            for (var i = 0;
+                                i < _HomeShellState._tabs.length;
+                                i++)
+                              Expanded(
+                                child: Semantics(
+                                  button: true,
+                                  selected:
+                                      _HomeShellState._tabToPageIndex[i] ==
+                                          selected,
+                                  label: _HomeShellState._tabs[i].label,
+                                  onTap: () => onSelect(
+                                      _HomeShellState._tabToPageIndex[i]),
+                                  child: ExcludeSemantics(
+                                    child: Tooltip(
+                                      message: _HomeShellState._tabs[i].label,
+                                      child: GPressScale(
+                                        onTap: () => onSelect(
+                                            _HomeShellState._tabToPageIndex[i]),
+                                        scale: .90,
                                         borderRadius:
                                             BorderRadius.circular(999),
-                                        color: _HomeShellState
-                                                    ._tabToPageIndex[i] ==
-                                                selected
-                                            ? (dark
-                                                    ? Colors.white
-                                                    : Colors.black)
-                                                .withValues(alpha: .10)
-                                            : Colors.transparent,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Icon(
-                                        _HomeShellState._tabToPageIndex[i] ==
-                                                selected
-                                            ? _HomeShellState
-                                                ._tabs[i].selectedIcon
-                                            : _HomeShellState._tabs[i].icon,
-                                        size: 22,
-                                        color: dark
-                                            ? (_HomeShellState
-                                                        ._tabToPageIndex[i] ==
-                                                    selected
-                                                ? const Color(0xFFDEEBF3)
-                                                : const Color(0xFFAEC5D6))
-                                            : const Color(0xFF30495B),
+                                        child: SizedBox(
+                                          height: 48,
+                                          child: Center(
+                                            child: AnimatedScale(
+                                              scale: _HomeShellState
+                                                          ._tabToPageIndex[i] ==
+                                                      selected
+                                                  ? 1.08
+                                                  : 1,
+                                              duration:
+                                                  PlatformMotion.tabDuration(
+                                                      context),
+                                              curve: Curves.easeOutCubic,
+                                              child: Icon(
+                                                _HomeShellState._tabToPageIndex[
+                                                            i] ==
+                                                        selected
+                                                    ? _HomeShellState
+                                                        ._tabs[i].selectedIcon
+                                                    : _HomeShellState
+                                                        ._tabs[i].icon,
+                                                size: 22,
+                                                color: dark
+                                                    ? (_HomeShellState
+                                                                    ._tabToPageIndex[
+                                                                i] ==
+                                                            selected
+                                                        ? const Color(
+                                                            0xFFEEF6FD)
+                                                        : const Color(
+                                                            0xFFB5C9D8))
+                                                    : const Color(0xFF30495B),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

@@ -30,13 +30,14 @@ class SettingsController extends ChangeNotifier {
   static const _statusBarLyricsKey = 'status_bar_lyrics';
   static const _globalShortcutsKey = 'global_shortcuts_enabled';
   static const _shortcutBindingsKey = 'desktop_shortcut_bindings';
+  static const _carModeKey = 'car_mode_enabled';
 
   String _source = 'netease';
   String _searchSource = 'netease';
   String _themeModeId = 'system';
   String _accentId = 'forestGreen';
   final Map<String, String> _qualityBySource = {};
-  String _glassQuality = 'smooth';
+  String _glassQuality = 'auto';
   bool _reduceMotion = false;
   int _lyricFontSize = defaultLyricFontSize;
   LyricFontStyle _lyricFontStyle = LyricFontStyle.bold;
@@ -48,6 +49,7 @@ class SettingsController extends ChangeNotifier {
   bool _globalShortcutsEnabled = true;
   Map<String, String> _shortcutBindings = const {};
   bool _loaded = false;
+  bool _carModeEnabled = false;
 
   String get source => _source;
 
@@ -79,6 +81,7 @@ class SettingsController extends ChangeNotifier {
   Map<String, String> get shortcutBindings =>
       Map.unmodifiable(_shortcutBindings);
   bool get loaded => _loaded;
+  bool get carModeEnabled => _carModeEnabled;
 
   Future<void> load() async {
     try {
@@ -103,8 +106,9 @@ class SettingsController extends ChangeNotifier {
       }
       _themeModeId = prefs.getString(_themeModeKey) ?? 'system';
       _accentId = prefs.getString(_accentKey) ?? 'forestGreen';
-      _glassQuality = prefs.getString(_glassQualityKey) ?? 'smooth';
+      _glassQuality = prefs.getString(_glassQualityKey) ?? 'auto';
       _reduceMotion = prefs.getBool(_reduceMotionKey) ?? false;
+      _carModeEnabled = prefs.getBool(_carModeKey) ?? false;
       _lyricFontSize = normalizeLyricFontSize(prefs.get(_lyricFontSizeKey));
       _lyricFontStyle =
           LyricFontStyle.fromStored(prefs.get(_lyricFontStyleKey));
@@ -128,6 +132,9 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> setSource(String value) =>
       _setString(_sourceKey, value, () => _source, (v) => _source = v);
+
+  Future<void> setCarModeEnabled(bool value) => _setBool(
+      _carModeKey, value, () => _carModeEnabled, (v) => _carModeEnabled = v);
 
   Future<void> setSearchSource(String value) => _setString(
         _searchSourceKey,

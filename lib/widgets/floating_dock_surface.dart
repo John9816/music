@@ -1,9 +1,21 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../core/settings/settings_controller.dart';
+/// Scroll content extends under the dock; only its trailing padding clears it.
+class FloatingDockInsets extends InheritedWidget {
+  const FloatingDockInsets(
+      {super.key, required this.bottom, required super.child});
+  final double bottom;
+  static double bottomOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FloatingDockInsets>()
+          ?.bottom ??
+      0;
+  @override
+  bool updateShouldNotify(FloatingDockInsets oldWidget) =>
+      bottom != oldWidget.bottom;
+}
 
 /// The navigation pill and playback pill share the same restrained glass rim.
 class FloatingDockSurface extends StatelessWidget {
@@ -20,16 +32,8 @@ class FloatingDockSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final highContrast = MediaQuery.highContrastOf(context);
-    var smooth = false;
-    try {
-      smooth = context.select<SettingsController, bool>(
-        (settings) => settings.glassQuality == 'smooth',
-      );
-    } on ProviderNotFoundException {
-      // The same surface is also used in isolated player previews.
-    }
     const radius = BorderRadius.all(Radius.circular(999));
-    final opaque = highContrast || smooth;
+    final opaque = highContrast;
     return Container(
       key: surfaceKey,
       decoration: BoxDecoration(
@@ -46,7 +50,7 @@ class FloatingDockSurface extends StatelessWidget {
         borderRadius: radius,
         child: BackdropFilter(
           enabled: !opaque,
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: radius,
@@ -56,15 +60,15 @@ class FloatingDockSurface extends StatelessWidget {
                 colors: dark
                     ? [
                         const Color(0xFF353A43)
-                            .withValues(alpha: opaque ? 1 : .90),
+                            .withValues(alpha: opaque ? 1 : .62),
                         const Color(0xFF1C1F27)
-                            .withValues(alpha: opaque ? 1 : .84),
+                            .withValues(alpha: opaque ? 1 : .48),
                       ]
                     : [
                         const Color(0xFFF8FBFD)
-                            .withValues(alpha: opaque ? 1 : .90),
+                            .withValues(alpha: opaque ? 1 : .62),
                         const Color(0xFFDDE4EB)
-                            .withValues(alpha: opaque ? 1 : .86),
+                            .withValues(alpha: opaque ? 1 : .54),
                       ],
               ),
               border: Border.all(
@@ -74,7 +78,23 @@ class FloatingDockSurface extends StatelessWidget {
                 width: .8,
               ),
             ),
-            child: child,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, .12, .48, 1],
+                  colors: [
+                    Colors.white.withValues(alpha: dark ? .16 : .55),
+                    Colors.white.withValues(alpha: .02),
+                    Colors.transparent,
+                    Colors.white.withValues(alpha: dark ? .03 : .14),
+                  ],
+                ),
+              ),
+              child: child,
+            ),
           ),
         ),
       ),

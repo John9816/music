@@ -21,7 +21,7 @@ import 'playback_coordinator.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
-enum PlaybackMode { listLoop, singleLoop, shuffle }
+enum PlaybackMode { listLoop, singleLoop, shuffle, sequential }
 
 /// 播放控制，对应 macOS 版 PlaybackCoordinator。
 /// 底层使用 just_audio：Android → ExoPlayer、iOS/macOS → AVPlayer、
@@ -154,7 +154,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       ? PlaybackMode.shuffle
       : _loopMode == LoopMode.one
           ? PlaybackMode.singleLoop
-          : PlaybackMode.listLoop;
+          : _loopMode == LoopMode.off
+              ? PlaybackMode.sequential
+              : PlaybackMode.listLoop;
 
   void toggleLike() {
     _liked = !_liked;
@@ -632,8 +634,12 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       if (_loopMode == LoopMode.off &&
           _index == _queue.length - 1 &&
           !_shuffle) {
-        unawaited(_player.pause());
-        unawaited(_player.seek(Duration.zero));
+        final completedSeq = _playSeq;
+        _sleepCompletedPlaySeq = completedSeq;
+        unawaited(Future<void>.microtask(() async {
+          if (completedSeq != _playSeq) return;
+          await _player.pause();
+        }));
         notifyListeners();
         return;
       }
@@ -693,6 +699,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> togglePlay() async {
     if (_current == null || _loading) return;
     if (_error != null ||
+        _player.processingState == ProcessingState.completed ||
         _player.processingState == ProcessingState.idle ||
         _sleepCompletedPlaySeq == _playSeq) {
       await playAt(_index);
@@ -788,12 +795,18 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> cyclePlaybackMode() => setPlaybackMode(switch (playbackMode) {
         PlaybackMode.listLoop => PlaybackMode.singleLoop,
         PlaybackMode.singleLoop => PlaybackMode.shuffle,
-        PlaybackMode.shuffle => PlaybackMode.listLoop,
+        PlaybackMode.shuffle ||
+        PlaybackMode.sequential =>
+          PlaybackMode.listLoop,
       });
 
   Future<void> setPlaybackMode(PlaybackMode mode) async {
     _shuffle = mode == PlaybackMode.shuffle;
-    _loopMode = mode == PlaybackMode.singleLoop ? LoopMode.one : LoopMode.all;
+    _loopMode = switch (mode) {
+      PlaybackMode.singleLoop => LoopMode.one,
+      PlaybackMode.sequential => LoopMode.off,
+      _ => LoopMode.all,
+    };
     await _player.setLoopMode(
       _loopMode == LoopMode.one && _onSleepTrackEnd == null
           ? LoopMode.one

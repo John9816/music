@@ -4,10 +4,13 @@ import 'dart:io' show Platform;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:rxdart/rxdart.dart';
 
 import '../models/song.dart';
 import '../network/image_request_policy.dart';
 import 'player_controller.dart';
+import 'car_media_library.dart';
 
 class SystemMediaController extends BaseAudioHandler {
   SystemMediaController({
@@ -36,6 +39,14 @@ class SystemMediaController extends BaseAudioHandler {
     androidStopForegroundOnPause: false,
     artDownscaleWidth: 512,
     artDownscaleHeight: 512,
+    androidBrowsableRootExtras: {
+      AndroidContentStyle.supportedKey: true,
+      AndroidContentStyle.browsableHintKey:
+          AndroidContentStyle.listItemHintValue,
+      AndroidContentStyle.playableHintKey:
+          AndroidContentStyle.listItemHintValue,
+      'android.media.browse.SEARCH_SUPPORTED': true,
+    },
   );
 
   /// 通知权限弹窗需要用户交互，给足时间；仅用于防止原生侧永不回调时状态锁死。
@@ -48,6 +59,13 @@ class SystemMediaController extends BaseAudioHandler {
   Future<dynamic>? _androidNotificationPermissionRequest;
   List<String> _publishedQueueKeys = const [];
   String? _publishedMediaKey;
+  CarMediaLibrary? _library;
+  final _libraryReady = Completer<void>();
+  final _children = <String, BehaviorSubject<Map<String, dynamic>>>{};
+  int _browseRevision = 0;
+  int _externalCommands = 0;
+  int _playRequest = 0;
+  int? _librarySession;
 
   /// iOS 与 macOS 共用 MPNowPlayingInfoCenter 通道；Android 走 audio_service。
   static bool get _usesAppleNowPlaying => Platform.isIOS || Platform.isMacOS;
@@ -70,7 +88,12 @@ class SystemMediaController extends BaseAudioHandler {
   /// Waits for the Android notification permission dialog before playback
   /// starts. The native method resolves only after the user makes a choice.
   Future<void> prepareForPlayback() async {
-    if (!_isAndroid()) return;
+    if (!_isAndroid() || _externalCommands > 0) return;
+    if (_androidNotificationPermissionRequester ==
+            _requestAndroidNotificationPermission &&
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
     final inFlight = _androidNotificationPermissionRequest;
     if (inFlight != null) {
       await inFlight;
@@ -203,6 +226,11 @@ class SystemMediaController extends BaseAudioHandler {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
+          MediaAction.playFromMediaId,
+          MediaAction.playFromSearch,
+          MediaAction.skipToQueueItem,
+          MediaAction.setRepeatMode,
+          MediaAction.setShuffleMode,
         },
         processingState: processingState,
         playing: player.playing,
@@ -251,6 +279,10 @@ class SystemMediaController extends BaseAudioHandler {
   static bool _platformIsAndroid() => Platform.isAndroid;
 
   static Future<dynamic> _requestAndroidNotificationPermission() async {
+    // Headless Android Auto commands must never wait for a phone permission UI.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
     await _androidNotificationChannel
         .invokeMethod<dynamic>('requestPermission');
   }
@@ -304,7 +336,7 @@ class SystemMediaController extends BaseAudioHandler {
     final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
     final artworkHeaders = imageRequestHeaders(artworkUrl);
     return MediaItem(
-      id: '${song.source}:${song.id}:$index',
+      id: CarMediaLibrary.mediaIdFor(song),
       title: song.name,
       artist: song.artistNames,
       album: song.album.name,
@@ -314,7 +346,217 @@ class SystemMediaController extends BaseAudioHandler {
           (song.durationMs > 0
               ? Duration(milliseconds: song.durationMs)
               : null),
+      playable: true,
     );
+  }
+
+  void attachLibrary(CarMediaLibrary library) {
+    if (identical(_library, library)) return;
+    _library?.removeListener(_catalogChanged);
+    _library = library;
+    _librarySession = library.sessionGeneration;
+    library.addListener(_catalogChanged);
+    if (!_libraryReady.isCompleted) _libraryReady.complete();
+    _catalogChanged();
+  }
+
+  void detachLibrary(CarMediaLibrary library) {
+    if (!identical(_library, library)) return;
+    library.removeListener(_catalogChanged);
+    _library = null;
+    _playRequest++;
+    for (final subject in _children.values) {
+      unawaited(subject.close());
+    }
+    _children.clear();
+  }
+
+  void _catalogChanged() {
+    if (_librarySession != _library?.sessionGeneration) {
+      _librarySession = _library?.sessionGeneration;
+      _playRequest++;
+    }
+    _browseRevision++;
+    for (final subject in _children.values) {
+      subject.add({'revision': _browseRevision});
+    }
+  }
+
+  Future<CarMediaLibrary> _catalog() async {
+    if (_library == null) {
+      await _libraryReady.future.timeout(const Duration(seconds: 12));
+    }
+    final library = _library;
+    if (library == null) throw const CarMediaLibraryException('请重新打开应用');
+    return library;
+  }
+
+  @override
+  ValueStream<Map<String, dynamic>> subscribeToChildren(String parentMediaId) =>
+      _children.putIfAbsent(parentMediaId,
+          () => BehaviorSubject.seeded({'revision': _browseRevision}));
+
+  @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) async {
+    if (parentMediaId == CarMediaLibrary.rootId) {
+      return [
+        for (final entry in CarMediaLibrary.categories.entries)
+          MediaItem(id: entry.key, title: entry.value, playable: false)
+      ];
+    }
+    try {
+      final group =
+          RegExp(r'^(car:[a-z]+)/page/([0-9]+)$').firstMatch(parentMediaId);
+      final category = group?.group(1) ?? parentMediaId;
+      final songs = await (await _catalog()).songsFor(category);
+      if (songs.length > 100 &&
+          group == null &&
+          options?['android.media.browse.extra.PAGE'] == null) {
+        return [
+          for (var offset = 0; offset < songs.length; offset += 100)
+            MediaItem(
+                id: '$category/page/${offset ~/ 100}',
+                title:
+                    '${offset + 1}–${(offset + 100).clamp(0, songs.length)} 首',
+                playable: false),
+        ];
+      }
+      final page = (int.tryParse(group?.group(2) ?? '') ??
+              (options?['android.media.browse.extra.PAGE'] as num?)?.toInt() ??
+              0)
+          .clamp(0, 100000);
+      final size = ((options?['android.media.browse.extra.PAGE_SIZE'] as num?)
+                  ?.toInt() ??
+              100)
+          .clamp(1, 100);
+      return [
+        for (final song in songs.skip(page * size).take(size))
+          _mediaItem(song, 0)
+      ];
+    } catch (error) {
+      return [
+        MediaItem(
+            id: 'car:message', title: _catalogMessage(error), playable: false)
+      ];
+    }
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    try {
+      final song = await (await _catalog()).songForMediaId(mediaId);
+      return song == null ? null : _mediaItem(song, 0);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<List<MediaItem>> search(String query,
+      [Map<String, dynamic>? extras]) async {
+    try {
+      return [
+        for (final song in await (await _catalog()).search(query))
+          _mediaItem(song, 0)
+      ];
+    } catch (error) {
+      _reportCatalogError(error);
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId,
+      [Map<String, dynamic>? extras]) async {
+    final request = ++_playRequest;
+    _externalCommands++;
+    try {
+      final catalog = await _catalog();
+      final session = catalog.sessionGeneration;
+      final song = await catalog.songForMediaId(mediaId);
+      if (request != _playRequest || session != catalog.sessionGeneration) {
+        return;
+      }
+      if (song == null) {
+        throw const CarMediaLibraryException('歌曲列表已更新，请重新打开目录选择歌曲');
+      }
+      final player = _player;
+      if (player == null) return;
+      final index = player.queue
+          .indexWhere((item) => CarMediaLibrary.mediaIdFor(item) == mediaId);
+      if (index >= 0) {
+        await player.playAt(index);
+      } else {
+        final songs = catalog.playbackQueueFor(song);
+        await player.playQueue(songs,
+            index: songs.indexWhere(
+                (entry) => CarMediaLibrary.mediaIdFor(entry) == mediaId));
+      }
+      _sync();
+    } catch (error) {
+      if (request == _playRequest) _reportCatalogError(error);
+    } finally {
+      _externalCommands--;
+    }
+  }
+
+  @override
+  Future<void> playFromSearch(String query,
+      [Map<String, dynamic>? extras]) async {
+    if (query.trim().isEmpty) {
+      await play();
+      return;
+    }
+    final request = ++_playRequest;
+    _externalCommands++;
+    try {
+      final songs = await (await _catalog()).search(query);
+      if (request != _playRequest) return;
+      if (songs.isEmpty) throw const CarMediaLibraryException('没有找到歌曲，请换个名称搜索');
+      await _player?.playQueue(songs);
+      _sync();
+    } catch (error) {
+      if (request == _playRequest) _reportCatalogError(error);
+    } finally {
+      _externalCommands--;
+    }
+  }
+
+  String _catalogMessage(Object error) =>
+      error is CarMediaLibraryException ? error.message : '暂时无法加载，请稍后重试';
+
+  void _reportCatalogError(Object error) {
+    playbackState.add(playbackState.value.copyWith(
+      errorCode: 1,
+      errorMessage: _catalogMessage(error),
+      processingState: _player?.current == null
+          ? AudioProcessingState.error
+          : playbackState.value.processingState,
+    ));
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    await _player?.setPlaybackMode(switch (repeatMode) {
+      AudioServiceRepeatMode.one => PlaybackMode.singleLoop,
+      AudioServiceRepeatMode.none => PlaybackMode.sequential,
+      _ =>
+        _player?.shuffle == true ? PlaybackMode.shuffle : PlaybackMode.listLoop,
+    });
+    _sync();
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final player = _player;
+    if (player == null) return;
+    if (shuffleMode != AudioServiceShuffleMode.none) {
+      await player.setPlaybackMode(PlaybackMode.shuffle);
+    } else if (player.shuffle) {
+      await player.setPlaybackMode(PlaybackMode.listLoop);
+    }
+    _sync();
   }
 
   String _songMediaKey(Song song, int index) {
@@ -325,13 +567,27 @@ class SystemMediaController extends BaseAudioHandler {
 
   @override
   Future<void> play() async {
-    final player = _player;
-    if (player != null && !player.playing) await player.togglePlay();
-    _sync();
+    final request = ++_playRequest;
+    _externalCommands++;
+    try {
+      if (_player == null || _player?.current == null) await _catalog();
+      if (request != _playRequest) return;
+      final player = _player;
+      if (player?.current == null) {
+        throw const CarMediaLibraryException('请先从目录选择歌曲');
+      }
+      if (!player!.playing) await player.togglePlay();
+      _sync();
+    } catch (error) {
+      if (request == _playRequest) _reportCatalogError(error);
+    } finally {
+      _externalCommands--;
+    }
   }
 
   @override
   Future<void> pause() async {
+    _playRequest++;
     await _player?.pause();
     _sync();
   }
@@ -344,20 +600,38 @@ class SystemMediaController extends BaseAudioHandler {
 
   @override
   Future<void> skipToNext() async {
-    await _player?.next();
-    _sync();
+    _playRequest++;
+    _externalCommands++;
+    try {
+      await _player?.next();
+      _sync();
+    } finally {
+      _externalCommands--;
+    }
   }
 
   @override
   Future<void> skipToPrevious() async {
-    await _player?.previous();
-    _sync();
+    _playRequest++;
+    _externalCommands++;
+    try {
+      await _player?.previous();
+      _sync();
+    } finally {
+      _externalCommands--;
+    }
   }
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    await _player?.playAt(index);
-    _sync();
+    _playRequest++;
+    _externalCommands++;
+    try {
+      await _player?.playAt(index);
+      _sync();
+    } finally {
+      _externalCommands--;
+    }
   }
 
   @override
@@ -366,6 +640,16 @@ class SystemMediaController extends BaseAudioHandler {
     if (player == null) return;
     await player.seek(player.position + const Duration(seconds: 10));
     _sync();
+  }
+
+  @override
+  Future<void> seekForward(bool begin) async {
+    if (begin) await fastForward();
+  }
+
+  @override
+  Future<void> seekBackward(bool begin) async {
+    if (begin) await rewind();
   }
 
   @override
@@ -379,6 +663,7 @@ class SystemMediaController extends BaseAudioHandler {
 
   @override
   Future<void> stop() async {
+    _playRequest++;
     await _player?.stopAndClear();
     _sync();
   }

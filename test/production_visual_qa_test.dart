@@ -288,7 +288,10 @@ void main() {
   testWidgets('visual QA settings large text', (tester) async {
     await _pump(tester,
         size: const Size(390, 844), scale: 1.5, child: const SettingsView());
-    expect(find.text('减弱动态效果'), findsOneWidget);
+    for (final label in ['主题色', '液态玻璃质量', '减弱动态效果', '通知']) {
+      expect(find.text(label), findsNothing);
+    }
+    expect(find.text('歌词显示'), findsOneWidget);
     await _verifyAndCapture(tester, 'settings-large-text');
   });
 

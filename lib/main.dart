@@ -9,6 +9,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'app.dart';
 import 'core/player/system_media_controller.dart';
+import 'core/player/app_playback_runtime.dart';
 import 'core/utils/performance_monitor.dart';
 
 Future<void> main() async {
@@ -53,7 +54,11 @@ Future<void> main() async {
 
   // Android / iOS：沉浸式边到边；桌面端不适用。
   if (Platform.isAndroid || Platform.isIOS) {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } catch (_) {
+      // A media-browser host can start the engine without an Activity.
+    }
   }
 
   // 系统媒体卡（锁屏 / 控制中心 / 媒体键）：
@@ -82,5 +87,6 @@ Future<void> main() async {
     PerformanceMonitor.enable();
   }
 
-  runApp(const DuckMusicApp());
+  final runtime = AppPlaybackRuntime();
+  runApp(DuckMusicApp(runtime: runtime));
 }

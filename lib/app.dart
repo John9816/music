@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/config/app_config.dart';
 import 'core/player/player_controller.dart';
+import 'core/player/app_playback_runtime.dart';
 import 'core/player/system_media_controller.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/desktop_integration_service.dart';
@@ -23,7 +24,8 @@ import 'features/search/search_view.dart';
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 class DuckMusicApp extends StatefulWidget {
-  const DuckMusicApp({super.key});
+  const DuckMusicApp({super.key, required this.runtime});
+  final AppPlaybackRuntime runtime;
 
   @override
   State<DuckMusicApp> createState() => _DuckMusicAppState();
@@ -41,22 +43,9 @@ class _DuckMusicAppState extends State<DuckMusicApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _settings = SettingsController();
-    final isMobile = Platform.isAndroid || Platform.isIOS;
-    // macOS 同样有系统媒体卡（「正在播放」与媒体键），需要一并同步播放状态。
-    final hasSystemMedia = isMobile || Platform.isMacOS;
-    _player = PlayerController(
-      settings: _settings,
-      beforePlayback:
-          isMobile ? SystemMediaController.instance.prepareForPlayback : null,
-    );
-    if (hasSystemMedia) {
-      SystemMediaController.instance.attach(_player);
-    }
-    _auth = AuthController(
-      onSessionCleared: () => _player.stopAndClear(clearSavedPlayback: true),
-    );
-    unawaited(_auth.load());
+    _settings = widget.runtime.settings;
+    _player = widget.runtime.player;
+    _auth = widget.runtime.auth;
     _iosSideload = IosSideloadService(stateStore: FileIosSideloadStateStore());
     unawaited(SongDownloadService.instance.initialize());
     _desktopIntegration = DesktopIntegrationService(
@@ -68,7 +57,8 @@ class _DuckMusicAppState extends State<DuckMusicApp>
         );
       },
     );
-    unawaited(_settings.load().then((_) async {
+    unawaited(widget.runtime.ready.then((_) async {
+      if (!mounted) return;
       await CacheService.instance.maintainAudioCache(_settings);
       await _desktopIntegration.initialize();
       await _iosSideload.autoRefreshIfNeeded();
@@ -79,11 +69,8 @@ class _DuckMusicAppState extends State<DuckMusicApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _desktopIntegration.dispose();
-    _auth.dispose();
     _iosSideload.dispose();
-    SystemMediaController.instance.detach(_player);
-    _player.dispose();
-    _settings.dispose();
+    widget.runtime.dispose();
     super.dispose();
   }
 
@@ -105,6 +92,7 @@ class _DuckMusicAppState extends State<DuckMusicApp>
         ChangeNotifierProvider.value(value: _desktopIntegration),
         ChangeNotifierProvider.value(value: SongDownloadService.instance),
         ChangeNotifierProvider.value(value: _auth),
+        ChangeNotifierProvider.value(value: widget.runtime.library),
         ChangeNotifierProvider(create: (_) => SleepTimer()),
         ChangeNotifierProvider.value(value: _iosSideload),
       ],
@@ -186,8 +174,7 @@ class _ThemeBridgeState extends State<_ThemeBridge> {
           ),
           child: MediaQuery(
             data: mediaQuery.copyWith(
-              disableAnimations:
-                  settings.reduceMotion || mediaQuery.disableAnimations,
+              disableAnimations: mediaQuery.disableAnimations,
             ),
             child: child ?? const SizedBox.shrink(),
           ),

@@ -45,6 +45,55 @@ void main() {
     expect(native.nativeLoop, LoopMode.off);
   });
 
+  test(
+      'system repeat and shuffle report their actual state and preserve the three-mode cycle',
+      () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(settings: settings, audioPlayer: native);
+    final handler = SystemMediaController()..attach(player);
+    addTearDown(() {
+      handler.detach(player);
+      player.dispose();
+      settings.dispose();
+    });
+    await handler.setRepeatMode(AudioServiceRepeatMode.none);
+    expect(player.playbackMode, PlaybackMode.sequential);
+    expect(handler.playbackState.value.repeatMode, AudioServiceRepeatMode.none);
+    await player.cyclePlaybackMode();
+    expect(player.playbackMode, PlaybackMode.listLoop);
+    await handler.setShuffleMode(AudioServiceShuffleMode.all);
+    expect(
+        handler.playbackState.value.shuffleMode, AudioServiceShuffleMode.all);
+    await handler.setRepeatMode(AudioServiceRepeatMode.one);
+    expect(player.playbackMode, PlaybackMode.singleLoop);
+    expect(
+        handler.playbackState.value.shuffleMode, AudioServiceShuffleMode.none);
+    await handler.setShuffleMode(AudioServiceShuffleMode.none);
+    expect(player.playbackMode, PlaybackMode.singleLoop);
+  });
+
+  test('system repeat-none stops at the end of the queue', () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    await player.playQueue([_playbackSong('last', const Duration(minutes: 3))]);
+    await player.setPlaybackMode(PlaybackMode.sequential);
+    native.completeTrack();
+    await Future<void>.delayed(Duration.zero);
+    expect(player.current!.id, 'last');
+    expect(player.playing, false);
+    expect(native.loadCount, 1);
+  });
+
   // Mock platform channels used by SystemMediaController
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
