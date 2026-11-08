@@ -24,6 +24,49 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final dark in [false, true]) {
+    testWidgets(
+        'artist chooser keeps app contrast from an immersive player dark=$dark',
+        (tester) async {
+      _configureView(tester);
+      final appTheme = AppTheme.forAccent('forestGreen', dark: dark).data;
+      final immersiveTheme = appTheme.copyWith(
+        colorScheme: appTheme.colorScheme.copyWith(
+          brightness: Brightness.dark,
+          onSurface: const Color(0xfff3f5fa),
+        ),
+      );
+      await tester.pumpWidget(MaterialApp(
+        theme: appTheme,
+        home: Scaffold(
+            body: Theme(
+          data: immersiveTheme,
+          child: Builder(
+              builder: (context) => TextButton(
+                  onPressed: () => openArtistInfo(context,
+                      artists: const [
+                        Artist(id: 1, name: '蔡依林', picUrl: ' '),
+                        Artist(id: 2, name: '周杰伦', picUrl: ' ')
+                      ],
+                      loader: () async =>
+                          const ArtistInfo(name: '蔡依林', profile: '流行音乐歌手的详细资料'),
+                      catalogLoader: () async =>
+                          const ArtistCatalog(songs: [], albums: [])),
+                  child: const Text('选择合作歌手'))),
+        )),
+      ));
+      await tester.tap(find.text('选择合作歌手'));
+      await tester.pumpAndSettle();
+      final artistContext = tester.element(find.text('蔡依林'));
+      expect(DefaultTextStyle.of(artistContext).style.color,
+          appTheme.colorScheme.onSurface);
+      await tester.tap(find.text('蔡依林'));
+      await tester.pumpAndSettle();
+      expect(find.text('流行音乐歌手的详细资料'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('playlist search keeps a full text line at twice the text size',
       (tester) async {
     final api = _PlaylistApi();

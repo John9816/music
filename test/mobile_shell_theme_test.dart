@@ -6,13 +6,14 @@ import 'package:duck_music/core/services/sleep_timer.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:duck_music/core/theme/app_theme.dart';
 import 'package:duck_music/features/home/home_shell.dart';
+import 'package:duck_music/features/settings/settings_view.dart';
 import 'package:duck_music/widgets/glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 void main() {
-  testWidgets('mobile shell uses one themed edge-to-edge surface',
+  testWidgets('mobile shell separates its floating navigation and player disc',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
@@ -34,7 +35,6 @@ void main() {
 
     final theme = AppTheme.forAccent('skyBlue', dark: true).data;
     final background = theme.colorScheme.surfaceContainerLowest;
-    final miniPlayerBackground = theme.colorScheme.surfaceContainer;
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -56,124 +56,130 @@ void main() {
     final shell = tester.widget<Scaffold>(
       find.byKey(const ValueKey('home-shell-scaffold')),
     );
-    final miniPlayer = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile-mini-player-surface')),
-    );
-    final bottomNav = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-    );
     expect(shell.backgroundColor, background);
+    final nav = find.byKey(const ValueKey('mobile-bottom-nav-surface'));
+    final disc = find.byKey(const ValueKey('mobile-player-disc-shortcut'));
+    final navBounds = tester.getRect(nav);
+    final discBounds = tester.getRect(disc);
+    expect(navBounds.left, greaterThan(0));
+    expect(discBounds.right, lessThan(390));
+    expect(navBounds.right, lessThan(discBounds.left));
+    expect(navBounds.center.dy, discBounds.center.dy);
+    expect(discBounds.size, const Size(60, 60));
     expect(
-      (miniPlayer.decoration! as BoxDecoration).color,
-      miniPlayerBackground,
-    );
-    final miniBounds = tester
-        .getRect(find.byKey(const ValueKey('mobile-mini-player-surface')));
-    final navBounds =
-        tester.getRect(find.byKey(const ValueKey('mobile-bottom-nav-surface')));
-    expect(miniBounds.left, 0);
-    expect(miniBounds.right, tester.view.physicalSize.width);
-    expect(miniBounds.bottom, navBounds.top);
-    expect(miniBounds.height, greaterThanOrEqualTo(48));
-    expect(
-        (bottomNav.decoration! as BoxDecoration).color, miniPlayerBackground);
+        find.byKey(const ValueKey('mobile-mini-player-surface')), findsNothing);
+    for (final label in ['首页', '搜索', '发现', '我的']) {
+      expect(find.byTooltip(label), findsOneWidget);
+      expect(tester.getSize(find.byTooltip(label)).shortestSide,
+          greaterThanOrEqualTo(48));
+    }
+    expect(tester.getCenter(find.byTooltip('搜索')).dx,
+        lessThan(tester.getCenter(find.byTooltip('发现')).dx));
+    await tester.tap(disc);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('收起播放器'), findsOneWidget);
+    await tester.tap(find.byTooltip('收起播放器'));
+    await tester.pumpAndSettle();
+    expect(disc, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   for (final bottomInset in [0.0, 24.0]) {
-    testWidgets(
-        'nested pages keep playback above the $bottomInset system inset',
-        (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.viewPadding = FakeViewPadding(top: 24, bottom: bottomInset);
-      tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
-      addTearDown(tester.view.resetViewPadding);
-      addTearDown(tester.view.resetPadding);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
+    for (final hasSong in [true, false]) {
+      testWidgets(
+          'nested pages protect the $bottomInset system inset with song=$hasSong',
+          (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.viewPadding = FakeViewPadding(top: 24, bottom: bottomInset);
+        tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
+        addTearDown(tester.view.resetViewPadding);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
 
-      final settings = SettingsController();
-      final player = _CurrentSongPlayer(settings);
-      final auth = AuthController();
-      final timer = SleepTimer();
-      final desktop = DesktopIntegrationService(
-        settings: settings,
-        player: player,
-      );
-      addTearDown(settings.dispose);
-      addTearDown(player.dispose);
-      addTearDown(auth.dispose);
-      addTearDown(timer.dispose);
+        final settings = SettingsController();
+        final player = _CurrentSongPlayer(settings, hasSong: hasSong);
+        final auth = AuthController();
+        final timer = SleepTimer();
+        final desktop = DesktopIntegrationService(
+          settings: settings,
+          player: player,
+        );
+        addTearDown(settings.dispose);
+        addTearDown(player.dispose);
+        addTearDown(auth.dispose);
+        addTearDown(timer.dispose);
 
-      await tester.pumpWidget(
-        MultiProvider(
-          providers: [
-            ChangeNotifierProvider<SettingsController>.value(value: settings),
-            ChangeNotifierProvider<PlayerController>.value(value: player),
-            ChangeNotifierProvider<AuthController>.value(value: auth),
-            ChangeNotifierProvider<SleepTimer>.value(value: timer),
-            ChangeNotifierProvider<DesktopIntegrationService>.value(
-                value: desktop),
-          ],
-          child: MaterialApp(
-            theme: AppTheme.byId('dark').data,
-            home: const HomeShell(),
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider<SettingsController>.value(value: settings),
+              ChangeNotifierProvider<PlayerController>.value(value: player),
+              ChangeNotifierProvider<AuthController>.value(value: auth),
+              ChangeNotifierProvider<SleepTimer>.value(value: timer),
+              ChangeNotifierProvider<DesktopIntegrationService>.value(
+                  value: desktop),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.byId('dark').data,
+              home: const HomeShell(),
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('我的').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('设置'));
-      await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byTooltip('我的'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('设置'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('深浅模式'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('mobile-mini-player-surface')),
-        findsOneWidget,
-      );
-      expect(
-        tester
-            .getBottomRight(
-              find.byKey(const ValueKey('mobile-mini-player-surface')),
-            )
-            .dy,
-        tester.view.physicalSize.height - bottomInset,
-      );
+        expect(find.byType(SettingsView), findsOneWidget);
+        expect(find.text('深浅模式'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('mobile-mini-player-surface')),
+            hasSong ? findsOneWidget : findsNothing);
+        if (hasSong) {
+          expect(
+              tester
+                  .getBottomRight(
+                      find.byKey(const ValueKey('mobile-mini-player-surface')))
+                  .dy,
+              tester.view.physicalSize.height - bottomInset - 10);
+        } else {
+          expect(tester.getBottomRight(find.byType(SettingsView)).dy,
+              tester.view.physicalSize.height - bottomInset);
+        }
 
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      tester.view.padding = const FakeViewPadding(top: 24);
-      addTearDown(tester.view.resetViewInsets);
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .getBottomRight(
-                find.byKey(const ValueKey('mobile-mini-player-surface')))
-            .dy,
-        tester.view.physicalSize.height - 300,
-      );
-      tester.view.viewInsets = FakeViewPadding.zero;
-      tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
-      await tester.pumpAndSettle();
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        tester.view.padding = const FakeViewPadding(top: 24);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('mobile-mini-player-surface')),
+            findsNothing);
+        expect(find.text('深浅模式'), findsOneWidget);
+        expect(tester.getSize(find.byType(SettingsView)).height,
+            tester.view.physicalSize.height - 300);
+        tester.view.viewInsets = FakeViewPadding.zero;
+        tester.view.padding = FakeViewPadding(top: 24, bottom: bottomInset);
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('返回'));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('mobile-bottom-nav-surface')),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    });
+        await tester.tap(find.byTooltip('返回'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('mobile-bottom-nav-surface')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 
   testWidgets('mobile app bar shares the page themed surface', (tester) async {
@@ -205,7 +211,9 @@ void main() {
 }
 
 class _CurrentSongPlayer extends PlayerController {
-  _CurrentSongPlayer(SettingsController settings) : super(settings: settings);
+  _CurrentSongPlayer(SettingsController settings, {this.hasSong = true})
+      : super(settings: settings);
+  final bool hasSong;
 
   final Song _song = Song(
     id: 'surface-preview',
@@ -217,7 +225,7 @@ class _CurrentSongPlayer extends PlayerController {
   );
 
   @override
-  Song get current => _song;
+  Song? get current => hasSong ? _song : null;
 
   @override
   bool get playing => false;

@@ -38,7 +38,7 @@ void main() {
           _detailRequests.add(request.url);
           return Future.value(_emptyResults());
         }
-        expect(request.url.queryParameters['pageSize'], '30');
+        expectSync(request.url.queryParameters['pageSize'], '30');
         final search = (
           keyword: request.url.queryParameters['keyword']!,
           type: request.url.queryParameters['type']!,
@@ -70,8 +70,7 @@ void main() {
     expect(_requests.map((request) => request.source), everyElement('qq'));
     expect(_requests, hasLength(4));
 
-    await tester.tap(find.byKey(const ValueKey('search_source_netease')));
-    await tester.pumpAndSettle();
+    await _tapSource(tester, 'netease');
     expect(_requests, hasLength(8));
     expect(_requests.skip(4).map((request) => request.source),
         everyElement('netease'));
@@ -95,16 +94,12 @@ void main() {
           _ => _songs(30, start: (request.page - 1) * 30),
         };
     await _pumpSearch(tester, size: const Size(390, 844));
-    await _tapPagination(tester, '下一页');
-    expect(find.text('第 2 页'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('search_source_qq')));
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('search_source_kuwo')));
-    await tester.pumpAndSettle();
+    await _scrollNearEnd(tester);
+    await _tapSource(tester, 'qq', settle: false);
+    await _tapSource(tester, 'kuwo');
     green.complete(_songs(1, start: 60, source: 'qq'));
     await tester.pumpAndSettle();
 
-    expect(find.text('第 1 页'), findsOneWidget);
     expect(find.text('歌曲 90'), findsOneWidget);
     expect(find.text('歌曲 60'), findsNothing);
     expect(tester.widget<SongRow>(find.byType(SongRow)).song.source, 'kuwo');
@@ -167,47 +162,182 @@ void main() {
     });
   }
 
-  testWidgets('an empty desktop next page retains the last successful results',
+  testWidgets('an empty next batch keeps results and stops further requests',
       (tester) async {
     await _pumpSearch(tester);
-    expect(find.text('歌曲 0'), findsOneWidget);
-
-    await _tapPagination(tester, '下一页');
-
-    expect(find.text('第 1 页'), findsOneWidget);
-    expect(find.text('歌曲 0'), findsOneWidget);
-    expect(find.byTooltip('上一页'), findsOneWidget);
+    await _scrollNearEnd(tester);
+    await _scrollToBottom(tester);
+    expect(find.text('已显示全部结果'), findsOneWidget);
     final requestCount = _requests.length;
-    await _tapPagination(tester, '下一页');
-    expect(_requests.length, requestCount,
-        reason: 'An empty next page must disable further next-page requests.');
+    await _scrollNearEnd(tester);
+    expect(_requests.length, requestCount);
+    await _scrollToTop(tester);
+    expect(find.text('歌曲 0'), findsOneWidget);
+    expect(find.byTooltip('上一页'), findsNothing);
+    expect(find.byTooltip('下一页'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('retry requests the failed page and preserves usable old results',
+  testWidgets('next batch appends asynchronously without duplicate requests',
       (tester) async {
-    var secondPageAttempts = 0;
+    final next = Completer<http.Response>();
+    addTearDown(() {
+      if (!next.isCompleted) next.complete(_emptyResults());
+    });
+    _respond =
+        (request) async => request.page == 1 ? _songs(30) : await next.future;
+    await _pumpSearch(tester, size: const Size(390, 844));
+    await _scrollNearEnd(tester, settle: false);
+    await _scrollToBottom(tester, settle: false);
+    final position = _resultPosition(tester);
+    final offset = position.pixels;
+    position.jumpTo(offset - 10);
+    position.jumpTo(offset);
+    await tester.pump();
+    expect(_requests.map((request) => request.page), [1, 2]);
+    expect(find.text('歌曲 29'), findsOneWidget);
+    expect(find.byKey(const ValueKey('search-load-more-progress')),
+        findsOneWidget);
+    next.complete(_songs(1, start: 30));
+    await tester.pumpAndSettle();
+    expect(position.pixels, closeTo(offset, 1));
+    await _scrollToBottom(tester);
+    expect(find.text('歌曲 30'), findsOneWidget);
+    await _scrollToTop(tester);
+    expect(find.text('歌曲 0'), findsOneWidget);
+    expect(_requests.map((request) => request.page), [1, 2]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('combined append keeps existing visible songs in place',
+      (tester) async {
+    final nextSongs = Completer<http.Response>();
+    final nextArtists = Completer<http.Response>();
+    addTearDown(() {
+      if (!nextSongs.isCompleted) nextSongs.complete(_emptyResults());
+      if (!nextArtists.isCompleted) nextArtists.complete(_emptyResults());
+    });
+    _respond = (request) async => switch ((request.type, request.page)) {
+          ('SONG', 1) => _songs(30),
+          ('ARTIST', 1) => _artists(1),
+          ('SONG', 2) => await nextSongs.future,
+          ('ARTIST', 2) => await nextArtists.future,
+          _ => _emptyResults(),
+        };
+    await _pumpSearch(tester, size: const Size(390, 844));
+    await _tapType(tester, '综合');
+    await _scrollNearEnd(tester, settle: false);
+    final before = tester.getTopLeft(find.text('歌曲 29')).dy;
+    nextSongs.complete(_songs(1, start: 30));
+    nextArtists.complete(_artists(1, start: 1));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('歌曲 29')).dy, closeTo(before, 1));
+    await _scrollNearEnd(tester);
+    await _scrollToBottom(tester);
+    expect(find.text('歌曲 30'), findsOneWidget);
+    await _scrollToTop(tester);
+    expect(find.text('歌手 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final kind in ['歌手', '专辑', '歌单']) {
+    testWidgets('$kind appends the next batch and keeps earlier results',
+        (tester) async {
+      final apiType = {'歌手': 'ARTIST', '专辑': 'ALBUM', '歌单': 'PLAYLIST'}[kind]!;
+      _respond = (request) async => request.type == apiType
+          ? _namedResults(apiType, request.page == 1 ? 30 : 1,
+              start: request.page == 1 ? 0 : 30)
+          : _emptyResults();
+      await _pumpSearch(tester, size: const Size(390, 844));
+      await _tapType(tester, kind);
+      await _scrollNearEnd(tester);
+      _resultPosition(tester).jumpTo(_resultPosition(tester).maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.text('$kind 30'), findsOneWidget);
+      await _scrollToTop(tester);
+      expect(find.text('$kind 0'), findsOneWidget);
+      expect(
+          _requests
+              .where((request) => request.type == apiType)
+              .map((request) => request.page),
+          [1, 2]);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('retry appends the failed batch and preserves earlier results',
+      (tester) async {
+    var attempts = 0;
     _respond = (request) async {
       if (request.page == 1) return _songs(30);
-      if (++secondPageAttempts == 1) return _unavailable();
+      if (++attempts == 1) return _unavailable();
       return _songs(1, start: 30);
     };
     await _pumpSearch(tester, size: const Size(390, 844));
-
-    await _tapPagination(tester, '下一页');
-    expect(find.text('歌曲 0'), findsOneWidget);
-    expect(find.text('第 1 页'), findsOneWidget);
-    expect(find.textContaining('第 2 页加载失败'), findsOneWidget);
-    final retry = find.byTooltip(RegExp('重试'));
+    await _scrollNearEnd(tester);
+    await _scrollToBottom(tester);
+    expect(find.text('加载更多失败，点击重试'), findsOneWidget);
+    await _scrollNearEnd(tester);
+    expect(_requests.map((request) => request.page), [1, 2]);
+    await _scrollToBottom(tester);
+    final retry = find.byKey(const ValueKey('search-load-more-retry'));
     await tester.ensureVisible(retry);
     await tester.tap(retry);
     await tester.pumpAndSettle();
-
+    await _scrollToBottom(tester);
     expect(find.text('歌曲 30'), findsOneWidget);
-    expect(find.text('第 2 页'), findsOneWidget);
+    await _scrollToTop(tester);
+    expect(find.text('歌曲 0'), findsOneWidget);
     expect(_requests.map((request) => request.page), [1, 2, 2]);
     expect(tester.takeException(), isNull);
   });
+
+  for (final change in ['query', 'type', 'source', 'clear']) {
+    testWidgets('pending next batch is discarded after $change changes',
+        (tester) async {
+      final next = Completer<http.Response>();
+      addTearDown(() {
+        if (!next.isCompleted) next.complete(_emptyResults());
+      });
+      _respond = (request) async {
+        if (request.page == 2) return await next.future;
+        if (request.type == 'ARTIST') return _artists(1, start: 90);
+        if (request.keyword == '新查询' || request.source == 'qq') {
+          return _songs(1, start: 90, source: request.source);
+        }
+        return _songs(30);
+      };
+      await _pumpSearch(tester, size: const Size(390, 844));
+      await _scrollNearEnd(tester, settle: false);
+      expect(_requests.last.page, 2);
+      await _scrollToTop(tester, settle: false);
+      switch (change) {
+        case 'query':
+          await tester.enterText(find.byType(TextField), '新查询');
+          await tester.testTextInput.receiveAction(TextInputAction.search);
+          await tester.pumpAndSettle();
+        case 'type':
+          await _tapType(tester, '歌手');
+        case 'source':
+          await _tapSource(tester, 'qq');
+        case 'clear':
+          await tester.tap(find.byTooltip('清除搜索'));
+          await tester.pumpAndSettle();
+      }
+      next.complete(_songs(1, start: 60));
+      await tester.pumpAndSettle();
+      expect(find.text('歌曲 60'), findsNothing);
+      expect(find.text('歌曲 0'), findsNothing);
+      expect(
+          find.text(change == 'type'
+              ? '歌手 90'
+              : change == 'clear'
+                  ? '热门搜索'
+                  : '歌曲 90'),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('search uses the content width inside a wide window',
       (tester) async {
@@ -216,24 +346,41 @@ void main() {
     expect(tester.getSize(find.byType(SearchView)).width, 390);
     expect(find.text('单曲').hitTestable(), findsOneWidget);
     expect(_requests.map((request) => request.type), ['SONG']);
-    expect(find.byTooltip('下一页').hitTestable(), findsOneWidget);
+    expect(find.byTooltip('下一页'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('large-text phone pagination keeps both directions usable',
+  testWidgets(
+      'large-text phone scrolls continuously and keeps controls reachable',
       (tester) async {
     _respond = (request) async =>
         _songs(request.page == 1 ? 30 : 1, start: request.page == 1 ? 0 : 30);
     await _pumpSearch(tester, size: const Size(320, 700), textScale: 2);
-    final initialRequests = _requests.length;
-    await _tapPagination(tester, '上一页');
-    expect(_requests.length, initialRequests);
-    await _tapPagination(tester, '下一页');
-    expect(find.text('第 2 页'), findsOneWidget);
+    await _scrollNearEnd(tester);
+    await _scrollToBottom(tester);
     expect(find.text('歌曲 30'), findsOneWidget);
-    await _tapPagination(tester, '上一页');
-    expect(find.text('第 1 页'), findsOneWidget);
+    await _scrollToTop(tester);
     expect(find.text('歌曲 0'), findsOneWidget);
+    expect(find.byType(TextField).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phone starts results below one compact toolbar and category row',
+      (tester) async {
+    await _pumpSearch(tester,
+        size: const Size(390, 844), platform: TargetPlatform.android);
+    expect(find.text('搜索结果'), findsNothing);
+    expect(find.byTooltip('下一页'), findsNothing);
+    expect(tester.getTopLeft(find.byType(SongRow).first).dy, lessThan(140));
+    expect(tester.getSize(find.byType(EditableText)).width,
+        greaterThanOrEqualTo(190));
+    expect(tester.getSize(find.widgetWithText(GPressScale, '单曲')).height,
+        greaterThanOrEqualTo(48));
+    expect(
+        tester
+            .getSize(find.byKey(const ValueKey('search-source-picker')))
+            .shortestSide,
+        greaterThanOrEqualTo(48));
     expect(tester.takeException(), isNull);
   });
 
@@ -269,8 +416,9 @@ void main() {
     tester.view.physicalSize = const Size(1280, 800);
     await tester.pumpAndSettle();
     _requests.clear();
-    await _tapPagination(tester, '下一页');
+    await _scrollNearEnd(tester);
 
+    await _scrollToBottom(tester);
     expect(find.text('歌手 30'), findsOneWidget);
     expect(_requests,
         [(keyword: '测试', type: 'ARTIST', page: 2, source: 'netease')]);
@@ -317,10 +465,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact macOS search title avoids native window controls',
+  testWidgets('compact macOS search toolbar avoids native window controls',
       (tester) async {
     await _pumpSearch(tester, size: const Size(700, 700));
-    expect(tester.getTopLeft(find.text('搜索结果')).dx, greaterThanOrEqualTo(100));
+    expect(tester.getTopLeft(find.byType(TextField)).dx,
+        greaterThanOrEqualTo(100));
     expect(tester.takeException(), isNull);
   });
 
@@ -371,7 +520,7 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await _tapType(tester, '单曲');
-    final source = find.byKey(const ValueKey('search_source_netease'));
+    final source = find.byKey(const ValueKey('search-source-picker'));
     await tester.ensureVisible(source);
     await tester.pumpAndSettle();
     expect(source.hitTestable(), findsOneWidget);
@@ -395,8 +544,9 @@ void main() {
     await tester.ensureVisible(song);
     await tester.pumpAndSettle();
     expect(song.hitTestable(), findsOneWidget);
-    await _tapPagination(tester, '下一页');
-    expect(find.text('第 1 页'), findsOneWidget);
+    await _scrollNearEnd(tester);
+    await _scrollToBottom(tester);
+    expect(find.text('已显示全部结果'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
@@ -409,6 +559,7 @@ Future<void> _pumpSearch(
   double textScale = 1,
   String initialQuery = '测试',
   bool settle = true,
+  TargetPlatform platform = TargetPlatform.macOS,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -434,7 +585,7 @@ Future<void> _pumpSearch(
       ],
       child: MaterialApp(
         theme: AppTheme.byId('dark').data.copyWith(
-              platform: TargetPlatform.macOS,
+              platform: platform,
             ),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(
@@ -456,23 +607,48 @@ Future<void> _pumpSearch(
   if (settle) await tester.pumpAndSettle();
 }
 
-Future<void> _tapPagination(WidgetTester tester, String label) async {
-  final button = find.byTooltip(label);
-  if (button.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(
-      button,
-      400,
-      scrollable: find
-          .byWidgetPredicate((widget) =>
-              widget is Scrollable &&
-              widget.axisDirection == AxisDirection.down)
-          .first,
-    );
+ScrollPosition _resultPosition(WidgetTester tester) => tester
+    .widget<CustomScrollView>(
+      find.byKey(const ValueKey('search-results-scroll')),
+    )
+    .controller!
+    .position;
+
+Future<void> _scrollNearEnd(WidgetTester tester, {bool settle = true}) async {
+  final position = _resultPosition(tester);
+  position.jumpTo((position.maxScrollExtent - 80).clamp(0, double.infinity));
+  await tester.pump();
+  if (settle) await tester.pumpAndSettle();
+}
+
+Future<void> _scrollToBottom(WidgetTester tester, {bool settle = true}) async {
+  for (var i = 0; i < 3; i++) {
+    final position = _resultPosition(tester);
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pump();
   }
-  await tester.ensureVisible(button);
-  await tester.pumpAndSettle();
-  await tester.tap(button);
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
+}
+
+Future<void> _scrollToTop(WidgetTester tester, {bool settle = true}) async {
+  _resultPosition(tester).jumpTo(0);
+  await tester.pump();
+  if (settle) await tester.pumpAndSettle();
+}
+
+Future<void> _tapSource(WidgetTester tester, String source,
+    {bool settle = true}) async {
+  await _scrollToTop(tester, settle: false);
+  final picker = find.byKey(const ValueKey('search-source-picker'));
+  if (picker.evaluate().isNotEmpty) {
+    await tester.tap(picker);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+  await tester.tap(find.byKey(ValueKey('search_source_$source')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  if (settle) await tester.pumpAndSettle();
 }
 
 Future<void> _tapType(WidgetTester tester, String label) async {
@@ -516,6 +692,23 @@ http.Response _artists(int count,
         };
       }),
     });
+
+http.Response _namedResults(String type, int count, {int start = 0}) {
+  if (type == 'ARTIST') return _artists(count, start: start);
+  final label = type == 'ALBUM' ? '专辑' : '歌单';
+  return _success({
+    type == 'ALBUM' ? 'albums' : 'playlists': List.generate(
+        count,
+        (index) => {
+              'id': '${start + index}',
+              'name': '$label ${start + index}',
+              'source': 'netease',
+              'artist': '测试歌手',
+              'creatorName': '测试创建者',
+              'trackCount': 10,
+            }),
+  });
+}
 
 http.Response _emptyResults() => _success(const {
       'list': [],

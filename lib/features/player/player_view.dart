@@ -22,6 +22,7 @@ import '../../core/settings/settings_controller.dart';
 import '../../core/settings/lyric_appearance.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/playback_mode_button.dart';
 import '../profile/login_view.dart';
 import '../profile/profile_view.dart';
 import '../search/artist_names_link.dart';
@@ -516,7 +517,6 @@ class _MobilePlayerState extends State<_MobilePlayer> {
   }
 
   Future<void> _showSettings() async {
-    final player = context.read<PlayerController>();
     final action = await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,
@@ -535,21 +535,6 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                   leading: const Icon(Icons.graphic_eq_rounded),
                   title: const Text('频谱视图'),
                   onTap: () => Navigator.pop(sheet, 'spectrum')),
-              ListTile(
-                  leading: Icon(player.loopMode.name == 'one'
-                      ? Icons.repeat_one
-                      : Icons.repeat),
-                  title: Text(switch (player.loopMode.name) {
-                    'one' => '单曲循环',
-                    'all' => '列表循环',
-                    _ => '不循环'
-                  }),
-                  onTap: () => Navigator.pop(sheet, 'repeat')),
-              ListTile(
-                  leading: const Icon(Icons.shuffle),
-                  title: Text(player.shuffle ? '随机播放（已开启）' : '随机播放'),
-                  selected: player.shuffle,
-                  onTap: () => Navigator.pop(sheet, 'shuffle')),
               const SizedBox(height: 16),
             ]),
           )),
@@ -561,10 +546,6 @@ class _MobilePlayerState extends State<_MobilePlayer> {
       case 'spectrum':
         Navigator.of(context).push(
             buildAppRoute<void>(context, (_) => const SpectrumPlayerView()));
-      case 'repeat':
-        player.cycleLoopMode();
-      case 'shuffle':
-        player.toggleShuffle();
     }
   }
 
@@ -586,18 +567,12 @@ class _MobilePlayerState extends State<_MobilePlayer> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               for (final item in [
                 ('song', Icons.more_horiz_rounded, '歌曲操作'),
-                (
-                  'shuffle',
-                  Icons.shuffle_rounded,
-                  player.shuffle ? '随机播放（已开启）' : '随机播放'
-                ),
                 ('device', Icons.airplay_rounded, 'AirPlay 或蓝牙'),
                 ('info', Icons.info_outline_rounded, '歌曲百科'),
               ])
                 ListTile(
                   leading: Icon(item.$2),
                   title: Text(item.$3),
-                  selected: item.$1 == 'shuffle' && player.shuffle,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                   onTap: () => Navigator.of(context).pop(item.$1),
@@ -611,9 +586,9 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     switch (action) {
       case 'song':
         showSongActions(context,
-            song: widget.song, queueIndex: player.queueIndex);
-      case 'shuffle':
-        player.toggleShuffle();
+            song: widget.song,
+            queueIndex: player.queueIndex,
+            downloadOnly: true);
       case 'device':
         await _castService.showDevicePicker();
         if (mounted && _castService.message.isNotEmpty) {
@@ -758,6 +733,7 @@ class _MobileControls extends StatelessWidget {
           ]),
           SizedBox(height: compact ? 0 : 24),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+            const PlaybackModeButton(),
             _ImmersiveIconButton(
                 icon: Icons.chat_bubble_outline_rounded,
                 tooltip: '查看歌词',
@@ -1424,14 +1400,11 @@ class _CoverAndControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
-    final state =
-        context.select<PlayerController, (bool, bool, String?, bool, String)>(
+    final state = context.select<PlayerController, (bool, bool, String?)>(
       (player) => (
         player.playing,
         player.loading,
         player.error,
-        player.shuffle,
-        player.loopMode.name,
       ),
     );
     final scheme = Theme.of(context).colorScheme;
@@ -1498,6 +1471,7 @@ class _CoverAndControls extends StatelessWidget {
                           context,
                           song: song,
                           queueIndex: player.queueIndex,
+                          downloadOnly: true,
                         ),
                       ),
                     ],
@@ -1516,14 +1490,7 @@ class _CoverAndControls extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      GIconButton(
-                        icon: Icons.shuffle_rounded,
-                        tooltip: state.$4 ? '随机播放（已开启）' : '随机播放',
-                        size: 26,
-                        padding: 10,
-                        tint: state.$4 ? scheme.primary : null,
-                        onTap: player.toggleShuffle,
-                      ),
+                      const PlaybackModeButton(size: 26),
                       GIconButton(
                         icon: Icons.skip_previous_rounded,
                         tooltip: '上一首',
@@ -1544,20 +1511,7 @@ class _CoverAndControls extends StatelessWidget {
                         padding: 10,
                         onTap: player.next,
                       ),
-                      GIconButton(
-                        icon: state.$5 == 'one'
-                            ? Icons.repeat_one_rounded
-                            : Icons.repeat_rounded,
-                        tooltip: switch (state.$5) {
-                          'one' => '单曲循环',
-                          'all' => '列表循环',
-                          _ => '不循环',
-                        },
-                        size: 26,
-                        padding: 10,
-                        tint: state.$5 != 'off' ? scheme.primary : null,
-                        onTap: player.cycleLoopMode,
-                      ),
+                      const SizedBox(width: 48),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -1821,7 +1775,7 @@ class _InlineQueueView extends StatelessWidget {
 }
 
 String _playbackActionLabel(PlayerController player) {
-  if (player.requiresMembership) return '去兑换 VIP';
+  if (player.requiresMembership) return '查看会员状态';
   if (player.requiresLogin) return '去登录';
   return '重试';
 }

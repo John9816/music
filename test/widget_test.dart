@@ -999,7 +999,7 @@ void main() {
     await pumpAt(const Size(390, 844));
   });
 
-  testWidgets('mobile mini player exposes themed navigation-edge progress',
+  testWidgets('mobile player disc reflects the actual playback fraction',
       (tester) async {
     final player = _PreviewPlayerController();
     addTearDown(player.dispose);
@@ -1021,27 +1021,15 @@ void main() {
     );
     await tester.pump();
 
-    final progress = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
+    final progress = tester.widget<CircularProgressIndicator>(
+      find.byKey(const ValueKey('mobile-player-disc-progress')),
     );
-    expect(progress.color,
-        Theme.of(tester.element(find.byType(MiniPlayer))).colorScheme.primary);
-    final progressSize = tester.getSize(
-      find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
-    );
-    expect(progressSize.height, greaterThan(0));
-    final surfaceWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('mobile-mini-player-surface')),
-        )
-        .width;
-    expect(progressSize.width, closeTo(surfaceWidth * (170 / 207), 0.1));
-    expect(
-      tester.getBottomLeft(
-          find.byKey(const ValueKey('mobile-mini-player-progress-fill'))),
-      tester.getBottomLeft(
-          find.byKey(const ValueKey('mobile-mini-player-surface'))),
-    );
+    expect(progress.value, closeTo(170 / 207, .001));
+    expect(find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
+        findsNothing);
+    expect(find.byTooltip('上一首'), findsOneWidget);
+    expect(find.byTooltip('播放'), findsOneWidget);
+    expect(find.byTooltip('下一首'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1201,8 +1189,7 @@ void main() {
     await tester.tap(find.byTooltip('播放队列'));
     await tester.pumpAndSettle();
     expect(find.text('接下来播放'), findsOneWidget);
-    expect(find.text('顺序播放'), findsOneWidget);
-    expect(find.text('不循环'), findsOneWidget);
+    expect(find.text('列表循环'), findsOneWidget);
     expect(find.text('2 首'), findsOneWidget);
 
     await tester.tap(find.byTooltip('更多：测试下一首'));
@@ -1221,12 +1208,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('请先登录后再喜欢歌曲'), findsOneWidget);
 
-    await tester.tap(find.text('顺序播放'));
+    await tester.tap(find.text('列表循环'));
+    await tester.pump();
+    expect(find.text('单曲循环'), findsOneWidget);
+    await tester.tap(find.text('单曲循环'));
     await tester.pump();
     expect(find.text('随机播放'), findsOneWidget);
-    await tester.tap(find.text('不循环'));
-    await tester.pump();
-    expect(find.text('列表循环'), findsOneWidget);
 
     await tester.tap(find.byTooltip('关闭播放队列'));
     await tester.pumpAndSettle();
@@ -1751,6 +1738,8 @@ void main() {
     expect(find.byType(SearchView), findsOneWidget);
 
     final qqSource = find.byKey(const ValueKey('search_source_qq'));
+    await tester.tap(find.byKey(const ValueKey('search-source-picker')));
+    await tester.pumpAndSettle();
     expect(tester.getSize(qqSource).height, greaterThanOrEqualTo(40));
     final sourceRect = tester.getRect(qqSource);
     await tester.tapAt(Offset(sourceRect.left + 2, sourceRect.bottom - 2));
@@ -2118,8 +2107,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('歌曲操作'));
     await tester.pumpAndSettle();
-    expect(find.text('播放'), findsOneWidget);
-    expect(find.text('收藏到歌单'), findsOneWidget);
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('收藏到歌单'), findsNothing);
     await tester.tapAt(const Offset(8, 80));
     await tester.pumpAndSettle();
 
@@ -2471,12 +2460,12 @@ void main() {
       expect(editable.cursorColor, theme.colorScheme.primary);
       expect(
         tester.getSize(find.byType(EditableText)).width,
-        greaterThan(size.width * 0.55),
+        greaterThan(tester.getSize(fieldFinder).width * 0.55),
         reason: '可编辑区域不应被前后图标挤压',
       );
       expect(
         tester.getCenter(find.byTooltip('清除搜索')).dx,
-        greaterThan(size.width * 0.82),
+        greaterThan(tester.getRect(fieldFinder).right - 40),
         reason: '清除按钮应位于搜索框右端',
       );
       expect(tester.takeException(), isNull, reason: '$platform at $size');
@@ -2574,14 +2563,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 401));
     await tester.pumpAndSettle();
 
-    expect(find.text('第 1 页'), findsOneWidget);
+    Future<void> reachNextPage(String type) async {
+      final scroll = tester.widget<CustomScrollView>(
+          find.byKey(const ValueKey('search-results-scroll')));
+      for (var attempt = 0;
+          attempt < 8 && !api.calls.contains((type, 30, 30));
+          attempt++) {
+        scroll.controller!.jumpTo(scroll.controller!.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    expect(find.byTooltip('下一页'), findsNothing);
     expect(api.calls, contains(('song', 0, 30)));
-    await tester.tap(find.byTooltip('下一页'));
-    await tester.pumpAndSettle();
+    await reachNextPage('song');
     expect(api.calls, contains(('song', 30, 30)));
-    expect(find.text('单曲 30'), findsOneWidget);
 
     for (final type in const ['歌手', '专辑', '歌单']) {
+      final scroll = tester.widget<CustomScrollView>(
+          find.byKey(const ValueKey('search-results-scroll')));
+      scroll.controller!.jumpTo(0);
+      await tester.pumpAndSettle();
       await tester.tap(find.text(type));
       await tester.pumpAndSettle();
       final apiType = switch (type) {
@@ -2590,10 +2592,8 @@ void main() {
         _ => 'playlist',
       };
       expect(api.calls, contains((apiType, 0, 30)));
-      await tester.tap(find.byTooltip('下一页'));
-      await tester.pumpAndSettle();
+      await reachNextPage(apiType);
       expect(api.calls, contains((apiType, 30, 30)));
-      expect(find.text('$type 30'), findsOneWidget);
     }
 
     expect(tester.takeException(), isNull);
@@ -2637,6 +2637,8 @@ void main() {
         ]));
 
     api.sources.clear();
+    await tester.tap(find.byKey(const ValueKey('search-source-picker')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('绿源'));
     await tester.pump();
     await tester.pump();
@@ -2692,16 +2694,16 @@ void main() {
     );
     await tester.pump();
 
-    final navLabels = ['首页', '发现', '搜索', '我的'];
+    final navLabels = ['首页', '搜索', '发现', '我的'];
     final labelCenters = [
-      for (final label in navLabels) tester.getCenter(find.text(label).last).dx,
+      for (final label in navLabels) tester.getCenter(find.byTooltip(label)).dx,
     ];
     expect(labelCenters, orderedEquals([...labelCenters]..sort()));
     expect(find.text('资料库'), findsNothing);
     expect(find.text('影视'), findsNothing);
     expect(find.text('直播'), findsNothing);
 
-    await tester.tap(find.text('我的').last);
+    await tester.tap(find.byTooltip('我的'));
     await tester.pumpAndSettle();
     expect(find.text('喜欢的音乐'), findsOneWidget);
     expect(find.text('播放历史'), findsOneWidget);
@@ -2819,7 +2821,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('我的').last);
+    await tester.tap(find.byTooltip('我的'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -2895,13 +2897,13 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('我的').last);
+    await tester.tap(find.byTooltip('我的'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
     await _sendSystemBack(tester);
     expect(find.byType(ProfileView), findsOneWidget);
-    await tester.tap(find.text('首页').last);
+    await tester.tap(find.byTooltip('首页'));
     await tester.pumpAndSettle();
 
     await _sendSystemBack(tester);
@@ -2951,7 +2953,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('我的').last);
+    await tester.tap(find.byTooltip('我的'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();

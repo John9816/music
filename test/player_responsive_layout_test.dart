@@ -114,27 +114,22 @@ void main() {
     }
   });
 
-  testWidgets('shuffle exposes its changed state to accessibility',
+  testWidgets('one playback mode button cycles through accessible modes',
       (tester) async {
     final semantics = tester.ensureSemantics();
     try {
       await _pumpPlayer(tester, const Size(390, 844));
-
-      await tester.tap(find.byTooltip('更多'));
+      await tester.tap(find.byTooltip('列表循环'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('随机播放'));
+      expect(find.byTooltip('单曲循环'), findsOneWidget);
+      await tester.tap(find.byTooltip('单曲循环'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('更多'));
-      await tester.pumpAndSettle();
-
-      final node = tester.getSemantics(find.bySemanticsLabel('随机播放（已开启）'));
-      expect(node.flagsCollection.isSelected.toBoolOrNull(), isTrue);
+      final node = tester.getSemantics(find.bySemanticsLabel('随机播放'));
       expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
       node.owner!.performAction(node.id, SemanticsAction.tap);
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('更多'));
-      await tester.pumpAndSettle();
-      expect(find.text('随机播放'), findsOneWidget);
+      expect(find.byTooltip('列表循环'), findsOneWidget);
+      expect(find.byTooltip('随机播放'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();

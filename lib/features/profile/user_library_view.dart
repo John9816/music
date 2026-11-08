@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -11,7 +9,8 @@ import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_action_menu.dart';
-import '../search/artist_names_link.dart';
+import '../../widgets/song_favorite_button.dart';
+import '../../widgets/song_row.dart';
 
 /// 通用的用户歌曲列表页（收藏 / 播放历史 / 歌单详情等）。
 class UserLibraryView extends StatefulWidget {
@@ -1182,91 +1181,23 @@ class _LibrarySongRow extends StatelessWidget {
   final VoidCallback? onSelect;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        GPressScale(
-          onTap: onTap,
-          child: SizedBox(
-            height: math.max(
-              68,
-              MediaQuery.textScalerOf(context).scale(16) * 1.3 +
-                  MediaQuery.textScalerOf(context).scale(14) * 1.3 +
-                  23,
-            ),
-            child: Row(
-              children: [
-                if (index != null)
-                  SizedBox(
-                    width: 34,
-                    child: Text(
-                      '$index',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                AsyncCover(
-                  url: song.album.picUrl,
-                  size: 48,
-                  radius: 9,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          height: 1.3,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      ArtistNamesLink(
-                        artists: song.artists,
-                        source: song.source,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.3,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (selectionMode)
-                  Checkbox(
-                    value: selected,
-                    onChanged: (_) => onSelect?.call(),
-                  )
-                else
-                  SongActionButton(
+  Widget build(BuildContext context) => SongRow(
+        song: song,
+        index: index,
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        trailing: selectionMode
+            ? Checkbox(value: selected, onChanged: (_) => onSelect?.call())
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                SongFavoriteButton(song: song),
+                SongActionButton(
                     song: song,
                     onPlay: onTap,
                     onRemove: onDelete,
                     removeLabel: removeLabel,
-                    showFavoriteAction: showFavoriteAction,
-                  ),
-              ],
-            ),
-          ),
-        ),
-        Divider(
-          height: 1,
-          indent: index == null ? 60 : 94,
-          color: glassHairline(context),
-        ),
-      ],
-    );
-  }
+                    showFavoriteAction: showFavoriteAction),
+              ]),
+      );
 }
 
 class _LibraryEmptyState extends StatelessWidget {

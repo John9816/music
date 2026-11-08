@@ -6,5 +6,11 @@ class UserPlaylistLibrary extends ChangeNotifier {
 
   static final UserPlaylistLibrary instance = UserPlaylistLibrary._();
 
-  void markChanged() => notifyListeners();
+  int _revision = 0;
+  int get revision => _revision;
+
+  void markChanged() {
+    _revision++;
+    notifyListeners();
+  }
 }

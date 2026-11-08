@@ -21,7 +21,7 @@ import 'artist_names_link.dart';
 /// 搜索类型
 enum _SearchType { all, song, artist, album, playlist }
 
-/// 搜索页：综合 / 单曲 / 歌手 / 专辑 / 歌单搜索 + 多源切换 + 分页。
+/// 搜索页：综合 / 单曲 / 歌手 / 专辑 / 歌单搜索 + 多源切换 + 连续加载。
 class SearchView extends StatefulWidget {
   const SearchView({super.key, this.api, this.initialQuery, this.focusNode});
 
@@ -40,11 +40,13 @@ class _SearchViewState extends State<SearchView> {
   late final SettingsController _settings;
   late String _lastSource;
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _debounce;
   List<Song> _results = [];
   List<SearchArtist> _artists = [];
   List<SearchAlbum> _albums = [];
   List<Playlist> _playlists = [];
+  final List<_SearchBatch> _combinedBatches = [];
   bool _searching = false;
   bool _hasNextPage = false;
   int _page = 1;
@@ -76,6 +78,7 @@ class _SearchViewState extends State<SearchView> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_loadMoreNearBottom);
     _api = widget.api ?? MusicApi();
     _settings = context.read<SettingsController>();
     _lastSource = _settings.searchSource;
@@ -117,6 +120,7 @@ class _SearchViewState extends State<SearchView> {
     _settings.removeListener(_onSourceChanged);
     _debounce?.cancel();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -218,6 +222,7 @@ class _SearchViewState extends State<SearchView> {
         _artists = [];
         _albums = [];
         _playlists = [];
+        _combinedBatches.clear();
         _searching = false;
         _page = 1;
         _hasNextPage = false;
@@ -226,9 +231,14 @@ class _SearchViewState extends State<SearchView> {
       });
       return;
     }
-    // 保留旧结果，只设置搜索状态
     setState(() {
       _keyword = keyword;
+      _results = [];
+      _artists = [];
+      _albums = [];
+      _playlists = [];
+      _combinedBatches.clear();
+      _hasNextPage = false;
       _searching = true;
       _page = 1;
       _pageError = null;
@@ -250,6 +260,8 @@ class _SearchViewState extends State<SearchView> {
     int page = 1,
     bool clearResults = false,
   }) async {
+    _debounce?.cancel();
+    if (page > 1 && _searching) return;
     final requestVersion = ++_requestVersion;
     final type = _type;
     final source = _settings.searchSource;
@@ -263,10 +275,12 @@ class _SearchViewState extends State<SearchView> {
         _artists = [];
         _albums = [];
         _playlists = [];
+        _combinedBatches.clear();
         _page = 1;
         _hasNextPage = false;
       }
     });
+    if (clearResults) _resetScroll();
     try {
       // The scope belongs to the query. Resizing while loading, retrying or
       // paging must not change which result kinds the user requested.
@@ -319,10 +333,18 @@ class _SearchViewState extends State<SearchView> {
         ImageCacheManager.preloadCovers(coverUrls, limit: 15);
 
         setState(() {
-          _playlists = playlists;
-          _results = songs;
-          _artists = artists;
-          _albums = albums;
+          if (page == 1) _combinedBatches.clear();
+          _combinedBatches.add(_SearchBatch(
+            playlists: playlists,
+            songs: songs,
+            artists: artists,
+            albums: albums,
+            songOffset: page == 1 ? 0 : _results.length,
+          ));
+          _playlists = page == 1 ? playlists : [..._playlists, ...playlists];
+          _results = page == 1 ? songs : [..._results, ...songs];
+          _artists = page == 1 ? artists : [..._artists, ...artists];
+          _albums = page == 1 ? albums : [..._albums, ...albums];
           _page = page;
           _hasNextPage = playlists.length >= _pageSize ||
               songs.length >= _pageSize ||
@@ -350,7 +372,7 @@ class _SearchViewState extends State<SearchView> {
             return;
           }
           setState(() {
-            _results = list;
+            _results = page == 1 ? list : [..._results, ...list];
             _page = page;
             _hasNextPage = list.length >= _pageSize;
           });
@@ -368,7 +390,7 @@ class _SearchViewState extends State<SearchView> {
             return;
           }
           setState(() {
-            _artists = list;
+            _artists = page == 1 ? list : [..._artists, ...list];
             _page = page;
             _hasNextPage = list.length >= _pageSize;
           });
@@ -386,7 +408,7 @@ class _SearchViewState extends State<SearchView> {
             return;
           }
           setState(() {
-            _albums = list;
+            _albums = page == 1 ? list : [..._albums, ...list];
             _page = page;
             _hasNextPage = list.length >= _pageSize;
           });
@@ -404,7 +426,7 @@ class _SearchViewState extends State<SearchView> {
             return;
           }
           setState(() {
-            _playlists = list;
+            _playlists = page == 1 ? list : [..._playlists, ...list];
             _page = page;
             _hasNextPage = list.length >= _pageSize;
           });
@@ -420,6 +442,13 @@ class _SearchViewState extends State<SearchView> {
     } finally {
       if (_isCurrentRequest(requestVersion, keyword, type, source)) {
         setState(() => _searching = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              _scrollController.hasClients &&
+              _scrollController.position.pixels > 0) {
+            _loadMoreNearBottom();
+          }
+        });
       }
     }
   }
@@ -430,70 +459,70 @@ class _SearchViewState extends State<SearchView> {
         clearResults: _currentResultsEmpty,
       );
 
-  /// Switches the provider used by every search result type.
-  Widget _buildSourceRow({required bool wide}) {
+  void _resetScroll() {
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  void _loadMoreNearBottom() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.extentAfter <= 240) {
+      _loadNextPage();
+    }
+  }
+
+  void _loadNextPage() {
+    if (_searching || !_hasNextPage || _pageError != null || _keyword.isEmpty) {
+      return;
+    }
+    unawaited(_search(_keyword, page: _page + 1));
+  }
+
+  Widget _buildSourcePicker({required bool showLabel}) {
     final settings = context.watch<SettingsController>();
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final entries = AppConfig.musicSources.entries.toList();
-    return Padding(
-      padding: EdgeInsets.fromLTRB(wide ? 24 : 20, 12, wide ? 24 : 20, 8),
+    final label =
+        AppConfig.musicSources[settings.searchSource] ?? settings.searchSource;
+    return PopupMenuButton<String>(
+      key: const ValueKey('search-source-picker'),
+      tooltip: '搜索音源：$label',
+      initialValue: settings.searchSource,
+      onSelected: settings.setSearchSource,
+      itemBuilder: (_) => [
+        for (final entry in AppConfig.musicSources.entries)
+          PopupMenuItem<String>(
+            key: ValueKey('search_source_${entry.key}'),
+            value: entry.key,
+            height: 48,
+            child: Row(children: [
+              Icon(
+                  settings.searchSource == entry.key
+                      ? Icons.check_rounded
+                      : Icons.music_note_rounded,
+                  size: 20),
+              const SizedBox(width: 12),
+              Text(entry.value),
+            ]),
+          ),
+      ],
       child: Container(
-        height: (MediaQuery.textScalerOf(context).scale(13) * 1.5 + 12)
-            .clamp(wide ? 48.0 : 44.0, double.infinity),
-        padding: const EdgeInsets.all(3),
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        padding: EdgeInsets.symmetric(horizontal: showLabel ? 12 : 8),
         decoration: BoxDecoration(
-          color: dark ? scheme.surfaceContainer : scheme.surfaceContainerLow,
+          color: scheme.surfaceContainerHigh.withValues(alpha: .7),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(
-          children: [
-            for (var i = 0; i < entries.length; i++)
-              Expanded(
-                child: GPressScale(
-                  key: ValueKey('search_source_${entries[i].key}'),
-                  onTap: () => settings.setSearchSource(entries[i].key),
-                  child: AnimatedContainer(
-                    height: double.infinity,
-                    duration: Motion.fast,
-                    decoration: BoxDecoration(
-                      color: settings.searchSource == entries[i].key
-                          ? scheme.surface
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: settings.searchSource == entries[i].key
-                                ? scheme.primary
-                                : scheme.onSurfaceVariant
-                                    .withValues(alpha: 0.45),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          entries[i].value,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: TypeScale.medium,
-                            color: settings.searchSource == entries[i].key
-                                ? scheme.onSurface
-                                : scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (showLabel)
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: TypeScale.medium))
+          else
+            Icon(Icons.library_music_outlined,
+                size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Icon(Icons.expand_more_rounded,
+              size: 18, color: scheme.onSurfaceVariant),
+        ]),
       ),
     );
   }
@@ -586,76 +615,64 @@ class _SearchViewState extends State<SearchView> {
           _type = wide ? _SearchType.all : _SearchType.song;
           _initialScopeChosen = true;
         }
-        return _buildContent(
-          context,
-          wide: wide,
-          scrollHeader: constraints.maxHeight <
-              480 * MediaQuery.textScalerOf(context).scale(1),
-        );
+        return _buildContent(context, wide: wide);
       },
     );
   }
 
-  Widget _buildContent(
-    BuildContext context, {
-    required bool wide,
-    required bool scrollHeader,
-  }) {
+  int get _resultCount => switch (_type) {
+        _SearchType.all => _results.length +
+            _artists.length +
+            _albums.length +
+            _playlists.length,
+        _SearchType.song => _results.length,
+        _SearchType.artist => _artists.length,
+        _SearchType.album => _albums.length,
+        _SearchType.playlist => _playlists.length,
+      };
+
+  Widget _buildToolbar({required bool wide}) {
     final scheme = Theme.of(context).colorScheme;
-    final header = <Widget>[
-      _contentFrame(
-        GPageHeader(
-          title: _keyword.isEmpty ? '搜索' : '搜索结果',
-          subtitle: wide ? '歌曲、歌手、专辑与歌单' : null,
-        ),
-      ),
-      Padding(
-        padding: EdgeInsets.fromLTRB(wide ? 24 : 20, 0, wide ? 24 : 20, 4),
-        child: Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: SizedBox(
-            height: (MediaQuery.textScalerOf(context).scale(17) * 1.5 + 22)
-                .clamp(GToolbarButton.extent, double.infinity),
+    final textScale = MediaQuery.textScalerOf(context);
+    final inset = GToolbar.horizontalInset(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          inset + macOSWindowControlsInset(context), 8, inset, 4),
+      child: Row(children: [
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh.withValues(alpha: .7),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: TextField(
               controller: _controller,
               focusNode: widget.focusNode,
-              style: TextStyle(
-                fontSize: 15,
-                color: scheme.onSurface,
-              ),
+              style: TextStyle(fontSize: 15, color: scheme.onSurface),
               cursorColor: scheme.primary,
               decoration: InputDecoration(
                 hintText: '搜索音乐',
-                hintStyle: TextStyle(
-                  fontSize: 15,
-                  color: scheme.onSurfaceVariant,
-                ),
+                hintStyle:
+                    TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
+                contentPadding: EdgeInsets.fromLTRB(wide ? 0 : 14, 12, 0, 12),
+                prefixIcon: wide
+                    ? Icon(Icons.search_rounded,
+                        size: 20, color: scheme.onSurfaceVariant)
+                    : null,
                 prefixIconConstraints:
                     const BoxConstraints.tightFor(width: 48, height: 48),
                 suffixIcon: _keyword.isEmpty
                     ? null
-                    : SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: GToolbarButton(
-                          icon: Icons.cancel_rounded,
-                          tooltip: '清除搜索',
-                          backgroundColor: Colors.transparent,
-                          onTap: _clearSearch,
-                        ),
+                    : GToolbarButton(
+                        icon: Icons.cancel_rounded,
+                        tooltip: '清除搜索',
+                        backgroundColor: Colors.transparent,
+                        onTap: _clearSearch,
                       ),
                 suffixIconConstraints:
                     const BoxConstraints.tightFor(width: 48, height: 48),
@@ -669,61 +686,63 @@ class _SearchViewState extends State<SearchView> {
             ),
           ),
         ),
-      ),
-      _contentFrame(_buildSourceRow(wide: wide)),
-      _contentFrame(_buildTypeTabs()),
-    ];
-    final results = _contentFrame(
-      _keyword.isEmpty
-          ? _buildHome(shrinkWrap: scrollHeader)
-          : _searching && _currentResultsEmpty
-              ? Semantics(
-                  label: '正在搜索',
-                  liveRegion: true,
-                  child: scrollHeader
-                      ? const GSkeletonList(itemCount: 8)
-                      : const SingleChildScrollView(
-                          child: GSkeletonList(itemCount: 8),
-                        ),
-                )
-              : _pageError != null && _currentResultsEmpty
-                  ? GEmptyState(
-                      icon: Icons.error_outline_rounded,
-                      text: '搜索失败，请重试',
-                      onRetry: _retrySearch,
-                    )
-                  : _buildResults(shrinkWrap: scrollHeader),
-      maxWidth: _keyword.isEmpty ? 1080 : 1320,
-      fillHeight: !scrollHeader,
-    );
-    return Scaffold(
-      // Short panes need the entire header to scroll away so that scopes,
-      // sources and results remain reachable without shrinking touch targets.
-      body: scrollHeader
-          ? SingleChildScrollView(
-              child: Column(children: [...header, results]),
-            )
-          : Column(children: [...header, Expanded(child: results)]),
+        const SizedBox(width: 8),
+        _buildSourcePicker(showLabel: wide || textScale.scale(13) <= 18),
+      ]),
     );
   }
 
-  Widget _contentFrame(
-    Widget child, {
-    double maxWidth = 1320,
-    bool fillHeight = false,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.clamp(0.0, maxWidth).toDouble();
-        return Align(
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: width,
-            height: fillHeight ? constraints.maxHeight : null,
-            child: child,
+  Widget _buildContent(BuildContext context, {required bool wide}) {
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1320),
+          child: CustomScrollView(
+            key: const ValueKey('search-results-scroll'),
+            controller: _scrollController,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(children: [
+                  _buildToolbar(wide: wide),
+                  Row(children: [
+                    Expanded(child: _buildTypeTabs()),
+                    if (wide && _resultCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 24),
+                        child: Text('$_resultCount 条结果',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant)),
+                      ),
+                  ]),
+                ]),
+              ),
+              if (_keyword.isEmpty)
+                SliverToBoxAdapter(child: _buildHome(shrinkWrap: true))
+              else if (_searching && _currentResultsEmpty)
+                SliverToBoxAdapter(
+                    child: Semantics(
+                  label: '正在搜索',
+                  liveRegion: true,
+                  child: const GSkeletonList(itemCount: 8),
+                ))
+              else if (_pageError != null && _currentResultsEmpty)
+                SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: GEmptyState(
+                      icon: Icons.error_outline_rounded,
+                      text: '搜索失败，请重试',
+                      onRetry: _retrySearch,
+                    ))
+              else
+                ..._buildResultSlivers(compact: !wide),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -737,12 +756,14 @@ class _SearchViewState extends State<SearchView> {
       _artists = [];
       _albums = [];
       _playlists = [];
+      _combinedBatches.clear();
       _searching = false;
       _page = 1;
       _hasNextPage = false;
       _pageError = null;
       _retryPage = null;
     });
+    _resetScroll();
   }
 
   /// The same explicit scopes remain available on both sides of a breakpoint.
@@ -758,7 +779,7 @@ class _SearchViewState extends State<SearchView> {
     final scheme = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
       child: Row(
         children: [
           for (var i = 0; i < labels.length; i++)
@@ -769,7 +790,7 @@ class _SearchViewState extends State<SearchView> {
                 child: GPressScale(
                   onTap: () => _switchType(types[i]),
                   child: Container(
-                    constraints: const BoxConstraints(minHeight: 44),
+                    constraints: const BoxConstraints(minHeight: 48),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 18, vertical: 10),
                     decoration: BoxDecoration(
@@ -795,91 +816,73 @@ class _SearchViewState extends State<SearchView> {
     );
   }
 
-  /// 按类型渲染结果
-  Widget _buildResults({bool shrinkWrap = false}) {
-    switch (_type) {
-      case _SearchType.all:
-        return _buildCombinedResults(shrinkWrap: shrinkWrap);
-      case _SearchType.song:
-        return _results.isEmpty
-            ? const GEmptyState(icon: Icons.search_off, text: '没有找到相关歌曲')
-            : _withPagination(
-                shrinkWrap: shrinkWrap,
-                child: ListView.builder(
-                  shrinkWrap: shrinkWrap,
-                  primary: shrinkWrap ? false : null,
-                  physics:
-                      shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-                  itemCount: _results.length,
-                  itemBuilder: (context, i) => RepaintBoundary(
-                    child: SongRow(
-                      song: _results[i],
-                      onTap: () => context
-                          .read<PlayerController>()
-                          .playQueue(_results, index: i),
-                    ),
-                  ),
-                ),
-              );
-      case _SearchType.artist:
-        return _artists.isEmpty
-            ? const GEmptyState(
-                icon: Icons.person_search_outlined, text: '没有找到相关歌手')
-            : _withPagination(
-                shrinkWrap: shrinkWrap,
-                child: ListView.builder(
-                  shrinkWrap: shrinkWrap,
-                  primary: shrinkWrap ? false : null,
-                  physics:
-                      shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-                  itemCount: _artists.length,
-                  itemBuilder: (context, i) => RepaintBoundary(
-                    child: _ArtistRow(
-                      artist: _artists[i],
-                      onTap: () => _openArtist(_artists[i]),
-                    ),
-                  ),
-                ),
-              );
-      case _SearchType.album:
-        return _albums.isEmpty
-            ? const GEmptyState(
-                icon: Icons.album_outlined,
-                text: '没有找到相关专辑',
-              )
-            : _withPagination(
-                shrinkWrap: shrinkWrap,
-                child: ListView.builder(
-                  shrinkWrap: shrinkWrap,
-                  primary: shrinkWrap ? false : null,
-                  physics:
-                      shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-                  itemCount: _albums.length,
-                  itemBuilder: (context, i) => RepaintBoundary(
-                    child: _AlbumRow(
-                      album: _albums[i],
-                      onTap: () => _openAlbum(_albums[i]),
-                    ),
-                  ),
-                ),
-              );
-      case _SearchType.playlist:
-        return _playlists.isEmpty
-            ? const GEmptyState(icon: Icons.queue_music, text: '没有找到相关歌单')
-            : _withPagination(
-                shrinkWrap: shrinkWrap,
-                child: _buildPlaylistGrid(shrinkWrap: shrinkWrap),
-              );
+  List<Widget> _buildResultSlivers({required bool compact}) {
+    if (_currentResultsEmpty) {
+      final (icon, text) = switch (_type) {
+        _SearchType.all => (Icons.search_off, '没有找到相关内容'),
+        _SearchType.song => (Icons.search_off, '没有找到相关歌曲'),
+        _SearchType.artist => (Icons.person_search_outlined, '没有找到相关歌手'),
+        _SearchType.album => (Icons.album_outlined, '没有找到相关专辑'),
+        _SearchType.playlist => (Icons.queue_music, '没有找到相关歌单'),
+      };
+      return [
+        SliverFillRemaining(
+            hasScrollBody: false, child: GEmptyState(icon: icon, text: text))
+      ];
     }
+    return [
+      if (_type == _SearchType.all)
+        ..._buildCombinedSlivers(compact: compact)
+      else if (_type == _SearchType.song)
+        _songSliver()
+      else if (_type == _SearchType.artist)
+        _artistSliver()
+      else if (_type == _SearchType.album)
+        _albumSliver()
+      else
+        _buildPlaylistGrid(),
+      SliverToBoxAdapter(child: _buildLoadMoreFooter()),
+    ];
   }
 
-  Widget _withPagination({required Widget child, required bool shrinkWrap}) {
-    return Column(
-      mainAxisSize: shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
-      children: [
-        shrinkWrap ? child : Expanded(child: child),
-        _buildPagination(),
-      ],
+  Widget _songSliver({List<Song>? songs, int offset = 0}) {
+    final items = songs ?? _results;
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => RepaintBoundary(
+            child: SongRow(
+          song: items[index],
+          index: offset + index + 1,
+          onTap: () => context
+              .read<PlayerController>()
+              .playQueue(_results, index: offset + index),
+        )),
+        childCount: items.length,
+      ),
+    );
+  }
+
+  Widget _artistSliver({List<SearchArtist>? artists}) {
+    final items = artists ?? _artists;
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => RepaintBoundary(
+            child: _ArtistRow(
+                artist: items[index], onTap: () => _openArtist(items[index]))),
+        childCount: items.length,
+      ),
+    );
+  }
+
+  Widget _albumSliver({List<SearchAlbum>? albums}) {
+    final items = albums ?? _albums;
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => RepaintBoundary(
+            child: _AlbumRow(
+                album: items[index], onTap: () => _openAlbum(items[index]))),
+        childCount: items.length,
+      ),
     );
   }
 
@@ -889,312 +892,152 @@ class _SearchViewState extends State<SearchView> {
     return coverSize + 18 + scaler.scale(13) * 2.5 + scaler.scale(11.5) * 1.5;
   }
 
-  Widget _buildPlaylistGrid({bool shrinkWrap = false}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 16.0;
-        final width = (constraints.maxWidth - 28).clamp(0.0, double.infinity);
-        final columns = ((width + spacing) / (168 + spacing)).ceil();
-        final count = columns < 1 ? 1 : columns;
-        final coverSize = (width - spacing * (count - 1)) / count;
-        return GridView.builder(
-          shrinkWrap: shrinkWrap,
-          primary: shrinkWrap ? false : null,
-          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: count,
-            mainAxisSpacing: spacing,
-            crossAxisSpacing: spacing,
-            mainAxisExtent: _playlistCardHeight(coverSize),
-          ),
-          itemCount: _playlists.length,
-          itemBuilder: (context, index) {
-            final playlist = _playlists[index];
-            return PlaylistCard(
-              playlist: playlist,
-              onTap: () => _openPlaylist(playlist),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCombinedResults({bool shrinkWrap = false}) {
-    final compact =
-        MediaQuery.sizeOf(context).width < GBreakpoints.contentSplit;
-    final sections = <Widget>[];
-    if (_playlists.isNotEmpty) {
-      sections.add(_SearchSection(
-        title: '歌单',
-        child: SizedBox(
-          height: _playlistCardHeight(148).clamp(218.0, double.infinity),
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: _playlists.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (context, index) {
-              final playlist = _playlists[index];
-              return SizedBox(
-                width: 148,
-                child: PlaylistCard(
-                  playlist: playlist,
-                  onTap: () => _openPlaylist(playlist),
-                ),
-              );
-            },
-          ),
-        ),
-      ));
-    }
-    if (_artists.isNotEmpty) {
-      sections.add(_SearchSection(
-        title: '歌手',
-        child: compact
-            ? Column(children: [
-                for (final artist in _artists)
-                  _ArtistRow(artist: artist, onTap: () => _openArtist(artist)),
-              ])
-            : SizedBox(
-                height: 90,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _artists.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 18),
-                  itemBuilder: (_, index) {
-                    final artist = _artists[index];
-                    return _DesktopArtistCard(
-                      artist: artist,
-                      onTap: () => _openArtist(artist),
-                    );
-                  },
-                ),
+  Widget _buildPlaylistGrid() => SliverLayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 16.0;
+          final width =
+              (constraints.crossAxisExtent - 28).clamp(0.0, double.infinity);
+          final columns = ((width + spacing) / (168 + spacing)).ceil();
+          final count = columns < 1 ? 1 : columns;
+          final coverSize = (width - spacing * (count - 1)) / count;
+          return SliverPadding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: count,
+                mainAxisSpacing: spacing,
+                crossAxisSpacing: spacing,
+                mainAxisExtent: _playlistCardHeight(coverSize),
               ),
-      ));
-    }
-    if (_albums.isNotEmpty) {
-      sections.add(_SearchSection(
-        title: '专辑',
-        child: compact
-            ? Column(children: [
-                for (final album in _albums)
-                  _AlbumRow(album: album, onTap: () => _openAlbum(album)),
-              ])
-            : SizedBox(
-                height: 90,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _albums.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 18),
-                  itemBuilder: (_, index) {
-                    final album = _albums[index];
-                    return _DesktopAlbumCard(
-                      album: album,
-                      onTap: () => _openAlbum(album),
-                    );
-                  },
-                ),
-              ),
-      ));
-    }
-    if (_results.isNotEmpty) {
-      sections.add(_SearchSection(
-        title: '歌曲',
-        child: ListView.builder(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _results.length,
-          itemBuilder: (context, index) => SongRow(
-            song: _results[index],
-            onTap: () => context
-                .read<PlayerController>()
-                .playQueue(_results, index: index),
-          ),
-        ),
-      ));
-    }
-    if (sections.isEmpty) {
-      return const GEmptyState(icon: Icons.search_off, text: '没有找到相关内容');
-    }
-    return ListView(
-      shrinkWrap: shrinkWrap,
-      primary: shrinkWrap ? false : null,
-      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        ...sections,
-        _buildPagination(),
-      ],
-    );
-  }
-
-  Widget _buildPagination() {
-    return LayoutBuilder(
-      builder: (context, constraints) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_pageError != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
-              child: Semantics(
-                liveRegion: true,
-                child: Text(
-                  '第 $_retryPage 页加载失败，仍显示第 $_page 页，请重试',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final playlist = _playlists[index];
+                return PlaylistCard(
+                    playlist: playlist, onTap: () => _openPlaylist(playlist));
+              }, childCount: _playlists.length),
             ),
-          _buildPaginationControls(
-            compact: constraints.maxWidth < GBreakpoints.compact,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPaginationControls({required bool compact}) {
-    final scheme = Theme.of(context).colorScheme;
-    final canGoBack = !_searching && _page > 1;
-    if (compact) {
-      final canGoNext = !_searching && (_pageError != null || _hasNextPage);
-      return SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 320),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: Row(
-                children: [
-                  GIconButton(
-                    icon: Icons.chevron_left_rounded,
-                    tooltip: '上一页',
-                    size: 24,
-                    padding: 12,
-                    backgroundColor: Colors.transparent,
-                    disabled: !canGoBack,
-                    onTap: canGoBack
-                        ? () => _search(_keyword, page: _page - 1)
-                        : null,
-                  ),
-                  Expanded(
-                    child: _searching
-                        ? Center(
-                            child: SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.primary,
-                                semanticsLabel: '正在加载搜索结果',
-                              ),
-                            ),
-                          )
-                        : Text(
-                            '第 $_page 页',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: _pageError == null
-                                  ? scheme.onSurfaceVariant
-                                  : scheme.error,
-                            ),
-                          ),
-                  ),
-                  GIconButton(
-                    icon: _pageError == null
-                        ? Icons.chevron_right_rounded
-                        : Icons.refresh_rounded,
-                    tooltip: _pageError == null ? '下一页' : '重试第 $_retryPage 页',
-                    size: 24,
-                    padding: 12,
-                    backgroundColor: Colors.transparent,
-                    disabled: !canGoNext,
-                    onTap: !canGoNext
-                        ? null
-                        : _pageError != null
-                            ? _retrySearch
-                            : () => _search(_keyword, page: _page + 1),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+          );
+        },
       );
-    }
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 54),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: glassHairline(context))),
-          color: Theme.of(context).scaffoldBackgroundColor,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            GIconButton(
-              icon: Icons.chevron_left_rounded,
-              tooltip: '上一页',
-              size: 20,
-              padding: 7,
-              disabled: !canGoBack,
-              onTap:
-                  canGoBack ? () => _search(_keyword, page: _page - 1) : null,
+  List<Widget> _buildCombinedSlivers({required bool compact}) {
+    Widget heading(String title) => SliverToBoxAdapter(
+            child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+          child: Text(title,
+              style: const TextStyle(
+                  fontSize: 19, fontWeight: TypeScale.semibold)),
+        ));
+    return [
+      for (final batch in _combinedBatches) ...[
+        if (batch.playlists.isNotEmpty)
+          SliverToBoxAdapter(
+              child: _SearchSection(
+            title: '歌单',
+            child: SizedBox(
+              height: _playlistCardHeight(148).clamp(218.0, double.infinity),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: batch.playlists.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 14),
+                itemBuilder: (context, index) => SizedBox(
+                  width: 148,
+                  child: PlaylistCard(
+                      playlist: batch.playlists[index],
+                      onTap: () => _openPlaylist(batch.playlists[index])),
+                ),
+              ),
             ),
-            const SizedBox(width: 14),
-            SizedBox(
-              width: 84,
-              child: _searching
-                  ? Center(
-                      child: SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: scheme.primary,
-                          semanticsLabel: '正在加载搜索结果',
-                        ),
-                      ),
-                    )
-                  : Text(
-                      '第 $_page 页',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: TypeScale.semibold,
-                        color: _pageError == null
-                            ? scheme.onSurface
-                            : scheme.error,
-                      ),
-                    ),
-            ),
-            const SizedBox(width: 14),
-            GIconButton(
-              icon: Icons.chevron_right_rounded,
-              tooltip: _pageError == null ? '下一页' : '重试第 $_retryPage 页',
-              size: 20,
-              padding: 7,
-              disabled: _searching || (!_hasNextPage && _pageError == null),
-              onTap: _searching
-                  ? null
-                  : _pageError != null
-                      ? _retrySearch
-                      : _hasNextPage
-                          ? () => _search(_keyword, page: _page + 1)
-                          : null,
-            ),
-          ],
-        ),
+          )),
+        if (batch.artists.isNotEmpty) ...[
+          heading('歌手'),
+          if (compact)
+            _artistSliver(artists: batch.artists)
+          else
+            SliverToBoxAdapter(
+                child: SizedBox(
+              height: 106,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: batch.artists.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 18),
+                itemBuilder: (_, index) => _DesktopArtistCard(
+                    artist: batch.artists[index],
+                    onTap: () => _openArtist(batch.artists[index])),
+              ),
+            )),
+        ],
+        if (batch.albums.isNotEmpty) ...[
+          heading('专辑'),
+          if (compact)
+            _albumSliver(albums: batch.albums)
+          else
+            SliverToBoxAdapter(
+                child: SizedBox(
+              height: 106,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: batch.albums.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 18),
+                itemBuilder: (_, index) => _DesktopAlbumCard(
+                    album: batch.albums[index],
+                    onTap: () => _openAlbum(batch.albums[index])),
+              ),
+            )),
+        ],
+        if (batch.songs.isNotEmpty) ...[
+          heading('歌曲'),
+          _songSliver(songs: batch.songs, offset: batch.songOffset)
+        ],
+      ],
+    ];
+  }
+
+  Widget _buildLoadMoreFooter() {
+    final scheme = Theme.of(context).colorScheme;
+    Widget child;
+    if (_searching) {
+      child = const Row(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(
+              key: ValueKey('search-load-more-progress'),
+              strokeWidth: 2,
+              semanticsLabel: '正在加载更多搜索结果',
+            )),
+        SizedBox(width: 10),
+        Text('正在加载更多…', style: TextStyle(fontSize: 13)),
+      ]);
+    } else if (_pageError != null) {
+      child = TextButton.icon(
+        key: const ValueKey('search-load-more-retry'),
+        onPressed: _retrySearch,
+        style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48), foregroundColor: scheme.error),
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('加载更多失败，点击重试'),
+      );
+    } else if (_hasNextPage) {
+      // Keep an explicit action for keyboard and screen-reader users, and for
+      // short result sections that do not fill the viewport yet.
+      child = TextButton(
+        onPressed: _loadNextPage,
+        style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            foregroundColor: scheme.onSurfaceVariant),
+        child: const Text('继续下滑加载更多', style: TextStyle(fontSize: 13)),
+      );
+    } else {
+      child = Text('已显示全部结果',
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant));
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Center(child: child),
       ),
     );
   }
@@ -1278,6 +1121,21 @@ class _SearchViewState extends State<SearchView> {
       ],
     );
   }
+}
+
+class _SearchBatch {
+  const _SearchBatch(
+      {required this.playlists,
+      required this.songs,
+      required this.artists,
+      required this.albums,
+      required this.songOffset});
+
+  final List<Playlist> playlists;
+  final List<Song> songs;
+  final List<SearchArtist> artists;
+  final List<SearchAlbum> albums;
+  final int songOffset;
 }
 
 class _SearchSection extends StatelessWidget {

@@ -2,10 +2,8 @@ import 'dart:async' show unawaited, Timer;
 import 'dart:ui' show ImageFilter;
 import 'dart:math' as math;
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:just_audio/just_audio.dart' show LoopMode;
 import 'package:provider/provider.dart';
 
 import '../../core/models/song.dart';
@@ -19,6 +17,7 @@ import '../../core/settings/lyric_appearance.dart';
 import 'karaoke_lyric_text.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/playback_mode_button.dart';
 import '../search/artist_names_link.dart';
 
 enum MiniPlayerPanel { lyrics, queue }
@@ -452,22 +451,10 @@ class _DesktopQueueState extends State<_DesktopQueue> {
             runSpacing: 8,
             children: [
               _ModeButton(
-                icon: CupertinoIcons.shuffle,
-                label: player.shuffle ? '随机播放' : '顺序播放',
-                selected: player.shuffle,
-                onTap: player.toggleShuffle,
-              ),
-              _ModeButton(
-                icon: player.loopMode == LoopMode.one
-                    ? CupertinoIcons.repeat_1
-                    : CupertinoIcons.repeat,
-                label: switch (player.loopMode) {
-                  LoopMode.off => '不循环',
-                  LoopMode.all => '列表循环',
-                  LoopMode.one => '单曲循环',
-                },
-                selected: player.loopMode != LoopMode.off,
-                onTap: player.cycleLoopMode,
+                icon: player.playbackMode.icon,
+                label: player.playbackMode.label,
+                selected: true,
+                onTap: player.cyclePlaybackMode,
               ),
             ],
           ),

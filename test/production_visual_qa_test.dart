@@ -84,8 +84,9 @@ void main() {
           platform:
               fixture.macOS ? TargetPlatform.macOS : TargetPlatform.android,
           child: const HomeShell());
-      await tester
-          .tap(find.text(fixture.size.width > 1000 ? '音乐爱好者' : '我的').last);
+      await tester.tap(fixture.size.width > 1000
+          ? find.text('音乐爱好者').last
+          : find.byTooltip('我的'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的歌单').last);
       await tester.pumpAndSettle();
@@ -125,7 +126,7 @@ void main() {
           size: const Size(390, 844), dark: dark, child: const HomeShell());
       final mode = dark ? 'dark' : 'light';
       await _verifyAndCapture(tester, 'home-phone-$mode');
-      await tester.tap(find.text('搜索').last);
+      await tester.tap(find.byTooltip('搜索'));
       await tester.pumpAndSettle();
       await _verifyAndCapture(tester, 'search-phone-$mode');
       await tester.enterText(find.byType(TextField).last, '晚风');
@@ -139,7 +140,7 @@ void main() {
       await _verifyAndCapture(tester, 'song-menu-phone-$mode');
       await tester.tapAt(const Offset(2, 80));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('我的').last);
+      await tester.tap(find.byTooltip('我的'));
       await tester.pumpAndSettle();
       await _verifyAndCapture(tester, 'profile-phone-$mode');
       await tester.tap(find.byTooltip('设置'));
@@ -169,7 +170,7 @@ void main() {
   testWidgets('visual QA search in a short landscape shell', (tester) async {
     await _pump(tester,
         size: const Size(812, 375), scale: 1.5, child: const HomeShell());
-    await tester.tap(find.text('搜索').last);
+    await tester.tap(find.byTooltip('搜索'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, '晚风');
     await tester.testTextInput.receiveAction(TextInputAction.search);
@@ -177,7 +178,16 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     await _verifyAndCapture(tester, 'search-landscape');
-    await tester.ensureVisible(find.text('留一点时间给自己'));
+    await tester.scrollUntilVisible(
+      find.text('留一点时间给自己'),
+      120,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('search-results-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.text('留一点时间给自己').hitTestable(), findsOneWidget);
     await _verifyAndCapture(tester, 'search-landscape-results');
@@ -224,6 +234,34 @@ void main() {
     await tester.pumpAndSettle();
     await _verifyAndCapture(tester, 'artist-chooser-large-text');
   });
+
+  for (final dark in [false, true]) {
+    testWidgets('visual QA artist chooser from player dark=$dark',
+        (tester) async {
+      await _pump(tester, size: const Size(390, 844), dark: dark,
+          child: Builder(builder: (context) {
+        final appTheme = Theme.of(context);
+        return Theme(
+          data: appTheme.copyWith(
+              colorScheme: appTheme.colorScheme.copyWith(
+                  brightness: Brightness.dark,
+                  onSurface: const Color(0xfff3f5fa))),
+          child: Scaffold(
+              body: Builder(
+                  builder: (context) => TextButton(
+                      onPressed: () => openArtistInfo(context, artists: const [
+                            Artist(id: 1, name: '蔡依林', picUrl: ' '),
+                            Artist(id: 2, name: '周杰伦', picUrl: ' '),
+                          ]),
+                      child: const Text('选择合作歌手')))),
+        );
+      }));
+      await tester.tap(find.text('选择合作歌手'));
+      await tester.pumpAndSettle();
+      await _verifyAndCapture(
+          tester, 'artist-chooser-${dark ? 'dark' : 'light'}');
+    });
+  }
 
   for (final fixture in [
     (name: 'playlist-phone', size: const Size(390, 844), scale: 1.0),

@@ -45,7 +45,7 @@ void main() {
     expect(find.descendant(of: navigation, matching: find.text('资料库')),
         findsNothing);
     await tester
-        .tap(find.descendant(of: navigation, matching: find.text('我的')));
+        .tap(find.descendant(of: navigation, matching: find.byTooltip('我的')));
     await tester.pumpAndSettle();
     expect(find.byType(ProfileView), findsOneWidget);
     for (final label in ['喜欢的音乐', '我的歌单', '收藏的歌单', '播放历史', '下载管理']) {
@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('资料库'), findsNothing);
     expect(find.byType(ProfileView), findsOneWidget);
-    await tester.tap(find.text('发现').last);
+    await tester.tap(_navigationItem(tester, '发现'));
     await tester.pumpAndSettle();
     expect(find.byType(PlaylistsView), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -71,27 +71,29 @@ void main() {
       await _pumpShell(tester, size);
       final home = find.byType(DiscoverView, skipOffstage: false);
       final homeState = tester.state(home);
-      await tester.tap(find.text('发现').last);
+      await tester.tap(_navigationItem(tester, '发现'));
       await tester.pumpAndSettle();
       final discover = find.byType(PlaylistsView, skipOffstage: false);
       final discoverState = tester.state(discover);
       if (size.width < 900) {
-        await tester.tap(find.text('搜索').last);
+        await tester.tap(_navigationItem(tester, '搜索'));
       } else {
         await tester.tap(find.byKey(const ValueKey('sidebar_search_control')));
       }
       await tester.pumpAndSettle();
       final settings =
           tester.element(find.byType(HomeShell)).read<SettingsController>();
+      await tester.tap(find.byKey(const ValueKey('search-source-picker')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('search_source_qq')));
       await tester.pumpAndSettle();
 
       expect(settings.source, 'netease',
           reason: 'Searching another provider must not change browsing.');
-      await tester.tap(find.text('首页').last);
+      await tester.tap(_navigationItem(tester, '首页'));
       await tester.pumpAndSettle();
       expect(tester.state(home), same(homeState));
-      await tester.tap(find.text('发现').last);
+      await tester.tap(_navigationItem(tester, '发现'));
       await tester.pumpAndSettle();
       expect(tester.state(discover), same(discoverState));
       expect(tester.takeException(), isNull);
@@ -101,7 +103,7 @@ void main() {
   testWidgets('switching tabs removes focus from the hidden search input',
       (tester) async {
     await _pumpShell(tester, const Size(390, 844));
-    await tester.tap(find.text('搜索').last);
+    await tester.tap(_navigationItem(tester, '搜索'));
     await tester.pumpAndSettle();
     final searchField = find.descendant(
       of: find.byType(SearchView),
@@ -111,7 +113,7 @@ void main() {
     await tester.pump();
     final input = tester.widget<EditableText>(find.byType(EditableText));
     expect(input.focusNode.hasFocus, isTrue);
-    await tester.tap(find.text('首页').last);
+    await tester.tap(_navigationItem(tester, '首页'));
     await tester.pumpAndSettle();
     expect(input.focusNode.hasFocus, isFalse);
     expect(tester.takeException(), isNull);
@@ -357,4 +359,9 @@ class _CurrentSongPlayer extends PlayerController {
 
   @override
   bool get playing => false;
+}
+
+Finder _navigationItem(WidgetTester tester, String label) {
+  final tooltip = find.byTooltip(label);
+  return tooltip.evaluate().isNotEmpty ? tooltip : find.text(label).last;
 }

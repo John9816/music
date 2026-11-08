@@ -104,7 +104,7 @@ void main() {
     final homeBefore = tester.widget<DiscoverView>(
       find.byType(DiscoverView, skipOffstage: false),
     );
-    await tester.tap(find.text('我的').last);
+    await tester.tap(find.byTooltip('我的'));
     await tester.pump();
     final homeAfter = tester.widget<DiscoverView>(
       find.byType(DiscoverView, skipOffstage: false),

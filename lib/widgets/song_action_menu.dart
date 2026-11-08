@@ -37,7 +37,7 @@ class SongActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Builder(
       builder: (buttonContext) => GIconButton(
-        icon: Icons.more_horiz_rounded,
+        icon: Icons.more_vert_rounded,
         tooltip: '更多：${song.name}',
         size: 20,
         padding: 9,
@@ -71,6 +71,7 @@ Future<void> showSongActions(
   FutureOr<void> Function()? onRemove,
   String removeLabel = '从歌单移除',
   bool showFavoriteAction = true,
+  bool downloadOnly = false,
   Rect? anchor,
 }) {
   // App overlays use the complete app palette, outside the player's local
@@ -104,6 +105,7 @@ Future<void> showSongActions(
           onRemove: onRemove,
           removeLabel: removeLabel,
           showFavoriteAction: showFavoriteAction,
+          downloadOnly: downloadOnly,
           desktop: desktop,
           anchored: true,
         ),
@@ -131,6 +133,7 @@ Future<void> showSongActions(
         onRemove: onRemove,
         removeLabel: removeLabel,
         showFavoriteAction: showFavoriteAction,
+        downloadOnly: downloadOnly,
       ),
     ),
   );
@@ -199,6 +202,7 @@ class _SongActionSheet extends StatefulWidget {
     this.showFavoriteAction = true,
     this.desktop = false,
     this.anchored = false,
+    this.downloadOnly = false,
   });
 
   final Song song;
@@ -209,6 +213,7 @@ class _SongActionSheet extends StatefulWidget {
   final bool showFavoriteAction;
   final bool desktop;
   final bool anchored;
+  final bool downloadOnly;
 
   @override
   State<_SongActionSheet> createState() => _SongActionSheetState();
@@ -225,7 +230,9 @@ class _SongActionSheetState extends State<_SongActionSheet> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_favoriteRequested && widget.showFavoriteAction) {
+    if (!_favoriteRequested &&
+        widget.showFavoriteAction &&
+        !widget.downloadOnly) {
       _favoriteRequested = true;
       unawaited(_loadFavorite());
     }
@@ -267,30 +274,32 @@ class _SongActionSheetState extends State<_SongActionSheet> {
     final downloaded = downloads.isDownloaded(widget.song);
     final scheme = Theme.of(context).colorScheme;
     final actions = <Widget>[
-      _action(
-        Icons.play_arrow_rounded,
-        '播放',
-        _play,
-      ),
-      _action(
-        Icons.skip_next_rounded,
-        '下一首播放',
-        _playNext,
-      ),
-      if (widget.showFavoriteAction)
+      if (!widget.downloadOnly) ...[
         _action(
-          _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-          _liked ? '取消喜欢' : '喜欢',
-          _favoriteLoading ? null : _toggleFavorite,
-          color: _liked ? AppBrand.favoriteRed : null,
-          loading: _favoriteLoading,
+          Icons.play_arrow_rounded,
+          '播放',
+          _play,
         ),
-      _action(
-        Icons.playlist_add_rounded,
-        '收藏到歌单',
-        _playlistBusy ? null : _addToPlaylist,
-        loading: _playlistLoading,
-      ),
+        _action(
+          Icons.skip_next_rounded,
+          '下一首播放',
+          _playNext,
+        ),
+        if (widget.showFavoriteAction)
+          _action(
+            _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            _liked ? '取消喜欢' : '喜欢',
+            _favoriteLoading ? null : _toggleFavorite,
+            color: _liked ? AppBrand.favoriteRed : null,
+            loading: _favoriteLoading,
+          ),
+        _action(
+          Icons.playlist_add_rounded,
+          '收藏到歌单',
+          _playlistBusy ? null : _addToPlaylist,
+          loading: _playlistLoading,
+        ),
+      ],
       _action(
         downloading
             ? Icons.downloading_rounded
@@ -306,7 +315,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
         loading: downloading,
         downloaded: downloaded,
       ),
-      if (widget.onRemove != null) ...[
+      if (!widget.downloadOnly && widget.onRemove != null) ...[
         const Divider(indent: 12, endIndent: 12),
         _action(
           Icons.remove_circle_outline_rounded,

@@ -15,6 +15,7 @@ import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_action_menu.dart';
+import '../../widgets/song_row.dart';
 import '../../core/utils/image_cache_manager.dart';
 import '../search/artist_names_link.dart';
 
@@ -1172,139 +1173,17 @@ class _MobilePlaylistSongRow extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final current = context.select<PlayerController, Song?>((p) => p.current);
-    final playing = current?.id == song.id && current?.source == song.source;
-    final highQuality = song.availableQualities.any(
-      (quality) => const {
-        'flac',
-        'lossless',
-        'hires',
-        'flac24bit',
-        'master',
-      }.contains(quality.toLowerCase()),
-    );
-    final artistAlbum = song.album.name.trim().isEmpty
-        ? song.artistNames
-        : '${song.artistNames} · ${song.album.name}';
-    return ColoredBox(
-      key: ValueKey('mobile-playlist-song-${song.id}'),
-      color: color,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: GPressScale(
-                    onTap: () => context
-                        .read<PlayerController>()
-                        .playQueue(songs, index: index),
-                    scale: 0.99,
-                    child: Row(
-                      children: [
-                        AsyncCover(
-                          url: song.album.picUrl,
-                          size: 48,
-                          radius: 8,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: playing
-                                      ? scheme.primary
-                                      : scheme.onSurface,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.2,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  if (highQuality) ...[
-                                    const _QualityBadge(label: '超清母带'),
-                                    const SizedBox(width: 5),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      artistAlbum,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: scheme.onSurfaceVariant,
-                                        fontSize: 14,
-                                        height: 1.2,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SongActionButton(
-                  song: song,
-                  onPlay: () => context
-                      .read<PlayerController>()
-                      .playQueue(songs, index: index),
-                ),
-              ],
-            ),
-          ),
-          Divider(
-            height: 1,
-            thickness: 0.5,
-            indent: 80,
-            endIndent: 20,
-            color: scheme.onSurface.withValues(alpha: 0.10),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QualityBadge extends StatelessWidget {
-  const _QualityBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    const color = Color(0xFFD5A30D);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 18),
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        border: Border.all(color: color.withValues(alpha: 0.88)),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: color,
-          fontSize: 10,
-          height: 1,
+  Widget build(BuildContext context) => ColoredBox(
+        key: ValueKey('mobile-playlist-song-${song.id}'),
+        color: color,
+        child: SongRow(
+          song: song,
+          index: index + 1,
+          padding: const EdgeInsets.fromLTRB(20, 10, 8, 10),
+          onTap: () =>
+              context.read<PlayerController>().playQueue(songs, index: index),
         ),
-      ),
-    );
-  }
+      );
 }
 
 String _formatPlaylistDuration(List<Song> songs) {

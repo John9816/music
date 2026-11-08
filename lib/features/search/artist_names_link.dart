@@ -84,8 +84,9 @@ Future<void> openArtistInfo(
   if (available.length == 1) {
     artist = available.first;
   } else {
+    final overlayContext = Navigator.of(context, rootNavigator: true).context;
     artist = await showModalBottomSheet<Artist>(
-      context: context,
+      context: overlayContext,
       useRootNavigator: true,
       isScrollControlled: true,
       showDragHandle: true,

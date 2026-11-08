@@ -11,6 +11,8 @@ import '../../core/player/player_controller.dart';
 import '../../core/player/playback_time.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/playback_mode_button.dart';
+import '../../widgets/floating_dock_surface.dart';
 import '../search/artist_names_link.dart';
 import 'desktop_player_panel.dart';
 import 'player_view.dart';
@@ -21,11 +23,13 @@ class MiniPlayer extends StatefulWidget {
   const MiniPlayer({
     super.key,
     this.sidebarWidth,
+    this.collapsed = false,
     this.panel,
     this.onPanelChanged,
   });
 
   final double? sidebarWidth;
+  final bool collapsed;
   final MiniPlayerPanel? panel;
   final ValueChanged<MiniPlayerPanel?>? onPanelChanged;
 
@@ -33,7 +37,7 @@ class MiniPlayer extends StatefulWidget {
     final textScaler = MediaQuery.textScalerOf(context);
     return math.max(
       64.0,
-      (textScaler.scale(15.5) + textScaler.scale(13)) * 1.2 + 18,
+      textScaler.scale(15.5) * 1.2 + 20,
     );
   }
 
@@ -82,9 +86,11 @@ class _MiniPlayerState extends State<MiniPlayer> {
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= GBreakpoints.desktopPlayer &&
             widget.sidebarWidth != null;
-        final height = desktop
-            ? MiniPlayer.desktopHeight(context)
-            : MiniPlayer.mobileHeight(context);
+        final height = widget.collapsed
+            ? 60.0
+            : desktop
+                ? MiniPlayer.desktopHeight(context)
+                : MiniPlayer.mobileHeight(context);
         final content = current == null
             ? const SizedBox.shrink(key: ValueKey('mini-player-empty'))
             : KeyedSubtree(
@@ -123,22 +129,48 @@ class _MiniPlayerState extends State<MiniPlayer> {
     required bool desktop,
     required double height,
   }) {
-    final scheme = Theme.of(context).colorScheme;
+    if (widget.collapsed) {
+      final error = context.select<PlayerController, String?>((p) => p.error);
+      return FloatingDockSurface(
+        surfaceKey: const ValueKey('mobile-player-disc-shortcut'),
+        child: Tooltip(
+          message: '打开播放器',
+          child: Semantics(
+            button: true,
+            label: '打开播放器，${current.name}，${current.artistNames}'
+                '${error == null ? '' : '，$error'}',
+            onTap: _openPlayer,
+            excludeSemantics: true,
+            child: GPressScale(
+              onTap: _openPlayer,
+              scale: .92,
+              borderRadius: BorderRadius.circular(999),
+              child: SizedBox.square(
+                dimension: 60,
+                child: Center(child: _PlayerDisc(song: current, size: 50)),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (!desktop) {
+      return FloatingDockSurface(
+        surfaceKey: const ValueKey('mobile-mini-player-surface'),
+        child: SizedBox(
+          height: height,
+          child: _compactBar(context, current),
+        ),
+      );
+    }
     return Container(
-      key: ValueKey(
-        desktop ? 'desktop-mini-player-surface' : 'mobile-mini-player-surface',
-      ),
+      key: const ValueKey('desktop-mini-player-surface'),
       height: height,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         border: Border(top: BorderSide(color: glassHairline(context))),
       ),
-      child: desktop
-          ? _desktopBar(context, current)
-          : ClipRect(
-              key: const ValueKey('mobile-mini-player-content-clip'),
-              child: _compactBar(context, current),
-            ),
+      child: _desktopBar(context, current),
     );
   }
 
@@ -365,57 +397,43 @@ class _MiniPlayerState extends State<MiniPlayer> {
     final platform = Theme.of(context).platform;
     final touch =
         platform == TargetPlatform.android || platform == TargetPlatform.iOS;
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) => Padding(
-              padding: EdgeInsets.fromLTRB(
-                constraints.maxWidth < 320 ? 12 : 20,
-                0,
-                12,
-                0,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _CompactTrackIdentity(
-                      song: current,
-                      onTap: _openPlayer,
-                    ),
-                  ),
-                  if (!touch && constraints.maxWidth >= 500)
-                    _PlayerIconButton(
-                      icon: CupertinoIcons.backward_end_fill,
-                      size: 16,
-                      padding: 7,
-                      tooltip: '上一首',
-                      onTap: player.previous,
-                    ),
-                  _PlayButton(player: player, size: 34),
-                  if (touch || constraints.maxWidth >= 380)
-                    _PlayerIconButton(
-                      icon: CupertinoIcons.forward_end_fill,
-                      size: 25,
-                      padding: 7,
-                      tooltip: '下一首',
-                      onTap: player.next,
-                    ),
-                  if (!touch)
-                    _PlayerIconButton(
-                      icon: CupertinoIcons.list_bullet,
-                      tooltip: '播放队列',
-                      size: 24,
-                      padding: 6,
-                      onTap: () => showQueueSheet(context),
-                    ),
-                ],
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: _CompactTrackIdentity(song: current, onTap: _openPlayer),
             ),
-          ),
+            const SizedBox(width: 2),
+            if (touch || constraints.maxWidth >= 500)
+              _PlayerIconButton(
+                icon: CupertinoIcons.backward_end_fill,
+                size: 21,
+                padding: 7,
+                tooltip: '上一首',
+                onTap: player.previous,
+              ),
+            _PlayButton(player: player, size: 32, filled: touch),
+            if (touch || constraints.maxWidth >= 380)
+              _PlayerIconButton(
+                icon: CupertinoIcons.forward_end_fill,
+                size: 21,
+                padding: 7,
+                tooltip: '下一首',
+                onTap: player.next,
+              ),
+            if (!touch)
+              _PlayerIconButton(
+                icon: CupertinoIcons.list_bullet,
+                size: 20,
+                padding: 7,
+                tooltip: '播放队列',
+                onTap: () => showQueueSheet(context),
+              ),
+          ],
         ),
-        const _MobileMiniPlayerProgress(),
-      ],
+      ),
     );
   }
 
@@ -423,23 +441,19 @@ class _MiniPlayerState extends State<MiniPlayer> {
     BuildContext context,
     PlayerController player,
   ) {
-    final scheme = Theme.of(context).colorScheme;
-    final shuffle = context.select<PlayerController, bool>((p) => p.shuffle);
-    final loopMode =
-        context.select<PlayerController, String>((p) => p.loopMode.name);
+    final mode =
+        context.select<PlayerController, PlaybackMode>((p) => p.playbackMode);
     return SizedBox(
       height: Theme.of(context).platform == TargetPlatform.android ? 48 : 44,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _PlayerIconButton(
-            icon: CupertinoIcons.shuffle,
-            size: 16,
+            icon: mode.icon,
+            size: 20,
             padding: 8,
-            tooltip: shuffle ? '随机播放（已开启）' : '随机播放',
-            selected: shuffle,
-            tint: shuffle ? scheme.primary : scheme.onSurfaceVariant,
-            onTap: player.toggleShuffle,
+            tooltip: mode.label,
+            onTap: player.cyclePlaybackMode,
           ),
           _PlayerIconButton(
             icon: CupertinoIcons.backward_end_fill,
@@ -456,21 +470,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
             tooltip: '下一首',
             onTap: player.next,
           ),
-          _PlayerIconButton(
-            icon: loopMode == 'one'
-                ? CupertinoIcons.repeat_1
-                : CupertinoIcons.repeat,
-            size: 16,
-            padding: 8,
-            tooltip: switch (loopMode) {
-              'one' => '单曲循环',
-              'all' => '列表循环',
-              _ => '不循环',
-            },
-            selected: loopMode != 'off',
-            tint: loopMode != 'off' ? scheme.primary : scheme.onSurfaceVariant,
-            onTap: player.cycleLoopMode,
-          ),
+          const SizedBox(width: 44),
         ],
       ),
     );
@@ -547,52 +547,86 @@ class _MiniPlayerState extends State<MiniPlayer> {
   }
 }
 
-class _MobileMiniPlayerProgress extends StatelessWidget {
-  const _MobileMiniPlayerProgress();
+class _PlayerDisc extends StatelessWidget {
+  const _PlayerDisc({required this.song, required this.size, super.key});
+
+  final Song song;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final player = context.read<PlayerController>();
     final duration =
         context.select<PlayerController, Duration?>((value) => value.duration);
-    return SizedBox(
-      height: 2,
-      width: double.infinity,
-      child: StreamBuilder<Duration>(
-        stream: player.positionStream,
-        initialData: player.position,
-        builder: (context, snapshot) {
-          final position = snapshot.data ?? player.position;
-          final progress = playbackProgressFraction(
-            position,
-            duration ?? Duration.zero,
-          );
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.08),
-                  ),
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: constraints.maxWidth * progress,
-                    child: ColoredBox(
-                      key: const ValueKey('mobile-mini-player-progress-fill'),
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
+    final hasError =
+        context.select<PlayerController, bool>((value) => value.error != null);
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            margin: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFA8BDC9), width: 1.6),
+              gradient: const RadialGradient(
+                colors: [
+                  Color(0xFF18212A),
+                  Color(0xFF18212A),
+                  Color(0xFF7B8B98),
+                  Color(0xFF17202A),
+                  Color(0xFF536673),
+                  Color(0xFF18212A),
                 ],
-              );
-            },
-          );
-        },
+                stops: [0, .62, .65, .71, .80, .86],
+              ),
+            ),
+            alignment: Alignment.center,
+            child: AsyncCover(
+              url: song.album.picUrl,
+              size: size * .57,
+              radius: size,
+            ),
+          ),
+          Positioned.fill(
+            child: StreamBuilder<Duration>(
+              stream: player.positionStream,
+              initialData: player.position,
+              builder: (context, snapshot) => CircularProgressIndicator(
+                key: const ValueKey('mobile-player-disc-progress'),
+                value: playbackProgressFraction(
+                  snapshot.data ?? player.position,
+                  duration ?? Duration.zero,
+                ),
+                strokeWidth: 1.4,
+                color: const Color(0xFFB9CFDC),
+                backgroundColor: const Color(0xFF728590).withValues(alpha: .35),
+              ),
+            ),
+          ),
+          if (hasError)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                key: const ValueKey('mobile-player-error-badge'),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.error,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(
+                  Icons.priority_high_rounded,
+                  size: 15,
+                  color: Theme.of(context).colorScheme.onError,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -763,77 +797,50 @@ class _CompactTrackIdentity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loading = context.select<PlayerController, bool>((p) => p.loading);
     final error = context.select<PlayerController, String?>((p) => p.error);
-    final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
+    return Semantics(
+      button: true,
+      label:
+          '${song.name}，${song.artistNames}${error == null ? '' : '，$error'}，打开播放器',
       onTap: onTap,
-      child: Row(
-        children: [
-          AsyncCover(
-            key: const ValueKey('mobile-mini-player-artwork'),
-            url: song.album.picUrl,
-            size: 44,
-            radius: 7,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: ClipRect(
-                    child: AnimatedSwitcher(
-                      duration: PlatformMotion.duration(context, Motion.normal),
-                      switchInCurve: Motion.standard,
-                      switchOutCurve: Curves.easeInCubic,
-                      layoutBuilder: (current, previous) => Stack(
-                        alignment: Alignment.centerLeft,
-                        children: [...previous, if (current != null) current],
-                      ),
-                      child: Column(
-                        key: ValueKey((song.source, song.id, song.name, error)),
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            song.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: scheme.onSurface,
-                              fontSize: 15.5,
-                              fontWeight: TypeScale.semibold,
-                              height: 1.2,
-                            ),
-                          ),
-                          Text(
-                            error ?? song.artistNames,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: error == null
-                                  ? scheme.onSurfaceVariant
-                                  : scheme.error,
-                              fontSize: 13,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      excludeSemantics: true,
+      child: GPressScale(
+        onTap: onTap,
+        scale: .98,
+        borderRadius: BorderRadius.circular(999),
+        child: Row(
+          children: [
+            _PlayerDisc(
+              key: const ValueKey('mobile-mini-player-artwork'),
+              song: song,
+              size: 48,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: PlatformMotion.duration(context, Motion.normal),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [...previous, if (current != null) current],
+                ),
+                child: Text(
+                  error ?? song.name,
+                  key: ValueKey((song.source, song.id, song.name, error)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: error == null
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Theme.of(context).colorScheme.error,
+                    fontSize: 15.5,
+                    fontWeight: TypeScale.semibold,
+                    height: 1.2,
                   ),
                 ),
-                if (loading) ...[
-                  const SizedBox(width: 7),
-                  const SizedBox.square(
-                    dimension: 11,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -843,8 +850,10 @@ class _PlayButton extends StatelessWidget {
   const _PlayButton({
     required this.player,
     required this.size,
+    this.filled = false,
   });
 
+  final bool filled;
   final PlayerController player;
   final double size;
 
@@ -852,31 +861,50 @@ class _PlayButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final playing = context.select<PlayerController, bool>((p) => p.playing);
     final loading = context.select<PlayerController, bool>((p) => p.loading);
+    final hasError =
+        context.select<PlayerController, bool>((p) => p.error != null);
     final scheme = Theme.of(context).colorScheme;
     final minimumTargetSize = switch (Theme.of(context).platform) {
       TargetPlatform.android => 48.0,
       _ => 44.0,
     };
-    final targetSize = size > minimumTargetSize ? size : minimumTargetSize;
+    final targetSize = filled ? 48.0 : math.max(size, minimumTargetSize);
+    final foreground = filled ? const Color(0xFF182A38) : scheme.onSurface;
     final label = loading
         ? '正在加载'
-        : playing
-            ? '暂停'
-            : '播放';
+        : hasError
+            ? '重试'
+            : playing
+                ? '暂停'
+                : '播放';
+    final VoidCallback? onTap = loading
+        ? null
+        : hasError
+            ? player.retry
+            : player.togglePlay;
     return Tooltip(
       message: label,
       child: Semantics(
         label: label,
         button: true,
         enabled: !loading,
-        onTap: loading ? null : player.togglePlay,
+        onTap: onTap,
         excludeSemantics: true,
         child: GPressScale(
-          onTap: loading ? null : player.togglePlay,
+          onTap: onTap,
           scale: 0.94,
           borderRadius: BorderRadius.circular(RadiusToken.pill),
-          child: SizedBox.square(
-            dimension: targetSize,
+          child: Container(
+            width: targetSize,
+            height: targetSize,
+            decoration: filled
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFCDDAE3),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: .7)),
+                  )
+                : null,
             child: Center(
               child: SizedBox(
                 width: size,
@@ -899,18 +927,22 @@ class _PlayButton extends StatelessWidget {
                           padding: EdgeInsets.all(size * 0.28),
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: scheme.onSurface,
+                            color: foreground,
                           ),
                         )
                       : Icon(
-                          playing
-                              ? CupertinoIcons.pause_fill
-                              : CupertinoIcons.play_fill,
-                          key: ValueKey(playing
-                              ? 'mini-player-pause'
-                              : 'mini-player-play'),
+                          hasError
+                              ? CupertinoIcons.arrow_clockwise
+                              : playing
+                                  ? CupertinoIcons.pause_fill
+                                  : CupertinoIcons.play_fill,
+                          key: ValueKey(hasError
+                              ? 'mini-player-retry'
+                              : playing
+                                  ? 'mini-player-pause'
+                                  : 'mini-player-play'),
                           size: size * 0.82,
-                          color: scheme.onSurface,
+                          color: foreground,
                         ),
                 ),
               ),

@@ -22,6 +22,29 @@ import 'package:just_audio/just_audio.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('playback modes cycle list, single, shuffle without conflicting flags',
+      () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(settings: settings, audioPlayer: native);
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    expect(player.loopMode, LoopMode.all);
+    expect(player.shuffle, isFalse);
+    await player.cycleLoopMode();
+    expect(player.loopMode, LoopMode.one);
+    expect(player.shuffle, isFalse);
+    expect(native.nativeLoop, LoopMode.one);
+    await player.cycleLoopMode();
+    expect(player.shuffle, isTrue);
+    expect(player.loopMode, LoopMode.all);
+    expect(native.nativeLoop, LoopMode.off);
+    await player.cycleLoopMode();
+    expect(player.shuffle, isFalse);
+    expect(player.loopMode, LoopMode.all);
+    expect(native.nativeLoop, LoopMode.off);
+  });
+
   // Mock platform channels used by SystemMediaController
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
@@ -110,7 +133,6 @@ void main() {
     addTearDown(player.dispose);
     addTearDown(settings.dispose);
     await player.playQueue([_playbackSong('one', const Duration(minutes: 4))]);
-    await player.cycleLoopMode();
     await player.cycleLoopMode();
     await player.setStopAtTrackEnd(() {});
     native.pauseGate = Completer<void>();

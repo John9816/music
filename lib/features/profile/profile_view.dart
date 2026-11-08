@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api/membership_api.dart';
@@ -37,7 +36,10 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
+  AuthController? _membershipAuth;
   String? _membershipToken;
+  int? _membershipGeneration;
+  int _membershipRequestVersion = 0;
   Membership? _membership;
   bool _membershipLoading = false;
   bool _membershipError = false;
@@ -75,12 +77,28 @@ class _ProfileViewState extends State<ProfileView> {
   Widget _buildContent(BuildContext context) {
     final auth = context.watch<AuthController>();
     final name = auth.username ?? '未登录';
-    if (_membershipToken != auth.token) {
-      _membershipToken = auth.token;
+    final token = auth.token;
+    final generation = auth.sessionGeneration;
+    if (!identical(_membershipAuth, auth) ||
+        _membershipToken != token ||
+        _membershipGeneration != generation) {
+      _membershipAuth = auth;
+      _membershipToken = token;
+      _membershipGeneration = generation;
+      final requestVersion = ++_membershipRequestVersion;
       _membership = null;
-      if (auth.token != null) {
+      _membershipLoading = false;
+      _membershipError = false;
+      if (token != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _loadMembership(auth.token!);
+          if (_isCurrentMembershipRequest(
+            auth,
+            token,
+            generation,
+            requestVersion,
+          )) {
+            _loadMembership();
+          }
         });
       }
     }
@@ -101,13 +119,7 @@ class _ProfileViewState extends State<ProfileView> {
               ? () => _openPage(context, const EditProfileView())
               : () => _openLogin(context),
           onMembershipTap: auth.isLoggedIn
-              ? () {
-                  if (_membershipError) {
-                    _loadMembership(auth.token!);
-                  } else {
-                    _showRedeemDialog(auth.token!);
-                  }
-                }
+              ? (_membershipError ? _loadMembership : null)
               : () => _openLogin(context),
         ),
         const SettingsSection('我的音乐'),
@@ -263,26 +275,58 @@ class _ProfileViewState extends State<ProfileView> {
     _openPage(context, const SettingsView());
   }
 
-  Future<void> _loadMembership(String token) async {
-    if (_membershipLoading) return;
+  bool _isCurrentMembershipRequest(
+    AuthController auth,
+    String token,
+    int generation,
+    int requestVersion,
+  ) {
+    return mounted &&
+        identical(_membershipAuth, auth) &&
+        _membershipToken == token &&
+        _membershipGeneration == generation &&
+        auth.token == token &&
+        auth.sessionGeneration == generation &&
+        _membershipRequestVersion == requestVersion;
+  }
+
+  Future<void> _loadMembership() async {
+    final auth = _membershipAuth;
+    final token = _membershipToken;
+    final generation = _membershipGeneration;
+    if (_membershipLoading ||
+        auth == null ||
+        token == null ||
+        generation == null ||
+        !_isCurrentMembershipRequest(
+          auth,
+          token,
+          generation,
+          _membershipRequestVersion,
+        )) {
+      return;
+    }
+    final requestVersion = ++_membershipRequestVersion;
+    bool isCurrent() =>
+        _isCurrentMembershipRequest(auth, token, generation, requestVersion);
     setState(() {
       _membershipLoading = true;
       _membershipError = false;
     });
     try {
       final membership = await MembershipApi().getMembership(token);
-      if (mounted && token == _membershipToken) {
+      if (isCurrent()) {
         setState(() {
           _membership = membership;
           _membershipError = false;
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (isCurrent()) {
         setState(() => _membershipError = true);
       }
     } finally {
-      if (mounted) setState(() => _membershipLoading = false);
+      if (isCurrent()) setState(() => _membershipLoading = false);
     }
   }
 
@@ -299,115 +343,6 @@ class _ProfileViewState extends State<ProfileView> {
         '${expiresAt.year}-${expiresAt.month.toString().padLeft(2, '0')}'
         '-${expiresAt.day.toString().padLeft(2, '0')}';
     return '${membership.typeName ?? '会员'} · 有效期至 $date';
-  }
-
-  Future<void> _showRedeemDialog(String token) async {
-    final result = await showDialog<RedeemResult>(
-      context: context,
-      builder: (_) => _RedeemCodeDialog(token: token),
-    );
-    if (!mounted || result == null) return;
-    setState(() => _membership = result.membership);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
-  }
-}
-
-class _RedeemCodeDialog extends StatefulWidget {
-  const _RedeemCodeDialog({required this.token});
-
-  final String token;
-
-  @override
-  State<_RedeemCodeDialog> createState() => _RedeemCodeDialogState();
-}
-
-class _RedeemCodeDialogState extends State<_RedeemCodeDialog> {
-  final TextEditingController _controller = TextEditingController();
-  bool _loading = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final code = _controller.text.trim().toUpperCase().replaceAll(' ', '');
-    if (code.isEmpty) {
-      setState(() => _error = '请输入兑换码');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final result = await MembershipApi().redeem(code, widget.token);
-      if (mounted) Navigator.of(context).pop(result);
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      title: const Text('兑换会员卡'),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '输入会员兑换码，兑换后即可使用音乐播放等会员功能。',
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              enabled: !_loading,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\- ]')),
-              ],
-              decoration: InputDecoration(
-                labelText: '兑换码',
-                hintText: 'OW-XXXX-XXXX-XXXX-XXXX',
-                errorText: _error,
-              ),
-              onSubmitted: (_) => _loading ? null : _submit(),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('立即兑换'),
-        ),
-      ],
-    );
   }
 }
 
@@ -432,7 +367,7 @@ class _AccountCard extends StatelessWidget {
   final String membershipText;
   final bool membershipActive;
   final VoidCallback onAccountTap;
-  final VoidCallback onMembershipTap;
+  final VoidCallback? onMembershipTap;
 
   @override
   Widget build(BuildContext context) {
@@ -529,8 +464,8 @@ class _AccountCard extends StatelessWidget {
                 ? '正在读取会员状态'
                 : loggedIn
                     ? membershipText
-                    : '登录后开通会员',
-            value: loggedIn ? '兑换码' : '登录',
+                    : '登录后查看会员状态',
+            value: loggedIn ? null : '登录',
             onTap: onMembershipTap,
           ),
         ],

@@ -21,6 +21,8 @@ import 'playback_coordinator.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
+enum PlaybackMode { listLoop, singleLoop, shuffle }
+
 /// 播放控制，对应 macOS 版 PlaybackCoordinator。
 /// 底层使用 just_audio：Android → ExoPlayer、iOS/macOS → AVPlayer、
 /// Windows → Media Foundation，一套 API 四平台通用。
@@ -131,7 +133,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   bool _loading = false;
   bool _liked = false;
   bool _shuffle = false;
-  LoopMode _loopMode = LoopMode.off;
+  LoopMode _loopMode = LoopMode.all;
   VoidCallback? _onSleepTrackEnd;
   int? _sleepCompletedPlaySeq;
 
@@ -148,6 +150,11 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   bool get liked => _liked;
   bool get shuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
+  PlaybackMode get playbackMode => _shuffle
+      ? PlaybackMode.shuffle
+      : _loopMode == LoopMode.one
+          ? PlaybackMode.singleLoop
+          : PlaybackMode.listLoop;
 
   void toggleLike() {
     _liked = !_liked;
@@ -773,17 +780,20 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     await playAt((_index - 1 + _queue.length) % _queue.length);
   }
 
-  void toggleShuffle() {
-    _shuffle = !_shuffle;
-    notifyListeners();
-  }
+  Future<void> toggleShuffle() =>
+      setPlaybackMode(_shuffle ? PlaybackMode.listLoop : PlaybackMode.shuffle);
 
-  Future<void> cycleLoopMode() async {
-    _loopMode = switch (_loopMode) {
-      LoopMode.off => LoopMode.all,
-      LoopMode.all => LoopMode.one,
-      LoopMode.one => LoopMode.off,
-    };
+  Future<void> cycleLoopMode() => cyclePlaybackMode();
+
+  Future<void> cyclePlaybackMode() => setPlaybackMode(switch (playbackMode) {
+        PlaybackMode.listLoop => PlaybackMode.singleLoop,
+        PlaybackMode.singleLoop => PlaybackMode.shuffle,
+        PlaybackMode.shuffle => PlaybackMode.listLoop,
+      });
+
+  Future<void> setPlaybackMode(PlaybackMode mode) async {
+    _shuffle = mode == PlaybackMode.shuffle;
+    _loopMode = mode == PlaybackMode.singleLoop ? LoopMode.one : LoopMode.all;
     await _player.setLoopMode(
       _loopMode == LoopMode.one && _onSleepTrackEnd == null
           ? LoopMode.one

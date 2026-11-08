@@ -14,6 +14,7 @@ import '../../core/services/user_playlist_library.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/utils/toast_helper.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/floating_dock_surface.dart';
 import '../../widgets/user_avatar.dart';
 import '../discover/discover_view.dart';
 import '../playlists/playlists_view.dart';
@@ -63,7 +64,7 @@ class _HomeShellState extends State<HomeShell> {
   late int _lastAuthGeneration;
   int _authVersion = 0;
 
-  static const _tabToPageIndex = [0, _discoverIndex, 1, _profileIndex];
+  static const _tabToPageIndex = [0, 1, _discoverIndex, _profileIndex];
 
   static const _tabs = [
     (
@@ -72,19 +73,19 @@ class _HomeShellState extends State<HomeShell> {
       selectedIcon: CupertinoIcons.house_fill
     ),
     (
-      label: '发现',
-      icon: CupertinoIcons.compass,
-      selectedIcon: CupertinoIcons.compass_fill,
-    ),
-    (
       label: '搜索',
       icon: CupertinoIcons.search,
       selectedIcon: CupertinoIcons.search
     ),
     (
+      label: '发现',
+      icon: CupertinoIcons.square_stack,
+      selectedIcon: CupertinoIcons.square_stack_fill
+    ),
+    (
       label: '我的',
       icon: CupertinoIcons.person,
-      selectedIcon: CupertinoIcons.person_fill,
+      selectedIcon: CupertinoIcons.person_fill
     ),
   ];
 
@@ -172,9 +173,9 @@ class _HomeShellState extends State<HomeShell> {
     switchTo(_profileIndex);
     showAppToast(
       context,
-      '播放需要有效会员，请在个人中心输入兑换码',
+      '播放需要有效会员，可在个人中心查看会员状态',
       action: SnackBarAction(
-        label: '去兑换',
+        label: '查看会员',
         onPressed: () => switchTo(_profileIndex),
       ),
     );
@@ -272,9 +273,8 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final windowWidth = MediaQuery.sizeOf(context).width;
-    // Scaffold removes the body's bottom padding whenever a nav widget exists,
-    // including its zero-height state on nested routes. Read it above Scaffold.
     final bottomSystemInset = MediaQuery.paddingOf(context).bottom;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final scheme = Theme.of(context).colorScheme;
     final macOS = Theme.of(context).platform == TargetPlatform.macOS;
     final wide = windowWidth >= GBreakpoints.sidebar;
@@ -442,6 +442,7 @@ class _HomeShellState extends State<HomeShell> {
             body: ColoredBox(
               color: scheme.surfaceContainerLowest,
               child: Stack(
+                fit: StackFit.expand,
                 children: [
                   Positioned.fill(
                     child: Column(
@@ -485,24 +486,30 @@ class _HomeShellState extends State<HomeShell> {
                                           valueListenable: canPopTab,
                                           builder:
                                               (context, nestedCanPop, child) {
-                                            final miniPlayerInset =
-                                                !wide && hasCurrentSong
-                                                    ? MiniPlayer.mobileHeight(
-                                                          context,
-                                                        ) +
-                                                        (nestedCanPop
-                                                            ? bottomSystemInset
-                                                            : 0)
-                                                    : 0.0;
+                                            final dockInset = wide ||
+                                                    keyboardOpen
+                                                ? 0.0
+                                                : nestedCanPop
+                                                    ? hasCurrentSong
+                                                        ? MiniPlayer
+                                                                .mobileHeight(
+                                                                    context) +
+                                                            20 +
+                                                            bottomSystemInset
+                                                        : bottomSystemInset
+                                                    : 80.0 + bottomSystemInset;
                                             return AnimatedPadding(
                                               duration: PlatformMotion.duration(
                                                   context, Motion.normal),
                                               curve: Motion.standard,
                                               padding: EdgeInsets.only(
-                                                bottom:
-                                                    miniPlayerInset.toDouble(),
+                                                bottom: dockInset,
                                               ),
-                                              child: child,
+                                              child: MediaQuery.removePadding(
+                                                context: context,
+                                                removeBottom: !wide,
+                                                child: child!,
+                                              ),
                                             );
                                           },
                                           child: _AnimatedTabStack(
@@ -545,24 +552,28 @@ class _HomeShellState extends State<HomeShell> {
                     ValueListenableBuilder<bool>(
                       valueListenable: canPopTab,
                       builder: (context, tabCanPop, child) {
+                        if (keyboardOpen || (tabCanPop && !hasCurrentSong)) {
+                          return const SizedBox.shrink();
+                        }
+                        final horizontalInset = windowWidth < 360 ? 8.0 : 16.0;
                         return Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: ColoredBox(
-                            color: scheme.surfaceContainer,
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                bottom: tabCanPop && hasCurrentSong
-                                    ? bottomSystemInset
-                                    : 0,
-                              ),
-                              child: child!,
+                          left: horizontalInset,
+                          right: horizontalInset,
+                          bottom: bottomSystemInset + 10,
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 560),
+                              child: tabCanPop
+                                  ? const MiniPlayer()
+                                  : _BottomNav(
+                                      selected: _index,
+                                      onSelect: _selectPage,
+                                      hasCurrentSong: hasCurrentSong,
+                                    ),
                             ),
                           ),
                         );
                       },
-                      child: const MiniPlayer(),
                     ),
                   if (dockedPlayerPanel)
                     AnimatedPositioned(
@@ -598,18 +609,6 @@ class _HomeShellState extends State<HomeShell> {
                 ],
               ),
             ),
-            bottomNavigationBar: wide
-                ? null
-                : ValueListenableBuilder<bool>(
-                    valueListenable: canPopTab,
-                    builder: (context, tabCanPop, child) {
-                      if (tabCanPop) return const SizedBox.shrink();
-                      return _BottomNav(
-                        selected: _index,
-                        onSelect: _selectPage,
-                      );
-                    },
-                  ),
           ),
         ),
       ),
@@ -1512,94 +1511,107 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
-/// 窄屏底部导航：以图标与文字标示当前栏目。
+/// A floating icon pill with a separate, persistent now-playing disc.
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.selected, required this.onSelect});
+  const _BottomNav({
+    required this.selected,
+    required this.onSelect,
+    required this.hasCurrentSong,
+  });
 
   final int selected;
   final ValueChanged<int> onSelect;
+  final bool hasCurrentSong;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final motion = PlatformMotion.tabDuration(context);
-    return Container(
-      key: const ValueKey('mobile-bottom-nav-surface'),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 58,
-          child: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.5,
-            child: Row(
-              children: [
-                for (var i = 0; i < _HomeShellState._tabs.length; i++)
-                  Expanded(
-                    child: Semantics(
-                      button: true,
-                      selected: _HomeShellState._tabToPageIndex[i] == selected,
-                      label: _HomeShellState._tabs[i].label,
-                      onTap: () {
-                        PlatformMotion.selectionFeedback(context);
-                        onSelect(_HomeShellState._tabToPageIndex[i]);
-                      },
-                      child: ExcludeSemantics(
-                          child: GPressScale(
-                        onTap: () {
-                          onSelect(_HomeShellState._tabToPageIndex[i]);
-                        },
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              height: 26,
-                              child: AnimatedSwitcher(
-                                duration: motion,
-                                child: Icon(
-                                  _HomeShellState._tabToPageIndex[i] == selected
-                                      ? _HomeShellState._tabs[i].selectedIcon
-                                      : _HomeShellState._tabs[i].icon,
-                                  size: 23,
-                                  key: ValueKey(
-                                      _HomeShellState._tabToPageIndex[i] ==
-                                          selected),
-                                  color: _HomeShellState._tabToPageIndex[i] ==
-                                          selected
-                                      ? scheme.primary
-                                      : scheme.onSurfaceVariant,
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 330;
+        return Row(
+          children: [
+            Expanded(
+              child: FloatingDockSurface(
+                surfaceKey: const ValueKey('mobile-bottom-nav-surface'),
+                child: SizedBox(
+                  height: 60,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _HomeShellState._tabs.length; i++)
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: _HomeShellState._tabToPageIndex[i] ==
+                                  selected,
+                              label: _HomeShellState._tabs[i].label,
+                              onTap: () =>
+                                  onSelect(_HomeShellState._tabToPageIndex[i]),
+                              child: ExcludeSemantics(
+                                child: Tooltip(
+                                  message: _HomeShellState._tabs[i].label,
+                                  child: GPressScale(
+                                    onTap: () => onSelect(
+                                        _HomeShellState._tabToPageIndex[i]),
+                                    scale: .93,
+                                    borderRadius: BorderRadius.circular(999),
+                                    child: AnimatedContainer(
+                                      duration:
+                                          PlatformMotion.tabDuration(context),
+                                      curve: Motion.standard,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        color: _HomeShellState
+                                                    ._tabToPageIndex[i] ==
+                                                selected
+                                            ? (dark
+                                                    ? Colors.white
+                                                    : Colors.black)
+                                                .withValues(alpha: .10)
+                                            : Colors.transparent,
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Icon(
+                                        _HomeShellState._tabToPageIndex[i] ==
+                                                selected
+                                            ? _HomeShellState
+                                                ._tabs[i].selectedIcon
+                                            : _HomeShellState._tabs[i].icon,
+                                        size: 22,
+                                        color: dark
+                                            ? (_HomeShellState
+                                                        ._tabToPageIndex[i] ==
+                                                    selected
+                                                ? const Color(0xFFDEEBF3)
+                                                : const Color(0xFFAEC5D6))
+                                            : const Color(0xFF30495B),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _HomeShellState._tabs[i].label,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                height: 1.1,
-                                fontWeight:
-                                    _HomeShellState._tabToPageIndex[i] ==
-                                            selected
-                                        ? TypeScale.semibold
-                                        : TypeScale.medium,
-                                color: _HomeShellState._tabToPageIndex[i] ==
-                                        selected
-                                    ? scheme.onSurface
-                                    : scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
+                          ),
+                      ],
                     ),
                   ),
-              ],
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
+            if (hasCurrentSong) ...[
+              SizedBox(width: compact ? 8 : 10),
+              SizedBox.square(
+                dimension: compact ? 52 : 60,
+                child: const MiniPlayer(collapsed: true),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

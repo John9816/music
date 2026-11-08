@@ -234,13 +234,29 @@ void main() {
     expect(find.byTooltip('歌曲百科'), findsNothing);
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    for (final label in ['随机播放', 'AirPlay 或蓝牙', '歌曲百科', '歌曲操作']) {
+    for (final label in ['AirPlay 或蓝牙', '歌曲百科', '歌曲操作']) {
       expect(find.text(label).hitTestable(), findsOneWidget);
     }
     await tester.tap(find.text('歌曲百科'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('关闭歌曲信息'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('player song operations keep only the missing download action',
+      (tester) async {
+    await _pumpPlayer(tester);
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('歌曲操作'));
+    await tester.pumpAndSettle();
+    final sheet = find.byType(BottomSheet);
+    expect(
+        find.descendant(of: sheet, matching: find.text('下载')), findsOneWidget);
+    for (final label in ['播放', '下一首播放', '喜欢', '收藏到歌单']) {
+      expect(
+          find.descendant(of: sheet, matching: find.text(label)), findsNothing);
+    }
   });
 
   testWidgets('Lotus lyrics gain reading space and system back restores cover',
@@ -996,8 +1012,8 @@ void main() {
     );
 
     final bar = tester.getRect(find.byType(MiniPlayer));
-    expect(find.byTooltip('上一首'), findsNothing);
-    for (final label in ['播放', '下一首']) {
+    expect(find.byTooltip('上一首'), findsOneWidget);
+    for (final label in ['上一首', '播放', '下一首']) {
       final button = tester.getRect(find.byTooltip(label));
       expect(button.shortestSide, greaterThanOrEqualTo(48));
       expect(button.left, greaterThanOrEqualTo(0));
@@ -1031,9 +1047,9 @@ void main() {
         platform: platform,
       );
 
-      expect(find.byTooltip('上一首'), findsNothing);
+      expect(find.byTooltip('上一首'), findsOneWidget);
       final minimumTarget = platform == TargetPlatform.android ? 48 : 44;
-      for (final label in ['播放', '下一首']) {
+      for (final label in ['上一首', '播放', '下一首']) {
         expect(
           tester.getSize(find.byTooltip(label)).shortestSide,
           greaterThanOrEqualTo(minimumTarget),
@@ -1041,7 +1057,7 @@ void main() {
       }
       expect(
         tester.getSize(find.textContaining('Test song same-id')).width,
-        greaterThanOrEqualTo(100),
+        greaterThanOrEqualTo(32),
       );
       expect(tester.takeException(), isNull);
     }
@@ -1065,6 +1081,22 @@ void main() {
     expect(find.byIcon(cupertino.CupertinoIcons.pause_fill), findsOneWidget);
     expect(find.byTooltip('暂停'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mini player keeps playback failures visible and retries',
+      (tester) async {
+    final harness = await _pumpPlayer(tester, mini: true);
+    harness.player.playbackError = '无法获取播放地址';
+    harness.player.setPlaying(false);
+    await tester.pumpAndSettle();
+    expect(find.text('无法获取播放地址'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile-player-error-badge')),
+        findsOneWidget);
+    expect(find.byTooltip('重试'), findsOneWidget);
+    await tester.tap(find.byTooltip('重试'));
+    await tester.pumpAndSettle();
+    expect(harness.player.retryCount, 1);
+    expect(find.byType(PlayerView), findsNothing);
   });
 
   testWidgets('mini player opens the full player and its playback queue',
@@ -1215,6 +1247,10 @@ class _InteractionPlayer extends PlayerController {
   Duration _position = const Duration(seconds: 60);
   final _positions = StreamController<Duration>.broadcast();
   String? lyricOverride;
+  String? playbackError;
+
+  @override
+  String? get error => playbackError;
   Duration? timelineDuration = const Duration(minutes: 4);
   Duration? soughtTo;
   Completer<void>? seekGate;
