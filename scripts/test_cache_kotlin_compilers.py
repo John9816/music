@@ -44,6 +44,22 @@ class KotlinCacheTests(unittest.TestCase):
             self.assertFalse(list(Path(directory).rglob("*.jar")))
             self.assertFalse(list(Path(directory).rglob("*.download")))
 
+    def test_local_repository_retains_pom_and_limits_override_to_pinned_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            jar = root / "compiler.jar"
+            jar.write_bytes(b"compiler")
+            pom = b"<project>original upstream dependencies</project>"
+            repo = module.install_local_repository(
+                root, {"2.2.20": jar}, {"2.2.20": hashlib.sha256(pom).hexdigest()},
+                lambda *_a, **_k: io.BytesIO(pom))
+            self.assertEqual(pom, next(repo.rglob("*.pom")).read_bytes())
+            self.assertEqual(b"compiler", next(repo.rglob("*.jar")).read_bytes())
+            script = (root / "init.d/duckmusic-kotlin.gradle").read_text()
+            self.assertIn("includeVersion('org.jetbrains.kotlin', 'kotlin-compiler-embeddable', '2.2.20')", script)
+            self.assertIn("exclusiveContent", script)
+            self.assertNotIn("includeGroup", script)
+
 
 if __name__ == "__main__":
     unittest.main()

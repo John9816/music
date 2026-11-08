@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import urllib.request
 
 
@@ -14,6 +15,10 @@ import urllib.request
 COMPILERS = {
     "2.2.20": "1c6c3f810bfe6a41abcbc34b3a2ef639f1e3f4aeed3a953a4b0974eea4f41889",
     "2.3.20": "976f989d0b5f5d80e8e8a8ad4b73da0bfc27fdd965b9fa38362b2be79ecc1337",
+}
+POMS = {
+    "2.2.20": "05ff025f7fb0932fb11fa1e1ccaef528f76027d956680f8835d438542762e20a",
+    "2.3.20": "0c35aeee372f07514ebed37b9407b8e1181d1427755139e5cee7719ca05fe7e8",
 }
 REPOSITORIES = (
     "https://repo.maven.apache.org/maven2/",
@@ -67,7 +72,59 @@ def cache_compiler(version, expected, gradle_home, opener=urllib.request.urlopen
         temporary.unlink(missing_ok=True)
 
 
+def install_local_repository(gradle_home, compilers, poms, opener=urllib.request.urlopen):
+    repository = (gradle_home / "duckmusic-verified-kotlin").resolve()
+    for version, compiler in compilers.items():
+        relative = "org/jetbrains/kotlin/kotlin-compiler-embeddable/" + version + "/"
+        directory = repository / relative
+        directory.mkdir(parents=True, exist_ok=True)
+        name = "kotlin-compiler-embeddable-" + version
+        pom = directory / (name + ".pom")
+        temporary = pom.with_suffix(".download")
+        try:
+            for index, base in enumerate(REPOSITORIES):
+                try:
+                    with opener(base + relative + name + ".pom", timeout=30) as response:
+                        temporary.write_bytes(response.read(128 * 1024))
+                    if sha256(temporary) != poms[version]:
+                        raise ValueError("Kotlin POM failed SHA-256 verification")
+                    temporary.replace(pom)
+                    break
+                except OSError:
+                    if index == len(REPOSITORIES) - 1:
+                        raise
+        finally:
+            temporary.unlink(missing_ok=True)
+        shutil.copyfile(compiler, directory / (name + ".jar"))
+    # Cache reuse still performs a remote HEAD. This narrowly scoped local
+    # repository avoids that failing endpoint, including Flutter's included build.
+    filters = "\n".join(
+        "            includeVersion('org.jetbrains.kotlin', 'kotlin-compiler-embeddable', '" + version + "')"
+        for version in compilers)
+    script = """gradle.beforeProject { project ->
+    project.repositories.exclusiveContent {
+        forRepository {
+            project.repositories.maven {
+                name = 'DuckMusicVerifiedKotlin'
+                url = uri('REPOSITORY')
+                metadataSources { mavenPom(); artifact() }
+            }
+        }
+        filter {
+FILTERS
+        }
+    }
+}
+""".replace("REPOSITORY", repository.as_uri().replace("'", "%27")).replace("FILTERS", filters)
+    init = gradle_home / "init.d/duckmusic-kotlin.gradle"
+    init.parent.mkdir(parents=True, exist_ok=True)
+    init.write_text(script)
+    print("Verified Kotlin local repository configured for pinned versions")
+    return repository
+
+
 if __name__ == "__main__":
     gradle_home = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle"))
-    for version, expected in COMPILERS.items():
-        cache_compiler(version, expected, gradle_home)
+    compilers = {version: cache_compiler(version, expected, gradle_home)
+                 for version, expected in COMPILERS.items()}
+    install_local_repository(gradle_home, compilers, POMS)
