@@ -83,11 +83,13 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Cache verified Gradle distribution
+      - name: Cache verified Gradle distribution and Kotlin compilers
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/cache_gradle_distribution.py
+        run: |
+          python3 scripts/cache_gradle_distribution.py
+          python3 scripts/cache_kotlin_compilers.py
 
       - uses: subosito/flutter-action@v2
         with:
