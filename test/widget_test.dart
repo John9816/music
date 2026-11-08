@@ -164,6 +164,135 @@ void main() {
     );
   });
 
+  const androidReleaseAssets = [
+    {
+      'name': 'DuckMusic-Flutter-v1.1.54-Android-universal.apk',
+      'browser_download_url': 'https://example.com/universal.apk',
+    },
+    {
+      'name': 'DuckMusic-Flutter-v1.1.54-Android-armeabi-v7a.apk',
+      'browser_download_url': 'https://example.com/armv7.apk',
+    },
+    {
+      'name': 'DuckMusic-Flutter-v1.1.54-Android-x86_64.apk',
+      'browser_download_url': 'https://example.com/x64.apk',
+    },
+    {
+      'name': 'DuckMusic-Flutter-v1.1.54-Android-arm64-v8a.apk',
+      'browser_download_url': 'https://example.com/arm64.apk',
+    },
+    {
+      'name': 'DuckMusic-Flutter-v1.1.54-Android-x86.apk',
+      'browser_download_url': 'https://example.com/x86.apk',
+    },
+  ];
+  for (final scenario in [
+    (abi: ffi.Abi.androidArm64, url: 'https://example.com/arm64.apk'),
+    (abi: ffi.Abi.androidArm, url: 'https://example.com/armv7.apk'),
+    (abi: ffi.Abi.androidX64, url: 'https://example.com/x64.apk'),
+  ]) {
+    test('Android GitHub update prefers the matching ${scenario.abi} APK', () {
+      expect(
+        AppUpdateService.selectAssetUrl(
+          androidReleaseAssets,
+          UpdateTarget.android,
+          requiredNamePrefix: 'DuckMusic-Flutter-',
+          architecture: scenario.abi.toString(),
+        ),
+        scenario.url,
+      );
+    });
+
+    test('Android GitHub update falls back to universal for ${scenario.abi}',
+        () {
+      expect(
+        AppUpdateService.selectAssetUrl(
+          androidReleaseAssets
+              .where((asset) => asset['browser_download_url'] != scenario.url)
+              .toList(),
+          UpdateTarget.android,
+          architecture: scenario.abi.toString(),
+        ),
+        'https://example.com/universal.apk',
+      );
+    });
+
+    test('Android GitHub update rejects other ABIs for ${scenario.abi}', () {
+      expect(
+        AppUpdateService.selectAssetUrl(
+          androidReleaseAssets
+              .where((asset) =>
+                  asset['browser_download_url'] != scenario.url &&
+                  asset['browser_download_url'] !=
+                      'https://example.com/universal.apk')
+              .toList(),
+          UpdateTarget.android,
+          architecture: scenario.abi.toString(),
+        ),
+        isNull,
+      );
+    });
+  }
+
+  test('Android GitHub update does not guess an unknown device ABI', () {
+    expect(
+      AppUpdateService.selectAssetUrl(
+        androidReleaseAssets.sublist(1),
+        UpdateTarget.android,
+        architecture: 'unknown',
+      ),
+      isNull,
+    );
+  });
+
+  test('Android GitHub update preserves an unlabelled APK fallback', () {
+    expect(
+      AppUpdateService.selectAssetUrl(
+        [
+          androidReleaseAssets[1],
+          {
+            'name': 'DuckMusic-Flutter-v1.1.54-Android.apk',
+            'browser_download_url': 'https://example.com/app.apk',
+          },
+        ],
+        UpdateTarget.android,
+        architecture: ffi.Abi.androidArm64.toString(),
+      ),
+      'https://example.com/app.apk',
+    );
+  });
+
+  for (final scenario in [
+    (target: UpdateTarget.macos, architecture: 'macosArm64', extension: 'dmg'),
+    (
+      target: UpdateTarget.windows,
+      architecture: 'windowsX64',
+      extension: 'exe'
+    ),
+  ]) {
+    test('desktop update keeps universal preference for ${scenario.target}',
+        () {
+      expect(
+        AppUpdateService.selectAssetUrl(
+          [
+            {
+              'name':
+                  'DuckMusic-${scenario.architecture}.${scenario.extension}',
+              'browser_download_url': 'https://example.com/matching',
+            },
+            {
+              'name': 'DuckMusic-universal.${scenario.extension}',
+              'browser_download_url': 'https://example.com/universal',
+            },
+          ],
+          scenario.target,
+          architecture: scenario.architecture,
+        ),
+        'https://example.com/universal',
+      );
+    });
+  }
+
   test('update service distinguishes available, current, and failed checks',
       () async {
     final client = MockClient((request) async => http.Response(

@@ -363,9 +363,11 @@ class AppUpdateService {
             !name.contains('debug') &&
             url != null &&
             url.isNotEmpty) {
+          final score = _assetScore(name, target, architecture.toLowerCase());
+          if (score < 0) continue;
           candidates.add((
             asset: asset,
-            score: _assetScore(name, target, architecture.toLowerCase()),
+            score: score,
           ));
         }
       }
@@ -382,6 +384,13 @@ class AppUpdateService {
     UpdateTarget target,
     String architecture,
   ) {
+    if (target == UpdateTarget.android) {
+      final assetAbi = _androidAbi(name);
+      if (assetAbi != null) {
+        return assetAbi == _androidAbi(architecture) ? 110 : -1;
+      }
+      return name.contains('universal') ? 100 : 0;
+    }
     if (name.contains('universal')) return 100;
     final isArm64 = architecture.contains('arm64');
     final isX64 = architecture.contains('x64');
@@ -391,10 +400,20 @@ class AppUpdateService {
     if (isX64 && (name.contains('x64') || name.contains('x86_64'))) {
       return 90;
     }
-    if (target == UpdateTarget.android && name.contains('armeabi-v7a')) {
-      return 10;
-    }
     return 0;
+  }
+
+  static String? _androidAbi(String value) {
+    final match = RegExp(
+      r'(?:^|[-_.])(arm64-v8a|arm64|aarch64|armeabi-v7a|armv7|arm|x86_64|x64|x86|ia32)(?:[-_.]|$)',
+    ).firstMatch(value.replaceFirst(RegExp(r'^android_?'), ''));
+    return switch (match?.group(1)) {
+      'arm64-v8a' || 'arm64' || 'aarch64' => 'arm64-v8a',
+      'armeabi-v7a' || 'armv7' || 'arm' => 'armeabi-v7a',
+      'x86_64' || 'x64' => 'x86_64',
+      'x86' || 'ia32' => 'x86',
+      _ => null,
+    };
   }
 
   static List<String> _preferredExtensions(UpdateTarget target) {
