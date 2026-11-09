@@ -38,10 +38,20 @@ const _qqQualityOptions = [
   AudioQualityOption(id: 'lossless', label: '无损音质', detail: 'FLAC'),
 ];
 
+const _qishuiQualityOptions = [
+  AudioQualityOption(id: 'standard', label: '标准音质', detail: '128 Kbps'),
+  AudioQualityOption(
+      id: 'exhigh', label: '高品质', detail: '320 Kbps', isDefault: true),
+  AudioQualityOption(id: 'lossless', label: '无损音质', detail: 'FLAC'),
+  AudioQualityOption(id: 'hires', label: 'Hi-Res', detail: 'FLAC 24-bit'),
+];
+
 List<AudioQualityOption> qualityOptionsForSource(String source) =>
-    _normalizeSource(source) == 'qq'
-        ? _qqQualityOptions
-        : _defaultQualityOptions;
+    AppConfig.isQishui(source)
+        ? _qishuiQualityOptions
+        : _normalizeSource(source) == 'qq'
+            ? _qqQualityOptions
+            : _defaultQualityOptions;
 
 String defaultQualityForSource(String source) =>
     qualityOptionsForSource(source).firstWhere((option) => option.isDefault).id;
@@ -62,10 +72,14 @@ String qualityLabelForSource(String source, String quality) {
       .label;
 }
 
-String qualitySupportSummary(String source) =>
-    _normalizeSource(source) == 'qq' ? '支持 128K、320K 与 FLAC' : '支持智能选择与多档音质';
+String qualitySupportSummary(String source) => AppConfig.isQishui(source)
+    ? '支持 128K、320K、FLAC 与 Hi-Res，实际以解析结果为准'
+    : _normalizeSource(source) == 'qq'
+        ? '支持 128K、320K 与 FLAC'
+        : '支持智能选择与多档音质';
 
 String sourceDisplayName(String source) =>
     AppConfig.musicSources[_normalizeSource(source)] ?? source;
 
-String _normalizeSource(String source) => source.trim().toLowerCase();
+String _normalizeSource(String source) =>
+    AppConfig.normalizeMusicSource(source);

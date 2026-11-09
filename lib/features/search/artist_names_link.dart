@@ -155,7 +155,7 @@ Future<void> openArtistInfo(
     MaterialPageRoute(
       builder: (_) => ArtistDetailView(
         artistName: artist!.name,
-        artistId: artistId ?? (artist.id == 0 ? null : '${artist.id}'),
+        artistId: artistId ?? artist.detailId,
         source: source,
         initialImageUrl: artist.picUrl,
         initialTrackCount: initialTrackCount,

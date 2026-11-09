@@ -54,6 +54,7 @@ Map<String, dynamic> _songToJson(Song song) => {
         for (final artist in song.artists)
           {
             'id': artist.id,
+            'sourceId': artist.sourceId,
             'name': artist.name,
             'picUrl': artist.picUrl,
           },
@@ -83,6 +84,7 @@ Song? _songFromJson(Map<String, dynamic> json) {
       artists.add(
         Artist(
           id: _int(artist['id']),
+          sourceId: _text(artist['sourceId']),
           name: artistName,
           picUrl: _text(artist['picUrl']),
         ),

@@ -51,6 +51,9 @@ class Song {
                     : (index == 0 ? primaryArtistId : null) ?? '',
               ) ??
               0,
+          sourceId: index < ids.length
+              ? ids[index]
+              : (index == 0 ? primaryArtistId : null),
           name: names[index],
         ),
     ];
@@ -149,9 +152,12 @@ double? _numericValue(Object? value) {
 }
 
 class Artist {
-  const Artist({required this.id, required this.name, this.picUrl});
+  const Artist(
+      {required this.id, required this.name, this.picUrl, this.sourceId});
 
   final int id;
+  final String? sourceId;
+  String? get detailId => sourceId ?? (id == 0 ? null : id.toString());
   final String name;
   final String? picUrl;
 }

@@ -11,6 +11,7 @@ import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/glass.dart';
 import 'about_view.dart';
+import 'qishui_account_view.dart';
 import 'desktop_settings_view.dart';
 import 'ios_sideload_view.dart';
 import 'lyric_settings_view.dart';
@@ -49,6 +50,14 @@ class SettingsView extends StatelessWidget {
               ),
             ],
           ),
+          const SettingsSection('音乐账号'),
+          SettingsGroup(children: [
+            SettingsRow(
+                icon: Icons.account_circle_outlined,
+                title: '黑源账号',
+                subtitle: '汽水音乐扫码绑定与授权管理',
+                onTap: () => _open(context, const QishuiAccountView()))
+          ]),
           const SettingsSection('外观'),
           SettingsGroup(
             children: [
@@ -170,7 +179,7 @@ class SettingsView extends StatelessWidget {
       context,
       title: '选择音乐源',
       current: settings.source,
-      options: AppConfig.musicSources.entries
+      options: AppConfig.browsingMusicSources.entries
           .map((entry) => (value: entry.key, label: entry.value, detail: null))
           .toList(),
     );

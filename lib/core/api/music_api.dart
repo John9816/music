@@ -125,6 +125,14 @@ class ArtistCatalog {
 const List<PlaylistCategoryGroup> kPlaylistCategories =
     kPlaylistCategoryCatalog;
 
+class PlaylistSongPage {
+  const PlaylistSongPage(
+      {required this.songs, required this.hasMore, required this.nextOffset});
+  final List<Song> songs;
+  final bool hasMore;
+  final int nextOffset;
+}
+
 /// 音乐接口，对应 macOS 版 MusicApiService。
 class MusicApi {
   MusicApi({ApiClient? client}) : _client = client ?? ApiClient.instance;
@@ -203,6 +211,30 @@ class MusicApi {
       'id': '$id',
     });
     return _songList(data);
+  }
+
+  Future<PlaylistSongPage> getPlaylistPage(
+    String id, {
+    required String source,
+    int offset = 0,
+    int limit = 100,
+  }) async {
+    final size = limit.clamp(1, 100);
+    final data = await _client.getJson('api/v1/music/playlist/detail', params: {
+      'source': AppConfig.normalizeMusicSource(source),
+      'id': id,
+      'page': '${offset ~/ size + 1}',
+      'pageSize': '$size',
+    });
+    final songs = _songList(data);
+    final total = (data['total'] as num?)?.toInt();
+    return PlaylistSongPage(
+        songs: songs,
+        hasMore: songs.isNotEmpty &&
+            (total == null
+                ? songs.length >= size
+                : offset + songs.length < total),
+        nextOffset: offset + size);
   }
 
   /// 排行榜详情

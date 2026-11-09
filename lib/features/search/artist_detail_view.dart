@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api/artist_info_api.dart';
 import '../../core/api/music_api.dart';
+import '../../core/config/app_config.dart';
 import '../../core/models/artist_info.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
@@ -333,7 +334,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
         songCount == null
             ? '歌曲'
             : '歌曲 $songCount${catalog!.hasMore ? '+' : ''}',
-        albumCount == null ? '专辑' : '专辑 $albumCount',
+        if (!AppConfig.isQishui(widget.source))
+          albumCount == null ? '专辑' : '专辑 $albumCount',
       ],
       selected: _selectedTab,
       onSelected: (index) {
@@ -398,16 +400,18 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
         ),
         _buildSongPreview(catalogSnapshot),
         const SizedBox(height: 30),
-        _SectionTitle(
-          title: '代表专辑',
-          action: catalog != null && catalog.albums.length > (compact ? 2 : 4)
-              ? _TabAction(
-                  label: '全部专辑',
-                  onTap: () => setState(() => _selectedTab = 2),
-                )
-              : null,
-        ),
-        _buildAlbumPreview(catalogSnapshot, compact: compact),
+        if (!AppConfig.isQishui(widget.source))
+          _SectionTitle(
+            title: '代表专辑',
+            action: catalog != null && catalog.albums.length > (compact ? 2 : 4)
+                ? _TabAction(
+                    label: '全部专辑',
+                    onTap: () => setState(() => _selectedTab = 2),
+                  )
+                : null,
+          ),
+        if (!AppConfig.isQishui(widget.source))
+          _buildAlbumPreview(catalogSnapshot, compact: compact),
       ],
     );
   }

@@ -4,6 +4,7 @@ class Playlist {
     required this.id,
     required this.name,
     this.source,
+    this.sourceId,
     this.coverUrl,
     this.description,
     this.creatorName,
@@ -12,6 +13,8 @@ class Playlist {
   });
 
   final int id;
+  final String? sourceId;
+  String get detailId => sourceId ?? id.toString();
   final String name;
   final String? source;
   final String? coverUrl;
@@ -27,6 +30,7 @@ class Playlist {
     final name = json['name']?.toString().trim() ?? '';
     return Playlist(
       id: id,
+      sourceId: _optionalText(json['id']),
       name: name,
       source: _optionalText(json['source']),
       coverUrl: _optionalText(json['coverUrl']) ??

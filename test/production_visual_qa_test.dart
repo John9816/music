@@ -9,6 +9,8 @@ import 'dart:ui' as ui;
 
 import 'package:duck_music/core/api/api_client.dart';
 import 'package:duck_music/core/api/music_api.dart';
+import 'package:duck_music/core/api/qishui_api.dart';
+import 'package:duck_music/features/settings/qishui_account_view.dart';
 import 'package:duck_music/core/auth/auth_controller.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/models/playlist.dart';
@@ -59,6 +61,53 @@ void main() {
     }
   });
   setUp(() => SharedPreferences.setMockInitialValues(const {}));
+
+  for (final fixture in [
+    (
+      name: 'black-account-dark',
+      size: const Size(390, 844),
+      dark: true,
+      scale: 1.0,
+      bound: false
+    ),
+    (
+      name: 'black-account-light',
+      size: const Size(390, 844),
+      dark: false,
+      scale: 1.0,
+      bound: true
+    ),
+    (
+      name: 'black-account-large-text',
+      size: const Size(320, 700),
+      dark: true,
+      scale: 2.0,
+      bound: true
+    ),
+  ]) {
+    testWidgets('visual QA ${fixture.name}', (tester) async {
+      final api = QishuiApi(
+          client: ApiClient.forTesting(MockClient((_) async => http.Response(
+              jsonEncode({
+                'code': 0,
+                'data': {
+                  'bound': fixture.bound,
+                  'status': fixture.bound ? 'bound' : 'unbound',
+                  if (fixture.bound) 'nickname': '音乐爱好者',
+                  'vip': false
+                }
+              }),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'}))));
+      await _pump(tester,
+          size: fixture.size,
+          scale: fixture.scale,
+          dark: fixture.dark,
+          child: QishuiAccountView(api: api));
+      await _verifyAndCapture(tester, fixture.name);
+      expect(find.text(fixture.bound ? '重新扫码绑定' : '获取授权二维码'), findsOneWidget);
+    });
+  }
 
   testWidgets('visual QA independent home sections', (tester) async {
     final daily = Completer<List<Song>>();

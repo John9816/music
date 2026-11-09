@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api/music_api.dart';
+import '../../core/config/app_config.dart';
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/models/playlist.dart';
@@ -29,6 +30,7 @@ class PlaylistDetailView extends StatefulWidget {
     this.kind = PlaylistDetailKind.playlist,
     this.loader,
     this.userApi,
+    this.musicApi,
   });
 
   final Playlist playlist;
@@ -39,13 +41,22 @@ class PlaylistDetailView extends StatefulWidget {
 
   /// Tests and previews can supply a deterministic account API.
   final UserApi? userApi;
+  final MusicApi? musicApi;
 
   @override
   State<PlaylistDetailView> createState() => _PlaylistDetailViewState();
 }
 
 class _PlaylistDetailViewState extends State<PlaylistDetailView> {
-  final MusicApi _api = MusicApi();
+  late final MusicApi _api;
+  List<Song> _pagedSongs = [];
+  int _nextOffset = 0;
+  int _loadGeneration = 0;
+  bool _hasMore = false;
+  bool _loadingMore = false;
+  String? _moreError;
+  bool get _paged =>
+      widget.loader == null && AppConfig.isQishui(_playlistSource());
   late UserApi _userApi;
   late Future<List<Song>> _future;
   Future<List<Song>>? _loadingFuture;
@@ -65,9 +76,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   @override
   void initState() {
     super.initState();
+    _api = widget.musicApi ?? MusicApi();
     _userApi = widget.userApi ?? UserApi();
     _future = _startLoad();
     _mobileScrollController.addListener(_updateMobileTitle);
+    _mobileScrollController.addListener(_onPageScroll);
     if (_supportsPlaylistFavorites) unawaited(_loadFavoriteState());
   }
 
@@ -82,7 +95,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   @override
   void didUpdateWidget(covariant PlaylistDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playlist.id != widget.playlist.id ||
+    if (oldWidget.playlist.detailId != widget.playlist.detailId ||
+        oldWidget.playlist.source != widget.playlist.source ||
         oldWidget.kind != widget.kind) {
       _isFavorite = false;
       _favoriteLoading = false;
@@ -104,11 +118,86 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 
   Future<List<Song>> _load() async {
     if (widget.loader != null) return widget.loader!();
+    if (_paged) {
+      final generation = ++_loadGeneration;
+      _hasMore = false;
+      _loadingMore = false;
+      _moreError = null;
+      final page = await _api.getPlaylistPage(widget.playlist.detailId,
+          source: _playlistSource());
+      if (mounted && generation == _loadGeneration) {
+        _pagedSongs = page.songs;
+        _nextOffset = page.nextOffset;
+        _hasMore = page.hasMore;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _onPageScroll());
+      }
+      return page.songs;
+    }
     return _api.getPlaylistDetail(
       widget.playlist.id,
       source: _playlistSource(),
     );
   }
+
+  void _onPageScroll() {
+    if (!mounted ||
+        !_paged ||
+        !_mobileScrollController.hasClients ||
+        _moreError != null) {
+      return;
+    }
+    if (_mobileScrollController.position.extentAfter < 600) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (!_hasMore || _loadingMore) return;
+    final generation = _loadGeneration;
+    setState(() {
+      _loadingMore = true;
+      _moreError = null;
+    });
+    try {
+      final page = await _api.getPlaylistPage(widget.playlist.detailId,
+          source: _playlistSource(), offset: _nextOffset);
+      if (!mounted || generation != _loadGeneration) return;
+      final songs = {for (final s in _pagedSongs) '${s.source}:${s.id}': s};
+      final before = songs.length;
+      for (final s in page.songs) {
+        songs['${s.source}:${s.id}'] = s;
+      }
+      setState(() {
+        _pagedSongs = songs.values.toList();
+        _nextOffset = page.nextOffset;
+        _hasMore = page.hasMore && songs.length > before;
+      });
+    } catch (error) {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _moreError = error.toString());
+      }
+    } finally {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loadingMore = false);
+      }
+    }
+  }
+
+  Widget _pagingFooter() => SliverToBoxAdapter(
+      child: !_paged
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                  child: _loadingMore
+                      ? const CircularProgressIndicator()
+                      : _moreError != null
+                          ? TextButton(
+                              onPressed: _loadMore,
+                              child: const Text('加载更多失败，点击重试'))
+                          : _hasMore
+                              ? TextButton(
+                                  onPressed: _loadMore,
+                                  child: const Text('继续加载'))
+                              : Text('已加载 ${_pagedSongs.length} 首'))));
 
   Future<List<Song>> _startLoad() {
     final existing = _loadingFuture;
@@ -149,7 +238,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       final source = _playlistSource();
       final status = await _userApi.getPlaylistFavoriteStatus(
         source,
-        widget.playlist.id.toString(),
+        widget.playlist.detailId,
         token,
       );
       if (!mounted || !_supportsPlaylistFavorites) return;
@@ -174,7 +263,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       if (_isFavorite) {
         await _userApi.removePlaylistFavorite(
           _playlistSource(),
-          widget.playlist.id.toString(),
+          widget.playlist.detailId,
           token,
         );
         if (!mounted) return;
@@ -186,7 +275,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
       } else {
         await _userApi.addPlaylistFavorite(
           _playlistSource(),
-          widget.playlist.id.toString(),
+          widget.playlist.detailId,
           token,
         );
         if (!mounted) return;
@@ -295,7 +384,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
             );
           }
 
-          final allSongs = snapshot.data ?? const <Song>[];
+          final allSongs = _paged &&
+                  snapshot.connectionState == ConnectionState.done &&
+                  !snapshot.hasError
+              ? _pagedSongs
+              : snapshot.data ?? const <Song>[];
           final query = _searchQuery.trim().toLowerCase();
           final songs = query.isEmpty
               ? allSongs
@@ -309,6 +402,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               final desktop = constraints.maxWidth >= 720;
               final horizontal = desktop ? 20.0 : 18.0;
               return CustomScrollView(
+                controller: _mobileScrollController,
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
@@ -382,6 +476,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                         ),
                       ),
                     ),
+                  _pagingFooter(),
                   const SliverToBoxAdapter(child: SizedBox(height: 30)),
                 ],
               );
@@ -408,7 +503,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
             child: FutureBuilder<List<Song>>(
               future: _future,
               builder: (context, snapshot) {
-                final loadedSongs = snapshot.data ?? const <Song>[];
+                final loadedSongs = _paged &&
+                        snapshot.connectionState == ConnectionState.done &&
+                        !snapshot.hasError
+                    ? _pagedSongs
+                    : snapshot.data ?? const <Song>[];
                 final query = _searchQuery.trim().toLowerCase();
                 var visibleSongs = query.isEmpty
                     ? loadedSongs
@@ -610,6 +709,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               );
             },
           ),
+        _pagingFooter(),
         const SliverToBoxAdapter(
           child: ColoredBox(
             color: panelColor,

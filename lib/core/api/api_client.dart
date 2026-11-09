@@ -61,6 +61,7 @@ class ApiClient {
     Map<String, String>? params,
     Map<String, String>? headers,
     bool retry = true,
+    bool retryUnauthorized = true,
   }) {
     return _request(
       () {
@@ -69,6 +70,7 @@ class ApiClient {
         return _client.get(uri, headers: _requestHeaders(headers));
       },
       retry: retry,
+      retryUnauthorized: retryUnauthorized,
     );
   }
 
@@ -160,12 +162,13 @@ class ApiClient {
     String path, {
     Map<String, String>? params,
     Map<String, String>? headers,
+    bool retryUnauthorized = true,
   }) {
     return _request(() {
       final uri = Uri.parse('${AppConfig.apiBaseUrl}$path')
           .replace(queryParameters: params);
       return _client.delete(uri, headers: _requestHeaders(headers));
-    });
+    }, retryUnauthorized: retryUnauthorized);
   }
 
   /// 统一执行：超时 + 网络错误转中文 + GET 幂等请求自动重试一次。

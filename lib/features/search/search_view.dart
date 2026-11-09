@@ -17,6 +17,7 @@ import '../../widgets/song_row.dart';
 import '../../core/utils/image_cache_manager.dart';
 import '../playlists/playlist_detail_view.dart';
 import 'artist_names_link.dart';
+import '../settings/qishui_account_view.dart';
 
 /// 搜索类型
 enum _SearchType { all, song, artist, album, playlist }
@@ -128,6 +129,10 @@ class _SearchViewState extends State<SearchView> {
     final source = _settings.searchSource;
     if (source == _lastSource) return;
     _lastSource = source;
+    if (AppConfig.isQishui(source) &&
+        (_type == _SearchType.artist || _type == _SearchType.album)) {
+      setState(() => _type = _SearchType.song);
+    }
     if (mounted && _keyword.isNotEmpty) {
       _search(_keyword, clearResults: true);
     }
@@ -186,6 +191,7 @@ class _SearchViewState extends State<SearchView> {
         ? playlist
         : Playlist(
             id: playlist.id,
+            sourceId: playlist.sourceId,
             name: playlist.name,
             source: source,
             coverUrl: playlist.coverUrl,
@@ -199,7 +205,7 @@ class _SearchViewState extends State<SearchView> {
         context,
         (_) => PlaylistDetailView(
           playlist: resolved,
-          loader: () => _api.getPlaylistDetail(playlist.id, source: source),
+          musicApi: _api,
         ),
       ),
     );
@@ -296,24 +302,30 @@ class _SearchViewState extends State<SearchView> {
             offset: (page - 1) * _pageSize,
             limit: _pageSize,
           ),
-          _searchArtistsAll(
-            keyword,
-            offset: (page - 1) * _pageSize,
-            limit: _pageSize,
-          ),
-          _searchAlbumsAll(
-            keyword,
-            offset: (page - 1) * _pageSize,
-            limit: _pageSize,
-          ),
+          if (!AppConfig.isQishui(source))
+            _searchArtistsAll(
+              keyword,
+              offset: (page - 1) * _pageSize,
+              limit: _pageSize,
+            ),
+          if (!AppConfig.isQishui(source))
+            _searchAlbumsAll(
+              keyword,
+              offset: (page - 1) * _pageSize,
+              limit: _pageSize,
+            ),
         ]);
         if (!_isCurrentRequest(requestVersion, keyword, type, source)) {
           return;
         }
         final playlists = values[0] as List<Playlist>;
         final songs = values[1] as List<Song>;
-        final artists = values[2] as List<SearchArtist>;
-        final albums = values[3] as List<SearchAlbum>;
+        final artists = AppConfig.isQishui(source)
+            ? <SearchArtist>[]
+            : values[2] as List<SearchArtist>;
+        final albums = AppConfig.isQishui(source)
+            ? <SearchAlbum>[]
+            : values[3] as List<SearchAlbum>;
 
         if (page > _page &&
             playlists.isEmpty &&
@@ -705,6 +717,23 @@ class _SearchViewState extends State<SearchView> {
               SliverToBoxAdapter(
                 child: Column(children: [
                   _buildToolbar(wide: wide),
+                  if (AppConfig.isQishui(_settings.searchSource))
+                    Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(children: [
+                          Expanded(
+                              child: Text('支持歌曲与歌单搜索',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant))),
+                          TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                  buildAppRoute(context,
+                                      (_) => const QishuiAccountView())),
+                              child: const Text('账号绑定')),
+                        ])),
                   Row(children: [
                     Expanded(child: _buildTypeTabs()),
                     if (wide && _resultCount > 0)
@@ -771,12 +800,13 @@ class _SearchViewState extends State<SearchView> {
 
   /// The same explicit scopes remain available on both sides of a breakpoint.
   Widget _buildTypeTabs() {
-    const labels = ['综合', '单曲', '歌手', '专辑', '歌单'];
-    const types = [
+    final black = AppConfig.isQishui(_settings.searchSource);
+    final labels = ['综合', '单曲', if (!black) '歌手', if (!black) '专辑', '歌单'];
+    final types = [
       _SearchType.all,
       _SearchType.song,
-      _SearchType.artist,
-      _SearchType.album,
+      if (!black) _SearchType.artist,
+      if (!black) _SearchType.album,
       _SearchType.playlist,
     ];
     final scheme = Theme.of(context).colorScheme;

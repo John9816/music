@@ -60,6 +60,34 @@ void main() {
         : _emptyResults();
   });
 
+  testWidgets(
+      'black source searches only supported categories without changing home',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {
+      'music_source': 'kuwo',
+      'search_music_source': 'qishui',
+    });
+    _respond = (_) async => _emptyResults();
+    await _pumpSearch(tester);
+    expect(_requests.map((r) => r.source), everyElement('qishui'));
+    expect(_requests.map((r) => r.type).toSet(), {'SONG', 'PLAYLIST'});
+    expect(find.text('歌手'), findsNothing);
+    expect(find.text('专辑'), findsNothing);
+    expect((await SharedPreferences.getInstance()).getString('music_source'),
+        'kuwo');
+  });
+
+  testWidgets('switching artist scope to black source selects songs',
+      (tester) async {
+    _respond = (_) async => _emptyResults();
+    await _pumpSearch(tester, size: const Size(390, 844));
+    await _tapType(tester, '歌手');
+    _requests.clear();
+    await _tapSource(tester, 'qishui');
+    expect(_requests.map((r) => r.type), ['SONG']);
+    expect(find.text('歌手'), findsNothing);
+  });
+
   testWidgets('saved search source remains separate from the browsing source',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {

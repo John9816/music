@@ -86,7 +86,10 @@ class SettingsController extends ChangeNotifier {
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _source = prefs.getString(_sourceKey) ?? 'netease';
+      final savedSource = prefs.getString(_sourceKey);
+      _source = AppConfig.browsingMusicSources.containsKey(savedSource)
+          ? savedSource!
+          : 'netease';
       final savedSearchSource = prefs.getString(_searchSourceKey);
       _searchSource = AppConfig.musicSources.containsKey(savedSearchSource)
           ? savedSearchSource!
@@ -130,8 +133,11 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
-  Future<void> setSource(String value) =>
-      _setString(_sourceKey, value, () => _source, (v) => _source = v);
+  Future<void> setSource(String value) => _setString(
+      _sourceKey,
+      AppConfig.browsingMusicSources.containsKey(value) ? value : _source,
+      () => _source,
+      (v) => _source = v);
 
   Future<void> setCarModeEnabled(bool value) => _setBool(
       _carModeKey, value, () => _carModeEnabled, (v) => _carModeEnabled = v);

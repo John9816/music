@@ -60,7 +60,22 @@ class AppConfig {
     'netease': '红源',
     'qq': '绿源',
     'kuwo': '橙源',
+    'qishui': '黑源',
   };
+
+  static String normalizeMusicSource(String source) =>
+      source.trim().toLowerCase() == 'qs'
+          ? 'qishui'
+          : source.trim().toLowerCase();
+
+  static bool isQishui(String source) =>
+      normalizeMusicSource(source) == 'qishui';
+
+  /// 黑源暂不提供首页推荐、榜单及分类目录。
+  static Map<String, String> get browsingMusicSources => {
+        for (final entry in musicSources.entries)
+          if (!isQishui(entry.key)) entry.key: entry.value,
+      };
 
   /// 音质档位 -> API 参数值（对应 macOS 版 AudioQuality）
   static const Map<String, String> qualityValues = {
