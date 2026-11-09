@@ -2,11 +2,42 @@ import 'dart:convert';
 
 import 'package:duck_music/core/api/api_client.dart';
 import 'package:duck_music/core/api/music_api.dart';
+import 'package:duck_music/core/config/app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  for (final path in [
+    '/api/public/music/qishui/stream?ticket=test%2Bsignature%2Fvalue%3D',
+    'api/public/music/qishui/stream?ticket=test%2Bsignature%2Fvalue%3D',
+  ]) {
+    test('resolves black source stream against API origin: $path', () async {
+      final api =
+          MusicApi(client: ApiClient.forTesting(MockClient((request) async {
+        return http.Response(
+            jsonEncode({
+              'code': 0,
+              'data': {
+                'source': 'qishui',
+                'actualSource': 'qishui',
+                'actualId': 'recording',
+                'lyricMatch': 'exact',
+                'playUrl': path,
+              },
+            }),
+            200);
+      })));
+      const expected = '${AppConfig.apiBaseUrl}'
+          'api/public/music/qishui/stream?ticket=test%2Bsignature%2Fvalue%3D';
+      final info = await api.getPlaybackInfo('recording', source: 'qishui');
+      expect(info.playUrl, expected);
+      expect(info.audioIdentity.canLoadLyrics, isTrue);
+      expect(await api.getSongUrl('recording', source: 'qishui', prefetch: true),
+          expected);
+    });
+  }
+
   test('download prefetch reaches the play endpoint through both API methods',
       () async {
     final api =

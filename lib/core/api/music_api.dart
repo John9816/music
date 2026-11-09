@@ -451,7 +451,19 @@ class MusicApi {
       },
       retry: false,
     );
-    return PlaybackInfo.fromJson(data, id: id, source: source);
+    // Same-origin streams are relative for web clients. Native playback and
+    // downloads need the full API URL, preserving the encoded stream ticket.
+    final playUrl = _textOrNull(data['playUrl']);
+    final uri = playUrl == null ? null : Uri.parse(playUrl);
+    return PlaybackInfo.fromJson(
+      {
+        ...data,
+        if (uri != null && !uri.hasScheme)
+          'playUrl': Uri.parse(AppConfig.apiBaseUrl).resolveUri(uri).toString(),
+      },
+      id: id,
+      source: source,
+    );
   }
 
   /// Prefer verified word timing; keep ordinary lyrics for unsupported formats.
