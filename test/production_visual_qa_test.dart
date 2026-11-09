@@ -105,6 +105,10 @@ void main() {
           dark: fixture.dark,
           child: QishuiAccountView(api: api));
       await _verifyAndCapture(tester, fixture.name);
+      expect(
+          find.text(
+              '使用抖音扫码绑定汽水账号。绑定后可使用个人音乐漫游；授权过期时可刷新或重新扫码。'),
+          findsOneWidget);
       expect(find.text(fixture.bound ? '重新扫码绑定' : '获取授权二维码'), findsOneWidget);
     });
   }
@@ -135,7 +139,7 @@ void main() {
           child: const HomeShell());
       await tester.tap(fixture.size.width > 1000
           ? find.text('音乐爱好者').last
-          : find.byTooltip('我的'));
+          : find.text('我的').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的歌单').last);
       await tester.pumpAndSettle();
@@ -189,7 +193,7 @@ void main() {
       await _verifyAndCapture(tester, 'song-menu-phone-$mode');
       await tester.tapAt(const Offset(2, 80));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('我的'));
+      await tester.tap(find.text('我的').last);
       await tester.pumpAndSettle();
       await _verifyAndCapture(tester, 'profile-phone-$mode');
       await tester.tap(find.byTooltip('设置'));

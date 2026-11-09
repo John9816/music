@@ -1,3 +1,4 @@
+import 'package:duck_music/features/settings/settings_view.dart';
 import 'package:duck_music/core/models/song.dart';
 import 'package:duck_music/core/models/artist_info.dart';
 import 'package:duck_music/core/api/artist_info_api.dart';
@@ -999,7 +1000,8 @@ void main() {
     await pumpAt(const Size(390, 844));
   });
 
-  testWidgets('mobile player disc reflects the actual playback fraction',
+  testWidgets(
+      'collapsed mobile player disc reflects the actual playback fraction',
       (tester) async {
     final player = _PreviewPlayerController();
     addTearDown(player.dispose);
@@ -1015,7 +1017,7 @@ void main() {
           theme: AppTheme.byId('dark').data.copyWith(
                 platform: TargetPlatform.iOS,
               ),
-          home: const Scaffold(body: MiniPlayer()),
+          home: const Scaffold(body: MiniPlayer(collapsed: true)),
         ),
       ),
     );
@@ -1027,9 +1029,7 @@ void main() {
     expect(progress.value, closeTo(170 / 207, .001));
     expect(find.byKey(const ValueKey('mobile-mini-player-progress-fill')),
         findsNothing);
-    expect(find.byTooltip('上一首'), findsOneWidget);
-    expect(find.byTooltip('播放'), findsOneWidget);
-    expect(find.byTooltip('下一首'), findsOneWidget);
+    expect(find.byTooltip('打开播放器'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1738,7 +1738,6 @@ void main() {
     expect(find.byType(SearchView), findsOneWidget);
 
     final qqSource = find.byKey(const ValueKey('search_source_qq'));
-    await tester.tap(find.byKey(const ValueKey('search-source-picker')));
     await tester.pumpAndSettle();
     expect(tester.getSize(qqSource).height, greaterThanOrEqualTo(40));
     final sourceRect = tester.getRect(qqSource);
@@ -2579,15 +2578,15 @@ void main() {
     await reachNextPage('song');
     expect(api.calls, contains(('song', 30, 30)));
 
-    for (final type in const ['歌手', '专辑', '歌单']) {
+    for (final type in const ['艺人', '专辑', '歌单']) {
       final scroll = tester.widget<CustomScrollView>(
           find.byKey(const ValueKey('search-results-scroll')));
       scroll.controller!.jumpTo(0);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(type));
+      await tester.tap(find.text(type).first);
       await tester.pumpAndSettle();
       final apiType = switch (type) {
-        '歌手' => 'artist',
+        '艺人' => 'artist',
         '专辑' => 'album',
         _ => 'playlist',
       };
@@ -2637,7 +2636,6 @@ void main() {
         ]));
 
     api.sources.clear();
-    await tester.tap(find.byKey(const ValueKey('search-source-picker')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('绿源'));
     await tester.pump();
@@ -2694,16 +2692,16 @@ void main() {
     );
     await tester.pump();
 
-    final navLabels = ['首页', '搜索', '发现', '我的'];
+    final navLabels = ['探索', '资料库', '我的'];
     final labelCenters = [
-      for (final label in navLabels) tester.getCenter(find.byTooltip(label)).dx,
+      for (final label in navLabels) tester.getCenter(find.text(label).last).dx,
     ];
     expect(labelCenters, orderedEquals([...labelCenters]..sort()));
-    expect(find.text('资料库'), findsNothing);
+    expect(find.text('资料库'), findsWidgets);
     expect(find.text('影视'), findsNothing);
     expect(find.text('直播'), findsNothing);
 
-    await tester.tap(find.byTooltip('我的'));
+    await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     expect(find.text('喜欢的音乐'), findsOneWidget);
     expect(find.text('播放历史'), findsOneWidget);
@@ -2712,6 +2710,12 @@ void main() {
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
     expect(find.text('深浅模式'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('默认播放音质'), 200,
+        scrollable: find
+            .descendant(
+                of: find.byType(SettingsView),
+                matching: find.byType(Scrollable))
+            .first);
     expect(find.text('默认播放音质'), findsOneWidget);
     await tester.tap(find.byTooltip('返回'));
     await tester.pumpAndSettle();
@@ -2821,7 +2825,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byTooltip('我的'));
+    await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -2897,13 +2901,13 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byTooltip('我的'));
+    await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
     await _sendSystemBack(tester);
     expect(find.byType(ProfileView), findsOneWidget);
-    await tester.tap(find.byTooltip('首页'));
+    await tester.tap(find.text('探索').last);
     await tester.pumpAndSettle();
 
     await _sendSystemBack(tester);
@@ -2953,7 +2957,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byTooltip('我的'));
+    await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();

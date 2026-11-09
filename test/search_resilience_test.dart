@@ -60,8 +60,7 @@ void main() {
         : _emptyResults();
   });
 
-  testWidgets(
-      'black source searches only supported categories without changing home',
+  testWidgets('black source includes artists and albums without changing home',
       (tester) async {
     SharedPreferences.setMockInitialValues(const {
       'music_source': 'kuwo',
@@ -70,22 +69,23 @@ void main() {
     _respond = (_) async => _emptyResults();
     await _pumpSearch(tester);
     expect(_requests.map((r) => r.source), everyElement('qishui'));
-    expect(_requests.map((r) => r.type).toSet(), {'SONG', 'PLAYLIST'});
-    expect(find.text('歌手'), findsNothing);
-    expect(find.text('专辑'), findsNothing);
+    expect(_requests.map((r) => r.type).toSet(),
+        {'SONG', 'PLAYLIST', 'ARTIST', 'ALBUM'});
+    expect(find.text('艺人'), findsOneWidget);
+    expect(find.text('专辑'), findsOneWidget);
     expect((await SharedPreferences.getInstance()).getString('music_source'),
         'kuwo');
   });
 
-  testWidgets('switching artist scope to black source selects songs',
+  testWidgets('switching artist scope to black source preserves artist scope',
       (tester) async {
     _respond = (_) async => _emptyResults();
     await _pumpSearch(tester, size: const Size(390, 844));
-    await _tapType(tester, '歌手');
+    await _tapType(tester, '艺人');
     _requests.clear();
     await _tapSource(tester, 'qishui');
-    expect(_requests.map((r) => r.type), ['SONG']);
-    expect(find.text('歌手'), findsNothing);
+    expect(_requests.map((r) => r.type), ['ARTIST']);
+    expect(find.text('艺人'), findsOneWidget);
   });
 
   testWidgets('saved search source remains separate from the browsing source',
@@ -142,7 +142,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final kind in ['歌手', '专辑', '歌单']) {
+  for (final kind in ['艺人', '专辑', '歌单']) {
     testWidgets(
         '$kind details inherit the search source when metadata omits it',
         (tester) async {
@@ -163,13 +163,13 @@ void main() {
       await _pumpSearch(tester, size: const Size(390, 844));
       await _tapType(tester, kind);
       final title = switch (kind) {
-        '歌手' => '歌手 0',
+        '艺人' => '歌手 0',
         '专辑' => '搜索专辑',
         _ => '一张适合安静工作时聆听的精选歌单',
       };
       await tester.tap(find.text(title));
       await tester.pumpAndSettle();
-      if (kind == '歌手') {
+      if (kind == '艺人') {
         expect(
             tester
                 .widget<ArtistDetailView>(find.byType(ArtistDetailView))
@@ -253,7 +253,7 @@ void main() {
           _ => _emptyResults(),
         };
     await _pumpSearch(tester, size: const Size(390, 844));
-    await _tapType(tester, '综合');
+    await _tapType(tester, '全部');
     await _scrollNearEnd(tester, settle: false);
     final before = tester.getTopLeft(find.text('歌曲 29')).dy;
     nextSongs.complete(_songs(1, start: 30));
@@ -268,10 +268,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final kind in ['歌手', '专辑', '歌单']) {
+  for (final kind in ['艺人', '专辑', '歌单']) {
     testWidgets('$kind appends the next batch and keeps earlier results',
         (tester) async {
-      final apiType = {'歌手': 'ARTIST', '专辑': 'ALBUM', '歌单': 'PLAYLIST'}[kind]!;
+      final apiType = {'艺人': 'ARTIST', '专辑': 'ALBUM', '歌单': 'PLAYLIST'}[kind]!;
       _respond = (request) async => request.type == apiType
           ? _namedResults(apiType, request.page == 1 ? 30 : 1,
               start: request.page == 1 ? 0 : 30)
@@ -281,9 +281,9 @@ void main() {
       await _scrollNearEnd(tester);
       _resultPosition(tester).jumpTo(_resultPosition(tester).maxScrollExtent);
       await tester.pumpAndSettle();
-      expect(find.text('$kind 30'), findsOneWidget);
+      expect(find.text('${kind == '艺人' ? '歌手' : kind} 30'), findsOneWidget);
       await _scrollToTop(tester);
-      expect(find.text('$kind 0'), findsOneWidget);
+      expect(find.text('${kind == '艺人' ? '歌手' : kind} 0'), findsOneWidget);
       expect(
           _requests
               .where((request) => request.type == apiType)
@@ -345,7 +345,7 @@ void main() {
           await tester.testTextInput.receiveAction(TextInputAction.search);
           await tester.pumpAndSettle();
         case 'type':
-          await _tapType(tester, '歌手');
+          await _tapType(tester, '艺人');
         case 'source':
           await _tapSource(tester, 'qq');
         case 'clear':
@@ -360,7 +360,7 @@ void main() {
           find.text(change == 'type'
               ? '歌手 90'
               : change == 'clear'
-                  ? '热门搜索'
+                  ? '搜索推荐'
                   : '歌曲 90'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -372,7 +372,7 @@ void main() {
     await _pumpSearch(tester, contentWidth: 390);
 
     expect(tester.getSize(find.byType(SearchView)).width, 390);
-    expect(find.text('单曲').hitTestable(), findsOneWidget);
+    expect(find.text('歌曲').hitTestable(), findsOneWidget);
     expect(_requests.map((request) => request.type), ['SONG']);
     expect(find.byTooltip('下一页'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -393,16 +393,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('phone starts results below one compact toolbar and category row',
+  testWidgets(
+      'phone starts results below compact search, source and category rows',
       (tester) async {
     await _pumpSearch(tester,
         size: const Size(390, 844), platform: TargetPlatform.android);
     expect(find.text('搜索结果'), findsNothing);
     expect(find.byTooltip('下一页'), findsNothing);
-    expect(tester.getTopLeft(find.byType(SongRow).first).dy, lessThan(140));
+    expect(tester.getTopLeft(find.byType(SongRow).first).dy, lessThan(196));
     expect(tester.getSize(find.byType(EditableText)).width,
         greaterThanOrEqualTo(190));
-    expect(tester.getSize(find.widgetWithText(GPressScale, '单曲')).height,
+    expect(tester.getSize(find.widgetWithText(GPressScale, '歌曲')).height,
         greaterThanOrEqualTo(48));
     expect(
         tester
@@ -438,7 +439,7 @@ void main() {
             start: request.page == 1 ? 0 : 30)
         : _emptyResults();
     await _pumpSearch(tester, size: const Size(390, 844));
-    await _tapType(tester, '歌手');
+    await _tapType(tester, '艺人');
     expect(find.text('歌手 0'), findsOneWidget);
 
     tester.view.physicalSize = const Size(1280, 800);
@@ -547,7 +548,6 @@ void main() {
     );
     expect(tester.takeException(), isNull);
 
-    await _tapType(tester, '单曲');
     final source = find.byKey(const ValueKey('search-source-picker'));
     await tester.ensureVisible(source);
     await tester.pumpAndSettle();
@@ -569,7 +569,11 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final song = find.text('歌曲 0');
-    await tester.ensureVisible(song);
+    await tester.scrollUntilVisible(song, 100,
+        scrollable: find
+            .byWidgetPredicate(
+                (w) => w is Scrollable && w.axisDirection == AxisDirection.down)
+            .first);
     await tester.pumpAndSettle();
     expect(song.hitTestable(), findsOneWidget);
     await _scrollNearEnd(tester);
@@ -667,12 +671,6 @@ Future<void> _scrollToTop(WidgetTester tester, {bool settle = true}) async {
 Future<void> _tapSource(WidgetTester tester, String source,
     {bool settle = true}) async {
   await _scrollToTop(tester, settle: false);
-  final picker = find.byKey(const ValueKey('search-source-picker'));
-  if (picker.evaluate().isNotEmpty) {
-    await tester.tap(picker);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-  }
   await tester.tap(find.byKey(ValueKey('search_source_$source')));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));

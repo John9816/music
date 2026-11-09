@@ -93,6 +93,7 @@ class _DuckMusicAppState extends State<DuckMusicApp>
         ChangeNotifierProvider.value(value: SongDownloadService.instance),
         ChangeNotifierProvider.value(value: _auth),
         ChangeNotifierProvider.value(value: widget.runtime.library),
+        ChangeNotifierProvider.value(value: widget.runtime.roaming),
         ChangeNotifierProvider(create: (_) => SleepTimer()),
         ChangeNotifierProvider.value(value: _iosSideload),
       ],

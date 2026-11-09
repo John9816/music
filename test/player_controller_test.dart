@@ -22,6 +22,70 @@ import 'package:just_audio/just_audio.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets(
+      'cold black audio remains loading after twenty seconds and can complete',
+      (tester) async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer()..holdNextLoad();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    final pending = player.playQueue(
+        [_playbackSong('cold', const Duration(minutes: 3), source: 'qishui')]);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 22));
+    expect(player.loading, isTrue);
+    expect(player.error, isNull);
+    native.releaseHeldLoad();
+    await tester.pump();
+    await pending;
+    expect(player.playing, isTrue);
+    expect(player.error, isNull);
+    await player.pause();
+  });
+
+  test(
+      'feed continuation appends without restarting and manual queue invalidates a pending page',
+      () async {
+    final settings = SettingsController();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+        settings: settings,
+        audioPlayer: native,
+        musicApi: _FakePlaybackMusicApi(),
+        localFileFor: (_) async => null,
+        maintainAudioCache: (_) async {},
+        lastPlaybackStore: _MemoryLastPlaybackStore());
+    addTearDown(player.dispose);
+    addTearDown(settings.dispose);
+    await player.playQueue([_playbackSong('a', const Duration(minutes: 3))]);
+    final generation = player.queueGeneration;
+    player.appendQueue([
+      _playbackSong('a', const Duration(minutes: 3)),
+      _playbackSong('b', const Duration(minutes: 3))
+    ], generation: generation);
+    expect(player.queue.map((s) => s.id), ['a', 'b']);
+    expect(native.loadCount, 1);
+    final pending = Completer<bool>();
+    await player.next();
+    player.loadMoreQueue = () => pending.future;
+    final next = player.next();
+    await player
+        .playQueue([_playbackSong('manual', const Duration(minutes: 3))]);
+    player.appendQueue([_playbackSong('stale', const Duration(minutes: 3))],
+        generation: generation);
+    pending.complete(true);
+    await next;
+    expect(player.current!.id, 'manual');
+    expect(player.queue.map((s) => s.id), ['manual']);
+  });
+
   test('playback modes cycle list, single, shuffle without conflicting flags',
       () async {
     final settings = SettingsController();

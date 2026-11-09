@@ -12,22 +12,24 @@ import '../../core/player/player_controller.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/music_page_background.dart';
 import '../../widgets/playlist_card.dart';
 import '../../widgets/song_row.dart';
 import '../../core/utils/image_cache_manager.dart';
 import '../playlists/playlist_detail_view.dart';
 import 'artist_names_link.dart';
-import '../settings/qishui_account_view.dart';
 
 /// 搜索类型
 enum _SearchType { all, song, artist, album, playlist }
 
 /// 搜索页：综合 / 单曲 / 歌手 / 专辑 / 歌单搜索 + 多源切换 + 连续加载。
 class SearchView extends StatefulWidget {
-  const SearchView({super.key, this.api, this.initialQuery, this.focusNode});
+  const SearchView(
+      {super.key, this.api, this.initialQuery, this.focusNode, this.onCancel});
 
   final MusicApi? api;
   final String? initialQuery;
+  final VoidCallback? onCancel;
 
   /// Borrowed from the shell when provided; ownership stays with the caller.
   final FocusNode? focusNode;
@@ -129,10 +131,6 @@ class _SearchViewState extends State<SearchView> {
     final source = _settings.searchSource;
     if (source == _lastSource) return;
     _lastSource = source;
-    if (AppConfig.isQishui(source) &&
-        (_type == _SearchType.artist || _type == _SearchType.album)) {
-      setState(() => _type = _SearchType.song);
-    }
     if (mounted && _keyword.isNotEmpty) {
       _search(_keyword, clearResults: true);
     }
@@ -302,30 +300,24 @@ class _SearchViewState extends State<SearchView> {
             offset: (page - 1) * _pageSize,
             limit: _pageSize,
           ),
-          if (!AppConfig.isQishui(source))
-            _searchArtistsAll(
-              keyword,
-              offset: (page - 1) * _pageSize,
-              limit: _pageSize,
-            ),
-          if (!AppConfig.isQishui(source))
-            _searchAlbumsAll(
-              keyword,
-              offset: (page - 1) * _pageSize,
-              limit: _pageSize,
-            ),
+          _searchArtistsAll(
+            keyword,
+            offset: (page - 1) * _pageSize,
+            limit: _pageSize,
+          ),
+          _searchAlbumsAll(
+            keyword,
+            offset: (page - 1) * _pageSize,
+            limit: _pageSize,
+          ),
         ]);
         if (!_isCurrentRequest(requestVersion, keyword, type, source)) {
           return;
         }
         final playlists = values[0] as List<Playlist>;
         final songs = values[1] as List<Song>;
-        final artists = AppConfig.isQishui(source)
-            ? <SearchArtist>[]
-            : values[2] as List<SearchArtist>;
-        final albums = AppConfig.isQishui(source)
-            ? <SearchAlbum>[]
-            : values[3] as List<SearchAlbum>;
+        final artists = values[2] as List<SearchArtist>;
+        final albums = values[3] as List<SearchAlbum>;
 
         if (page > _page &&
             playlists.isEmpty &&
@@ -492,51 +484,65 @@ class _SearchViewState extends State<SearchView> {
   Widget _buildSourcePicker({required bool showLabel}) {
     final settings = context.watch<SettingsController>();
     final scheme = Theme.of(context).colorScheme;
-    final label =
-        AppConfig.musicSources[settings.searchSource] ?? settings.searchSource;
-    return PopupMenuButton<String>(
-      key: const ValueKey('search-source-picker'),
-      tooltip: '搜索音源：$label',
-      initialValue: settings.searchSource,
-      onSelected: settings.setSearchSource,
-      itemBuilder: (_) => [
-        for (final entry in AppConfig.musicSources.entries)
-          PopupMenuItem<String>(
-            key: ValueKey('search_source_${entry.key}'),
-            value: entry.key,
-            height: 48,
-            child: Row(children: [
-              Icon(
-                  settings.searchSource == entry.key
-                      ? Icons.check_rounded
-                      : Icons.music_note_rounded,
-                  size: 20),
-              const SizedBox(width: 12),
-              Text(entry.value),
-            ]),
-          ),
-      ],
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        padding: EdgeInsets.symmetric(horizontal: showLabel ? 12 : 8),
+    const colors = [
+      Color(0xffef4352),
+      Color(0xff36c681),
+      Color(0xffffa23d),
+      Color(0xff3b3c42)
+    ];
+    return Container(
+        key: const ValueKey('search-source-picker'),
+        margin: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh.withValues(alpha: .7),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (showLabel)
-            Text(label,
-                style:
-                    const TextStyle(fontSize: 13, fontWeight: TypeScale.medium))
-          else
-            Icon(Icons.library_music_outlined,
-                size: 20, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Icon(Icons.expand_more_rounded,
-              size: 18, color: scheme.onSurfaceVariant),
-        ]),
-      ),
-    );
+            color: scheme.onSurface.withValues(alpha: .055),
+            borderRadius: BorderRadius.circular(14)),
+        child: Row(children: [
+          for (var i = 0; i < AppConfig.musicSources.length; i++)
+            Expanded(child: Builder(builder: (context) {
+              final source = AppConfig.musicSources.entries.elementAt(i);
+              final selected = source.key == settings.searchSource;
+              return Semantics(
+                  button: true,
+                  selected: selected,
+                  label: source.value,
+                  child: GPressScale(
+                      key: ValueKey('search_source_${source.key}'),
+                      onTap: () => settings.setSearchSource(source.key),
+                      child: AnimatedContainer(
+                          duration:
+                              PlatformMotion.duration(context, Motion.fast),
+                          height: 42,
+                          decoration: BoxDecoration(
+                              color: selected
+                                  ? scheme.onSurface.withValues(alpha: .12)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(11)),
+                          child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: colors[i],
+                                        border: i == 3
+                                            ? Border.all(color: Colors.white24)
+                                            : null)),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                    child: Text(source.value,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: selected
+                                                ? FontWeight.w600
+                                                : FontWeight.w400))),
+                              ]))));
+            })),
+        ]));
   }
 
   Future<List<Song>> _searchSongsAll(
@@ -624,7 +630,9 @@ class _SearchViewState extends State<SearchView> {
         // Choose a useful initial scope once. Every later scope change is an
         // explicit user action, never a side effect of a window resize.
         if (!_initialScopeChosen) {
-          _type = wide ? _SearchType.all : _SearchType.song;
+          _type = wide || widget.initialQuery?.trim().isNotEmpty != true
+              ? _SearchType.all
+              : _SearchType.song;
           _initialScopeChosen = true;
         }
         return _buildContent(context, wide: wide);
@@ -645,11 +653,12 @@ class _SearchViewState extends State<SearchView> {
 
   Widget _buildToolbar({required bool wide}) {
     final scheme = Theme.of(context).colorScheme;
-    final textScale = MediaQuery.textScalerOf(context);
-    final inset = GToolbar.horizontalInset(context);
+    final inset = wide || Theme.of(context).platform == TargetPlatform.macOS
+        ? GToolbar.horizontalInset(context)
+        : 6.0;
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          inset + macOSWindowControlsInset(context), 8, inset, 4),
+          inset + macOSWindowControlsInset(context), 0, inset, 4),
       child: Row(children: [
         Expanded(
           child: Container(
@@ -672,10 +681,8 @@ class _SearchViewState extends State<SearchView> {
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 contentPadding: EdgeInsets.fromLTRB(wide ? 0 : 14, 12, 0, 12),
-                prefixIcon: wide
-                    ? Icon(Icons.search_rounded,
-                        size: 20, color: scheme.onSurfaceVariant)
-                    : null,
+                prefixIcon: Icon(Icons.search_rounded,
+                    size: 20, color: scheme.onSurfaceVariant),
                 prefixIconConstraints:
                     const BoxConstraints.tightFor(width: 48, height: 48),
                 suffixIcon: _keyword.isEmpty
@@ -699,13 +706,25 @@ class _SearchViewState extends State<SearchView> {
           ),
         ),
         const SizedBox(width: 8),
-        _buildSourcePicker(showLabel: wide || textScale.scale(13) <= 18),
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              _clearSearch();
+              widget.onCancel?.call();
+            },
+            style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFFF2D55),
+                minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 8)),
+            child: const Text('取消', style: TextStyle(fontSize: 16))),
       ]),
     );
   }
 
   Widget _buildContent(BuildContext context, {required bool wide}) {
-    return Scaffold(
+    return MusicPageBackground(
+        child: Scaffold(
+      backgroundColor: Colors.transparent,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1320),
@@ -717,36 +736,21 @@ class _SearchViewState extends State<SearchView> {
               SliverToBoxAdapter(
                 child: Column(children: [
                   _buildToolbar(wide: wide),
-                  if (AppConfig.isQishui(_settings.searchSource))
-                    Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Row(children: [
-                          Expanded(
-                              child: Text('支持歌曲与歌单搜索',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant))),
-                          TextButton(
-                              onPressed: () => Navigator.of(context).push(
-                                  buildAppRoute(context,
-                                      (_) => const QishuiAccountView())),
-                              child: const Text('账号绑定')),
-                        ])),
-                  Row(children: [
-                    Expanded(child: _buildTypeTabs()),
-                    if (wide && _resultCount > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 24),
-                        child: Text('$_resultCount 条结果',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant)),
-                      ),
-                  ]),
+                  _buildSourcePicker(showLabel: true),
+                  if (_keyword.isNotEmpty)
+                    Row(children: [
+                      Expanded(child: _buildTypeTabs()),
+                      if (wide && _resultCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 24),
+                          child: Text('$_resultCount 条结果',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)),
+                        ),
+                    ]),
                 ]),
               ),
               if (_keyword.isEmpty)
@@ -775,7 +779,7 @@ class _SearchViewState extends State<SearchView> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   void _clearSearch() {
@@ -800,14 +804,13 @@ class _SearchViewState extends State<SearchView> {
 
   /// The same explicit scopes remain available on both sides of a breakpoint.
   Widget _buildTypeTabs() {
-    final black = AppConfig.isQishui(_settings.searchSource);
-    final labels = ['综合', '单曲', if (!black) '歌手', if (!black) '专辑', '歌单'];
+    final labels = ['全部', '歌曲', '艺人', '歌单', '专辑'];
     final types = [
       _SearchType.all,
       _SearchType.song,
-      if (!black) _SearchType.artist,
-      if (!black) _SearchType.album,
+      _SearchType.artist,
       _SearchType.playlist,
+      _SearchType.album
     ];
     final scheme = Theme.of(context).colorScheme;
     return SingleChildScrollView(
@@ -824,12 +827,12 @@ class _SearchViewState extends State<SearchView> {
                   onTap: () => _switchType(types[i]),
                   child: Container(
                     constraints: const BoxConstraints(minHeight: 48),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                     decoration: BoxDecoration(
                       color: _type == types[i]
                           ? scheme.onSurface
-                          : Colors.transparent,
+                          : scheme.onSurface.withValues(alpha: .06),
                       borderRadius: BorderRadius.circular(RadiusToken.pill),
                     ),
                     child: Text(labels[i],
@@ -962,6 +965,29 @@ class _SearchViewState extends State<SearchView> {
         ));
     return [
       for (final batch in _combinedBatches) ...[
+        if (batch.artists.isNotEmpty) ...[
+          heading('艺人'),
+          if (compact)
+            _artistSliver(artists: batch.artists)
+          else
+            SliverToBoxAdapter(
+                child: SizedBox(
+              height: 106,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: batch.artists.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 18),
+                itemBuilder: (_, index) => _DesktopArtistCard(
+                    artist: batch.artists[index],
+                    onTap: () => _openArtist(batch.artists[index])),
+              ),
+            )),
+        ],
+        if (batch.songs.isNotEmpty) ...[
+          heading('歌曲'),
+          _songSliver(songs: batch.songs, offset: batch.songOffset),
+        ],
         if (batch.playlists.isNotEmpty)
           SliverToBoxAdapter(
               child: _SearchSection(
@@ -982,25 +1008,6 @@ class _SearchViewState extends State<SearchView> {
               ),
             ),
           )),
-        if (batch.artists.isNotEmpty) ...[
-          heading('歌手'),
-          if (compact)
-            _artistSliver(artists: batch.artists)
-          else
-            SliverToBoxAdapter(
-                child: SizedBox(
-              height: 106,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: batch.artists.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 18),
-                itemBuilder: (_, index) => _DesktopArtistCard(
-                    artist: batch.artists[index],
-                    onTap: () => _openArtist(batch.artists[index])),
-              ),
-            )),
-        ],
         if (batch.albums.isNotEmpty) ...[
           heading('专辑'),
           if (compact)
@@ -1019,10 +1026,6 @@ class _SearchViewState extends State<SearchView> {
                     onTap: () => _openAlbum(batch.albums[index])),
               ),
             )),
-        ],
-        if (batch.songs.isNotEmpty) ...[
-          heading('歌曲'),
-          _songSliver(songs: batch.songs, offset: batch.songOffset)
         ],
       ],
     ];
@@ -1076,83 +1079,73 @@ class _SearchViewState extends State<SearchView> {
   }
 
   /// 搜索首页：搜索历史 + 热门搜索
+  Future<void> _removeHistory(String keyword) async {
+    setState(() => _history.remove(keyword));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_historyKey, _history);
+  }
+
   Widget _buildHome({bool shrinkWrap = false}) {
     final scheme = Theme.of(context).colorScheme;
     return ListView(
-      shrinkWrap: shrinkWrap,
-      primary: shrinkWrap ? false : null,
-      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      children: [
-        if (_history.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                Icon(Icons.history_rounded,
-                    size: 16, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text(
-                  '搜索历史',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                GPressScale(
-                  onTap: _clearHistory,
-                  child: Text(
-                    '清空',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: _history
-                .map((kw) => _Chip(label: kw, onTap: () => _submit(kw)))
-                .toList(),
-          ),
-          const SizedBox(height: 24),
-        ],
-        const Padding(
-          padding: EdgeInsets.only(bottom: 14),
-          child: Text('热门搜索',
-              style: TextStyle(
-                  fontSize: TypeScale.section, fontWeight: TypeScale.semibold)),
-        ),
-        LayoutBuilder(builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 720 ? 4 : 2;
-          final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
-          final height =
-              68 + (MediaQuery.textScalerOf(context).scale(16) - 16) * 2;
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
+        shrinkWrap: shrinkWrap,
+        primary: shrinkWrap ? false : null,
+        physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        children: [
+          if (_history.isNotEmpty) ...[
+            Row(children: [
+              const Text('最近搜索',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+              TextButton(
+                  onPressed: _clearHistory,
+                  style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF2D55)),
+                  child: const Text('清除')),
+            ]),
+            for (final keyword in _history)
+              SizedBox(
+                  height: 48,
+                  child: Row(children: [
+                    Icon(Icons.history_rounded,
+                        size: 20, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: InkWell(
+                            onTap: () => _submit(keyword),
+                            child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(keyword,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 16))))),
+                    IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        tooltip: '删除搜索记录 $keyword',
+                        onPressed: () => _removeHistory(keyword)),
+                  ])),
+            const SizedBox(height: 24),
+          ],
+          const Padding(
+              padding: EdgeInsets.only(bottom: 14),
+              child: Text('搜索推荐',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700))),
+          LayoutBuilder(builder: (context, c) {
+            final columns = c.maxWidth >= 720 ? 4 : 2;
+            final width = (c.maxWidth - 12 * (columns - 1)) / columns;
+            return Wrap(spacing: 12, runSpacing: 12, children: [
               for (var i = 0; i < _hotKeywords.length; i++)
                 SizedBox(
-                  width: width,
-                  height: height,
-                  child: _HotSearchCard(
-                    label: _hotKeywords[i],
-                    index: i,
-                    onTap: () => _submit(_hotKeywords[i]),
-                  ),
-                ),
-            ],
-          );
-        }),
-      ],
-    );
+                    width: width,
+                    height: 112 +
+                        (MediaQuery.textScalerOf(context).scale(18) - 18) * 2,
+                    child: _HotSearchCard(
+                        label: _hotKeywords[i],
+                        index: i,
+                        onTap: () => _submit(_hotKeywords[i]))),
+            ]);
+          }),
+        ]);
   }
 }
 
@@ -1341,81 +1334,52 @@ class _AlbumRow extends StatelessWidget {
   }
 }
 
-/// 关键词胶囊按钮（搜索历史 / 热门搜索）
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.onTap,
-  });
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GPressScale(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(RadiusToken.pill),
-          color: Theme.of(context).brightness == Brightness.dark
-              ? scheme.surfaceContainer
-              : scheme.surfaceContainerLow,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _HotSearchCard extends StatelessWidget {
   const _HotSearchCard(
       {required this.label, required this.index, required this.onTap});
-
   final String label;
   final int index;
   final VoidCallback onTap;
+  static const _colors = [
+    Color(0xffae3049),
+    Color(0xffe07e2e),
+    Color(0xff3e85c3),
+    Color(0xff754ac8),
+    Color(0xff249985),
+    Color(0xffc84e76),
+    Color(0xff7167af),
+    Color(0xff7c994b)
+  ];
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
+  Widget build(BuildContext context) => Semantics(
+      button: true,
       label: label,
       child: GPressScale(
-        onTap: onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            color: scheme.surfaceContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: TypeScale.medium,
-                          color: scheme.onSurface)),
-                ),
-                const SizedBox(width: 6),
-                Icon(Icons.north_west_rounded,
-                    size: 15,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.65)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+          onTap: onTap,
+          child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(fit: StackFit.expand, children: [
+                ColoredBox(color: _colors[index % _colors.length]),
+                Positioned(
+                    top: -12,
+                    right: 6,
+                    child: ExcludeSemantics(
+                        child: Text('${index + 1}',
+                            style: TextStyle(
+                                fontSize: 84,
+                                height: 1.2,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white.withValues(alpha: .15))))),
+                Positioned(
+                    left: 16,
+                    bottom: 16,
+                    right: 12,
+                    child: Text(label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700))),
+              ]))));
 }

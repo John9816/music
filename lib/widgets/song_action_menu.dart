@@ -230,7 +230,8 @@ class _SongActionSheetState extends State<_SongActionSheet> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_favoriteRequested &&
+    if (widget.song.source != 'local' &&
+        !_favoriteRequested &&
         widget.showFavoriteAction &&
         !widget.downloadOnly) {
       _favoriteRequested = true;
@@ -285,7 +286,7 @@ class _SongActionSheetState extends State<_SongActionSheet> {
           '下一首播放',
           _playNext,
         ),
-        if (widget.showFavoriteAction)
+        if (widget.showFavoriteAction && widget.song.source != 'local')
           _action(
             _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             _liked ? '取消喜欢' : '喜欢',
@@ -293,28 +294,32 @@ class _SongActionSheetState extends State<_SongActionSheet> {
             color: _liked ? AppBrand.favoriteRed : null,
             loading: _favoriteLoading,
           ),
-        _action(
-          Icons.playlist_add_rounded,
-          '收藏到歌单',
-          _playlistBusy ? null : _addToPlaylist,
-          loading: _playlistLoading,
-        ),
+        if (widget.song.source != 'local')
+          _action(
+            Icons.playlist_add_rounded,
+            '收藏到歌单',
+            _playlistBusy ? null : _addToPlaylist,
+            loading: _playlistLoading,
+          ),
       ],
-      _action(
-        downloading
-            ? Icons.downloading_rounded
-            : downloaded
-                ? Icons.download_done_rounded
-                : Icons.download_rounded,
-        downloading
-            ? '下载中'
-            : downloaded
-                ? '已下载'
-                : '下载',
-        downloading || downloaded ? null : _download,
-        loading: downloading,
-        downloaded: downloaded,
-      ),
+      if (widget.song.source == 'local')
+        const Padding(padding: EdgeInsets.all(20), child: Text('这首歌曲已保存在本地音乐中'))
+      else
+        _action(
+          downloading
+              ? Icons.downloading_rounded
+              : downloaded
+                  ? Icons.download_done_rounded
+                  : Icons.download_rounded,
+          downloading
+              ? '下载中'
+              : downloaded
+                  ? '已下载'
+                  : '下载',
+          downloading || downloaded ? null : _download,
+          loading: downloading,
+          downloaded: downloaded,
+        ),
       if (!widget.downloadOnly && widget.onRemove != null) ...[
         const Divider(indent: 12, endIndent: 12),
         _action(

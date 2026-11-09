@@ -52,7 +52,7 @@ void main() {
     final auth = _LibraryAuth();
     await _pumpLibrary(tester, api: api, auth: auth);
     expect(find.text('通勤歌单'), findsOneWidget);
-    expect(find.text('2 首歌曲'), findsOneWidget);
+    expect(find.text('喜欢的音乐'), findsOneWidget);
     expect(find.text('把喜欢的歌整理成自己的歌单'), findsNothing);
     await tester.ensureVisible(find.text('通勤歌单'));
     await tester.tap(find.text('通勤歌单'));
@@ -75,8 +75,10 @@ void main() {
     expect(find.text('通勤歌单'), findsOneWidget);
     expect(find.text('资料库加载失败'), findsNothing);
     api.fail = true;
-    await tester.ensureVisible(find.byTooltip('刷新资料库'));
-    await tester.tap(find.byTooltip('刷新资料库'));
+    Scrollable.of(tester.element(find.text('通勤歌单'))).position.jumpTo(0);
+    await tester.pumpAndSettle();
+    await tester.drag(
+        find.byType(CustomScrollView).first, const Offset(0, 400));
     await tester.pumpAndSettle();
     expect(find.text('资料库加载失败'), findsOneWidget);
     expect(find.text('通勤歌单'), findsOneWidget);
@@ -124,7 +126,9 @@ void main() {
     final auth = _LibraryAuth();
     final api = _LibraryApi();
     await _pumpLibrary(tester, api: api, auth: auth);
-    await tester.tap(find.byTooltip('新建歌单'));
+    await tester.tap(find.byTooltip('添加到资料库'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建歌单'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '继续编辑的歌单');
     auth.rotateToken();
@@ -226,7 +230,7 @@ class _LibraryApi extends UserApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getOwnedPlaylists(String token) async {
+  Future<List<Map<String, dynamic>>> getUserPlaylists(String token) async {
     loads++;
     if (fail) throw StateError('Network unavailable');
     return [

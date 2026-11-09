@@ -14,10 +14,12 @@ import '../models/playback_info.dart';
 import '../network/image_request_policy.dart';
 import '../services/cache_service.dart';
 import '../services/song_download_service.dart';
+import '../services/local_music_service.dart';
 import '../settings/settings_controller.dart';
 import 'audio_source_policy.dart';
 import 'last_playback_store.dart';
 import 'playback_coordinator.dart';
+import 'equalizer_controller.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
@@ -38,11 +40,6 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     LastPlaybackStore? lastPlaybackStore,
     Future<void> Function()? beforePlayback,
   })  : _settings = settings,
-        _player = audioPlayer ??
-            AudioPlayer(
-              useProxyForRequestHeaders:
-                  !usesNativeAudioHeaders(defaultTargetPlatform),
-            ),
         _api = musicApi ?? MusicApi(),
         _localFileFor = localFileFor,
         _localAudioFor =
@@ -54,6 +51,20 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         _lastPlaybackStore =
             lastPlaybackStore ?? SharedPreferencesLastPlaybackStore(),
         _beforePlayback = beforePlayback {
+    final effect =
+        audioPlayer == null && defaultTargetPlatform == TargetPlatform.android
+            ? AndroidEqualizer()
+            : null;
+    equalizer = EqualizerController(
+        target: effect == null ? null : AndroidEqualizerTarget(effect));
+    _player = audioPlayer ??
+        AudioPlayer(
+          useProxyForRequestHeaders:
+              !usesNativeAudioHeaders(defaultTargetPlatform),
+          audioPipeline: effect == null
+              ? null
+              : AudioPipeline(androidAudioEffects: [effect]),
+        );
     PlaybackCoordinator.instance.register(this, pause);
     _positionController = StreamController<Duration>.broadcast(
       sync: true,
@@ -92,7 +103,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   final SettingsController _settings;
-  final AudioPlayer _player;
+  late final AudioPlayer _player;
+  late final EqualizerController equalizer;
   final MusicApi _api;
   final Future<File?> Function(Song song)? _localFileFor;
   final Future<LocalAudio?> Function(Song song) _localAudioFor;
@@ -123,7 +135,24 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   bool _positionSourceReady = false;
   Future<void>? _restoreLastPlaybackFuture;
 
+  int _queueGeneration = 0;
+  int get queueGeneration => _queueGeneration;
+  Future<bool> Function()? loadMoreQueue;
   List<Song> _queue = [];
+
+  void appendQueue(List<Song> songs, {required int generation}) {
+    if (generation != _queueGeneration || songs.isEmpty) return;
+    final seen = _queue.map((s) => '${s.source}:${s.id}').toSet();
+    _queue.addAll(songs.where((s) => seen.add('${s.source}:${s.id}')));
+    if (_queue.length > 200 && _index > 20) {
+      final remove = min(_index - 20, _queue.length - 200);
+      _queue.removeRange(0, remove);
+      _index -= remove;
+    }
+    _queueSnapshot = null;
+    notifyListeners();
+  }
+
   List<Song>? _queueSnapshot;
   int _index = -1;
   Song? _current;
@@ -359,6 +388,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> playQueue(List<Song> songs, {int index = 0}) async {
     if (songs.isEmpty) return;
+    _queueGeneration++;
+    loadMoreQueue = null;
     _queue = List.of(songs);
     _queueSnapshot = null;
     await playAt(index);
@@ -435,7 +466,10 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       if (seq != _playSeq) return;
       final song = _current!;
       final LocalAudio? downloaded;
-      if (_localFileFor != null) {
+      if (song.source == 'local') {
+        downloaded = await LocalMusicService.instance.localAudioFor(song);
+        if (downloaded == null) throw StateError('本地音乐文件不存在，请重新导入');
+      } else if (_localFileFor != null) {
         final file = await _localFileFor(song);
         downloaded = file == null
             ? null
@@ -520,16 +554,18 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       // 带 MediaItem 标签：系统通知栏/锁屏显示歌名、歌手、封面。
-      await _player.setAudioSource(source).timeout(const Duration(seconds: 20));
+      await _player.setAudioSource(source).timeout(Duration(
+        seconds: identity.source == 'qishui' && audioUri.scheme != 'file' ? 90 : 20));
       if (seq != _playSeq) return;
       _positionSourceReady = true;
+      unawaited(equalizer.initialize());
       while (seq == _playSeq && _deferredSeek != null) {
         final deferredSeek = _deferredSeek!;
         _deferredSeek = null;
         await _seekNative(deferredSeek, seq);
       }
       if (seq != _playSeq) return;
-      _loadLyric(seq, identity);
+      if (song.source != 'local') _loadLyric(seq, identity);
       _loading = false;
       _emitNativePosition(force: true);
       notifyListeners();
@@ -632,6 +668,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       }
       // 如果是"不循环"模式且播完最后一首，停在末尾不再自动播放
       if (_loopMode == LoopMode.off &&
+          loadMoreQueue == null &&
           _index == _queue.length - 1 &&
           !_shuffle) {
         final completedSeq = _playSeq;
@@ -747,6 +784,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {}
     }
     await _player.stop();
+    _queueGeneration++;
+    loadMoreQueue = null;
     _queue = [];
     _queueSnapshot = null;
     _index = -1;
@@ -771,6 +810,17 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> next() async {
     if (_queue.isEmpty) return;
+    final continuation = loadMoreQueue;
+    if (continuation != null && _index == _queue.length - 1) {
+      final generation = _queueGeneration;
+      final playSequence = _playSeq;
+      final hasMore = await continuation();
+      if (generation != _queueGeneration || playSequence != _playSeq) return;
+      if (!hasMore && _index == _queue.length - 1) {
+        await pause();
+        return;
+      }
+    }
     if (_shuffle && _queue.length > 1) {
       var nextIndex = _index;
       while (nextIndex == _index) {
@@ -942,6 +992,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    equalizer.dispose();
     _clearResolvedAudio();
     WidgetsBinding.instance.removeObserver(this);
     PlaybackCoordinator.instance.unregister(this);

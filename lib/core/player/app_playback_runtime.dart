@@ -8,6 +8,7 @@ import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
 import 'car_media_library.dart';
 import 'player_controller.dart';
+import 'roaming_controller.dart';
 import 'system_media_controller.dart';
 
 /// Created before runApp so media hosts can cold-start playback without a view.
@@ -21,6 +22,7 @@ class AppPlaybackRuntime {
             : null);
     auth = AuthController(
         onSessionCleared: () => player.stopAndClear(clearSavedPlayback: true));
+    roaming = RoamingController(player: player, auth: auth);
     library = CarMediaLibrary(
         auth: auth,
         player: player,
@@ -36,6 +38,7 @@ class AppPlaybackRuntime {
   late final PlayerController player;
   late final AuthController auth;
   late final CarMediaLibrary library;
+  late final RoamingController roaming;
   late final Future<void> ready;
   bool _disposed = false;
   bool get _hasSystemMedia =>
@@ -55,6 +58,7 @@ class AppPlaybackRuntime {
   }
 
   void _recordHistory(Song song) {
+    if (song.source == 'local') return;
     final token = auth.token;
     final generation = auth.sessionGeneration;
     if (token == null) return;
@@ -87,6 +91,7 @@ class AppPlaybackRuntime {
     _disposed = true;
     SystemMediaController.instance.detachLibrary(library);
     SystemMediaController.instance.detach(player);
+    roaming.dispose();
     library.dispose();
     auth.dispose();
     player.dispose();

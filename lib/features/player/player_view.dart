@@ -33,6 +33,11 @@ import 'karaoke_lyric_text.dart';
 import 'reference_player_effects.dart';
 import 'spectrum_player_view.dart';
 import 'sleep_timer_dialog.dart';
+import 'player_skin_stage.dart';
+import 'equalizer_view.dart';
+import '../roaming/roaming_view.dart';
+import '../../core/player/roaming_controller.dart';
+import '../../core/settings/player_appearance.dart';
 
 enum _PlayerPane { lyrics, queue }
 
@@ -425,6 +430,8 @@ class _MobilePlayerState extends State<_MobilePlayer> {
         data: theme,
         child: Builder(builder: (context) {
           final lyrics = _page == 1;
+          final skin = context
+              .select<SettingsController, PlayerSkin>((s) => s.playerSkin);
           return PopScope<void>(
             canPop: !lyrics,
             onPopInvokedWithResult: (didPop, _) {
@@ -443,10 +450,16 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                   physics: const BouncingScrollPhysics(),
                   onPageChanged: (page) => setState(() => _page = page),
                   children: [
-                    _MobileCoverStage(
-                        key: ValueKey(
-                            'mobile-cover-${widget.song.source}:${widget.song.id}'),
-                        song: widget.song),
+                    skin == PlayerSkin.classic
+                        ? _MobileCoverStage(
+                            key: ValueKey(
+                                'mobile-cover-${widget.song.source}:${widget.song.id}'),
+                            song: widget.song)
+                        : PlayerSkinStage(
+                            song: widget.song,
+                            skin: skin,
+                            lrc: state.$1,
+                            onLyrics: () => _showPage(1)),
                     _LyricView(
                         key: ValueKey(
                             'mobile-lyrics-${widget.song.source}:${widget.song.id}'),
@@ -527,6 +540,21 @@ class _MobilePlayerState extends State<_MobilePlayer> {
           top: false,
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (context.read<RoamingController?>() != null)
+                ListTile(
+                    leading: const Icon(Icons.auto_awesome),
+                    title: const Text('音乐漫游'),
+                    onTap: () => Navigator.pop(sheet, 'roaming')),
+              ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('播放页皮肤'),
+                  subtitle:
+                      Text(context.read<SettingsController>().playerSkin.label),
+                  onTap: () => Navigator.pop(sheet, 'skin')),
+              ListTile(
+                  leading: const Icon(Icons.equalizer_rounded),
+                  title: const Text('均衡器'),
+                  onTap: () => Navigator.pop(sheet, 'eq')),
               ListTile(
                   leading: const Icon(Icons.timer_outlined),
                   title: const Text('睡眠定时'),
@@ -541,6 +569,12 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     );
     if (!mounted) return;
     switch (action) {
+      case 'roaming':
+        await showMusicRoaming(context, openPlayer: false);
+      case 'skin':
+        await showPlayerSkins(context);
+      case 'eq':
+        await showEqualizer(context);
       case 'sleep':
         showReferenceSleepTimer(context);
       case 'spectrum':
@@ -661,11 +695,7 @@ class _MobileCoverStage extends StatelessWidget {
               constraints.maxHeight - 16));
       return Center(
         child: RepaintBoundary(
-          child: AsyncCover(
-              key: const ValueKey('mobile-player-artwork'),
-              url: song.album.picUrl,
-              size: size,
-              radius: 28),
+          child: AnimatedSongArtwork(song: song, size: size),
         ),
       );
     });
@@ -1985,7 +2015,7 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
     final token = context.read<AuthController>().token;
     _fav = false;
     _busy = false;
-    if (token == null) return;
+    if (token == null || song.source == 'local') return;
     try {
       final items = await UserApi().getFavorites(token);
       if (!mounted || !_isCurrentRequest(request, song, token)) return;
@@ -2060,6 +2090,7 @@ class _FavoriteBtnState extends State<_FavoriteBtn> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.song.source == 'local') return const SizedBox(width: 48);
     final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: _fav ? '取消收藏' : '收藏歌曲',

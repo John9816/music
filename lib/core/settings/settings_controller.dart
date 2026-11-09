@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../config/audio_quality_policy.dart';
 import '../theme/app_theme.dart';
 import 'lyric_appearance.dart';
+import 'player_appearance.dart';
 
 /// 柒伍壹壹音乐的统一设置模型。
 ///
@@ -50,6 +51,15 @@ class SettingsController extends ChangeNotifier {
   Map<String, String> _shortcutBindings = const {};
   bool _loaded = false;
   bool _carModeEnabled = false;
+  PlayerSkin _playerSkin = PlayerSkin.classic;
+  bool _fluidBackground = true;
+  bool _animatedArtwork = true;
+  bool _liquidNavigation = true;
+
+  PlayerSkin get playerSkin => _playerSkin;
+  bool get fluidBackground => _fluidBackground;
+  bool get animatedArtwork => _animatedArtwork;
+  bool get liquidNavigation => _liquidNavigation;
 
   String get source => _source;
 
@@ -112,6 +122,10 @@ class SettingsController extends ChangeNotifier {
       _glassQuality = prefs.getString(_glassQualityKey) ?? 'auto';
       _reduceMotion = prefs.getBool(_reduceMotionKey) ?? false;
       _carModeEnabled = prefs.getBool(_carModeKey) ?? false;
+      _playerSkin = PlayerSkin.fromStored(prefs.getString('player_skin'));
+      _fluidBackground = prefs.getBool('fluid_background') ?? true;
+      _animatedArtwork = prefs.getBool('animated_artwork') ?? true;
+      _liquidNavigation = prefs.getBool('liquid_navigation') ?? true;
       _lyricFontSize = normalizeLyricFontSize(prefs.get(_lyricFontSizeKey));
       _lyricFontStyle =
           LyricFontStyle.fromStored(prefs.get(_lyricFontStyleKey));
@@ -141,6 +155,21 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> setCarModeEnabled(bool value) => _setBool(
       _carModeKey, value, () => _carModeEnabled, (v) => _carModeEnabled = v);
+
+  Future<void> setPlayerSkin(PlayerSkin value) async {
+    if (_playerSkin == value) return;
+    _playerSkin = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('player_skin', value.name);
+  }
+
+  Future<void> setFluidBackground(bool value) => _setBool('fluid_background',
+      value, () => _fluidBackground, (v) => _fluidBackground = v);
+  Future<void> setAnimatedArtwork(bool value) => _setBool('animated_artwork',
+      value, () => _animatedArtwork, (v) => _animatedArtwork = v);
+  Future<void> setLiquidNavigation(bool value) => _setBool('liquid_navigation',
+      value, () => _liquidNavigation, (v) => _liquidNavigation = v);
 
   Future<void> setSearchSource(String value) => _setString(
         _searchSourceKey,

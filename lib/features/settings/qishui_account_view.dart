@@ -110,7 +110,7 @@ class _QishuiAccountViewState extends State<QishuiAccountView>
                                               height: 1.6)),
                                       const SizedBox(height: 8),
                                       Text(
-                                          '账号绑定与歌曲播放权限独立。扫码不会解锁播放；播放仍需本站会员与可用的解析服务。',
+                                          '使用抖音扫码绑定汽水账号。绑定后可使用个人音乐漫游；授权过期时可刷新或重新扫码。',
                                           style: TextStyle(
                                               color: scheme.onSurfaceVariant,
                                               height: 1.6)),

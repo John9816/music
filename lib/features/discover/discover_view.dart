@@ -11,6 +11,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/song_row.dart';
 import '../playlists/playlist_detail_view.dart';
 import '../search/artist_names_link.dart';
+import '../roaming/roaming_view.dart';
 
 /// 发现页：问候 + 主推横幅 + 最新专辑 + 每日推荐
 class DiscoverView extends StatefulWidget {
@@ -19,11 +20,14 @@ class DiscoverView extends StatefulWidget {
     this.title = '发现',
     this.subtitle,
     this.api,
+    this.onSearch,
+    this.onBrowse,
   });
 
   final String title;
   final String? subtitle;
   final MusicApi? api;
+  final VoidCallback? onSearch, onBrowse;
 
   @override
   State<DiscoverView> createState() => _DiscoverViewState();
@@ -182,6 +186,7 @@ class _DiscoverViewState extends State<DiscoverView> {
                       ? _buildHeroSkeleton(context)
                       : const SizedBox.shrink(),
             ),
+            const SliverToBoxAdapter(child: RoamingSection()),
             SliverToBoxAdapter(
               child: SectionHeader(
                 '最新专辑',
@@ -411,14 +416,37 @@ class _DiscoverViewState extends State<DiscoverView> {
   Widget _buildHeader(BuildContext context, {bool refreshing = false}) {
     if (_mobileLayout(context)) {
       return GPageHeader(
-        title: widget.title,
-        subtitle: widget.subtitle ?? '${_greeting()}，听点喜欢的',
+        title: widget.onSearch == null ? widget.title : '探索',
+        inlineActions: true,
+        actions: [
+          if (widget.onBrowse != null)
+            GToolbarButton(
+                icon: Icons.grid_view_rounded,
+                tooltip: '发现',
+                onTap: widget.onBrowse),
+          if (widget.onSearch != null)
+            GToolbarButton(
+                icon: Icons.search_rounded,
+                tooltip: '搜索',
+                onTap: widget.onSearch)
+        ],
+        subtitle: widget.subtitle,
       );
     }
     return GPageHeader(
       title: widget.title,
       subtitle: widget.subtitle ?? '${_greeting()}，看看今天的新鲜声音',
       actions: [
+        if (widget.onBrowse != null)
+          GToolbarButton(
+              icon: Icons.grid_view_rounded,
+              tooltip: '发现',
+              onTap: widget.onBrowse),
+        if (widget.onSearch != null)
+          GToolbarButton(
+              icon: Icons.search_rounded,
+              tooltip: '搜索',
+              onTap: widget.onSearch),
         GToolbarButton(
           icon: Icons.refresh_rounded,
           tooltip: '刷新',

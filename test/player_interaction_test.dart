@@ -1012,8 +1012,8 @@ void main() {
     );
 
     final bar = tester.getRect(find.byType(MiniPlayer));
-    expect(find.byTooltip('上一首'), findsOneWidget);
-    for (final label in ['上一首', '播放', '下一首']) {
+    expect(find.byTooltip('上一首'), findsNothing);
+    for (final label in ['播放', '下一首']) {
       final button = tester.getRect(find.byTooltip(label));
       expect(button.shortestSide, greaterThanOrEqualTo(48));
       expect(button.left, greaterThanOrEqualTo(0));
@@ -1047,9 +1047,9 @@ void main() {
         platform: platform,
       );
 
-      expect(find.byTooltip('上一首'), findsOneWidget);
+      expect(find.byTooltip('上一首'), findsNothing);
       final minimumTarget = platform == TargetPlatform.android ? 48 : 44;
-      for (final label in ['上一首', '播放', '下一首']) {
+      for (final label in ['播放', '下一首']) {
         expect(
           tester.getSize(find.byTooltip(label)).shortestSide,
           greaterThanOrEqualTo(minimumTarget),
@@ -1090,8 +1090,7 @@ void main() {
     harness.player.setPlaying(false);
     await tester.pumpAndSettle();
     expect(find.text('无法获取播放地址'), findsOneWidget);
-    expect(find.byKey(const ValueKey('mobile-player-error-badge')),
-        findsOneWidget);
+    expect(find.text('Test artist'), findsOneWidget);
     expect(find.byTooltip('重试'), findsOneWidget);
     await tester.tap(find.byTooltip('重试'));
     await tester.pumpAndSettle();

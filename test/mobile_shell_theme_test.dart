@@ -13,7 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 void main() {
-  testWidgets('mobile shell separates its floating navigation and player disc',
+  testWidgets(
+      'mobile shell stacks the full mini player above the three glass tabs',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
@@ -58,23 +59,17 @@ void main() {
     );
     expect(shell.backgroundColor, background);
     final nav = find.byKey(const ValueKey('mobile-bottom-nav-surface'));
-    final disc = find.byKey(const ValueKey('mobile-player-disc-shortcut'));
+    final disc = find.byKey(const ValueKey('mobile-mini-player-surface'));
     final navBounds = tester.getRect(nav);
-    final discBounds = tester.getRect(disc);
+    final playerBounds = tester.getRect(disc);
     expect(navBounds.left, greaterThan(0));
-    expect(discBounds.right, lessThan(390));
-    expect(navBounds.right, lessThan(discBounds.left));
-    expect(navBounds.center.dy, discBounds.center.dy);
-    expect(discBounds.size, const Size(60, 60));
-    expect(
-        find.byKey(const ValueKey('mobile-mini-player-surface')), findsNothing);
-    for (final label in ['首页', '搜索', '发现', '我的']) {
-      expect(find.byTooltip(label), findsOneWidget);
-      expect(tester.getSize(find.byTooltip(label)).shortestSide,
-          greaterThanOrEqualTo(48));
+    expect(playerBounds.right, lessThan(390));
+    expect(playerBounds.bottom, lessThan(navBounds.top));
+    expect(find.byKey(const ValueKey('mobile-player-disc-shortcut')),
+        findsNothing);
+    for (final label in ['探索', '资料库', '我的']) {
+      expect(find.text(label), findsWidgets);
     }
-    expect(tester.getCenter(find.byTooltip('搜索')).dx,
-        lessThan(tester.getCenter(find.byTooltip('发现')).dx));
     await tester.tap(disc);
     await tester.pumpAndSettle();
     expect(find.byTooltip('收起播放器'), findsOneWidget);
@@ -133,7 +128,7 @@ void main() {
           find.byKey(const ValueKey('mobile-bottom-nav-surface')),
           findsOneWidget,
         );
-        await tester.tap(find.byTooltip('我的'));
+        await tester.tap(find.text('我的').last);
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('设置'));
         await tester.pumpAndSettle();

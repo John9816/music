@@ -17,6 +17,8 @@ import 'ios_sideload_view.dart';
 import 'lyric_settings_view.dart';
 import 'settings_components.dart';
 import 'storage_settings_view.dart';
+import '../player/player_skin_stage.dart';
+import '../player/equalizer_view.dart';
 
 /// 统一设置入口，承载从“我的”中移出的偏好与支持功能。
 class SettingsView extends StatelessWidget {
@@ -85,9 +87,48 @@ class SettingsView extends StatelessWidget {
               ),
             ],
           ),
+          const SettingsSection('动态外观'),
+          SettingsGroup(children: [
+            SettingsRow(
+                icon: Icons.palette_outlined,
+                title: '播放页皮肤',
+                value: settings.playerSkin.label,
+                onTap: () => showPlayerSkins(context)),
+            SettingsRow(
+                icon: Icons.blur_on_rounded,
+                title: '动态流体背景',
+                subtitle: '让封面色彩缓慢流动',
+                trailing: SettingsSwitch(
+                    value: settings.fluidBackground,
+                    onChanged: settings.setFluidBackground),
+                onToggle: settings.setFluidBackground,
+                toggleValue: settings.fluidBackground),
+            SettingsRow(
+                icon: Icons.album_outlined,
+                title: '动态歌曲封面',
+                subtitle: '播放时轻柔移动封面',
+                trailing: SettingsSwitch(
+                    value: settings.animatedArtwork,
+                    onChanged: settings.setAnimatedArtwork),
+                onToggle: settings.setAnimatedArtwork,
+                toggleValue: settings.animatedArtwork),
+            SettingsRow(
+                icon: Icons.water_drop_outlined,
+                title: '液态玻璃导航',
+                trailing: SettingsSwitch(
+                    value: settings.liquidNavigation,
+                    onChanged: settings.setLiquidNavigation),
+                onToggle: settings.setLiquidNavigation,
+                toggleValue: settings.liquidNavigation),
+          ]),
           const SettingsSection('播放与体验'),
           SettingsGroup(
             children: [
+              SettingsRow(
+                  icon: Icons.equalizer_rounded,
+                  title: '均衡器',
+                  subtitle: '预设、频段与输出保护',
+                  onTap: () => showEqualizer(context)),
               SettingsRow(
                 icon: Icons.graphic_eq_rounded,
                 iconColor: const Color(0xFFF5A000),

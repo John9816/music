@@ -15,7 +15,6 @@ import '../../core/services/user_playlist_library.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/utils/toast_helper.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/floating_dock_surface.dart';
 import '../../widgets/user_avatar.dart';
 import '../discover/discover_view.dart';
 import '../playlists/playlists_view.dart';
@@ -26,6 +25,8 @@ import '../profile/login_view.dart';
 import '../profile/profile_view.dart';
 import '../profile/user_library_view.dart';
 import '../search/search_view.dart';
+import '../library/library_view.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 /// 主框架：左侧导航（搜索 + 功能 + 我的歌单 + 用户信息）+ 内容区 + 底部全局播放栏。
 class HomeShell extends StatefulWidget {
@@ -40,7 +41,8 @@ class _HomeShellState extends State<HomeShell> {
   static const _favoritesIndex = 3;
   static const _historyIndex = 4;
   static const _profileIndex = 5;
-  static const _pageCount = 6;
+  static const _libraryIndex = 6;
+  static const _pageCount = 7;
 
   int _index = 0;
   String? _pendingSearchQuery;
@@ -66,23 +68,17 @@ class _HomeShellState extends State<HomeShell> {
   int _authVersion = 0;
   bool _favoriteBusy = false;
 
-  static const _tabToPageIndex = [0, 1, _discoverIndex, _profileIndex];
-
+  static const _tabToPageIndex = [0, _libraryIndex, _profileIndex];
   static const _tabs = [
     (
-      label: '首页',
-      icon: CupertinoIcons.house,
-      selectedIcon: CupertinoIcons.house_fill
-    ),
-    (
-      label: '搜索',
-      icon: CupertinoIcons.search,
-      selectedIcon: CupertinoIcons.search
-    ),
-    (
-      label: '发现',
+      label: '探索',
       icon: CupertinoIcons.square_stack,
       selectedIcon: CupertinoIcons.square_stack_fill
+    ),
+    (
+      label: '资料库',
+      icon: CupertinoIcons.music_note_list,
+      selectedIcon: CupertinoIcons.music_note_list
     ),
     (
       label: '我的',
@@ -121,6 +117,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _recordPlayedSong(Song song) {
+    if (song.source == 'local') return;
     final token = _auth.token;
     if (!_auth.isLoggedIn || token == null) return;
     UserApi().addHistory(song, token).catchError((_) {});
@@ -461,13 +458,15 @@ class _HomeShellState extends State<HomeShell> {
           child: Scaffold(
             key: const ValueKey('home-shell-scaffold'),
             backgroundColor: scheme.surfaceContainerLowest,
-            body: ColoredBox(
+            body: liquid.LiquidGlassScope(
+                child: ColoredBox(
               color: scheme.surfaceContainerLowest,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   Positioned.fill(
-                    child: Column(
+                    child: liquid.GlassBackgroundSource(
+                        child: Column(
                       children: [
                         Expanded(
                           child: Row(
@@ -519,7 +518,14 @@ class _HomeShellState extends State<HomeShell> {
                                                             20 +
                                                             bottomSystemInset
                                                         : bottomSystemInset
-                                                    : 80.0 + bottomSystemInset;
+                                                    : 84.0 +
+                                                        (hasCurrentSong
+                                                            ? MiniPlayer
+                                                                    .mobileHeight(
+                                                                        context) +
+                                                                8
+                                                            : 0) +
+                                                        bottomSystemInset;
                                             return FloatingDockInsets(
                                               bottom:
                                                   nestedCanPop ? 0 : dockInset,
@@ -575,7 +581,7 @@ class _HomeShellState extends State<HomeShell> {
                                 : null,
                           ),
                       ],
-                    ),
+                    )),
                   ),
                   if (!wide)
                     ValueListenableBuilder<bool>(
@@ -637,7 +643,7 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                 ],
               ),
-            ),
+            )),
           ),
         ),
       ),
@@ -650,12 +656,15 @@ class _HomeShellState extends State<HomeShell> {
         return DiscoverView(
           key: ValueKey('home_$_sourceVersion'),
           title: '首页',
+          onSearch: () => _selectPage(1),
+          onBrowse: () => _selectPage(_discoverIndex),
         );
       case 1:
         return SearchView(
           key: ValueKey('search_$_pendingSearchQuery'),
           initialQuery: _pendingSearchQuery,
           focusNode: _searchFocusNode,
+          onCancel: () => _selectPage(0),
         );
       case _discoverIndex:
         return PlaylistsView(
@@ -663,6 +672,10 @@ class _HomeShellState extends State<HomeShell> {
           title: '发现',
           subtitle: '去听一些还没遇见过的声音',
         );
+      case _libraryIndex:
+        return LibraryView(
+            onOpenFavorites: () => _selectPage(_favoritesIndex),
+            onOpenHistory: () => _selectPage(_historyIndex));
       case _favoritesIndex:
         return UserLibraryView(
           key: ValueKey('favorites_$_authVersion'),
@@ -1552,163 +1565,68 @@ class _SidebarItem extends StatelessWidget {
 
 /// A floating icon pill with a separate, persistent now-playing disc.
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({
-    required this.selected,
-    required this.onSelect,
-    required this.hasCurrentSong,
-  });
-
+  const _BottomNav(
+      {required this.selected,
+      required this.onSelect,
+      required this.hasCurrentSong});
   final int selected;
   final ValueChanged<int> onSelect;
   final bool hasCurrentSong;
-
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 330;
-        return Row(
-          children: [
-            Expanded(
-              child: FloatingDockSurface(
-                surfaceKey: const ValueKey('mobile-bottom-nav-surface'),
-                child: SizedBox(
-                  height: 60,
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        AnimatedAlign(
-                          key: const ValueKey('mobile-nav-glass-selector'),
-                          alignment: Alignment(
-                            -1 +
-                                2 *
-                                    _HomeShellState._tabToPageIndex
-                                        .indexOf(selected)
-                                        .clamp(0,
-                                            _HomeShellState._tabs.length - 1) /
-                                    (_HomeShellState._tabs.length - 1),
-                            0,
-                          ),
-                          duration: PlatformMotion.duration(
-                              context, const Duration(milliseconds: 320)),
-                          curve: Curves.easeOutCubic,
-                          child: FractionallySizedBox(
-                            widthFactor: 1 / _HomeShellState._tabs.length,
-                            heightFactor: 1,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(999),
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Colors.white
-                                        .withValues(alpha: dark ? .22 : .72),
-                                    Colors.white
-                                        .withValues(alpha: dark ? .07 : .18),
-                                  ],
-                                ),
-                                border: Border.all(
-                                    color: Colors.white
-                                        .withValues(alpha: dark ? .24 : .65),
-                                    width: .8),
-                                boxShadow: [
-                                  BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: .06),
-                                      blurRadius: 5,
-                                      offset: const Offset(0, 2))
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            for (var i = 0;
-                                i < _HomeShellState._tabs.length;
-                                i++)
-                              Expanded(
-                                child: Semantics(
-                                  button: true,
-                                  selected:
-                                      _HomeShellState._tabToPageIndex[i] ==
-                                          selected,
-                                  label: _HomeShellState._tabs[i].label,
-                                  onTap: () => onSelect(
-                                      _HomeShellState._tabToPageIndex[i]),
-                                  child: ExcludeSemantics(
-                                    child: Tooltip(
-                                      message: _HomeShellState._tabs[i].label,
-                                      child: GPressScale(
-                                        onTap: () => onSelect(
-                                            _HomeShellState._tabToPageIndex[i]),
-                                        scale: .90,
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                        child: SizedBox(
-                                          height: 48,
-                                          child: Center(
-                                            child: AnimatedScale(
-                                              scale: _HomeShellState
-                                                          ._tabToPageIndex[i] ==
-                                                      selected
-                                                  ? 1.08
-                                                  : 1,
-                                              duration:
-                                                  PlatformMotion.tabDuration(
-                                                      context),
-                                              curve: Curves.easeOutCubic,
-                                              child: Icon(
-                                                _HomeShellState._tabToPageIndex[
-                                                            i] ==
-                                                        selected
-                                                    ? _HomeShellState
-                                                        ._tabs[i].selectedIcon
-                                                    : _HomeShellState
-                                                        ._tabs[i].icon,
-                                                size: 22,
-                                                color: dark
-                                                    ? (_HomeShellState
-                                                                    ._tabToPageIndex[
-                                                                i] ==
-                                                            selected
-                                                        ? const Color(
-                                                            0xFFEEF6FD)
-                                                        : const Color(
-                                                            0xFFB5C9D8))
-                                                    : const Color(0xFF30495B),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (hasCurrentSong) ...[
-              SizedBox(width: compact ? 8 : 10),
-              SizedBox.square(
-                dimension: compact ? 52 : 60,
-                child: const MiniPlayer(collapsed: true),
-              ),
-            ],
-          ],
-        );
-      },
-    );
+    final glass =
+        context.select<SettingsController, bool>((s) => s.liquidNavigation);
+    final scheme = Theme.of(context).colorScheme;
+    final library = selected == 3 || selected == 4 || selected == 6;
+    final tab = selected == 5
+        ? 2
+        : library
+            ? 1
+            : 0;
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      if (hasCurrentSong) ...[const MiniPlayer(), const SizedBox(height: 8)],
+      liquid.GlassTabBar.bottom(
+        key: const ValueKey('mobile-bottom-nav-surface'),
+        tabs: [
+          for (final item in _HomeShellState._tabs)
+            liquid.GlassTab(
+                icon: Icon(item.icon),
+                activeIcon: Icon(item.selectedIcon),
+                label: item.label,
+                semanticLabel: item.label)
+        ],
+        selectedIndex: tab,
+        onTabSelected: (i) => onSelect(_HomeShellState._tabToPageIndex[i]),
+        horizontalPadding: 0,
+        verticalPadding: 0,
+        barHeight: 62,
+        quality: glass && !reduced
+            ? liquid.GlassQuality.premium
+            : liquid.GlassQuality.minimal,
+        backgroundQuality:
+            glass ? liquid.GlassQuality.standard : liquid.GlassQuality.minimal,
+        settings: liquid.LiquidGlassSettings(
+          blur: 24,
+          thickness: 18,
+          glassColor: scheme.surface.withValues(alpha: .68),
+          saturation: 1.05,
+          chromaticAberration: .005,
+        ),
+        selectedIconColor: const Color(0xFFFF2D55),
+        selectedLabelColor: const Color(0xFFFF2D55),
+        unselectedIconColor: scheme.onSurfaceVariant,
+        unselectedLabelColor: scheme.onSurfaceVariant,
+        glowDuration:
+            reduced ? Duration.zero : const Duration(milliseconds: 300),
+        interactionBehavior: reduced
+            ? liquid.GlassInteractionBehavior.none
+            : liquid.GlassInteractionBehavior.full,
+        enableBlend: glass && !reduced,
+        iconSize: 23,
+        labelFontSize: 11,
+      ),
+    ]);
   }
 }
 

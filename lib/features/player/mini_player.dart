@@ -37,7 +37,7 @@ class MiniPlayer extends StatefulWidget {
     final textScaler = MediaQuery.textScalerOf(context);
     return math.max(
       64.0,
-      textScaler.scale(15.5) * 1.2 + 20,
+      textScaler.scale(15.5) * 1.2 + textScaler.scale(12.5) * 1.2 + 16,
     );
   }
 
@@ -157,6 +157,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     if (!desktop) {
       return FloatingDockSurface(
         surfaceKey: const ValueKey('mobile-mini-player-surface'),
+        radius: BorderRadius.circular(18),
         child: SizedBox(
           height: height,
           child: _compactBar(context, current),
@@ -406,7 +407,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               child: _CompactTrackIdentity(song: current, onTap: _openPlayer),
             ),
             const SizedBox(width: 2),
-            if (touch || constraints.maxWidth >= 500)
+            if (!touch && constraints.maxWidth >= 500)
               _PlayerIconButton(
                 icon: CupertinoIcons.backward_end_fill,
                 size: 21,
@@ -414,7 +415,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 tooltip: '上一首',
                 onTap: player.previous,
               ),
-            _PlayButton(player: player, size: 32, filled: touch),
+            _PlayButton(player: player, size: 28),
             if (touch || constraints.maxWidth >= 380)
               _PlayerIconButton(
                 icon: CupertinoIcons.forward_end_fill,
@@ -548,7 +549,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
 }
 
 class _PlayerDisc extends StatelessWidget {
-  const _PlayerDisc({required this.song, required this.size, super.key});
+  const _PlayerDisc({required this.song, required this.size});
 
   final Song song;
   final double size;
@@ -810,10 +811,11 @@ class _CompactTrackIdentity extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         child: Row(
           children: [
-            _PlayerDisc(
+            AsyncCover(
               key: const ValueKey('mobile-mini-player-artwork'),
-              song: song,
+              url: song.album.picUrl,
               size: 48,
+              radius: 9,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -823,19 +825,36 @@ class _CompactTrackIdentity extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   children: [...previous, if (current != null) current],
                 ),
-                child: Text(
-                  error ?? song.name,
+                child: Column(
                   key: ValueKey((song.source, song.id, song.name, error)),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: error == null
-                        ? Theme.of(context).colorScheme.onSurface
-                        : Theme.of(context).colorScheme.error,
-                    fontSize: 15.5,
-                    fontWeight: TypeScale.semibold,
-                    height: 1.2,
-                  ),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      error ?? song.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: error == null
+                            ? Theme.of(context).colorScheme.onSurface
+                            : Theme.of(context).colorScheme.error,
+                        fontSize: 15.5,
+                        fontWeight: TypeScale.semibold,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(song.artistNames.isEmpty ? '未知歌手' : song.artistNames,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.2,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
+                  ],
                 ),
               ),
             ),
@@ -850,10 +869,9 @@ class _PlayButton extends StatelessWidget {
   const _PlayButton({
     required this.player,
     required this.size,
-    this.filled = false,
   });
 
-  final bool filled;
+  final bool filled = false;
   final PlayerController player;
   final double size;
 

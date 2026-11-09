@@ -22,17 +22,18 @@ class FloatingDockSurface extends StatelessWidget {
   const FloatingDockSurface({
     super.key,
     this.surfaceKey,
+    this.radius = const BorderRadius.all(Radius.circular(999)),
     required this.child,
   });
 
   final Key? surfaceKey;
   final Widget child;
+  final BorderRadius radius;
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final highContrast = MediaQuery.highContrastOf(context);
-    const radius = BorderRadius.all(Radius.circular(999));
     final opaque = highContrast;
     return Container(
       key: surfaceKey,

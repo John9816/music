@@ -13,6 +13,8 @@ import 'package:duck_music/features/discover/discover_view.dart';
 import 'package:duck_music/features/home/home_shell.dart';
 import 'package:duck_music/features/playlists/playlists_view.dart';
 import 'package:duck_music/features/search/search_view.dart';
+import 'package:duck_music/features/library/library_view.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 import 'package:duck_music/features/profile/user_library_view.dart';
 import 'package:duck_music/features/profile/profile_view.dart';
 import 'package:flutter/material.dart';
@@ -63,19 +65,22 @@ void main() {
     expect(tester.getRect(find.byType(DiscoverView)).bottom, 844,
         reason:
             'The page paints behind the floating dock so its blur samples content.');
-    final selector = find.byKey(const ValueKey('mobile-nav-glass-selector'));
-    final before = tester.getRect(find.descendant(
-        of: selector, matching: find.byType(FractionallySizedBox)));
+    expect(
+        tester
+            .widget<liquid.GlassTabBar>(find.byType(liquid.GlassTabBar))
+            .selectedIndex,
+        0);
     await tester.tap(_navigationItem(tester, '我的'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
-    final during = tester.getRect(find.descendant(
-        of: selector, matching: find.byType(FractionallySizedBox)));
+    expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
-    final after = tester.getRect(find.descendant(
-        of: selector, matching: find.byType(FractionallySizedBox)));
-    expect(during.left, greaterThan(before.left));
-    expect(during.left, lessThan(after.left));
+    expect(find.byType(ProfileView), findsOneWidget);
+    expect(
+        tester
+            .widget<liquid.GlassTabBar>(find.byType(liquid.GlassTabBar))
+            .selectedIndex,
+        2);
     expect(tester.takeException(), isNull);
   });
 
@@ -97,14 +102,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('mobile music entries live under profile after navigation merges',
+  testWidgets('mobile library restores a dedicated tab with six real entries',
       (tester) async {
     await _pumpShell(tester, const Size(390, 844));
     final navigation = find.byKey(const ValueKey('mobile-bottom-nav-surface'));
     expect(find.descendant(of: navigation, matching: find.text('资料库')),
-        findsNothing);
+        findsWidgets);
+    await tester.tap(find.text('资料库').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(LibraryView), findsOneWidget);
+    for (final label in ['本地音乐', '收藏的歌单', '创建的歌单', '喜欢的音乐', '播放历史', '下载的音乐']) {
+      expect(find.text(label), findsOneWidget);
+    }
     await tester
-        .tap(find.descendant(of: navigation, matching: find.byTooltip('我的')));
+        .tap(find.descendant(of: navigation, matching: find.text('我的').last));
     await tester.pumpAndSettle();
     expect(find.byType(ProfileView), findsOneWidget);
     for (final label in ['喜欢的音乐', '我的歌单', '收藏的歌单', '播放历史', '下载管理']) {
@@ -135,6 +146,8 @@ void main() {
       final discover = find.byType(PlaylistsView, skipOffstage: false);
       final discoverState = tester.state(discover);
       if (size.width < 900) {
+        await tester.tap(_navigationItem(tester, '首页'));
+        await tester.pumpAndSettle();
         await tester.tap(_navigationItem(tester, '搜索'));
       } else {
         await tester.tap(find.byKey(const ValueKey('sidebar_search_control')));
@@ -142,7 +155,6 @@ void main() {
       await tester.pumpAndSettle();
       final settings =
           tester.element(find.byType(HomeShell)).read<SettingsController>();
-      await tester.tap(find.byKey(const ValueKey('search-source-picker')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('search_source_qq')));
       await tester.pumpAndSettle();
@@ -429,6 +441,13 @@ class _CurrentSongPlayer extends PlayerController {
 }
 
 Finder _navigationItem(WidgetTester tester, String label) {
-  final tooltip = find.byTooltip(label);
-  return tooltip.evaluate().isNotEmpty ? tooltip : find.text(label).last;
+  final tooltip = find.byTooltip(
+      label == '首页' && tester.view.physicalSize.width < 900 ? '探索' : label);
+  return tooltip.evaluate().isNotEmpty
+      ? tooltip.first
+      : find
+          .text(label == '首页' && tester.view.physicalSize.width < 900
+              ? '探索'
+              : label)
+          .last;
 }
