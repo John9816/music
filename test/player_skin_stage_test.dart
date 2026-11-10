@@ -84,7 +84,7 @@ void main() {
                                 onLyrics: () => opened = true)))))));
         await tester.pump();
         expect(find.text('当下这一句歌词'), findsOneWidget);
-        expect(find.text('下一句'), findsOneWidget);
+        expect(find.text('下一句'), findsNothing);
         expect(find.text('上一句'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.tap(find.text('当下这一句歌词'));

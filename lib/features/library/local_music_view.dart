@@ -25,10 +25,16 @@ class _LocalMusicViewState extends State<LocalMusicView> {
   Future<void> _load() async {
     try {
       await _service.initialize();
+      await _service.startAutomaticScan();
       if (mounted) setState(() => _loaded = true);
     } catch (_) {
       if (mounted) setState(() => _error = '本地音乐读取失败');
     }
+  }
+
+  Future<void> _scan() async {
+    await _service.scanDevice(requestPermission: true);
+    if (mounted) setState(() {});
   }
 
   Future<void> _import() async {
@@ -59,6 +65,9 @@ class _LocalMusicViewState extends State<LocalMusicView> {
             title: '本地音乐',
             onBack: () => Navigator.maybePop(context),
             actions: [
+              if (_service.supportsDeviceScan)
+                GToolbarButton(
+                    icon: Icons.refresh_rounded, tooltip: '重新扫描', onTap: _scan),
               GToolbarButton(
                   icon: Icons.add_rounded,
                   tooltip: '导入音频',
@@ -70,7 +79,30 @@ class _LocalMusicViewState extends State<LocalMusicView> {
             builder: (context, _) {
               final songs = _service.songs;
               return Column(children: [
-                if (_busy) const LinearProgressIndicator(),
+                if (_busy || _service.scanning) const LinearProgressIndicator(),
+                if (_service.supportsDeviceScan)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+                    child: Row(children: [
+                      Icon(
+                          _service.devicePermissionGranted
+                              ? Icons.check_circle_outline
+                              : Icons.library_music_outlined,
+                          size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: Text(
+                              _service.scanError ??
+                                  (_service.devicePermissionGranted
+                                      ? '已开启自动扫描 · ${songs.length} 首歌曲'
+                                      : '允许访问音乐后，自动发现设备上的歌曲'),
+                              style: Theme.of(context).textTheme.bodySmall)),
+                      if (!_service.devicePermissionGranted)
+                        TextButton(
+                            onPressed: _service.scanning ? null : _scan,
+                            child: const Text('开启扫描')),
+                    ]),
+                  ),
                 if (_error != null)
                   Padding(
                       padding: const EdgeInsets.all(20), child: Text(_error!)),
@@ -81,8 +113,12 @@ class _LocalMusicViewState extends State<LocalMusicView> {
                             ? GEmptyState(
                                 icon: Icons.audio_file_outlined,
                                 text: '把设备上的音乐带到这里',
-                                actionLabel: '导入音频',
-                                onRetry: _import)
+                                actionLabel: _service.supportsDeviceScan
+                                    ? '扫描本地音乐'
+                                    : '导入音频',
+                                onRetry: _service.supportsDeviceScan
+                                    ? _scan
+                                    : _import)
                             : ListView.builder(
                                 itemCount: songs.length,
                                 itemBuilder: (context, index) => SongRow(
@@ -102,8 +138,11 @@ class _LocalMusicViewState extends State<LocalMusicView> {
                                               builder: (dialog) => AlertDialog(
                                                       title:
                                                           const Text('移除这首歌？'),
-                                                      content: const Text(
-                                                          '仅移除应用内的副本，原始文件会保留。'),
+                                                      content: Text(song.id
+                                                              .startsWith(
+                                                                  'device:')
+                                                          ? '从列表隐藏这首歌，设备上的原始文件会保留。'
+                                                          : '仅移除应用内的副本，原始文件会保留。'),
                                                       actions: [
                                                         TextButton(
                                                             onPressed: () =>

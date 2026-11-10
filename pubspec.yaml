@@ -36,6 +36,7 @@ dependencies:
   media_kit_libs_macos_video: ^1.1.4
   media_kit_libs_windows_video: ^1.0.11
   liquid_glass_widgets: 1.17.0
+  webview_flutter: 4.14.1
 
 dev_dependencies:
   flutter_test:
@@ -46,3 +47,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/app_icon.png
+    - assets/player/folia/

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/config/app_config.dart';
@@ -177,6 +178,23 @@ class _AboutViewState extends State<AboutView> {
               ),
             ],
           ),
+          const SettingsSection('开源软件'),
+          SettingsGroup(children: [
+            SettingsRow(
+                icon: Icons.code_rounded,
+                title: '对应版本源码',
+                subtitle: 'DuckMusic 与 Folia · AGPL-3.0',
+                onTap: () => launchUrl(
+                    Uri.parse(
+                        'https://api.751152.xyz/updates/DuckMusic-Flutter-v${AppConfig.appVersion}-source.tar.gz'),
+                    mode: LaunchMode.externalApplication)),
+            SettingsRow(
+                icon: Icons.description_outlined,
+                title: '开源许可证',
+                subtitle: 'Folia · AnimCJK · 第三方依赖',
+                onTap: () => showLicensePage(
+                    context: context, applicationName: AppConfig.appName)),
+          ]),
           const SizedBox(height: 28),
           Text(
             '${AppConfig.appName} 是独立开发的跨平台音乐客户端。',

@@ -2104,7 +2104,7 @@ void main() {
 
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('歌曲操作'));
+    await tester.tap(find.text('下载歌曲'));
     await tester.pumpAndSettle();
     expect(find.text('下载'), findsOneWidget);
     expect(find.text('收藏到歌单'), findsNothing);
@@ -2279,7 +2279,7 @@ void main() {
         expect(coverSize.width, closeTo(coverSize.height, 0.01));
         expect(find.bySemanticsLabel('查看歌词'), findsOneWidget);
         expect(find.byTooltip('AirPlay 或蓝牙'), findsNothing);
-        expect(find.byTooltip('播放设置'), findsOneWidget);
+        expect(find.byTooltip('播放设备'), findsOneWidget);
         expect(find.byTooltip('播放队列'), findsOneWidget);
         expect(find.byTooltip('歌曲百科'), findsNothing);
         expect(find.byTooltip('更多'), findsOneWidget);
@@ -2287,7 +2287,7 @@ void main() {
         final viewport = Offset.zero & size;
         for (final finder in [
           find.byTooltip('播放'),
-          find.byTooltip('播放设置'),
+          find.byTooltip('播放设备'),
           find.byTooltip('播放队列'),
         ]) {
           expect(viewport.contains(tester.getCenter(finder)), isTrue);

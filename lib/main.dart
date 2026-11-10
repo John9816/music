@@ -15,6 +15,16 @@ import 'core/utils/performance_monitor.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks(['Folia / DuckMusic renderer'],
+        await rootBundle.loadString('assets/player/folia/LICENSE.txt'));
+    yield LicenseEntryWithLineBreaks(['AnimCJK stroke medians'],
+        await rootBundle.loadString('assets/player/folia/ARPHICPL.TXT'));
+    yield LicenseEntryWithLineBreaks(
+        ['Folia JavaScript dependencies'],
+        await rootBundle
+            .loadString('assets/player/folia/THIRD_PARTY_LICENSES.txt'));
+  });
 
   // 全局异常兜底：任何未捕获异常只记录日志，绝不导致界面冻结/白屏。
   FlutterError.onError = (details) {

@@ -21,11 +21,14 @@ class MainActivity : AudioServiceActivity() {
     private var pendingInstallResult: MethodChannel.Result? = null
     private var pendingNotificationPermissionResult: MethodChannel.Result? = null
     private var audioSpectrumBridge: AudioSpectrumBridge? = null
+    private var deviceMusicBridge: DeviceMusicBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioSpectrumBridge?.dispose()
         audioSpectrumBridge = AudioSpectrumBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        deviceMusicBridge?.dispose()
+        deviceMusicBridge = DeviceMusicBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         val legacyAuthStore = LegacyAuthSessionStore.fromContext(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LEGACY_AUTH_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -154,6 +157,7 @@ class MainActivity : AudioServiceActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (deviceMusicBridge?.onRequestPermissionsResult(requestCode) == true) return
         if (audioSpectrumBridge?.onRequestPermissionsResult(requestCode) == true) return
         if (requestCode != NOTIFICATION_PERMISSION_REQUEST_CODE) return
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
@@ -167,6 +171,8 @@ class MainActivity : AudioServiceActivity() {
         pendingApkPath = null
         audioSpectrumBridge?.dispose()
         audioSpectrumBridge = null
+        deviceMusicBridge?.dispose()
+        deviceMusicBridge = null
         // 权限弹窗期间 Activity 可能被系统回收，此时 onRequestPermissionsResult
         // 不会再触发。若不在这里兜底回调，Dart 侧的 await 会永久挂起，
         // 导致通知权限再也不会被请求第二次。

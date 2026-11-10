@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../core/api/user_api.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/services/desktop_integration_service.dart';
+import '../../core/services/local_music_service.dart';
 import '../../core/models/song.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/services/user_playlist_library.dart';
@@ -100,6 +101,7 @@ class _HomeShellState extends State<HomeShell> {
     _player.onMembershipRequired = _openMembershipCenter;
     context.read<DesktopIntegrationService>().onFavorite = _toggleFavorite;
     unawaited(_restoreLastPlayback());
+    unawaited(LocalMusicService.instance.startAutomaticScan());
     _settings.addListener(_onSettingsChanged);
     _auth.addListener(_onAuthChanged);
   }

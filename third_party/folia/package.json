@@ -1,0 +1,21 @@
+{
+  "name": "duckmusic-folia-renderer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pixi.js": "8.21.0",
+    "@chenglou/pretext": "0.0.9",
+    "lucide-react": "1.48.0",
+    "react": "19.3.0",
+    "framer-motion": "13.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

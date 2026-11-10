@@ -30,8 +30,7 @@ void main() {
         '上一首',
         '下一首',
         '收藏歌曲',
-        '播放设置',
-        '添加到歌单',
+        '播放设备',
         '播放队列',
         '更多',
         '切换音质',
@@ -119,6 +118,8 @@ void main() {
     final semantics = tester.ensureSemantics();
     try {
       await _pumpPlayer(tester, const Size(390, 844));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('列表循环'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('单曲循环'), findsOneWidget);
@@ -209,7 +210,7 @@ void _expectVisibleTargets(
     final target = tester.getRect(find.byTooltip(label));
     expect(target.shortestSide, greaterThanOrEqualTo(44 - 1e-6), reason: label);
     expect(viewport.contains(target.topLeft), isTrue, reason: label);
-    expect(viewport.contains(target.bottomRight), isTrue,
+    expect(viewport.inflate(1e-6).contains(target.bottomRight), isTrue,
         reason: '$label: $target within $viewport');
   }
 }

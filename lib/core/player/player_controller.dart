@@ -215,6 +215,10 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   List<Song> get queue => _queueSnapshot ??= List.unmodifiable(_queue);
   Song? get current => _current;
   bool get playing => _player.playing;
+  bool get playbackAdvancing =>
+      _player.playing &&
+      !_loading &&
+      _player.processingState == ProcessingState.ready;
 
   /// Native session for Android playback visualization; null until available.
   int? get audioSessionId => _player.androidAudioSessionId;
@@ -465,10 +469,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       await _player.stop();
       if (seq != _playSeq) return;
       final song = _current!;
+      final localUri = song.source == 'local'
+          ? await LocalMusicService.instance.playbackUriFor(song)
+          : null;
       final LocalAudio? downloaded;
       if (song.source == 'local') {
-        downloaded = await LocalMusicService.instance.localAudioFor(song);
-        if (downloaded == null) throw StateError('本地音乐文件不存在，请重新导入');
+        downloaded = null;
+        if (localUri == null) throw StateError('本地音乐不可读取，请重新扫描或检查音乐权限');
       } else if (_localFileFor != null) {
         final file = await _localFileFor(song);
         downloaded = file == null
@@ -485,7 +492,11 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       late AudioIdentity identity;
       late Uri audioUri;
       File? cacheFile;
-      if (downloaded != null) {
+      if (localUri != null) {
+        identity = const AudioIdentity(source: 'local');
+        audioUri = localUri;
+        _effectiveQuality = 'local';
+      } else if (downloaded != null) {
         identity = downloaded.identity;
         audioUri = downloaded.file.uri;
         _effectiveQuality = downloaded.quality;
@@ -549,13 +560,17 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       } else {
         source = AudioSource.uri(
           audioUri,
-          headers: audioUri.scheme == 'file' ? null : audioHeaders,
+          headers: audioUri.scheme == 'http' || audioUri.scheme == 'https'
+              ? audioHeaders
+              : null,
           tag: mediaItem,
         );
       }
       // 带 MediaItem 标签：系统通知栏/锁屏显示歌名、歌手、封面。
       await _player.setAudioSource(source).timeout(Duration(
-        seconds: identity.source == 'qishui' && audioUri.scheme != 'file' ? 90 : 20));
+          seconds: identity.source == 'qishui' && audioUri.scheme != 'file'
+              ? 90
+              : 20));
       if (seq != _playSeq) return;
       _positionSourceReady = true;
       unawaited(equalizer.initialize());

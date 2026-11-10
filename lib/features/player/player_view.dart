@@ -438,7 +438,14 @@ class _MobilePlayerState extends State<_MobilePlayer> {
               if (!didPop && lyrics) _showPage(0);
             },
             child: Stack(fit: StackFit.expand, children: [
-              ReferenceArtworkBackground(coverUrl: widget.song.album.picUrl),
+              if (lyrics ||
+                  skin == PlayerSkin.classic ||
+                  skin == PlayerSkin.poster)
+                ReferenceArtworkBackground(
+                    coverUrl: widget.song.album.picUrl,
+                    poster: skin == PlayerSkin.poster && !lyrics)
+              else
+                const ColoredBox(color: Color(0xff0b1018)),
               SafeArea(child: LayoutBuilder(builder: (context, constraints) {
                 final compact =
                     constraints.maxHeight < 680 || constraints.maxWidth < 360;
@@ -458,6 +465,7 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                         : PlayerSkinStage(
                             song: widget.song,
                             skin: skin,
+                            visible: !lyrics,
                             lrc: state.$1,
                             onLyrics: () => _showPage(1)),
                     _LyricView(
@@ -473,12 +481,13 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                   primary: false,
                   child: _MobileControls(
                       song: widget.song,
+                      skin: skin,
+                      lrc: state.$1,
                       error: state.$2,
-                      compact: compact,
+                      compact: compact || skin != PlayerSkin.classic,
                       onMore: _showMore,
                       onLyrics: () => _showPage(1),
-                      onSettings: _showSettings,
-                      onAddPlaylist: _addPlaylist),
+                      onDevice: _showDevice),
                 );
                 return Column(children: [
                   GestureDetector(
@@ -583,6 +592,15 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     }
   }
 
+  Future<void> _showDevice() async {
+    await _castService.showDevicePicker();
+    if (mounted && _castService.message.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(_castService.message)));
+    }
+  }
+
   Future<void> _showMore() async {
     final player = context.read<PlayerController>();
     final action = await showModalBottomSheet<String>(
@@ -599,8 +617,12 @@ class _MobilePlayerState extends State<_MobilePlayer> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const ListTile(
+                  title: Text('播放模式'), trailing: PlaybackModeButton()),
               for (final item in [
-                ('song', Icons.more_horiz_rounded, '歌曲操作'),
+                ('settings', Icons.tune_rounded, '播放设置'),
+                ('playlist', Icons.add_rounded, '添加到歌单'),
+                ('song', Icons.download_rounded, '下载歌曲'),
                 ('device', Icons.airplay_rounded, 'AirPlay 或蓝牙'),
                 ('info', Icons.info_outline_rounded, '歌曲百科'),
               ])
@@ -618,18 +640,17 @@ class _MobilePlayerState extends State<_MobilePlayer> {
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case 'settings':
+        await _showSettings();
+      case 'playlist':
+        await _addPlaylist();
       case 'song':
         showSongActions(context,
             song: widget.song,
             queueIndex: player.queueIndex,
             downloadOnly: true);
       case 'device':
-        await _castService.showDevicePicker();
-        if (mounted && _castService.message.isNotEmpty) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(_castService.message)));
-        }
+        await _showDevice();
       case 'info':
         final quality = player.effectiveQuality ??
             context
@@ -649,37 +670,59 @@ class _MobilePlayerTopBar extends StatelessWidget {
   final bool showingLyrics;
   final VoidCallback onShowCover;
   @override
-  Widget build(BuildContext context) => GToolbar(
-        leading: GToolbarButton(
-            icon: showingLyrics
-                ? Icons.close_rounded
-                : Icons.arrow_downward_rounded,
-            tooltip: showingLyrics ? '返回封面' : '收起播放器',
-            onTap: showingLyrics
-                ? onShowCover
-                : () => Navigator.of(context).maybePop()),
-        title: SizedBox(
-            key: ValueKey(showingLyrics ? 'lyric-spacer' : 'cover-title')),
-        actions: [
-          if (showingLyrics)
-            Semantics(
-                key: const ValueKey('lyric-title'),
-                label: '${song.name}，${song.artistNames}',
-                child: Tooltip(
-                    message: '通过封面返回',
-                    child: GPressScale(
-                        key: const ValueKey('lyric-cover-return'),
-                        scale: 0.92,
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: onShowCover,
-                        child: AsyncCover(
-                            url: song.album.picUrl,
-                            size: GToolbarButton.extent,
-                            radius: 8))))
-          else
-            _FavoriteBtn(song: song),
-        ],
-      );
+  Widget build(BuildContext context) {
+    if (!showingLyrics) {
+      return Tooltip(
+          message: '收起播放器',
+          child: Semantics(
+              button: true,
+              label: '收起播放器',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).maybePop(),
+                child: SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                    child: Center(
+                      child: Container(
+                          width: 36,
+                          height: 5,
+                          decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .45),
+                              borderRadius: BorderRadius.circular(3))),
+                    )),
+              )));
+    }
+    return GToolbar(
+      leading: GToolbarButton(
+          icon: showingLyrics
+              ? Icons.close_rounded
+              : Icons.arrow_downward_rounded,
+          tooltip: showingLyrics ? '返回封面' : '收起播放器',
+          onTap: showingLyrics
+              ? onShowCover
+              : () => Navigator.of(context).maybePop()),
+      title: SizedBox(
+          key: ValueKey(showingLyrics ? 'lyric-spacer' : 'cover-title')),
+      actions: [
+        if (showingLyrics)
+          Semantics(
+              key: const ValueKey('lyric-title'),
+              label: '${song.name}，${song.artistNames}',
+              child: Tooltip(
+                  message: '通过封面返回',
+                  child: GPressScale(
+                      key: const ValueKey('lyric-cover-return'),
+                      scale: 0.92,
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: onShowCover,
+                      child: AsyncCover(
+                          url: song.album.picUrl,
+                          size: GToolbarButton.extent,
+                          radius: 8))))
+      ],
+    );
+  }
 }
 
 class _MobileCoverStage extends StatelessWidget {
@@ -705,16 +748,19 @@ class _MobileCoverStage extends StatelessWidget {
 class _MobileControls extends StatelessWidget {
   const _MobileControls(
       {required this.song,
+      required this.skin,
+      required this.lrc,
       required this.error,
       required this.compact,
       required this.onMore,
       required this.onLyrics,
-      required this.onSettings,
-      required this.onAddPlaylist});
+      required this.onDevice});
   final Song song;
+  final PlayerSkin skin;
+  final String lrc;
   final String? error;
   final bool compact;
-  final VoidCallback onMore, onLyrics, onSettings, onAddPlaylist;
+  final VoidCallback onMore, onLyrics, onDevice;
 
   @override
   Widget build(BuildContext context) {
@@ -727,14 +773,17 @@ class _MobileControls extends StatelessWidget {
         child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 500),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(28, compact ? 8 : 24, 28, 8),
+        padding: EdgeInsets.fromLTRB(28, compact ? 8 : 16, 28, 8),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           if (error != null)
             _PlaybackErrorBanner(
                 message: error!,
                 actionLabel: _playbackActionLabel(player),
                 onAction: () => _handlePlaybackError(context, player)),
-          _MobileSongSummary(song: song, compact: compact, onMore: onMore),
+          if (skin == PlayerSkin.poster)
+            _PosterNextLine(song: song, lrc: lrc, onMore: onMore)
+          else
+            _MobileSongSummary(song: song, compact: compact, onMore: onMore),
           SizedBox(height: compact ? 2 : 18),
           _MobileProgressRow(
               key: ValueKey((song.source, song.id)),
@@ -752,6 +801,7 @@ class _MobileControls extends StatelessWidget {
                 playing: state.$1,
                 loading: state.$2,
                 onTap: player.togglePlay,
+                plain: true,
                 large: true,
                 compact: compact),
             _ImmersiveIconButton(
@@ -762,22 +812,17 @@ class _MobileControls extends StatelessWidget {
                 onTap: player.next),
           ]),
           SizedBox(height: compact ? 0 : 24),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            const PlaybackModeButton(),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             _ImmersiveIconButton(
                 icon: Icons.chat_bubble_outline_rounded,
                 tooltip: '查看歌词',
                 onTap: onLyrics),
             _ImmersiveIconButton(
-                icon: Icons.add_rounded,
-                tooltip: '添加到歌单',
-                onTap: onAddPlaylist),
+                icon: Icons.airplay_rounded, tooltip: '播放设备', onTap: onDevice),
             _ImmersiveIconButton(
                 icon: Icons.view_headline_rounded,
                 tooltip: '播放队列',
                 onTap: () => showQueueSheet(context)),
-            _ImmersiveIconButton(
-                icon: Icons.tune_rounded, tooltip: '播放设置', onTap: onSettings),
           ]),
         ]),
       ),
@@ -826,13 +871,76 @@ class _MobileSongSummary extends StatelessWidget {
                     style: TextStyle(
                         color: scheme.onSurfaceVariant, fontSize: 15))),
           ])),
-      const SizedBox(width: 10),
+      _FavoriteBtn(song: song),
+      const SizedBox(width: 6),
       DecoratedBox(
           decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: .16))),
+              color: Colors.white.withValues(alpha: .14)),
           child: _ImmersiveIconButton(
-              icon: Icons.more_vert_rounded, tooltip: '更多', onTap: onMore)),
+              icon: Icons.more_horiz_rounded, tooltip: '更多', onTap: onMore)),
+    ]);
+  }
+}
+
+class _PosterNextLine extends StatefulWidget {
+  const _PosterNextLine(
+      {required this.song, required this.lrc, required this.onMore});
+  final Song song;
+  final String lrc;
+  final VoidCallback onMore;
+  @override
+  State<_PosterNextLine> createState() => _PosterNextLineState();
+}
+
+class _PosterNextLineState extends State<_PosterNextLine> {
+  late List<LrcLine> _lines = parseLrc(widget.lrc);
+  @override
+  void didUpdateWidget(covariant _PosterNextLine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lrc != widget.lrc) _lines = parseLrc(widget.lrc);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.read<PlayerController>();
+    return Row(children: [
+      Expanded(
+          child: StreamBuilder<Duration>(
+              stream: player.positionStream,
+              initialData: player.position,
+              builder: (context, snapshot) {
+                final time = snapshot.data ?? player.position;
+                final next = _lines
+                    .where((line) =>
+                        line.time > time && line.text.trim().isNotEmpty)
+                    .firstOrNull;
+                return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('下一句',
+                          style:
+                              TextStyle(color: Colors.white54, fontSize: 12)),
+                      const SizedBox(height: 3),
+                      Text(next?.text ?? '音乐继续',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600)),
+                    ]);
+              })),
+      _FavoriteBtn(song: widget.song),
+      const SizedBox(width: 6),
+      DecoratedBox(
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: .14)),
+          child: _ImmersiveIconButton(
+              icon: Icons.more_horiz_rounded,
+              tooltip: '更多',
+              onTap: widget.onMore)),
     ]);
   }
 }
@@ -1113,8 +1221,9 @@ class _MobileProgressRowState extends State<_MobileProgressRow> {
               onSeek: player.seek,
               onPreviewChanged: (value) =>
                   setState(() => _previewPosition = value),
-              height: 2.5,
-              wave: true,
+              height: 7,
+              showThumb: false,
+              wave: false,
               playing: playing,
               activeColor: scheme.onSurface,
             ),
@@ -1893,6 +2002,7 @@ class _PlayPauseButton extends StatelessWidget {
     required this.onTap,
     this.large = false,
     this.compact = false,
+    this.plain = false,
   });
 
   final bool playing;
@@ -1900,6 +2010,7 @@ class _PlayPauseButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool large;
   final bool compact;
+  final bool plain;
 
   @override
   Widget build(BuildContext context) {
@@ -1933,7 +2044,7 @@ class _PlayPauseButton extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: scheme.onSurface,
+              color: plain ? Colors.transparent : scheme.onSurface,
             ),
             child: AnimatedSwitcher(
               duration: PlatformMotion.duration(context, Motion.normal),
@@ -1953,7 +2064,7 @@ class _PlayPauseButton extends StatelessWidget {
                       padding: const EdgeInsets.all(20),
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: scheme.surface,
+                        color: plain ? scheme.onSurface : scheme.surface,
                       ),
                     )
                   : Icon(
@@ -1961,8 +2072,8 @@ class _PlayPauseButton extends StatelessWidget {
                           ? CupertinoIcons.pause_fill
                           : CupertinoIcons.play_fill,
                       key: ValueKey(playing ? 'pause' : 'play'),
-                      size: size * 0.46,
-                      color: scheme.surface,
+                      size: size * (plain ? .76 : .46),
+                      color: plain ? scheme.onSurface : scheme.surface,
                     ),
             ),
           ),

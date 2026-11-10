@@ -48,12 +48,12 @@ void main() {
     expect(find.byType(ImageFiltered), findsWidgets);
     final titleRect = tester.getRect(title);
     expect(titleRect.left, closeTo(28, 1));
-    for (final label in ['查看歌词', '添加到歌单', '播放队列', '播放设置']) {
+    for (final label in ['查看歌词', '播放设备', '播放队列']) {
       expect(find.byTooltip(label).hitTestable(), findsOneWidget);
     }
     expect(
         tester.getTopLeft(find.byTooltip('收藏歌曲')).dy,
-        lessThan(tester
+        greaterThan(tester
             .getTopLeft(find.byKey(const ValueKey('mobile-player-artwork')))
             .dy));
   });
@@ -73,27 +73,23 @@ void main() {
     expect(find.byType(GProgressBar).hitTestable(), findsOneWidget);
   });
 
-  testWidgets('cover and lyrics keep header controls on the same baseline',
+  testWidgets('cover pull handle and lyric header retain accessible dismissal',
       (tester) async {
     await _pumpPlayer(tester);
-    final coverBack = tester.getRect(find.byTooltip('收起播放器'));
-    final favorite = tester.getRect(find.byTooltip('收藏歌曲'));
-    expect(favorite.center.dy, coverBack.center.dy);
+    expect(find.byTooltip('收起播放器').hitTestable(), findsOneWidget);
+    expect(tester.getCenter(find.byTooltip('收起播放器')).dx, 195);
     await tester.tap(find.byTooltip('查看歌词'));
     await tester.pumpAndSettle();
-    final lyricBack = tester.getRect(find.byTooltip('返回封面'));
+    final back = tester.getRect(find.byTooltip('返回封面'));
     final thumbnail = tester.getRect(find.byTooltip('通过封面返回'));
-    expect(lyricBack, coverBack);
-    expect(thumbnail.size, favorite.size);
-    expect(thumbnail.center, favorite.center);
+    expect(thumbnail.center.dy, back.center.dy);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('reference sleep dialog supports short presets and end of track',
       (tester) async {
     await _pumpPlayer(tester);
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('睡眠定时'));
     await tester.pumpAndSettle();
     expect(find.byType(Dialog), findsOneWidget);
@@ -113,8 +109,7 @@ void main() {
   testWidgets('reference custom sleep time validates input and starts timer',
       (tester) async {
     final harness = await _pumpPlayer(tester);
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('睡眠定时'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('自定义'));
@@ -134,23 +129,21 @@ void main() {
   testWidgets('reference spectrum opens and returns without changing playback',
       (tester) async {
     final harness = await _pumpPlayer(tester);
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('频谱视图'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('返回播放器'), findsOneWidget);
     expect(harness.player.playing, isFalse);
     await tester.tap(find.byTooltip('返回播放器'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('播放设置'), findsOneWidget);
+    expect(find.byTooltip('更多'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('spectrum lyrics follow playback and backward seeks',
       (tester) async {
     final harness = await _pumpPlayer(tester, themeId: 'light');
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('频谱视图'));
     await tester.pumpAndSettle();
     final spectrum = find.byType(SpectrumPlayerView);
@@ -179,8 +172,7 @@ void main() {
   testWidgets('spectrum preserves centered word timing after lyrics change',
       (tester) async {
     final harness = await _pumpPlayer(tester);
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('频谱视图'));
     await tester.pumpAndSettle();
     harness.player.lyricOverride =
@@ -207,10 +199,9 @@ void main() {
         await _pumpPlayer(tester, size: const Size(812, 375), textScale: 1.5);
     harness.player.lyricOverride =
         '[00:00]这是一句很长很长用于检查换行的歌词这是一句很长很长用于检查换行的歌词\n[01:30]下一句歌词';
-    await tester.ensureVisible(find.byTooltip('播放设置'));
+    await tester.ensureVisible(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('播放设置'));
-    await tester.pumpAndSettle();
+    await _openPlaybackSettings(tester);
     await tester.tap(find.text('频谱视图'));
     await tester.pumpAndSettle();
     final spectrum = find.byType(SpectrumPlayerView);
@@ -234,7 +225,7 @@ void main() {
     expect(find.byTooltip('歌曲百科'), findsNothing);
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    for (final label in ['AirPlay 或蓝牙', '歌曲百科', '歌曲操作']) {
+    for (final label in ['AirPlay 或蓝牙', '歌曲百科', '下载歌曲']) {
       expect(find.text(label).hitTestable(), findsOneWidget);
     }
     await tester.tap(find.text('歌曲百科'));
@@ -248,7 +239,7 @@ void main() {
     await _pumpPlayer(tester);
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('歌曲操作'));
+    await tester.tap(find.text('下载歌曲'));
     await tester.pumpAndSettle();
     final sheet = find.byType(BottomSheet);
     expect(
@@ -786,9 +777,7 @@ void main() {
     testWidgets('sleep timer choices fit $size with large text',
         (tester) async {
       final harness = await _pumpPlayer(tester, size: size, textScale: 2);
-      await tester.ensureVisible(find.byTooltip('播放设置'));
-      await tester.tap(find.byTooltip('播放设置'));
-      await tester.pumpAndSettle();
+      await _openPlaybackSettings(tester);
       await tester.tap(find.text('睡眠定时'));
       await tester.pumpAndSettle();
 
@@ -882,7 +871,7 @@ void main() {
 
     final page = tester.widget<PageView>(find.byType(PageView));
     expect(page.controller!.page, 0);
-    expect(find.byKey(const ValueKey('cover-title')), findsOneWidget);
+    expect(find.byTooltip('收起播放器'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1116,6 +1105,14 @@ void main() {
     expect(find.byType(MiniPlayer), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _openPlaybackSettings(WidgetTester tester) async {
+  await tester.ensureVisible(find.byTooltip('更多'));
+  await tester.tap(find.byTooltip('更多'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('播放设置'));
+  await tester.pumpAndSettle();
 }
 
 AnimationController _equalizerAnimation(WidgetTester tester) {
