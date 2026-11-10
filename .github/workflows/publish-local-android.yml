@@ -1,0 +1,62 @@
+name: Publish locally verified Android packages
+on:
+  push:
+    branches: [codex/publish-local-android-1.1.59]
+permissions:
+  contents: write
+jobs:
+  publish-existing:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Retrieve verified packages already live on owner ECS
+        shell: bash
+        env:
+          ECS_SSH_PRIVATE_KEY: ${{ secrets.ECS_SSH_PRIVATE_KEY }}
+          ECS_PASSWORD: ${{ secrets.ECS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' 'api.751152.xyz ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG/x49fgr05tJGpnR/6K74mh6+oesV5n9knc9aMs03Xj' > ~/.ssh/known_hosts
+          declare -a scp_runner
+          if [[ -n "${ECS_SSH_PRIVATE_KEY}" ]]; then
+            printf '%s\n' "${ECS_SSH_PRIVATE_KEY}" > ~/.ssh/duckmusic_ecs
+            chmod 600 ~/.ssh/duckmusic_ecs
+            scp_runner=(scp -i ~/.ssh/duckmusic_ecs -o StrictHostKeyChecking=yes)
+          elif [[ -n "${ECS_PASSWORD}" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends sshpass
+            export SSHPASS="${ECS_PASSWORD}"
+            scp_runner=(sshpass -e scp -o StrictHostKeyChecking=yes -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          else
+            echo "ECS transport credentials are unavailable" >&2
+            exit 1
+          fi
+          trap 'rm -f ~/.ssh/duckmusic_ecs' EXIT
+          for abi in universal arm64-v8a armeabi-v7a x86_64; do
+            "${scp_runner[@]}" -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "root@api.751152.xyz:/opt/website/updates/DuckMusic-Flutter-v1.1.59-Android-${abi}.apk" dist/
+          done
+          "${scp_runner[@]}" -o ConnectTimeout=20 "root@api.751152.xyz:/opt/website/updates/DuckMusic-Flutter-v1.1.59-source.tar.gz" dist/
+          printf '%s\n' '33930e2bd513a48e1748ae6ce94a671e5b259564dbbd43e7c423ce0e7fcbf7b6  dist/DuckMusic-Flutter-v1.1.59-Android-universal.apk' | sha256sum -c -
+          printf '%s\n' '41ca91a1a7e5e54314f9ef3666e5fdf7ae1b5b7c4e48b6e0d08706f165270075  dist/DuckMusic-Flutter-v1.1.59-Android-arm64-v8a.apk' | sha256sum -c -
+          printf '%s\n' 'bffb7b956deb9ba3d0d7303309d9abb9ab804dbe5a78e4987d558ffabf6474f7  dist/DuckMusic-Flutter-v1.1.59-Android-armeabi-v7a.apk' | sha256sum -c -
+          printf '%s\n' 'c5593af6f772545c6ec03faa72056fc11141455b1e32d8d6db7cfb7924200cd2  dist/DuckMusic-Flutter-v1.1.59-Android-x86_64.apk' | sha256sum -c -
+          printf '%s\n' '318a7cfbef36b38b6056c3c8736487f01213d54816da4a47bed7c3a65c1916a7  dist/DuckMusic-Flutter-v1.1.59-source.tar.gz' | sha256sum -c -
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: flutter-v1.1.59
+          target_commitish: fbfcf48c19992a93acbc0b88e07999c516238d3c
+          name: DuckMusic Flutter v1.1.59
+          body: |
+            Android 正式版 1.1.59（构建号 70）。
+            新增黑源个人音乐漫游、五款播放页皮肤、Android 原生均衡器和本地音乐自动扫描。
+            直接接入 Folia 的绘光、花火、雾笺渲染器，调整播放控件与过渡；歌词不显示雨滴。
+            优化暂停、拖动进度、后台恢复和字体大小/粗细；调整液态玻璃导航、搜索和资料库。
+            702 项 Flutter 测试和 5 项渲染器测试通过，正式签名和覆盖安装验证通过。
+            本机完成四个 APK 的构建与签名，本 Release 仅镜像 ECS 产物，不执行编译。
+            完整对应客户端源码、构建脚本与许可证包含在 source.tar.gz 中，AGPL-3.0；第三方保留各自许可证。
+            说明：未包含离线人声/鼓点分离分析，音乐驱动细节不承诺逐帧一致；真机流畅度仍需实际设备验证。
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: dist/*
