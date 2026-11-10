@@ -12,9 +12,11 @@ under AGPL-3.0 with this integration; third-party components retain their licens
 Use Node.js 22 or newer:
 
 ```sh
-npm ci --ignore-scripts --prefix third_party/folia
-npm test --prefix third_party/folia
-npm run build --prefix third_party/folia
+cd third_party/folia
+npm ci --ignore-scripts
+npm test
+npm run build
+cd ../..
 flutter pub get
 flutter build apk --release
 ```
