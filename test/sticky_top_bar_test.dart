@@ -57,8 +57,8 @@ void main() {
     expect(find.byKey(gStickyTopBarTitleKey), findsNothing);
     expect(fillAlpha(tester), 0);
 
-    // 走到 fadeStart 与 fadeEnd 之间：底色已经起来，标题还没开始淡入。
-    controller.jumpTo(40);
+    // 走到 fadeStart 与 fadeEnd 之间：底色已经起来，但还没到标题的淡入阈值。
+    controller.jumpTo(30);
     await tester.pump();
     final midFill = fillAlpha(tester);
     expect(midFill, greaterThan(0));
