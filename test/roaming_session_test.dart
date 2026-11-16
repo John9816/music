@@ -24,6 +24,49 @@ http.Response response(Map<String, dynamic> data) =>
     http.Response(jsonEncode({'code': 0, 'data': data}), 200);
 
 void main() {
+  test('409 binding change reads as an expired session, not a lost authorization',
+      () async {
+    final client = ApiClient.forTesting(MockClient((r) async => http.Response(
+        jsonEncode({
+          'code': 409,
+          'message': 'Qishui binding changed; start a new roaming session'
+        }),
+        409)));
+    final session = RoamingSession(
+        api: QishuiFeedApi(client: client), identity: () => 'one');
+    await session.start();
+    expect(session.error, '漫游会话已失效，重新开始即可');
+    session.dispose();
+  });
+
+  test('409 authorization expiry still asks the user to refresh', () async {
+    final client = ApiClient.forTesting(MockClient((r) async => http.Response(
+        jsonEncode({
+          'code': 409,
+          'message': 'Qishui authorization expired; refresh or authorize again'
+        }),
+        409)));
+    final session = RoamingSession(
+        api: QishuiFeedApi(client: client), identity: () => 'one');
+    await session.start();
+    expect(session.error, '授权已过期，请在黑源账号里刷新授权');
+    session.dispose();
+  });
+
+  test('unbound account points at the QR binding flow', () async {
+    final client = ApiClient.forTesting(MockClient((r) async => http.Response(
+        jsonEncode({
+          'code': 409,
+          'message': 'Bind a Qishui account before roaming'
+        }),
+        409)));
+    final session = RoamingSession(
+        api: QishuiFeedApi(client: client), identity: () => 'one');
+    await session.start();
+    expect(session.error, '还没有绑定黑源账号，请先扫码绑定');
+    session.dispose();
+  });
+
   test('stop while prior session closes cannot resurrect a pending start',
       () async {
     final closing = Completer<http.Response>();

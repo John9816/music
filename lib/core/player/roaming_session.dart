@@ -136,11 +136,30 @@ class RoamingSession extends ChangeNotifier {
     if (error is ApiException) {
       if (error.unauthorized) return '请登录后重新开始漫游';
       final lower = error.message.toLowerCase();
-      if (lower.contains('bind') ||
-          lower.contains('credential') ||
-          lower.contains('授权') ||
-          lower.contains('绑定')) {
-        return '请先在黑源账号中扫码绑定，或刷新授权';
+      // 后端用 409 表达三种完全不同的状态。把"会话失效"也说成"请重新扫码"，
+      // 会让用户以为授权掉了 —— 实际只需要重开一次漫游。
+      if (lower.contains('binding changed')) {
+        return '漫游会话已失效，重新开始即可';
+      }
+      if (lower.contains('authorization expired') ||
+          lower.contains('authorize again') ||
+          lower.contains('identity is incomplete')) {
+        return '授权已过期，请在黑源账号里刷新授权';
+      }
+      if (lower.contains('bind') || lower.contains('绑定')) {
+        return '还没有绑定黑源账号，请先扫码绑定';
+      }
+      switch (error.statusCode) {
+        case 404:
+          return '本次漫游已结束，重新开始即可';
+        case 409:
+          return '漫游会话已失效，重新开始即可';
+        case 429:
+          return '操作太快了，稍等一下再试';
+        case 503:
+          return '服务正忙，稍后重试';
+        case 504:
+          return '上游响应超时，稍后重试';
       }
     }
     return '漫游暂时不可用，请重试';

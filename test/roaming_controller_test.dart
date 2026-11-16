@@ -41,6 +41,17 @@ class _Player extends PlayerController {
   }
 }
 
+class _ModesApi extends QishuiFeedApi {
+  final gate = Completer<void>();
+  int calls = 0;
+  @override
+  Future<List<RoamingMode>> modes() async {
+    calls++;
+    await gate.future;
+    return const [RoamingMode(id: 'recommended', name: '为你推荐')];
+  }
+}
+
 class _Api extends QishuiFeedApi {
   final pending = Completer<RoamingPage>();
   @override
@@ -51,6 +62,19 @@ class _Api extends QishuiFeedApi {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('concurrent mode loads collapse into one upstream request', () async {
+    // 漫游页打开与弹窗展开会同时请求场景列表，重复请求会把服务端同一把用户锁占满。
+    final api = _ModesApi();
+    final roaming = RoamingController(
+        player: _Player(SettingsController()), auth: _Auth(), api: api);
+    final first = roaming.loadModes();
+    final second = roaming.loadModes();
+    api.gate.complete();
+    await Future.wait([first, second]);
+    expect(api.calls, 1);
+    expect(roaming.modes, hasLength(1));
+  });
   for (final action in ['manual', 'account', 'stop', 'failure']) {
     test('pending roaming respects $action and preserves an actionable error',
         () async {

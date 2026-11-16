@@ -27,6 +27,8 @@ class RoamingController extends ChangeNotifier {
   int? _queueGeneration;
   int _operation = 0;
   bool _disposed = false, _starting = false;
+  /// 正在进行的场景列表请求；并发调用方共用同一个 Future。
+  Future<void>? _modesInFlight;
   List<RoamingMode> _modes = [];
   List<RoamingMode> get modes => List.unmodifiable(_modes);
   bool get active => _queueGeneration != null && session.active;
@@ -34,7 +36,21 @@ class RoamingController extends ChangeNotifier {
   String? get error => session.error;
   String get modeName =>
       _modes.where((m) => m.id == session.modeId).firstOrNull?.name ?? '为你推荐';
-  Future<void> loadModes() async {
+
+  /// Collapses concurrent callers onto one request. The roaming sheet asks for modes on
+  /// open while the page below may still be loading them, which used to fire the same
+  /// request three times in a row and jam the server-side per-user lock.
+  Future<void> loadModes() {
+    final pending = _modesInFlight;
+    if (pending != null) return pending;
+    late final Future<void> flight;
+    flight = _fetchModes().whenComplete(() {
+      if (identical(_modesInFlight, flight)) _modesInFlight = null;
+    });
+    return _modesInFlight = flight;
+  }
+
+  Future<void> _fetchModes() async {
     final generation = auth.sessionGeneration;
     final result = await api.modes();
     if (_disposed || generation != auth.sessionGeneration) return;
