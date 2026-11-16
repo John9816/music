@@ -14,7 +14,7 @@ void main() {
   });
 
   test('初始化读取当前模式', () async {
-    final channel = const MethodChannel('test_alert_slider_initial');
+    const channel = MethodChannel('test_alert_slider_initial');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'current') return 'vibrate';
@@ -33,7 +33,7 @@ void main() {
 
   test('startListening 只调用一次，stop 后可再次启动', () async {
     final calls = <String>[];
-    final channel = const MethodChannel('test_alert_slider_listen');
+    const channel = MethodChannel('test_alert_slider_listen');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       calls.add(call.method);
@@ -57,7 +57,7 @@ void main() {
   });
 
   test('平台回调推送变化，重复模式不重复广播', () async {
-    final channel = const MethodChannel('test_alert_slider_events');
+    const channel = MethodChannel('test_alert_slider_events');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'current') return 'normal';
@@ -94,7 +94,7 @@ void main() {
   });
 
   test('平台调用失败时静默降级', () async {
-    final channel = const MethodChannel('test_alert_slider_failure');
+    const channel = MethodChannel('test_alert_slider_failure');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       throw PlatformException(code: 'UNAVAILABLE');
