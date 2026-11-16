@@ -101,18 +101,38 @@ def install_local_repository(gradle_home, compilers, poms, opener=urllib.request
     filters = "\n".join(
         "            includeVersion('org.jetbrains.kotlin', 'kotlin-compiler-embeddable', '" + version + "')"
         for version in compilers)
-    script = """gradle.beforeProject { project ->
-    project.repositories.exclusiveContent {
-        forRepository {
-            project.repositories.maven {
-                name = 'DuckMusicVerifiedKotlin'
-                url = uri('REPOSITORY')
-                metadataSources { mavenPom(); artifact() }
+    script = """gradle.settingsEvaluated { settings ->
+    try {
+        settings.dependencyResolutionManagement.repositories.exclusiveContent {
+            forRepository {
+                settings.dependencyResolutionManagement.repositories.maven {
+                    name = 'DuckMusicVerifiedKotlin'
+                    url = uri('REPOSITORY')
+                    metadataSources { mavenPom(); artifact() }
+                }
+            }
+            filter {
+FILTERS
             }
         }
-        filter {
+    } catch (Exception ignored) {
+    }
+}
+gradle.beforeProject { project ->
+    try {
+        project.repositories.exclusiveContent {
+            forRepository {
+                project.repositories.maven {
+                    name = 'DuckMusicVerifiedKotlin'
+                    url = uri('REPOSITORY')
+                    metadataSources { mavenPom(); artifact() }
+                }
+            }
+            filter {
 FILTERS
+            }
         }
+    } catch (Exception ignored) {
     }
 }
 """.replace("REPOSITORY", repository.as_uri().replace("'", "%27")).replace("FILTERS", filters)
