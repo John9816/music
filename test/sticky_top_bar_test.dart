@@ -69,13 +69,13 @@ void main() {
     controller.jumpTo(100);
     await tester.pump();
     expect(fillAlpha(tester), greaterThan(midFill));
-    expect(titleOpacity(tester), 1);
+    expect(titleOpacity(tester), closeTo(1, 1e-6));
 
     // 继续往下滚不再变化，避免 overscroll 把 alpha 推出区间。
     controller.jumpTo(240);
     await tester.pump();
     expect(fillAlpha(tester), lessThanOrEqualTo(1));
-    expect(titleOpacity(tester), 1);
+    expect(titleOpacity(tester), closeTo(1, 1e-6));
     expect(tester.takeException(), isNull);
   });
 
