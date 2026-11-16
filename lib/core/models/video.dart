@@ -273,6 +273,72 @@ class VideoLine {
   final String? description;
 }
 
+/// Container reported by the backend for a playable URL.
+///
+/// The backend infers this from the URL itself and reports `unknown` when it cannot
+/// tell, so anything unrecognised is still attempted instead of being refused.
+enum MediaContainer {
+  mp4('mp4', 'MP4'),
+  hls('hls', 'HLS'),
+  dash('dash', 'DASH'),
+  mkv('mkv', 'MKV'),
+  webm('webm', 'WebM'),
+  ts('ts', 'TS'),
+  flv('flv', 'FLV'),
+  avi('avi', 'AVI'),
+  threeGp('3gp', '3GP'),
+  unknown('unknown', '未知格式'),
+  unsupported('unsupported', '不支持');
+
+  const MediaContainer(this.wireValue, this.label);
+
+  final String wireValue;
+  final String label;
+
+  static MediaContainer parse(Object? value) {
+    switch (value?.toString().trim().toLowerCase()) {
+      case 'mp4':
+      case 'm4v':
+      case 'mov':
+      case 'f4v':
+        return MediaContainer.mp4;
+      case 'hls':
+      case 'm3u8':
+        return MediaContainer.hls;
+      case 'dash':
+      case 'mpd':
+        return MediaContainer.dash;
+      case 'mkv':
+        return MediaContainer.mkv;
+      case 'webm':
+        return MediaContainer.webm;
+      case 'ts':
+      case 'm2ts':
+      case 'mts':
+        return MediaContainer.ts;
+      case 'flv':
+        return MediaContainer.flv;
+      case 'avi':
+        return MediaContainer.avi;
+      case '3gp':
+      case '3gpp':
+        return MediaContainer.threeGp;
+      case 'wmv':
+      case 'asf':
+      case 'rm':
+      case 'rmvb':
+      case 'vob':
+      case 'ogv':
+        return MediaContainer.unsupported;
+      default:
+        return MediaContainer.unknown;
+    }
+  }
+
+  /// Legacy Windows RealMedia (.wmv/.rm/.rmvb) cannot be decoded by ExoPlayer or AVPlayer.
+  bool get playableInApp => this != MediaContainer.unsupported;
+}
+
 class VideoPlayback {
   const VideoPlayback({
     required this.videoId,
@@ -314,26 +380,50 @@ class VideoPlayback {
   final String? sourceId;
   final String? sourceName;
 
+  /// Container hint reported by the backend.
+  MediaContainer get container => MediaContainer.parse(format);
+
   bool get isInlinePlayable {
     if (!playable) return false;
     final uri = Uri.tryParse(mediaUrl ?? '');
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return false;
-    final normalizedFormat = format?.trim().toLowerCase();
-    final path = uri.path.toLowerCase();
-    switch (normalizedFormat) {
-      case 'mp4':
-        return path.endsWith('.mp4') ||
-            (uri.host == 'dj.youlishipin.com' && path == '/duanju/video302');
-      case 'hls':
-      case 'm3u8':
-        return path.endsWith('.m3u8');
-      case 'dash':
-      case 'mpd':
-        return path.endsWith('.mpd');
-      default:
-        return false;
-    }
+    final fromUrl = _containerForPath(uri.path);
+    // No extension at all: trust the backend, it already resolved this to a direct URL.
+    if (fromUrl == null) return container.playableInApp;
+    // The URL names something no player can decode (.exe, .php, images, ...).
+    if (fromUrl == MediaContainer.unsupported) return false;
+    // The backend could not tell, so fall back to what the address itself says.
+    if (container == MediaContainer.unknown) return fromUrl.playableInApp;
+    return fromUrl == container && container.playableInApp;
   }
+
+  /// Reason to show when [isInlinePlayable] is false but a direct URL exists.
+  String get unsupportedReason {
+    if (isInlinePlayable || !playable) return '';
+    final url = mediaUrl;
+    if (url == null || url.isEmpty) return '';
+    return '该线路地址内置播放器无法解码，可换一条线路';
+  }
+}
+
+/// Extensions the inline player may attempt; mirrors the backend `MediaFormat` list.
+const Set<String> _mediaExtensions = {
+  'm3u8', 'mp4', 'mpd', 'mkv', 'webm', 'ts', 'm2ts', 'mts', //
+  'flv', 'avi', 'mov', 'm4v', 'f4v', '3gp', '3gpp', 'wmv', //
+  'asf', 'rmvb', 'rm', 'vob', 'ogv',
+};
+
+/// Resolves the container named by [path].
+///
+/// Returns null when the path carries no extension, and [MediaContainer.unsupported]
+/// when it names something that is not media at all.
+MediaContainer? _containerForPath(String path) {
+  final name = path.split('/').last;
+  final dot = name.lastIndexOf('.');
+  if (dot < 0 || dot == name.length - 1) return null;
+  final extension = name.substring(dot + 1).toLowerCase();
+  if (!_mediaExtensions.contains(extension)) return MediaContainer.unsupported;
+  return MediaContainer.parse(extension);
 }
 
 /// Compatibility name used by the video feature and API consumers.

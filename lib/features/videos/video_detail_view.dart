@@ -227,13 +227,15 @@ class _VideoDetailViewState extends State<VideoDetailView> {
     Duration resumePosition = Duration.zero,
   }) async {
     try {
-      final play = await widget.api.play(
-        detail.id,
-        source: widget.source,
-        episode: episode.id,
-        line: lineOverride ?? _line ?? '1',
+      final play = await _resolvePlayable(
+        detail,
+        episode,
+        preferredLine: lineOverride ?? _line,
       );
       if (!mounted) return;
+      if (play.lineId.isNotEmpty) {
+        setState(() => _line = play.lineId);
+      }
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => VideoPlayerView(
@@ -243,6 +245,7 @@ class _VideoDetailViewState extends State<VideoDetailView> {
             source: widget.source ?? detail.sourceId ?? _sourceId,
             resumePosition: resumePosition,
             historyService: _historyService,
+            lines: detail.lines,
           ),
         ),
       );
@@ -252,6 +255,37 @@ class _VideoDetailViewState extends State<VideoDetailView> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('$error')));
     }
+  }
+
+  /// Returns the first line whose URL the in-app player can take.
+  ///
+  /// Mirrors TVBox's "change source" behaviour: the preferred line is tried first and,
+  /// when it yields no playable URL, up to [maxAttempts] lines are probed before giving
+  /// up with the first result (which still carries the upstream fallback links).
+  Future<VideoPlay> _resolvePlayable(
+    VideoDetail detail,
+    VideoEpisode episode, {
+    String? preferredLine,
+    int maxAttempts = 3,
+  }) async {
+    final candidates = <String>[
+      if (preferredLine != null && preferredLine.isNotEmpty) preferredLine,
+      for (final line in detail.lines) line.id,
+    ];
+    if (candidates.isEmpty) candidates.add('1');
+
+    VideoPlay? first;
+    for (final lineId in candidates.toSet().take(maxAttempts)) {
+      final play = await widget.api.play(
+        detail.id,
+        source: widget.source,
+        episode: episode.id,
+        line: lineId,
+      );
+      first ??= play;
+      if (play.isInlinePlayable) return play;
+    }
+    return first!;
   }
 
   String get _sourceId => widget.source ?? 'ncat21';
