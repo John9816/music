@@ -7,6 +7,14 @@ enum DeviceFamily { vivo, oplus, other }
 
 /// 原生侧只读探测出的设备画像。
 class DeviceProfile {
+  final String brand;
+  final String manufacturer;
+  final String model;
+  final DeviceFamily family;
+  final bool isVivo;
+  final bool isOplus;
+  final String? oplusVersion;
+
   const DeviceProfile({
     required this.brand,
     required this.manufacturer,
@@ -57,19 +65,19 @@ class DeviceProfileService {
     MethodChannel? channel,
     Future<Map<dynamic, dynamic>> Function()? probe,
   })  : _channel = channel ?? const MethodChannel('com.music.player/device_profile'),
-        _probe = probe ?? _loadFromPlatform;
+        _probe = probe;
 
   static final DeviceProfileService instance = DeviceProfileService();
 
   final MethodChannel _channel;
-  final Future<Map<dynamic, dynamic>> Function() _probe;
+  final Future<Map<dynamic, dynamic>> Function()? _probe;
   DeviceProfile? _cached;
 
   Future<DeviceProfile> profile() async {
     final cached = _cached;
     if (cached != null) return cached;
     try {
-      final map = await _probe();
+      final map = await (_probe ?? _loadFromPlatform)();
       _cached = DeviceProfile.fromMap(map);
     } catch (_) {
       _cached = DeviceProfile.fallback;

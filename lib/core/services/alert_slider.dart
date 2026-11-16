@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -20,12 +22,12 @@ class AlertSliderService {
     MethodChannel? channel,
     Future<String?> Function()? probe,
   })  : _channel = channel ?? const MethodChannel('com.music.player/alert_slider'),
-        _probe = probe ?? _probePlatform;
+        _probe = probe;
 
   static final AlertSliderService instance = AlertSliderService();
 
   final MethodChannel _channel;
-  final Future<String?> Function() _probe;
+  final Future<String?> Function()? _probe;
   final StreamController<RingerMode> _changes = StreamController.broadcast();
 
   bool _initialized = false;
@@ -41,7 +43,7 @@ class AlertSliderService {
     _initialized = true;
     _channel.setMethodCallHandler(_handlePlatformCall);
     try {
-      final current = await _probe();
+      final current = await (_probe ?? _probePlatform)();
       final parsed = parseRingerMode(current);
       if (parsed != null) _mode = parsed;
     } catch (_) {
