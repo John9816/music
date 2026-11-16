@@ -66,6 +66,10 @@ class _GStickyTopBarState extends State<GStickyTopBar> {
   double get _progress {
     final controller = widget.controller;
     if (!controller.hasClients) return 0;
+    // 页面重建时新旧 ScrollView 会短暂同时挂在一个控制器上，此时
+    // `controller.offset` 会抛 "attached to multiple scroll views"。
+    // 这种过渡帧直接按未滚动处理，栏保持透明，等下一帧再算。
+    if (controller.positions.length != 1) return 0;
     final offset = controller.offset;
     final span = widget.fadeEnd - widget.fadeStart;
     if (span <= 0) return offset >= widget.fadeEnd ? 1 : 0;
@@ -110,7 +114,9 @@ class _GStickyTopBarState extends State<GStickyTopBar> {
             padding: EdgeInsets.only(top: inset),
             child: Stack(
               children: [
-                if (widget.title != null)
+                // 完全透明时不建标题：避免与滚动内容里的大标题同时存在于
+                // 语义树与 finder 中（读屏会念两遍，测试也会数出两个）。
+                if (widget.title != null && titleOpacity > 0)
                   Positioned.fill(
                     child: Padding(
                       padding: EdgeInsets.symmetric(

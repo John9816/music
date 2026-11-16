@@ -47,9 +47,14 @@ void main() {
     final controller = ScrollController();
     addTearDown(controller.dispose);
     await tester.pumpWidget(harness(controller));
+    await tester.pump();
+    // 首帧布局可能带着非零的滚动位置，先归零再测起点。
+    controller.jumpTo(0);
+    await tester.pump();
 
-    // fadeStart 之前：底色全透、标题不可见。
-    expect(titleOpacity(tester), 0);
+    // fadeStart 之前：底色全透，标题还没有进入树里。
+    expect(controller.offset, 0);
+    expect(find.byKey(gStickyTopBarTitleKey), findsNothing);
     expect(fillAlpha(tester), 0);
 
     // 走到 fadeStart 与 fadeEnd 之间：底色已经起来，标题还没开始淡入。
@@ -58,7 +63,7 @@ void main() {
     final midFill = fillAlpha(tester);
     expect(midFill, greaterThan(0));
     expect(midFill, lessThan(1));
-    expect(titleOpacity(tester), 0);
+    expect(find.byKey(gStickyTopBarTitleKey), findsNothing);
 
     // fadeEnd 之后：完全变实，标题显形。
     controller.jumpTo(100);
@@ -103,33 +108,30 @@ void main() {
       ),
     ));
     expect(tester.takeException(), isNull);
-    expect(titleOpacity(tester), 0);
+    expect(find.byKey(gStickyTopBarTitleKey), findsNothing);
   });
 
   testWidgets('状态栏图标跟随底色明暗', (tester) async {
-    SystemUiOverlayStyle? dark;
-    SystemUiOverlayStyle? light;
+    SystemUiOverlayStyle? onDark;
+    SystemUiOverlayStyle? onLight;
 
     await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(brightness: Brightness.dark),
       home: Builder(builder: (context) {
-        dark = systemOverlayStyleFor(context);
-        return const SizedBox.shrink();
-      }),
-    ));
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(brightness: Brightness.light),
-      home: Builder(builder: (context) {
-        light = systemOverlayStyleFor(context);
+        // 明确给出底色，不依赖各版本 ThemeData 的默认 surface 取值。
+        onDark = systemOverlayStyleFor(context,
+            background: const Color(0xFF0A0A0B));
+        onLight = systemOverlayStyleFor(context,
+            background: const Color(0xFFF7F8FA));
         return const SizedBox.shrink();
       }),
     ));
 
     // 深色底配白图标，浅色底配黑图标；iOS 的语义相反。
-    expect(dark!.statusBarIconBrightness, Brightness.light);
-    expect(dark!.statusBarBrightness, Brightness.dark);
-    expect(light!.statusBarIconBrightness, Brightness.dark);
-    expect(light!.statusBarBrightness, Brightness.light);
-    expect(dark!.statusBarColor, Colors.transparent);
+    expect(onDark!.statusBarIconBrightness, Brightness.light);
+    expect(onDark!.statusBarBrightness, Brightness.dark);
+    expect(onLight!.statusBarIconBrightness, Brightness.dark);
+    expect(onLight!.statusBarBrightness, Brightness.light);
+    expect(onDark!.statusBarColor, Colors.transparent);
+    expect(onDark!.systemNavigationBarContrastEnforced, false);
   });
 }
