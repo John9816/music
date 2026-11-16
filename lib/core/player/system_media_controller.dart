@@ -323,7 +323,8 @@ class SystemMediaController extends BaseAudioHandler {
       _originIslandKey = key;
       if (!force) unawaited(_originIsland.hide());
     }
-    final durationMs = item.duration?.inMilliseconds ?? player.duration.inMilliseconds;
+    final durationMs =
+        item.duration?.inMilliseconds ?? player.duration?.inMilliseconds ?? 0;
     unawaited(_originIsland.show(
       title: item.title,
       subText: item.artist,
@@ -331,7 +332,7 @@ class SystemMediaController extends BaseAudioHandler {
       playing: player.playing,
       progressMs: player.position.inMilliseconds,
       durationMs: durationMs,
-      accentColor: androidConfig.notificationColor?.value,
+      accentColor: androidConfig.notificationColor?.toARGB32(),
     ));
   }
 
