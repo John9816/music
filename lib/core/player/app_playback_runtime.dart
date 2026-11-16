@@ -16,6 +16,9 @@ import 'system_media_controller.dart';
 class AppPlaybackRuntime {
   AppPlaybackRuntime() {
     settings = SettingsController();
+    // 原子岛开关提供者：单例在下面首次被访问前注入，读到的是本运行时的设置。
+    SystemMediaController.setOriginIslandEnabledProvider(
+        () => settings.originIslandEnabled);
     player = PlayerController(
         settings: settings,
         beforePlayback: Platform.isAndroid || Platform.isIOS
@@ -54,6 +57,7 @@ class AppPlaybackRuntime {
     _lastSessionGeneration = auth.sessionGeneration;
     listenTimeReporter.onSessionChanged();
   }
+
   bool get _hasSystemMedia =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 

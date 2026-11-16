@@ -37,6 +37,8 @@ class MainActivity : AudioServiceActivity() {
         audioSpectrumBridge = AudioSpectrumBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         deviceMusicBridge?.dispose()
         deviceMusicBridge = DeviceMusicBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        // vivo 原子岛（notification.superx.*）本地发送通道。
+        OriginIslandBridge.register(flutterEngine, this)
         val legacyAuthStore = LegacyAuthSessionStore.fromContext(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LEGACY_AUTH_CHANNEL)
             .setMethodCallHandler { call, result ->

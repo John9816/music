@@ -7,6 +7,7 @@ import '../../core/config/app_config.dart';
 import '../../core/config/audio_quality_policy.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/player/system_media_controller.dart';
+import '../../core/services/origin_island.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/glass.dart';
@@ -210,6 +211,8 @@ class SettingsView extends StatelessWidget {
             children: [
               if (Theme.of(context).platform == TargetPlatform.android)
                 const AndroidMediaStatusRow(),
+              if (Theme.of(context).platform == TargetPlatform.android)
+                const OriginIslandRow(),
               SettingsRow(
                 icon: Icons.info_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
@@ -409,6 +412,52 @@ class _AndroidMediaStatusRowState extends State<AndroidMediaStatusRow>
             )
           : null,
       onTap: _loading ? null : _open,
+    );
+  }
+}
+
+/// vivo 原子岛开关。只在检测到 vivo/iQOO 设备时显示。
+class OriginIslandRow extends StatefulWidget {
+  const OriginIslandRow({super.key});
+
+  @override
+  State<OriginIslandRow> createState() => _OriginIslandRowState();
+}
+
+class _OriginIslandRowState extends State<OriginIslandRow> {
+  bool? _supported;
+
+  @override
+  void initState() {
+    super.initState();
+    _detect();
+  }
+
+  Future<void> _detect() async {
+    final island = OriginIslandService.instance;
+    await island.initialize();
+    if (mounted) setState(() => _supported = island.available);
+  }
+
+  Future<void> _toggle(bool value) async {
+    final settings = context.read<SettingsController>();
+    await settings.setOriginIslandEnabled(value);
+    // 关掉立即收起胶囊；打开则按当前播放状态重推。
+    await SystemMediaController.instance.refreshOriginIsland();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsController>();
+    if (_supported != true) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsRow(
+      icon: Icons.airplay_rounded,
+      iconColor: scheme.primary,
+      title: '原子岛播放胶囊',
+      subtitle: '播放时在挖孔旁显示进度，暂停时显示歌曲与歌手',
+      onToggle: _toggle,
+      toggleValue: settings.originIslandEnabled,
     );
   }
 }

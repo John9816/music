@@ -9,6 +9,7 @@ import 'package:rxdart/rxdart.dart';
 
 import '../models/song.dart';
 import '../network/image_request_policy.dart';
+import '../services/origin_island.dart';
 import 'player_controller.dart';
 import 'car_media_library.dart';
 
@@ -16,10 +17,22 @@ class SystemMediaController extends BaseAudioHandler {
   SystemMediaController({
     Future<void> Function()? androidNotificationPermissionRequester,
     bool Function()? isAndroid,
+    bool Function()? isOriginIslandEnabled,
+    OriginIslandService? originIsland,
   })  : _androidNotificationPermissionRequester =
             androidNotificationPermissionRequester ??
                 _requestAndroidNotificationPermission,
-        _isAndroid = isAndroid ?? _platformIsAndroid;
+        _isAndroid = isAndroid ?? _platformIsAndroid,
+        _isOriginIslandEnabled = isOriginIslandEnabled ?? _readDefaultOriginIslandEnabled,
+        _originIsland = originIsland ?? OriginIslandService.instance;
+
+  /// 单例的开关提供者由运行时注入（SettingsController 在实例之后才可用）。
+  static bool Function() _defaultOriginIslandProvider = () => true;
+  static bool _readDefaultOriginIslandEnabled() => _defaultOriginIslandProvider();
+
+  static void setOriginIslandEnabledProvider(bool Function() provider) {
+    _defaultOriginIslandProvider = provider;
+  }
 
   static final SystemMediaController instance = SystemMediaController();
   static bool _initialized = false;
@@ -55,6 +68,9 @@ class SystemMediaController extends BaseAudioHandler {
 
   final Future<dynamic> Function() _androidNotificationPermissionRequester;
   final bool Function() _isAndroid;
+  final bool Function() _isOriginIslandEnabled;
+  final OriginIslandService _originIsland;
+  String? _originIslandKey;
   bool _androidNotificationPermissionRequested = false;
   Future<dynamic>? _androidNotificationPermissionRequest;
   List<String> _publishedQueueKeys = const [];
@@ -78,11 +94,24 @@ class SystemMediaController extends BaseAudioHandler {
       _initialized = true;
       return;
     }
+    // 原子岛探测不可用时只是静默降级，绝不能挡住音频服务的初始化。
+    unawaited(instance._originIsland.initialize());
     await AudioService.init(
       builder: () => instance,
       config: androidConfig,
     );
     _initialized = true;
+  }
+
+  /// 设置页在开关变化后调用：关掉时立即收起胶囊，打开时按当前状态重推。
+  Future<void> refreshOriginIsland() async {
+    if (!_isAndroid()) return;
+    if (!_isOriginIslandEnabled()) {
+      _originIslandKey = null;
+      await _originIsland.hide();
+      return;
+    }
+    _syncOriginIsland(force: true);
   }
 
   /// Waits for the Android notification permission dialog before playback
@@ -153,6 +182,10 @@ class SystemMediaController extends BaseAudioHandler {
     queue.add(const <MediaItem>[]);
     mediaItem.add(null);
     playbackState.add(PlaybackState());
+    if (_originIslandKey != null) {
+      _originIslandKey = null;
+      unawaited(_originIsland.hide());
+    }
     if (_usesAppleNowPlaying) {
       unawaited(_iosChannel.invokeMethod<void>('clear'));
     }
@@ -265,6 +298,41 @@ class SystemMediaController extends BaseAudioHandler {
         }),
       );
     }
+    _syncOriginIsland();
+  }
+
+  /// 把当前播放状态投到 vivo 原子岛。
+  ///
+  /// 只在 Android + vivo + 用户开启时工作；切歌/停止会卸载旧胶囊。
+  /// 调用频率跟 [_sync] 一致，真正的刷新节流在 [OriginIslandService] 里。
+  void _syncOriginIsland({bool force = false}) {
+    if (!_isAndroid() || !_isOriginIslandEnabled()) return;
+    if (!_originIsland.available) return;
+    final player = _player;
+    final item = mediaItem.value;
+    if (player == null || item == null || player.current == null) {
+      if (_originIslandKey != null) {
+        _originIslandKey = null;
+        unawaited(_originIsland.hide());
+      }
+      return;
+    }
+    // 曲目变化时先卸载，避免上一首的胶囊残留到新曲目的进度卡。
+    final key = '${item.id}\u001f${item.title}';
+    if (key != _originIslandKey) {
+      _originIslandKey = key;
+      if (!force) unawaited(_originIsland.hide());
+    }
+    final durationMs = item.duration?.inMilliseconds ?? player.duration.inMilliseconds;
+    unawaited(_originIsland.show(
+      title: item.title,
+      subText: item.artist,
+      content: item.album,
+      playing: player.playing,
+      progressMs: player.position.inMilliseconds,
+      durationMs: durationMs,
+      accentColor: androidConfig.notificationColor?.value,
+    ));
   }
 
   void _ensureAndroidNotificationPermission(bool playing) {
