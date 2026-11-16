@@ -6,8 +6,9 @@ import '../player/player_controller.dart';
 
 /// 听歌时长心跳上报。
 ///
-/// 只统计「真正在播放」的墙钟秒数：监听 [PlayerController.playingStream]，
-/// 播放时每秒累加；每满一个心跳周期（默认 30 秒）上报一次真实播放秒数。
+/// 只统计「真正在播放」的墙钟秒数：监听 [PlayerController] 的状态变化，
+/// 当 [PlayerController.playbackAdvancing] 为真（已就绪且正在推进）时每秒累加；
+/// 每满一个心跳周期（默认 30 秒）上报一次真实播放秒数。
 /// 暂停时停止累计但不丢弃不足一个周期的余数；切歌不重置（后端按 user+day 聚合）。
 /// 登录态变化 / 应用切后台时结算，避免串号或进程被杀导致丢数据。
 class ListenTimeReporter {
@@ -19,7 +20,8 @@ class ListenTimeReporter {
   })  : _player = player,
         _auth = auth,
         _api = api ?? MusicSocialApi() {
-    _playingSub = _player.playingStream.distinct().listen(_onPlayingChanged);
+    _player.addListener(_syncPlaying);
+    _syncPlaying();
   }
 
   final PlayerController _player;
@@ -27,13 +29,18 @@ class ListenTimeReporter {
   final MusicSocialApi _api;
   final Duration interval;
 
-  StreamSubscription<bool>? _playingSub;
   Timer? _tick;
   int _pendingSeconds = 0;
   bool _reporting = false;
+  bool _wasAdvancing = false;
 
-  void _onPlayingChanged(bool playing) {
-    if (playing) {
+  /// [PlayerController] 是 ChangeNotifier；状态变化时据此启停计时器。
+  /// 只有 advancing 由 false → true 才启动，避免频繁通知导致重复建 Timer。
+  void _syncPlaying() {
+    final advancing = _player.playbackAdvancing;
+    if (advancing == _wasAdvancing) return;
+    _wasAdvancing = advancing;
+    if (advancing) {
       _startTicking();
     } else {
       _stopTicking();
@@ -84,9 +91,8 @@ class ListenTimeReporter {
   }
 
   void dispose() {
+    _player.removeListener(_syncPlaying);
     unawaited(flush());
     _stopTicking();
-    _playingSub?.cancel();
-    _playingSub = null;
   }
 }

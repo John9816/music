@@ -151,7 +151,7 @@ class _ShareSongViewState extends State<ShareSongView> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: GAppBar(title: '分享的歌曲'),
+      appBar: const GAppBar(title: '分享的歌曲'),
       body: _buildBody(scheme),
     );
   }
