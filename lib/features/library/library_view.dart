@@ -432,7 +432,7 @@ class _LibraryHeader extends StatelessWidget {
   final bool compact;
   @override
   Widget build(BuildContext context) => compact
-      ? GToolbar(title: const Text('资料库'), actions: [
+      ? GToolbar(title: const Text('资料库'), includeTopInset: true, actions: [
           PopupMenuButton<String>(
             tooltip: '添加到资料库',
             icon: const Icon(CupertinoIcons.add, size: 25),

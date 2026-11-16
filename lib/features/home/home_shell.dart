@@ -45,6 +45,18 @@ class _HomeShellState extends State<HomeShell> {
   static const _libraryIndex = 6;
   static const _pageCount = 7;
 
+  /// 顶部采用「背景铺到屏幕最顶、内容自己让 inset」的页面。
+  ///
+  /// 这些页面各自持有完整的背景层（Scaffold 底色 / 渐变 / ColoredBox），
+  /// 由页头组件负责让开状态栏与挖孔。未列出的页面仍由 [_TabNavigator] 里的
+  /// SafeArea 统一避让，行为与改动前一致。
+  static const _edgeToEdgeTopPages = <int>{
+    0,
+    _discoverIndex,
+    _profileIndex,
+    _libraryIndex,
+  };
+
   int _index = 0;
   String? _pendingSearchQuery;
   int _sourceVersion = 0;
@@ -560,6 +572,9 @@ class _HomeShellState extends State<HomeShell> {
                                                   active: _index == i,
                                                   canPopListenable:
                                                       _tabCanPop[i],
+                                                  edgeToEdgeTop:
+                                                      _edgeToEdgeTopPages
+                                                          .contains(i),
                                                   child: pages[i],
                                                 ),
                                             ],
@@ -790,11 +805,15 @@ class _TabNavigator extends StatefulWidget {
     required this.active,
     required this.child,
     required this.canPopListenable,
+    this.edgeToEdgeTop = false,
   });
 
   final bool active;
   final Widget child;
   final ValueNotifier<bool> canPopListenable;
+
+  /// 根页面自己处理顶部安全区（背景铺到屏幕最顶）时为 true。
+  final bool edgeToEdgeTop;
 
   @override
   State<_TabNavigator> createState() => _TabNavigatorState();
@@ -977,7 +996,10 @@ class _TabNavigatorState extends State<_TabNavigator> {
         onGenerateRoute: (_) => MaterialPageRoute<void>(
           builder: (_) => ValueListenableBuilder<Widget>(
             valueListenable: _rootPage,
+            // 二级页（搜索、喜欢、历史等）仍然整体让开顶部；四个主页面则由
+            // 自身的背景层铺满整屏、由页头组件让 inset。
             builder: (_, page, __) => SafeArea(
+              top: !widget.edgeToEdgeTop,
               bottom: false,
               child: page,
             ),

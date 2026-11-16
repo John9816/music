@@ -60,6 +60,14 @@ double macOSWindowControlsInset(BuildContext context) {
 /// 从根本上规避 macOS 上 MouseTracker._debugDuringDeviceUpdate 断言。
 /// ============================================================
 
+/// 顶部系统区（状态栏 + 挖孔）需要让出的高度。
+///
+/// 设计成「读多少让多少」：`SafeArea` 会把自己已经消费掉的 inset 从子树
+/// 的 `MediaQuery` 里移除，所以已经包在 `SafeArea` 里的组件读到的恒为 0，
+/// 头部组件可以无条件叠加，不会出现双重避让。
+double topSystemInset(BuildContext context) =>
+    MediaQuery.paddingOf(context).top;
+
 /// 页面大标题（各页顶部统一使用）
 TextStyle pageTitleStyle(BuildContext context) => TextStyle(
       fontSize:
@@ -93,10 +101,14 @@ class GPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final inset = GToolbar.horizontalInset(context);
+    // 页面本身已经铺到屏幕顶部时（外层没有 SafeArea），标题需要自己让开
+    // 状态栏与挖孔；已经被 SafeArea 处理过的场景读到的 top 为 0，行为不变。
+    final base = (padding ??
+            EdgeInsets.fromLTRB(
+                inset + macOSWindowControlsInset(context), 8, inset, 8))
+        .resolve(Directionality.of(context));
     return Padding(
-      padding: padding ??
-          EdgeInsets.fromLTRB(
-              inset + macOSWindowControlsInset(context), 8, inset, 8),
+      padding: base.add(EdgeInsets.only(top: topSystemInset(context))),
       child: LayoutBuilder(builder: (context, constraints) {
         final hasActions = actions != null && actions!.isNotEmpty;
         final effectiveTrailing = hasActions
@@ -333,7 +345,8 @@ class GToolbar extends StatelessWidget {
       this.leading,
       this.title,
       this.actions = const [],
-      this.centerTitle = true});
+      this.centerTitle = true,
+      this.includeTopInset = false});
 
   static const double height = 64;
   static double horizontalInset(BuildContext context) =>
@@ -344,14 +357,18 @@ class GToolbar extends StatelessWidget {
   final List<Widget> actions;
   final bool centerTitle;
 
+  /// 页面自己铺到屏幕顶部时置 true，让工具栏让开状态栏与挖孔。
+  final bool includeTopInset;
+
   @override
   Widget build(BuildContext context) {
     final inset = horizontalInset(context);
     final windowInset = macOSWindowControlsInset(context);
+    final top = includeTopInset ? topSystemInset(context) : 0.0;
     return SizedBox(
-      height: height,
+      height: height + top,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(inset + windowInset, 8, inset, 8),
+        padding: EdgeInsets.fromLTRB(inset + windowInset, 8 + top, inset, 8),
         child: NavigationToolbar(
           leading: leading,
           middle: title == null

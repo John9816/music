@@ -10,7 +10,9 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -107,6 +109,13 @@ class MainActivity : AudioServiceActivity() {
                         ),
                     )
                     "stopCast" -> result.success(null)
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, INSETS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getSafeAreaTop" -> result.success(safeAreaTopDp())
                     else -> result.notImplemented()
                 }
             }
@@ -233,6 +242,22 @@ class MainActivity : AudioServiceActivity() {
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
+    /**
+     * 顶部安全区高度（dp）：取系统栏与屏幕挖孔两者的较大值。
+     *
+     * 背景：targetSdk 已进入 Android 15+ 的强制 edge-to-edge 区间，窗口必然铺满整屏，
+     * 内容避让完全依赖 insets。部分国产 ROM 不会把 displayCutout 的 inset 透传给
+     * Flutter，MediaQuery.padding.top 只剩下状态栏高度，居中标题就会被屏幕正中的
+     * 挖孔压住。这里直接向系统要一份，交给 Dart 侧在缺失时兜底。
+     */
+    private fun safeAreaTopDp(): Int {
+        val insets = ViewCompat.getRootWindowInsets(window.decorView) ?: return 0
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+        val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout()).top
+        val density = resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+        return Math.round(maxOf(bars, cutout) / density)
+    }
+
     private fun openPackageInstaller(path: String): Boolean {
         return try {
             if (validateUpdate(path) != null) return false
@@ -286,6 +311,7 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         private const val UPDATE_CHANNEL = "duckmusic/update"
+        private const val INSETS_CHANNEL = "com.music.player/insets"
         private const val CAST_CHANNEL = "com.751152.duckmusic/cast"
         private const val NOTIFICATION_CHANNEL =
             "com.751152.duckmusic/notifications"

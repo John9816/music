@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:audio_session/audio_session.dart';
@@ -10,6 +11,7 @@ import 'package:media_kit/media_kit.dart';
 import 'app.dart';
 import 'core/player/system_media_controller.dart';
 import 'core/player/app_playback_runtime.dart';
+import 'core/services/device_insets.dart';
 import 'core/utils/performance_monitor.dart';
 
 Future<void> main() async {
@@ -99,4 +101,6 @@ Future<void> main() async {
 
   final runtime = AppPlaybackRuntime();
   runApp(DuckMusicApp(runtime: runtime));
+  // 首帧之后再取，此时窗口已 attach、insets 已经分发完成。
+  unawaited(DeviceInsets.initialize());
 }
