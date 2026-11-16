@@ -53,6 +53,7 @@ class AuthController extends ChangeNotifier {
   bool _sessionEstablished = false;
 
   String? get token => _token;
+  String? get userId => _userId;
   String? get username => _username;
   String? get email => _email;
   String? get avatarUrl => _avatarUrl;

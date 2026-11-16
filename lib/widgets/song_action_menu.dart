@@ -3,8 +3,11 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api/music_social_api.dart';
 import '../core/api/user_api.dart';
 import '../core/auth/auth_controller.dart';
 import '../core/models/song.dart';
@@ -221,11 +224,13 @@ class _SongActionSheet extends StatefulWidget {
 
 class _SongActionSheetState extends State<_SongActionSheet> {
   final UserApi _userApi = UserApi();
+  final MusicSocialApi _socialApi = MusicSocialApi();
   bool _liked = false;
   bool _favoriteRequested = false;
   bool _favoriteLoading = false;
   bool _playlistBusy = false;
   bool _playlistLoading = false;
+  bool _shareLoading = false;
 
   @override
   void didChangeDependencies() {
@@ -300,6 +305,13 @@ class _SongActionSheetState extends State<_SongActionSheet> {
             '收藏到歌单',
             _playlistBusy ? null : _addToPlaylist,
             loading: _playlistLoading,
+          ),
+        if (widget.song.source != 'local')
+          _action(
+            Icons.share_rounded,
+            '分享歌曲',
+            _shareLoading ? null : _share,
+            loading: _shareLoading,
           ),
       ],
       if (widget.song.source == 'local')
@@ -625,6 +637,79 @@ class _SongActionSheetState extends State<_SongActionSheet> {
     } catch (error) {
       _message(_errorText(error, '下载失败'));
     }
+  }
+
+  /// 创建服务端分享链接，复制并在 dialog 中提供浏览器打开入口。
+  Future<void> _share() async {
+    final token = context.read<AuthController>().token;
+    if (token == null) {
+      _message('请先登录后再分享歌曲');
+      return;
+    }
+    if (_shareLoading) return;
+    setState(() => _shareLoading = true);
+    final song = widget.song;
+    try {
+      final share = await _socialApi.saveShare(
+        source: song.source,
+        songId: song.id,
+        name: song.name,
+        artist: song.artistNames,
+        album: song.album.name,
+        coverUrl: song.album.picUrl ?? '',
+        durationSec: song.durationMs > 0
+            ? (song.durationMs / 1000).round()
+            : 0,
+        token: token,
+      );
+      await Clipboard.setData(ClipboardData(text: share.shareUrl));
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showShareDialog(share.shareUrl);
+    } catch (error) {
+      _message(_errorText(error, '分享失败'));
+    } finally {
+      if (mounted) setState(() => _shareLoading = false);
+    }
+  }
+
+  void _showShareDialog(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('分享链接已生成'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('链接已复制到剪贴板，可直接粘贴发送给好友。'),
+            const SizedBox(height: 12),
+            SelectableText(
+              url,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(dialogContext).colorScheme.primary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: const Text('在浏览器打开'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _message(String text) {

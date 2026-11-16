@@ -14,11 +14,13 @@ import 'about_view.dart';
 import 'qishui_account_view.dart';
 import 'desktop_settings_view.dart';
 import 'ios_sideload_view.dart';
+import 'listening_ranking_view.dart';
 import 'lyric_settings_view.dart';
 import 'settings_components.dart';
 import 'storage_settings_view.dart';
 import '../player/player_skin_stage.dart';
 import '../player/equalizer_view.dart';
+import '../player/share_song_view.dart';
 
 /// 统一设置入口，承载从“我的”中移出的偏好与支持功能。
 class SettingsView extends StatelessWidget {
@@ -58,7 +60,17 @@ class SettingsView extends StatelessWidget {
                 icon: Icons.account_circle_outlined,
                 title: '黑源账号',
                 subtitle: '汽水音乐扫码绑定与授权管理',
-                onTap: () => _open(context, const QishuiAccountView()))
+                onTap: () => _open(context, const QishuiAccountView())),
+            SettingsRow(
+                icon: Icons.leaderboard_outlined,
+                title: '听歌排行榜',
+                subtitle: '周/月听歌时长榜与我的排名',
+                onTap: () => _open(context, const ListeningRankingView())),
+            SettingsRow(
+                icon: Icons.link_rounded,
+                title: '打开分享歌曲',
+                subtitle: '粘贴好友分享的链接或 token',
+                onTap: () => showShareInputSheet(context))
           ]),
           const SettingsSection('外观'),
           SettingsGroup(

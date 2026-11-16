@@ -4,6 +4,7 @@ import 'dart:io';
 import '../api/user_api.dart';
 import '../auth/auth_controller.dart';
 import '../models/song.dart';
+import '../services/listen_time_reporter.dart';
 import '../services/song_download_service.dart';
 import '../settings/settings_controller.dart';
 import 'car_media_library.dart';
@@ -31,6 +32,10 @@ class AppPlaybackRuntime {
     player.onSongPlayed = _recordHistory;
     player.onSongChanged = _syncFavorite;
     if (_hasSystemMedia) SystemMediaController.instance.attach(player);
+    // 听歌时长心跳：登录态变化（登出/切换账号）时结算旧会话，避免串号。
+    listenTimeReporter = ListenTimeReporter(player: player, auth: auth);
+    _lastSessionGeneration = auth.sessionGeneration;
+    auth.addListener(_onSessionChanged);
     ready = _initialize();
   }
 
@@ -39,8 +44,16 @@ class AppPlaybackRuntime {
   late final AuthController auth;
   late final CarMediaLibrary library;
   late final RoamingController roaming;
+  late final ListenTimeReporter listenTimeReporter;
   late final Future<void> ready;
   bool _disposed = false;
+  int _lastSessionGeneration = 0;
+
+  void _onSessionChanged() {
+    if (_lastSessionGeneration == auth.sessionGeneration) return;
+    _lastSessionGeneration = auth.sessionGeneration;
+    listenTimeReporter.onSessionChanged();
+  }
   bool get _hasSystemMedia =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
@@ -89,8 +102,10 @@ class AppPlaybackRuntime {
 
   void dispose() {
     _disposed = true;
+    auth.removeListener(_onSessionChanged);
     SystemMediaController.instance.detachLibrary(library);
     SystemMediaController.instance.detach(player);
+    listenTimeReporter.dispose();
     roaming.dispose();
     library.dispose();
     auth.dispose();
