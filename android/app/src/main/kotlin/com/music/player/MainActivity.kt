@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +26,11 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Draw edge-to-edge so Flutter's SystemUiMode.edgeToEdge takes effect and
+        // MediaQuery padding accurately reports status bar / gesture / cutout insets.
+        // Without this the window still fits system bars, which hides content behind
+        // the notch on punch-hole devices. Flutter's AnnotatedRegion paints the bars.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         audioSpectrumBridge?.dispose()
         audioSpectrumBridge = AudioSpectrumBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         deviceMusicBridge?.dispose()
