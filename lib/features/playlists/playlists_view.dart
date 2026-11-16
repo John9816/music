@@ -6,6 +6,8 @@ import '../../core/models/playlist.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/playlist_card.dart';
+import '../../widgets/sticky_top_bar.dart';
+import '../../widgets/system_chrome.dart';
 import 'playlist_detail_view.dart';
 
 /// 歌单页：排行榜横滑 + 歌单分类筛选 + 分页
@@ -27,6 +29,9 @@ class _PlaylistsViewState extends State<PlaylistsView> {
   static const _limit = 20;
 
   final MusicApi _api = MusicApi();
+
+  /// 页面主滚动容器；悬浮顶栏按它的偏移决定底色与标题的显隐。
+  final ScrollController _pageScroll = ScrollController();
 
   late Future<List<Playlist>> _chartsFuture;
   final List<PlaylistCategoryGroup> _groups = kPlaylistCategories;
@@ -138,144 +143,167 @@ class _PlaylistsViewState extends State<PlaylistsView> {
   }
 
   @override
+  void dispose() {
+    _pageScroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final compactLayout = MediaQuery.sizeOf(context).width < 600;
-    return Scaffold(
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          // 滚动接近底部时自动加载下一页（_loadPlaylists 内部有防抖）
-          if (notification.metrics.extentAfter < 400) {
-            _loadPlaylists(append: true);
-          }
-          return false;
-        },
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: GPageHeader(
-                title: widget.title,
-                subtitle: widget.subtitle ??
-                    (_supportsCategories() ? '排行榜与精选分类歌单' : '排行榜与热门歌单'),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SectionHeader('排行榜')),
-            SliverToBoxAdapter(
-              child: FutureBuilder<List<Playlist>>(
-                future: _chartsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const SizedBox(
-                      height: 150,
-                      child: GLoading(padding: 40),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return SizedBox(
-                      height: 150,
-                      child: Center(
+    return GStatusBarRegion(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Scaffold(
+            body: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                // 滚动接近底部时自动加载下一页（_loadPlaylists 内部有防抖）
+                if (notification.metrics.extentAfter < 400) {
+                  _loadPlaylists(append: true);
+                }
+                return false;
+              },
+              child: CustomScrollView(
+                controller: _pageScroll,
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: GPageHeader(
+                      title: widget.title,
+                      subtitle: widget.subtitle ??
+                          (_supportsCategories() ? '排行榜与精选分类歌单' : '排行榜与热门歌单'),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SectionHeader('排行榜')),
+                  SliverToBoxAdapter(
+                    child: FutureBuilder<List<Playlist>>(
+                      future: _chartsFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const SizedBox(
+                            height: 150,
+                            child: GLoading(padding: 40),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return SizedBox(
+                            height: 150,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    "榜单加载失败",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.outline,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  GButton(
+                                    label: "重试",
+                                    filled: false,
+                                    onTap: () => setState(() {
+                                      _chartsFuture = _api.getTopLists(
+                                        source: _source(),
+                                      );
+                                    }),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        final charts = snapshot.data ?? const <Playlist>[];
+                        return SizedBox(
+                          height: 172,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            itemCount: charts.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
+                            itemBuilder: (context, i) => SizedBox(
+                              width: 116,
+                              child: PlaylistCard(
+                                playlist: charts[i],
+                                onTap: () => _openDetail(charts[i], isChart: true),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SectionHeader(
+                      _supportsCategories() ? '分类歌单' : '热门歌单',
+                      subtitle: _supportsCategories() ? _cat ?? '全部' : null,
+                    ),
+                  ),
+                  if (_supportsCategories()) SliverToBoxAdapter(child: _buildChips()),
+                  if (_error != null && !_loading)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              "榜单加载失败",
+                              _error!,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 13,
                                 color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 14),
                             GButton(
                               label: "重试",
                               filled: false,
-                              onTap: () => setState(() {
-                                _chartsFuture = _api.getTopLists(
-                                  source: _source(),
-                                );
-                              }),
+                              onTap: _reload,
                             ),
                           ],
                         ),
                       ),
-                    );
-                  }
-                  final charts = snapshot.data ?? const <Playlist>[];
-                  return SizedBox(
-                    height: 172,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      itemCount: charts.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 14),
-                      itemBuilder: (context, i) => SizedBox(
-                        width: 116,
-                        child: PlaylistCard(
-                          playlist: charts[i],
-                          onTap: () => _openDetail(charts[i], isChart: true),
+                    )
+                  else if (_playlists.isEmpty && _loading)
+                    const SliverToBoxAdapter(child: GLoading())
+                  else ...[
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 168,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: compactLayout ? 0.65 : 0.78,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => PlaylistCard(
+                            playlist: _playlists[i],
+                            onTap: () => _openDetail(_playlists[i]),
+                          ),
+                          childCount: _playlists.length,
                         ),
                       ),
                     ),
-                  );
-                },
+                    SliverToBoxAdapter(child: _buildFooter()),
+                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                  ],
+                  SliverToBoxAdapter(
+                      child: SizedBox(height: FloatingDockInsets.bottomOf(context))),
+                ],
               ),
             ),
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                _supportsCategories() ? '分类歌单' : '热门歌单',
-                subtitle: _supportsCategories() ? _cat ?? '全部' : null,
-              ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GStickyTopBar(
+              controller: _pageScroll,
+              title: widget.title,
             ),
-            if (_supportsCategories()) SliverToBoxAdapter(child: _buildChips()),
-            if (_error != null && !_loading)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  child: Column(
-                    children: [
-                      Text(
-                        _error!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      GButton(
-                        label: "重试",
-                        filled: false,
-                        onTap: _reload,
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else if (_playlists.isEmpty && _loading)
-              const SliverToBoxAdapter(child: GLoading())
-            else ...[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 168,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: compactLayout ? 0.65 : 0.78,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => PlaylistCard(
-                      playlist: _playlists[i],
-                      onTap: () => _openDetail(_playlists[i]),
-                    ),
-                    childCount: _playlists.length,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(child: _buildFooter()),
-              const SliverToBoxAdapter(child: SizedBox(height: 20)),
-            ],
-            SliverToBoxAdapter(
-                child: SizedBox(height: FloatingDockInsets.bottomOf(context))),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

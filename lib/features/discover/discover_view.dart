@@ -9,6 +9,8 @@ import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/song_row.dart';
+import '../../widgets/sticky_top_bar.dart';
+import '../../widgets/system_chrome.dart';
 import '../playlists/playlist_detail_view.dart';
 import '../search/artist_names_link.dart';
 import '../roaming/roaming_view.dart';
@@ -36,6 +38,8 @@ class DiscoverView extends StatefulWidget {
 class _DiscoverViewState extends State<DiscoverView> {
   late final MusicApi _api;
   final ScrollController _albumController = ScrollController();
+  /// 页面主滚动容器；悬浮顶栏按它的偏移决定底色与标题的显隐。
+  final ScrollController _pageScroll = ScrollController();
   final _daily = _DiscoverSection<Song>();
   final _albums = _DiscoverSection<Album>();
   bool _albumAtStart = true;
@@ -55,6 +59,7 @@ class _DiscoverViewState extends State<DiscoverView> {
     _albumController
       ..removeListener(_syncAlbumScrollState)
       ..dispose();
+    _pageScroll.dispose();
     super.dispose();
   }
 
@@ -166,127 +171,141 @@ class _DiscoverViewState extends State<DiscoverView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncAlbumScrollState();
     });
-    return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _reload,
-        child: CustomScrollView(
-          key: const PageStorageKey('discover-scroll'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: _buildHeader(
-                context,
-                refreshing: _daily.loading != null || _albums.loading != null,
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: daily != null
-                  ? _buildHero(context, daily)
-                  : _daily.loading != null
-                      ? _buildHeroSkeleton(context)
-                      : const SizedBox.shrink(),
-            ),
-            const SliverToBoxAdapter(child: RoamingSection()),
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                '最新专辑',
-                action: albums == null
-                    ? null
-                    : _buildAlbumHeaderAction(context, albums.length),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  if (_albums.error != null)
-                    _buildSectionError(
+    return GStatusBarRegion(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Scaffold(
+            body: RefreshIndicator(
+              onRefresh: _reload,
+              child: CustomScrollView(
+                controller: _pageScroll,
+                key: const PageStorageKey('discover-scroll'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _buildHeader(
                       context,
-                      title: '最新专辑',
-                      hasData: albums != null,
-                      onRetry: _reloadAlbums,
+                      refreshing: _daily.loading != null || _albums.loading != null,
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: daily != null
+                        ? _buildHero(context, daily)
+                        : _daily.loading != null
+                            ? _buildHeroSkeleton(context)
+                            : const SizedBox.shrink(),
+                  ),
+                  const SliverToBoxAdapter(child: RoamingSection()),
+                  SliverToBoxAdapter(
+                    child: SectionHeader(
+                      '最新专辑',
+                      action: albums == null
+                          ? null
+                          : _buildAlbumHeaderAction(context, albums.length),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        if (_albums.error != null)
+                          _buildSectionError(
+                            context,
+                            title: '最新专辑',
+                            hasData: albums != null,
+                            onRetry: _reloadAlbums,
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        if (albums != null)
+                          _buildAlbums(context, albums)
+                        else if (_albums.loading != null)
+                          _buildAlbumSkeleton(context),
+                      ],
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SectionHeader(
+                      '每日推荐',
+                      subtitle: daily == null || daily.isEmpty ? null : '根据你的口味精选',
+                      action: daily == null || daily.isEmpty
+                          ? null
+                          : Text(
+                              '${daily.length} 首',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                            ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: _daily.error == null
+                        ? const SizedBox.shrink()
+                        : _buildSectionError(
+                            context,
+                            title: '每日推荐',
+                            hasData: daily != null,
+                            onRetry: _reloadDaily,
+                          ),
+                  ),
+                  if (daily == null)
+                    SliverToBoxAdapter(
+                      child: _daily.loading == null
+                          ? const SizedBox.shrink()
+                          : const GSkeletonList(itemCount: 5),
+                    )
+                  else if (daily.isEmpty)
+                    SliverToBoxAdapter(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 150),
+                        child: const GEmptyState(
+                          icon: Icons.music_off_rounded,
+                          text: '暂时没有推荐歌曲，稍后再来看看',
+                        ),
+                      ),
                     )
                   else
-                    const SizedBox.shrink(),
-                  if (albums != null)
-                    _buildAlbums(context, albums)
-                  else if (_albums.loading != null)
-                    _buildAlbumSkeleton(context),
+                    SliverPadding(
+                      padding: EdgeInsets.zero,
+                      sliver: SliverList.builder(
+                        itemCount: daily.length,
+                        itemBuilder: (context, i) {
+                          final song = daily[i];
+                          // 首屏错峰淡入上浮；滚动复用不会重复播放。
+                          return GListEntrance(
+                            key: ValueKey('${song.source}:${song.id}'),
+                            index: i,
+                            child: SongRow(
+                              song: song,
+                              leading: MediaQuery.sizeOf(context).width >=
+                                      GBreakpoints.compact
+                                  ? _RankCover(
+                                      index: i,
+                                      coverUrl: song.album.picUrl,
+                                      scheme: Theme.of(context).colorScheme,
+                                    )
+                                  : null,
+                              onTap: () => _play(context, daily, i),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                      child: SizedBox(
+                          height: 24 + FloatingDockInsets.bottomOf(context))),
                 ],
               ),
             ),
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                '每日推荐',
-                subtitle: daily == null || daily.isEmpty ? null : '根据你的口味精选',
-                action: daily == null || daily.isEmpty
-                    ? null
-                    : Text(
-                        '${daily.length} 首',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: _daily.error == null
-                  ? const SizedBox.shrink()
-                  : _buildSectionError(
-                      context,
-                      title: '每日推荐',
-                      hasData: daily != null,
-                      onRetry: _reloadDaily,
-                    ),
-            ),
-            if (daily == null)
-              SliverToBoxAdapter(
-                child: _daily.loading == null
-                    ? const SizedBox.shrink()
-                    : const GSkeletonList(itemCount: 5),
-              )
-            else if (daily.isEmpty)
-              SliverToBoxAdapter(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 150),
-                  child: const GEmptyState(
-                    icon: Icons.music_off_rounded,
-                    text: '暂时没有推荐歌曲，稍后再来看看',
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: EdgeInsets.zero,
-                sliver: SliverList.builder(
-                  itemCount: daily.length,
-                  itemBuilder: (context, i) {
-                    final song = daily[i];
-                    // 首屏错峰淡入上浮；滚动复用不会重复播放。
-                    return GListEntrance(
-                      key: ValueKey('${song.source}:${song.id}'),
-                      index: i,
-                      child: SongRow(
-                        song: song,
-                        leading: MediaQuery.sizeOf(context).width >=
-                                GBreakpoints.compact
-                            ? _RankCover(
-                                index: i,
-                                coverUrl: song.album.picUrl,
-                                scheme: Theme.of(context).colorScheme,
-                              )
-                            : null,
-                        onTap: () => _play(context, daily, i),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            SliverToBoxAdapter(
-                child: SizedBox(
-                    height: 24 + FloatingDockInsets.bottomOf(context))),
-          ],
-        ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GStickyTopBar(controller: _pageScroll),
+          ),
+        ],
       ),
     );
   }

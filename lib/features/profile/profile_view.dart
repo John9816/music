@@ -7,6 +7,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/models/membership.dart';
 import '../../core/models/song.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/system_chrome.dart';
 import '../../widgets/user_avatar.dart';
 import '../library/downloads_view.dart';
 import '../settings/account_security_view.dart';
@@ -69,9 +70,11 @@ class _ProfileViewState extends State<ProfileView> {
         ],
       ),
     );
-    return widget.embedded
-        ? Material(type: MaterialType.transparency, child: content)
-        : Scaffold(body: content);
+    return GStatusBarRegion(
+      child: widget.embedded
+          ? Material(type: MaterialType.transparency, child: content)
+          : Scaffold(body: content),
+    );
   }
 
   Widget _buildContent(BuildContext context) {

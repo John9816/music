@@ -13,6 +13,8 @@ import '../../core/player/player_controller.dart';
 import '../../widgets/async_cover.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/music_page_background.dart';
+import '../../widgets/sticky_top_bar.dart';
+import '../../widgets/system_chrome.dart';
 import '../playlists/create_playlist_dialog.dart';
 import '../playlists/playlist_import_view.dart';
 import '../profile/user_playlists_view.dart';
@@ -52,6 +54,8 @@ class _LibraryViewState extends State<LibraryView> {
   int _requestVersion = 0;
   bool _downloadsReady = false;
   bool _creating = false;
+  /// 页面主滚动容器；悬浮顶栏按它的偏移决定底色与标题的显隐。
+  final ScrollController _pageScroll = ScrollController();
 
   @override
   void initState() {
@@ -67,6 +71,7 @@ class _LibraryViewState extends State<LibraryView> {
 
   @override
   void dispose() {
+    _pageScroll.dispose();
     UserPlaylistLibrary.instance.removeListener(_onPlaylistLibraryChanged);
     _auth.removeListener(_onSessionChanged);
     _downloads.removeListener(_onDownloadsChanged);
@@ -249,166 +254,184 @@ class _LibraryViewState extends State<LibraryView> {
             final playlists = data?.playlists ?? const <Map<String, dynamic>>[];
             final loading = snapshot.connectionState == ConnectionState.waiting;
             final hasError = snapshot.hasError && _auth.isLoggedIn;
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _LibraryHeader(
-                      compact: mobile,
-                      onImport: _openImport,
-                      onCreate: _openCreatePlaylist,
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: padding),
-                    sliver: SliverToBoxAdapter(
-                      child: _LibraryGrid(
-                        flat: mobile,
-                        playlistCount: data?.playlists.length,
-                        favoriteCount: data?.favoriteCount,
-                        downloadCount: _downloadsReady
-                            ? _downloads.downloads.length
-                            : null,
-                        downloadingCount: _downloads.progress.length,
-                        signedIn: _auth.isLoggedIn,
-                        current: current,
-                        onFavorites: widget.onOpenFavorites,
-                        onHistory: widget.onOpenHistory,
-                        onPlaylists: _openUserPlaylists,
-                        onFavoritePlaylists: () => _openUserPlaylists(
-                            filter: UserPlaylistFilter.favorites),
-                        onLocal: () => Navigator.of(context).push(buildAppRoute(
-                            context, (_) => const LocalMusicView())),
-                        onDownloads: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const DownloadsView()),
+            return GStatusBarRegion(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: CustomScrollView(
+                      controller: _pageScroll,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _LibraryHeader(
+                            compact: mobile,
+                            onImport: _openImport,
+                            onCreate: _openCreatePlaylist,
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: mobile
-                          ? EdgeInsets.zero
-                          : EdgeInsets.fromLTRB(padding, 28, padding, 14),
-                      child: mobile
-                          ? const Padding(
-                              padding: EdgeInsets.fromLTRB(20, 32, 20, 14),
-                              child: Text('最近添加',
-                                  style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w700)),
-                            )
-                          : SectionHeader(
-                              '最近添加',
-                              subtitle: playlists.isEmpty
-                                  ? null
-                                  : '${playlists.length} 个歌单',
-                              action: GIconButton(
-                                icon: Icons.refresh_rounded,
-                                tooltip: '刷新资料库',
-                                onTap: loading ? null : _refresh,
+                        SliverPadding(
+                          padding: EdgeInsets.symmetric(horizontal: padding),
+                          sliver: SliverToBoxAdapter(
+                            child: _LibraryGrid(
+                              flat: mobile,
+                              playlistCount: data?.playlists.length,
+                              favoriteCount: data?.favoriteCount,
+                              downloadCount: _downloadsReady
+                                  ? _downloads.downloads.length
+                                  : null,
+                              downloadingCount: _downloads.progress.length,
+                              signedIn: _auth.isLoggedIn,
+                              current: current,
+                              onFavorites: widget.onOpenFavorites,
+                              onHistory: widget.onOpenHistory,
+                              onPlaylists: _openUserPlaylists,
+                              onFavoritePlaylists: () => _openUserPlaylists(
+                                  filter: UserPlaylistFilter.favorites),
+                              onLocal: () => Navigator.of(context).push(buildAppRoute(
+                                  context, (_) => const LocalMusicView())),
+                              onDownloads: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const DownloadsView()),
                               ),
                             ),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: mobile
+                                ? EdgeInsets.zero
+                                : EdgeInsets.fromLTRB(padding, 28, padding, 14),
+                            child: mobile
+                                ? const Padding(
+                                    padding: EdgeInsets.fromLTRB(20, 32, 20, 14),
+                                    child: Text('最近添加',
+                                        style: TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w700)),
+                                  )
+                                : SectionHeader(
+                                    '最近添加',
+                                    subtitle: playlists.isEmpty
+                                        ? null
+                                        : '${playlists.length} 个歌单',
+                                    action: GIconButton(
+                                      icon: Icons.refresh_rounded,
+                                      tooltip: '刷新资料库',
+                                      onTap: loading ? null : _refresh,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        if (hasError)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(padding, 0, padding, 16),
+                              child: _LibraryNotice(
+                                title: '资料库加载失败',
+                                detail:
+                                    data == null ? '请检查网络连接后重试' : '已保留上次加载的内容，请重试更新',
+                                action: '重试',
+                                onTap: _refresh,
+                              ),
+                            ),
+                          ),
+                        if (!_auth.isLoggedIn)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: padding),
+                              child: _LibraryNotice(
+                                title: '登录后同步你的音乐',
+                                detail: '在不同设备上查看收藏、歌单与播放历史',
+                                action: '去登录',
+                                onTap: _ensureSignedIn,
+                              ),
+                            ),
+                          )
+                        else if (loading && data == null)
+                          const SliverToBoxAdapter(
+                            child: SizedBox(
+                                height: 120, child: Center(child: GLoading())),
+                          )
+                        else if (playlists.isNotEmpty)
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(horizontal: padding),
+                            sliver: mobile
+                                ? SliverLayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final textScaler =
+                                          MediaQuery.textScalerOf(context);
+                                      final columns =
+                                          constraints.crossAxisExtent < 320 &&
+                                                  textScaler.scale(15) > 22.5
+                                              ? 1
+                                              : 2;
+                                      final coverSize = (constraints.crossAxisExtent -
+                                              16 * (columns - 1)) /
+                                          columns;
+                                      final cardHeight = coverSize +
+                                          10 +
+                                          textScaler.scale(15) * 1.25 * 2 +
+                                          3 +
+                                          textScaler.scale(13) * 1.2 +
+                                          4;
+                                      return SliverGrid.builder(
+                                        gridDelegate:
+                                            SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: columns,
+                                          crossAxisSpacing: 16,
+                                          mainAxisSpacing: 20,
+                                          mainAxisExtent: cardHeight,
+                                        ),
+                                        itemCount: playlists.length,
+                                        itemBuilder: (context, index) {
+                                          final playlist = playlists[index];
+                                          return _OwnedPlaylistRow(
+                                            playlist: playlist,
+                                            artworkFirst: true,
+                                            onTap: () => _openPlaylist(playlist),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  )
+                                : SliverList.separated(
+                                    itemCount: playlists.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 8),
+                                    itemBuilder: (context, index) {
+                                      final playlist = playlists[index];
+                                      return _OwnedPlaylistRow(
+                                        playlist: playlist,
+                                        onTap: () => _openPlaylist(playlist),
+                                      );
+                                    },
+                                  ),
+                          )
+                        else if (!hasError)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: padding),
+                              child: _PlaylistCallout(onCreate: _openCreatePlaylist),
+                            ),
+                          ),
+                        SliverToBoxAdapter(
+                            child: SizedBox(
+                                height: 32 + FloatingDockInsets.bottomOf(context))),
+                      ],
+                    ),
+
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: GStickyTopBar(
+                      controller: _pageScroll,
+                      title: '资料库',
                     ),
                   ),
-                  if (hasError)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(padding, 0, padding, 16),
-                        child: _LibraryNotice(
-                          title: '资料库加载失败',
-                          detail:
-                              data == null ? '请检查网络连接后重试' : '已保留上次加载的内容，请重试更新',
-                          action: '重试',
-                          onTap: _refresh,
-                        ),
-                      ),
-                    ),
-                  if (!_auth.isLoggedIn)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: padding),
-                        child: _LibraryNotice(
-                          title: '登录后同步你的音乐',
-                          detail: '在不同设备上查看收藏、歌单与播放历史',
-                          action: '去登录',
-                          onTap: _ensureSignedIn,
-                        ),
-                      ),
-                    )
-                  else if (loading && data == null)
-                    const SliverToBoxAdapter(
-                      child: SizedBox(
-                          height: 120, child: Center(child: GLoading())),
-                    )
-                  else if (playlists.isNotEmpty)
-                    SliverPadding(
-                      padding: EdgeInsets.symmetric(horizontal: padding),
-                      sliver: mobile
-                          ? SliverLayoutBuilder(
-                              builder: (context, constraints) {
-                                final textScaler =
-                                    MediaQuery.textScalerOf(context);
-                                final columns =
-                                    constraints.crossAxisExtent < 320 &&
-                                            textScaler.scale(15) > 22.5
-                                        ? 1
-                                        : 2;
-                                final coverSize = (constraints.crossAxisExtent -
-                                        16 * (columns - 1)) /
-                                    columns;
-                                final cardHeight = coverSize +
-                                    10 +
-                                    textScaler.scale(15) * 1.25 * 2 +
-                                    3 +
-                                    textScaler.scale(13) * 1.2 +
-                                    4;
-                                return SliverGrid.builder(
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: columns,
-                                    crossAxisSpacing: 16,
-                                    mainAxisSpacing: 20,
-                                    mainAxisExtent: cardHeight,
-                                  ),
-                                  itemCount: playlists.length,
-                                  itemBuilder: (context, index) {
-                                    final playlist = playlists[index];
-                                    return _OwnedPlaylistRow(
-                                      playlist: playlist,
-                                      artworkFirst: true,
-                                      onTap: () => _openPlaylist(playlist),
-                                    );
-                                  },
-                                );
-                              },
-                            )
-                          : SliverList.separated(
-                              itemCount: playlists.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 8),
-                              itemBuilder: (context, index) {
-                                final playlist = playlists[index];
-                                return _OwnedPlaylistRow(
-                                  playlist: playlist,
-                                  onTap: () => _openPlaylist(playlist),
-                                );
-                              },
-                            ),
-                    )
-                  else if (!hasError)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: padding),
-                        child: _PlaylistCallout(onCreate: _openCreatePlaylist),
-                      ),
-                    ),
-                  SliverToBoxAdapter(
-                      child: SizedBox(
-                          height: 32 + FloatingDockInsets.bottomOf(context))),
                 ],
               ),
             );
