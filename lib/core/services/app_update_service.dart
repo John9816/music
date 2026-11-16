@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -270,6 +271,12 @@ class AppUpdateService {
     }
   }
 
+  /// 下载更新包，支持断点续传与断流自动重试。
+  ///
+  /// 中间结果保存在 `<file>.part`，中断后再次进入会从已下载字节处继续，
+  /// 而不是从头开始。若服务端忽略 Range（返回 200）则自动回退为整包重下；
+  /// 若服务端声明了不同的起始偏移，同样丢弃本地片段重来，避免拼出坏包。
+  /// 文件名带 URL 指纹，换版本后不会错误复用上个版本的残留片段。
   Future<String?> downloadUpdate(
     String url, {
     ValueChanged<double>? onProgress,
@@ -281,20 +288,95 @@ class AppUpdateService {
       return null;
     }
 
+    final directory = await getTemporaryDirectory();
+    final extension = _extensionForUrl(url, resolvedTarget);
+    final fingerprint =
+        sha1.convert(utf8.encode(url)).toString().substring(0, 10);
+    final partFile = File(
+      '${directory.path}/duck_music_update_$fingerprint$extension.part',
+    );
+    final targetFile = File('${directory.path}/duck_music_update$extension');
+
+    const maxAttempts = 4;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      final completed = await _downloadOnce(
+        url: url,
+        partFile: partFile,
+        targetFile: targetFile,
+        onProgress: onProgress,
+      );
+      if (completed != null) return completed;
+      if (attempt < maxAttempts) {
+        // 1s、2s、4s 退避，给弱网留出恢复时间
+        await Future<void>.delayed(Duration(seconds: 1 << (attempt - 1)));
+      }
+    }
+    return null;
+  }
+
+  /// 单次下载尝试。成功返回最终路径，失败返回 null 并保留 `.part` 供续传。
+  Future<String?> _downloadOnce({
+    required String url,
+    required File partFile,
+    required File targetFile,
+    ValueChanged<double>? onProgress,
+  }) async {
+    var existing = 0;
+    try {
+      if (await partFile.exists()) existing = await partFile.length();
+    } catch (_) {
+      existing = 0;
+    }
+
     IOSink? sink;
     try {
       final request = http.Request('GET', Uri.parse(url));
+      request.headers['User-Agent'] = 'DuckMusic-Flutter';
+      // 禁止透明压缩：否则 contentLength 是压缩后长度、流是解压后数据，
+      // 长度校验和断点偏移都会错位
+      request.headers['Accept-Encoding'] = 'identity';
+      if (existing > 0) request.headers['Range'] = 'bytes=$existing-';
+
       final response = await _client.send(request).timeout(
             const Duration(seconds: 20),
           );
-      if (response.statusCode != 200) return null;
 
-      final directory = await getTemporaryDirectory();
-      final extension = _extensionForUrl(url, resolvedTarget);
-      final file = File('${directory.path}/duck_music_update$extension');
-      sink = file.openWrite();
-      final total = response.contentLength;
-      var received = 0;
+      var start = existing;
+      int? total = response.contentLength == null
+          ? null
+          : response.contentLength! + existing;
+
+      if (response.statusCode == 200) {
+        // 服务端忽略了 Range，只能整包重下
+        start = 0;
+        total = response.contentLength;
+        if (await partFile.exists()) await partFile.delete();
+      } else if (response.statusCode == 206) {
+        final declaredStart =
+            _rangeStart(response.headers['content-range']);
+        if (declaredStart != null && declaredStart != existing) {
+          // 偏移对不上，本地片段不可用
+          start = 0;
+          total = response.contentLength == null
+              ? null
+              : response.contentLength! + declaredStart;
+          if (await partFile.exists()) await partFile.delete();
+        }
+      } else if (response.statusCode == 416) {
+        // 本地残留超出远端长度，丢弃后由上层重试
+        if (await partFile.exists()) await partFile.delete();
+        return null;
+      } else {
+        return null;
+      }
+
+      sink = partFile.openWrite(
+        mode: start > 0 ? FileMode.append : FileMode.write,
+      );
+      var received = start;
+      if (total != null && total > 0) {
+        onProgress?.call((received / total).clamp(0, 1));
+      }
       await for (final chunk in response.stream) {
         sink.add(chunk);
         received += chunk.length;
@@ -305,13 +387,36 @@ class AppUpdateService {
       await sink.flush();
       await sink.close();
       sink = null;
+
+      // 长度对不上说明连接被截断，保留片段等待续传。
+      // 若服务端无视 identity 仍返回压缩内容，长度基准不可靠，跳过校验。
+      final encoding = response.headers['content-encoding'];
+      final compressed = encoding != null && encoding != 'identity';
+      if (!compressed && total != null && total > 0 && received != total) {
+        return null;
+      }
+
+      if (await targetFile.exists()) await targetFile.delete();
+      await partFile.rename(targetFile.path);
       onProgress?.call(1);
-      return file.path;
+      return targetFile.path;
     } catch (_) {
       return null;
     } finally {
-      await sink?.close();
+      try {
+        await sink?.close();
+      } catch (_) {
+        // 关闭失败不影响续传：已落盘的字节仍然有效
+      }
     }
+  }
+
+  /// 从 `Content-Range: bytes 100-999/1000` 中取出起始偏移。
+  int? _rangeStart(String? contentRange) {
+    if (contentRange == null) return null;
+    final match = RegExp(r'bytes\s+(\d+)').firstMatch(contentRange);
+    if (match == null) return null;
+    return int.tryParse(match.group(1) ?? '');
   }
 
   Future<bool> installUpdate(String filePath, {UpdateTarget? target}) async {
