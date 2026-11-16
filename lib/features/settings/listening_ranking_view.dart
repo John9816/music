@@ -88,7 +88,7 @@ class _ListeningRankingViewState extends State<ListeningRankingView> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            _MyListenCard(mine: _mine, period: _period),
+            _MyListenCard(mine: _mine),
             const SizedBox(height: 18),
             Center(
               child: GSegmented(
@@ -168,10 +168,9 @@ class _ListeningRankingViewState extends State<ListeningRankingView> {
 }
 
 class _MyListenCard extends StatelessWidget {
-  const _MyListenCard({required this.mine, required this.period});
+  const _MyListenCard({required this.mine});
 
   final MyListenTime? mine;
-  final int period;
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +183,6 @@ class _MyListenCard extends StatelessWidget {
           child: Row(
             children: [
               Icon(Icons.person_outline_rounded, color: scheme.outline),
-              const SizedBox(height: 12),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
