@@ -7,6 +7,7 @@ import '../../core/config/app_config.dart';
 import '../../core/config/audio_quality_policy.dart';
 import '../../core/player/player_controller.dart';
 import '../../core/player/system_media_controller.dart';
+import '../../core/services/device_profile.dart';
 import '../../core/services/origin_island.dart';
 import '../../core/services/sleep_timer.dart';
 import '../../core/settings/settings_controller.dart';
@@ -213,6 +214,8 @@ class SettingsView extends StatelessWidget {
                 const AndroidMediaStatusRow(),
               if (Theme.of(context).platform == TargetPlatform.android)
                 const OriginIslandRow(),
+              if (Theme.of(context).platform == TargetPlatform.android)
+                const AlertSliderRow(),
               SettingsRow(
                 icon: Icons.info_rounded,
                 iconColor: Theme.of(context).colorScheme.primary,
@@ -458,6 +461,52 @@ class _OriginIslandRowState extends State<OriginIslandRow> {
       subtitle: '播放时在挖孔旁显示进度，暂停时显示歌曲与歌手',
       onToggle: _toggle,
       toggleValue: settings.originIslandEnabled,
+    );
+  }
+}
+
+/// 一加 / OPPO 三段式拨杆联动开关。只在 oplus 家族设备上显示。
+class AlertSliderRow extends StatefulWidget {
+  const AlertSliderRow({super.key});
+
+  @override
+  State<AlertSliderRow> createState() => _AlertSliderRowState();
+}
+
+class _AlertSliderRowState extends State<AlertSliderRow> {
+  bool? _supported;
+
+  @override
+  void initState() {
+    super.initState();
+    _detect();
+  }
+
+  Future<void> _detect() async {
+    final profile = await DeviceProfileService.instance.profile();
+    if (mounted) {
+      setState(() => _supported = profile.family == DeviceFamily.oplus);
+    }
+  }
+
+  Future<void> _toggle(bool value) async {
+    final settings = context.read<SettingsController>();
+    await settings.setAlertSliderPauseEnabled(value);
+    await SystemMediaController.instance.refreshAlertSlider();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsController>();
+    if (_supported != true) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsRow(
+      icon: Icons.volume_off_rounded,
+      iconColor: scheme.primary,
+      title: '拨杆静音时暂停',
+      subtitle: '三段式拨杆拨到静音或振动档时自动暂停，恢复响铃不会自动续播',
+      onToggle: _toggle,
+      toggleValue: settings.alertSliderPauseEnabled,
     );
   }
 }

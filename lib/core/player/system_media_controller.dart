@@ -9,6 +9,8 @@ import 'package:rxdart/rxdart.dart';
 
 import '../models/song.dart';
 import '../network/image_request_policy.dart';
+import '../services/alert_slider.dart';
+import '../services/device_profile.dart';
 import '../services/origin_island.dart';
 import 'player_controller.dart';
 import 'car_media_library.dart';
@@ -34,6 +36,12 @@ class SystemMediaController extends BaseAudioHandler {
     _defaultOriginIslandProvider = provider;
   }
 
+  /// 三段式拨杆静音档是否暂停播放，默认关闭。
+  static bool Function() _defaultAlertSliderPauseProvider = () => false;
+  static void setAlertSliderPauseEnabledProvider(bool Function() provider) {
+    _defaultAlertSliderPauseProvider = provider;
+  }
+
   static final SystemMediaController instance = SystemMediaController();
   static bool _initialized = false;
   static const MethodChannel _iosChannel = MethodChannel(
@@ -42,25 +50,33 @@ class SystemMediaController extends BaseAudioHandler {
   static const MethodChannel _androidNotificationChannel = MethodChannel(
     'com.751152.duckmusic/notifications',
   );
-  static const AudioServiceConfig androidConfig = AudioServiceConfig(
-    androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
-    androidNotificationChannelName: '音频播放',
-    androidNotificationChannelDescription: '显示当前歌曲和播放控制',
-    androidNotificationIcon: 'drawable/ic_notification_music',
-    notificationColor: Color(0xFF2FD365),
-    androidNotificationOngoing: false,
-    androidStopForegroundOnPause: false,
-    artDownscaleWidth: 512,
-    artDownscaleHeight: 512,
-    androidBrowsableRootExtras: {
-      AndroidContentStyle.supportedKey: true,
-      AndroidContentStyle.browsableHintKey:
-          AndroidContentStyle.listItemHintValue,
-      AndroidContentStyle.playableHintKey:
-          AndroidContentStyle.listItemHintValue,
-      'android.media.browse.SEARCH_SUPPORTED': true,
-    },
-  );
+  static AudioServiceConfig? _androidConfig;
+
+  /// 初始化前的默认值：与改造前的 AOSP 行为完全一致。
+  /// [initialize] 会在设备家族探测后按实际情况重建。
+  static AudioServiceConfig get androidConfig =>
+      _androidConfig ??= _buildAndroidConfig(ongoing: false);
+
+  static AudioServiceConfig _buildAndroidConfig({required bool ongoing}) =>
+      AudioServiceConfig(
+        androidNotificationChannelId: 'com.751152.duck_music.channel.audio',
+        androidNotificationChannelName: '音频播放',
+        androidNotificationChannelDescription: '显示当前歌曲和播放控制',
+        androidNotificationIcon: 'drawable/ic_notification_music',
+        notificationColor: const Color(0xFF2FD365),
+        androidNotificationOngoing: ongoing,
+        androidStopForegroundOnPause: false,
+        artDownscaleWidth: 512,
+        artDownscaleHeight: 512,
+        androidBrowsableRootExtras: {
+          AndroidContentStyle.supportedKey: true,
+          AndroidContentStyle.browsableHintKey:
+              AndroidContentStyle.listItemHintValue,
+          AndroidContentStyle.playableHintKey:
+              AndroidContentStyle.listItemHintValue,
+          'android.media.browse.SEARCH_SUPPORTED': true,
+        },
+      );
 
   /// 通知权限弹窗需要用户交互，给足时间；仅用于防止原生侧永不回调时状态锁死。
   static const Duration _androidNotificationPermissionTimeout =
@@ -70,6 +86,7 @@ class SystemMediaController extends BaseAudioHandler {
   final bool Function() _isAndroid;
   final bool Function() _isOriginIslandEnabled;
   final OriginIslandService _originIsland;
+  StreamSubscription<RingerMode>? _alertSliderSubscription;
   String? _originIslandKey;
   bool _androidNotificationPermissionRequested = false;
   Future<dynamic>? _androidNotificationPermissionRequest;
@@ -86,7 +103,7 @@ class SystemMediaController extends BaseAudioHandler {
   /// iOS 与 macOS 共用 MPNowPlayingInfoCenter 通道；Android 走 audio_service。
   static bool get _usesAppleNowPlaying => Platform.isIOS || Platform.isMacOS;
 
-  static Future<void> initialize() async {
+  static Future<void> initialize({DeviceProfile? deviceProfileForTesting}) async {
     if (_initialized) return;
     if (_usesAppleNowPlaying) {
       _iosChannel.setMethodCallHandler(instance._handleIosCommand);
@@ -94,11 +111,21 @@ class SystemMediaController extends BaseAudioHandler {
       _initialized = true;
       return;
     }
+    // 设备家族探测失败时降级为 AOSP 行为，绝不挡住音频服务初始化。
+    final profile = deviceProfileForTesting ??
+        await DeviceProfileService.instance.profile();
+    _androidConfig = _buildAndroidConfig(
+      ongoing: profile.usesOngoingMediaNotification,
+    );
     // 原子岛探测不可用时只是静默降级，绝不能挡住音频服务的初始化。
     unawaited(instance._originIsland.initialize());
+    // 拨杆联动默认关闭；已打开时随启动恢复系统广播监听。
+    if (_defaultAlertSliderPauseProvider()) {
+      unawaited(AlertSliderService.instance.startListening());
+    }
     await AudioService.init(
       builder: () => instance,
-      config: androidConfig,
+      config: _androidConfig!,
     );
     _initialized = true;
   }
@@ -112,6 +139,32 @@ class SystemMediaController extends BaseAudioHandler {
       return;
     }
     _syncOriginIsland(force: true);
+  }
+
+  /// 设置页开关变化后调用：只有打开时才注册系统广播监听。
+  Future<void> refreshAlertSlider() async {
+    if (!_isAndroid()) return;
+    final alertSlider = AlertSliderService.instance;
+    await alertSlider.initialize();
+    if (_defaultAlertSliderPauseProvider()) {
+      await alertSlider.startListening();
+    } else {
+      await alertSlider.stopListening();
+    }
+  }
+
+  void _subscribeAlertSlider() {
+    if (_alertSliderSubscription != null) return;
+    _alertSliderSubscription =
+        AlertSliderService.instance.changes.listen(_onRingerModeChanged);
+  }
+
+  void _onRingerModeChanged(RingerMode mode) {
+    if (!_defaultAlertSliderPauseProvider()) return;
+    // 只在静音 / 振动档暂停；恢复响铃不自动续播，避免意外出声。
+    if (mode == RingerMode.normal) return;
+    final player = _player;
+    if (player != null && player.playing) unawaited(player.pause());
   }
 
   /// Waits for the Android notification permission dialog before playback
@@ -171,6 +224,7 @@ class SystemMediaController extends BaseAudioHandler {
     _player = player;
     player.addListener(_sync);
     _sync();
+    _subscribeAlertSlider();
   }
 
   void detach(PlayerController player) {

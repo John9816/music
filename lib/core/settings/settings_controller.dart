@@ -33,6 +33,7 @@ class SettingsController extends ChangeNotifier {
   static const _shortcutBindingsKey = 'desktop_shortcut_bindings';
   static const _carModeKey = 'car_mode_enabled';
   static const _originIslandKey = 'origin_island_enabled';
+  static const _alertSliderPauseKey = 'alert_slider_pause_enabled';
 
   String _source = 'netease';
   String _searchSource = 'netease';
@@ -53,6 +54,7 @@ class SettingsController extends ChangeNotifier {
   bool _loaded = false;
   bool _carModeEnabled = false;
   bool _originIslandEnabled = true;
+  bool _alertSliderPauseEnabled = false;
   PlayerSkin _playerSkin = PlayerSkin.classic;
   bool _fluidBackground = true;
   bool _animatedArtwork = true;
@@ -95,6 +97,7 @@ class SettingsController extends ChangeNotifier {
   bool get loaded => _loaded;
   bool get carModeEnabled => _carModeEnabled;
   bool get originIslandEnabled => _originIslandEnabled;
+  bool get alertSliderPauseEnabled => _alertSliderPauseEnabled;
 
   Future<void> load() async {
     try {
@@ -126,6 +129,8 @@ class SettingsController extends ChangeNotifier {
       _reduceMotion = prefs.getBool(_reduceMotionKey) ?? false;
       _carModeEnabled = prefs.getBool(_carModeKey) ?? false;
       _originIslandEnabled = prefs.getBool(_originIslandKey) ?? true;
+      _alertSliderPauseEnabled =
+          prefs.getBool(_alertSliderPauseKey) ?? false;
       _playerSkin = PlayerSkin.fromStored(prefs.getString('player_skin'));
       _fluidBackground = prefs.getBool('fluid_background') ?? true;
       _animatedArtwork = prefs.getBool('animated_artwork') ?? true;
@@ -165,6 +170,12 @@ class SettingsController extends ChangeNotifier {
       value,
       () => _originIslandEnabled,
       (v) => _originIslandEnabled = v);
+
+  Future<void> setAlertSliderPauseEnabled(bool value) => _setBool(
+      _alertSliderPauseKey,
+      value,
+      () => _alertSliderPauseEnabled,
+      (v) => _alertSliderPauseEnabled = v);
 
   Future<void> setPlayerSkin(PlayerSkin value) async {
     if (_playerSkin == value) return;

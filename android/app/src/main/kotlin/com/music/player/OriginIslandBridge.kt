@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.graphics.drawable.Icon
-import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import io.flutter.embedding.engine.FlutterEngine
@@ -93,13 +92,7 @@ object OriginIslandBridge {
         }
     }
 
-    fun isVivo(): Boolean {
-        val brand = Build.BRAND.orEmpty()
-        val manufacturer = Build.MANUFACTURER.orEmpty()
-        return brand.contains("vivo", ignoreCase = true) ||
-            brand.contains("iqoo", ignoreCase = true) ||
-            manufacturer.contains("vivo", ignoreCase = true)
-    }
+    fun isVivo(): Boolean = DeviceProfileBridge.isVivo()
 
     private fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return

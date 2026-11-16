@@ -1126,7 +1126,7 @@ void main() {
   });
 
   test('Android media notification uses vendor-compatible visuals', () {
-    const config = SystemMediaController.androidConfig;
+    final config = SystemMediaController.androidConfig;
 
     expect(config.androidNotificationIcon, 'drawable/ic_notification_music');
     expect(config.notificationColor, const Color(0xFF2FD365));

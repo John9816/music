@@ -19,6 +19,9 @@ class AppPlaybackRuntime {
     // 原子岛开关提供者：单例在下面首次被访问前注入，读到的是本运行时的设置。
     SystemMediaController.setOriginIslandEnabledProvider(
         () => settings.originIslandEnabled);
+    // 拨杆静音暂停开关提供者；默认关闭，用户打开后才注册系统广播监听。
+    SystemMediaController.setAlertSliderPauseEnabledProvider(
+        () => settings.alertSliderPauseEnabled);
     player = PlayerController(
         settings: settings,
         beforePlayback: Platform.isAndroid || Platform.isIOS
@@ -71,6 +74,9 @@ class AppPlaybackRuntime {
       // A damaged preference or saved queue must not disable the media browser.
     }
     if (_disposed) return;
+    if (Platform.isAndroid) {
+      unawaited(SystemMediaController.instance.refreshAlertSlider());
+    }
     if (_hasSystemMedia) SystemMediaController.instance.attachLibrary(library);
   }
 
