@@ -254,7 +254,7 @@ class TestCarPlayer extends PlayerController {
   }
 
   @override
-  Future<void> next() async {
+  Future<void> next({bool smooth = false}) async {
     if (songs.isNotEmpty) await playAt((selected + 1) % songs.length);
   }
 

@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:duck_music/core/api/api_client.dart';
 import 'package:duck_music/core/api/music_api.dart';
 import 'package:duck_music/core/player/audio_source_policy.dart';
 import 'package:duck_music/core/config/audio_quality_policy.dart';
 import 'package:duck_music/core/network/image_request_policy.dart';
 import 'package:duck_music/core/player/player_controller.dart';
+import 'package:duck_music/core/player/source_fallback_resolver.dart';
+import 'package:duck_music/core/services/artwork_color_service.dart';
 import 'package:duck_music/core/player/last_playback_store.dart';
 import 'package:duck_music/core/player/system_media_controller.dart';
 import 'package:duck_music/core/models/song.dart';
@@ -15,12 +18,14 @@ import 'package:duck_music/core/services/song_download_service.dart';
 import 'package:duck_music/core/services/cache_service.dart';
 import 'package:duck_music/core/settings/settings_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
 
   testWidgets(
       'cold black audio remains loading after twenty seconds and can complete',
@@ -1155,15 +1160,452 @@ void main() {
     gate.complete();
     await Future.wait([first, second]);
   });
+
+  // --- 安卓切歌加速：下一首预取 + 不可播自动跳过 ---
+
+  test('playing a song prefetches the next one via prefetch flag', () async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    final api = _ScriptedMusicApi();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('first', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('second', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    // 让后台预取的异步链完成。
+    for (var i = 0; i < 6; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(api.playRequests, ['first']);
+    expect(api.prefetchRequests, ['second']);
+  });
+
+  test('advancing to a prefetched song reuses the resolved url', () async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    final api = _ScriptedMusicApi();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('first', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('second', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await player.next();
+    for (var i = 0; i < 4; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(player.current!.id, 'second');
+    // 切到第二首应命中预取缓存，不再产生一次真实解析请求。
+    expect(api.playRequests, ['first']);
+    // 第二首曾被预热解析过（队尾绕回的下一首预取属于正常行为，不影响断言）。
+    expect(api.prefetchRequests, contains('second'));
+  });
+
+  testWidgets('an unplayable song is skipped so the next song starts',
+      (tester) async {
+    final settings = SettingsController();
+    final api = _ScriptedMusicApi(errors: {
+      'bad': ApiException('模拟解析失败'),
+    });
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('bad', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('good', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+    // 350ms 延时后应自动切到下一首并清除错误。
+    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(player.current!.id, 'good');
+    expect(player.error, isNull);
+    expect(api.playRequests, ['bad', 'good']);
+  });
+
+  testWidgets('membership errors stay visible and never auto-skip',
+      (tester) async {
+    final settings = SettingsController();
+    final api = _ScriptedMusicApi(errors: {
+      'vip': ApiException('需要会员', statusCode: 403),
+    });
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('vip', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('good', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(player.current!.id, 'vip');
+    expect(player.errorKind, PlaybackErrorKind.membershipRequired);
+    expect(player.error, contains('会员'));
+  });
+
+  testWidgets('a single unplayable song keeps its error visible',
+      (tester) async {
+    final settings = SettingsController();
+    final api = _ScriptedMusicApi(errors: {
+      'only': ApiException('模拟解析失败'),
+    });
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('only', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(player.current!.id, 'only');
+    expect(player.error, isNotNull);
+  });
+
+  testWidgets('auto-skip can be turned off', (tester) async {
+    final settings = SettingsController();
+    await settings.setAutoSkipUnplayable(false);
+    final api = _ScriptedMusicApi(errors: {
+      'bad': ApiException('模拟解析失败'),
+    });
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('bad', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('good', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(player.current!.id, 'bad');
+    expect(player.error, isNotNull);
+  });
+
+  // ===== 自动换源打分匹配（对标 TuneFreeNext 的 AutomaticSourceFallbackResolver）=====
+  group('SourceFallbackResolver 打分逻辑', () {
+    const resolver = SourceFallbackResolver();
+
+    test('normalize 去括号附注、大小写、全角与标点', () {
+      expect(SourceFallbackResolver.normalize('告白气球 (Live版)'), '告白气球');
+      expect(SourceFallbackResolver.normalize('Hello  [Remix]'), 'hello');
+      expect(SourceFallbackResolver.normalize('晴天（现场）'), '晴天');
+      expect(SourceFallbackResolver.normalize('Ｈｅｌｌｏ，World！'), 'hello world');
+    });
+
+    test('同一首歌跨版本打分高于不同歌', () {
+      final target = _playbackSong('1', const Duration(minutes: 3),
+          name: '告白气球', artist: '周杰伦');
+      final same = _playbackSong('2', const Duration(minutes: 3),
+          name: '告白气球 (Live)', artist: '周杰伦');
+      final other = _playbackSong('3', const Duration(minutes: 4),
+          name: '夜曲', artist: '林俊杰');
+      expect(resolver.matchScore(target, same),
+          greaterThan(resolver.matchScore(target, other)));
+      expect(resolver.matchScore(target, same),
+          greaterThan(SourceFallbackResolver.acceptThreshold));
+    });
+
+    test('bestCandidateOrNull 选出最高分候选', () {
+      final target = _playbackSong('1', const Duration(minutes: 3),
+          name: '晴天', artist: '周杰伦');
+      final candidates = [
+        _playbackSong('9', const Duration(minutes: 3), name: '稻香', artist: '周杰伦'),
+        _playbackSong('8', const Duration(minutes: 3), name: '晴天', artist: '周杰伦'),
+        _playbackSong('7', const Duration(minutes: 5), name: '彩虹', artist: '五月天'),
+      ];
+      final best = resolver.bestCandidateOrNull(target, candidates);
+      expect(best?.id, '8');
+      expect(
+          resolver.bestCandidateOrNull(target, [
+            _playbackSong('x', const Duration(minutes: 3),
+                name: '完全不相关的歌', artist: '某人'),
+          ]),
+          isNull);
+    });
+  });
+
+  test('当前源解析失败时自动换源到打分最高的候选', () async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    final api = _FallbackMusicApi(
+      failIds: {'local-id'},
+      searchResults: {
+        'netease': [
+          _playbackSong('wrong', const Duration(minutes: 3),
+              name: '另一首', artist: '别人', source: 'netease'),
+          _playbackSong('matched', const Duration(minutes: 3),
+              name: '晴天', artist: '周杰伦', source: 'netease'),
+        ],
+        'kuwo': const [],
+        'qishui': const [],
+      },
+    );
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+      enablePrefetch: false,
+      enableAutoSkip: false,
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('local-id', const Duration(minutes: 3),
+          source: 'qq', name: '晴天', artist: '周杰伦'),
+    ]);
+    for (var i = 0; i < 8; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // 原源失败 → 搜索了备用源 → 换到匹配候选并成功播放。
+    expect(api.playRequests, contains('qq:local-id'));
+    expect(api.searchQueries, isNotEmpty);
+    expect(api.playRequests, contains('netease:matched'));
+    expect(player.error, isNull);
+    expect(player.current!.id, 'local-id');
+  });
+
+  testWidgets('关闭自动换源后不会搜索备用源', (tester) async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    await settings.setAutoSourceFallback(false);
+    final api = _FallbackMusicApi(
+      failIds: {'bad'},
+      searchResults: {
+        'netease': [
+          _playbackSong('ok', const Duration(minutes: 3),
+              name: 'bad', artist: '测试歌手', source: 'netease'),
+        ],
+      },
+    );
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+      enablePrefetch: false,
+      enableAutoSkip: false,
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('bad', const Duration(minutes: 3),
+          source: 'qq', name: 'bad', artist: '测试歌手'),
+    ]);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(api.searchQueries, isEmpty);
+    expect(player.error, isNotNull);
+  });
+
+  // ===== 封面预取 + 主色过渡（对标 TuneFreeNext 的 DynamicArtworkController）=====
+  test('切歌时预热封面并用提取的主色更新 artworkColor', () async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    final api = _ScriptedMusicApi();
+    final warmed = <Uri>[];
+    final colorService = ArtworkColorService.forTesting(
+      (uri) => uri.toString().contains('cover-a')
+          ? const Color(0xff112233)
+          : null,
+    );
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: _ControllableAudioPlayer(),
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+      enablePrefetch: false,
+      enableAutoSkip: false,
+      warmArtwork: (uri) async {
+        warmed.add(uri);
+      },
+      artworkColorService: colorService,
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('a', const Duration(minutes: 3),
+          source: 'netease', picUrl: 'https://img.example.com/cover-a.jpg'),
+    ]);
+    for (var i = 0; i < 8; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(warmed, isNotEmpty);
+    expect(warmed.first.toString(), contains('cover-a'));
+    expect(player.artworkColor.value, const Color(0xff112233));
+  });
+
+  // ===== AutoMix 平滑切歌（单 player 近似）=====
+  test('AutoMix 开启时自然播完切歌包含淡出与淡入', () async {
+    final settings = SettingsController();
+    await settings.setAutomaticAudioCache(false);
+    await settings.setAutoMix(true);
+    final api = _ScriptedMusicApi();
+    final native = _ControllableAudioPlayer();
+    final player = PlayerController(
+      settings: settings,
+      audioPlayer: native,
+      musicApi: api,
+      localFileFor: (_) async => null,
+      localAudioFor: (_) async => null,
+      maintainAudioCache: (_) async {},
+      lastPlaybackStore: _MemoryLastPlaybackStore(),
+      enablePrefetch: false,
+      enableAutoSkip: false,
+    );
+    addTearDown(() {
+      player.dispose();
+      settings.dispose();
+    });
+
+    await player.playQueue([
+      _playbackSong('a', const Duration(minutes: 3), source: 'netease'),
+      _playbackSong('b', const Duration(minutes: 3), source: 'netease'),
+    ]);
+    native.volumeChanges.clear();
+    // 模拟当前歌自然播放结束。
+    native.completeTrack();
+    // 等待淡出(110ms)+切歌+淡入(180ms)异步链完成。
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+
+    expect(player.current!.id, 'b');
+    // 至少出现一次淡出到接近 0，以及淡入回接近 1。
+    expect(native.volumeChanges.any((v) => v < 0.3), isTrue,
+        reason: '应包含淡出');
+    expect(native.volumeChanges.last, greaterThan(0.9), reason: '应淡入回原音量');
+  });
 }
 
-Song _playbackSong(String id, Duration duration, {String source = 'qq'}) =>
+Song _playbackSong(
+  String id,
+  Duration duration, {
+  String source = 'qq',
+  String name = '',
+  String artist = '测试歌手',
+  String? picUrl,
+}) =>
     Song(
       id: id,
-      name: id,
+      name: name.isEmpty ? id : name,
       source: source,
-      artists: const [Artist(id: 1, name: '测试歌手')],
-      album: const Album(id: 1, name: '测试专辑'),
+      artists: [Artist(id: 1, name: artist)],
+      album: Album(id: 1, name: '测试专辑', picUrl: picUrl),
       durationMs: duration.inMilliseconds,
     );
 
@@ -1193,6 +1635,7 @@ class _IdentityMusicApi extends MusicApi {
   final Map<String, Completer<String?>> heldLyrics;
   final List<String> lyricRequests = [];
   final List<String> playRequests = [];
+  final List<String> prefetchRequests = [];
 
   @override
   Future<PlaybackInfo> getPlaybackInfo(
@@ -1201,8 +1644,12 @@ class _IdentityMusicApi extends MusicApi {
     String quality = 'exhigh',
     bool prefetch = false,
   }) async {
-    expect(prefetch, isFalse);
-    playRequests.add('$source:$id');
+    // 下一首预热请求带 prefetch=true，不计入真实播放解析次数。
+    if (prefetch) {
+      prefetchRequests.add('$source:$id');
+    } else {
+      playRequests.add('$source:$id');
+    }
     return PlaybackInfo.fromJson({
       'playUrl': 'https://media.example.com/$id.mp3',
       ...?responses[id],
@@ -1217,6 +1664,90 @@ class _IdentityMusicApi extends MusicApi {
     lyricRequests.add(key);
     return heldLyrics[key]?.future ?? Future.value('[00:01.00]$key');
   }
+}
+
+/// 可对指定歌曲注入解析错误，并记录真实解析 / 预热请求的次数，
+/// 用于验证「下一首预取」与「不可播自动跳过」机制。
+class _ScriptedMusicApi extends MusicApi {
+  _ScriptedMusicApi({this.errors = const {}});
+
+  /// id -> 仅真实解析（非预热）时抛出的异常。
+  final Map<String, Object> errors;
+  final List<String> playRequests = [];
+  final List<String> prefetchRequests = [];
+
+  @override
+  Future<PlaybackInfo> getPlaybackInfo(
+    String id, {
+    String source = 'netease',
+    String quality = 'exhigh',
+    bool prefetch = false,
+  }) async {
+    if (prefetch) {
+      prefetchRequests.add(id);
+    } else {
+      playRequests.add(id);
+      final error = errors[id];
+      if (error != null) throw error;
+    }
+    return PlaybackInfo.fromJson(
+      {'playUrl': 'https://media.example.com/$id.m4a'},
+      id: id,
+      source: source,
+    );
+  }
+
+  @override
+  Future<String?> getLyric(String id,
+          {String source = 'netease', bool requireVerified = false}) async =>
+      null;
+}
+
+/// 支持自动换源测试：指定 id 解析失败，searchSongs 返回可注入的候选。
+class _FallbackMusicApi extends MusicApi {
+  _FallbackMusicApi({
+    this.failIds = const {},
+    this.searchResults = const {},
+  });
+
+  final Set<String> failIds;
+  final Map<String, List<Song>> searchResults;
+  final List<String> playRequests = [];
+  final List<String> searchQueries = [];
+
+  @override
+  Future<PlaybackInfo> getPlaybackInfo(
+    String id, {
+    String source = 'netease',
+    String quality = 'exhigh',
+    bool prefetch = false,
+  }) async {
+    if (!prefetch) {
+      playRequests.add('$source:$id');
+      if (failIds.contains(id)) throw ApiException('解析失败');
+    }
+    return PlaybackInfo.fromJson(
+      {'playUrl': 'https://media.example.com/$source/$id.m4a'},
+      id: id,
+      source: source,
+    );
+  }
+
+  @override
+  Future<List<Song>> searchSongs(
+    String keyword, {
+    String source = 'netease',
+    int offset = 0,
+    int limit = 30,
+  }) async {
+    searchQueries.add('$source:$keyword');
+    return searchResults[source] ?? const [];
+  }
+
+  @override
+  Future<String?> getLyric(String id,
+          {String source = 'netease', bool requireVerified = false}) async =>
+      null;
 }
 
 class _MemoryLastPlaybackStore implements LastPlaybackStore {
@@ -1270,6 +1801,19 @@ class _ControllableAudioPlayer extends AudioPlayer {
   Completer<void>? pauseGate;
   LoopMode nativeLoop = LoopMode.off;
   int loadCount = 0;
+
+  // AutoMix 淡入淡出观测点。
+  double _volume = 1.0;
+  final List<double> volumeChanges = [];
+
+  @override
+  double get volume => _volume;
+
+  @override
+  Future<void> setVolume(double volume) async {
+    _volume = volume;
+    volumeChanges.add(volume);
+  }
 
   @override
   Stream<PlaybackEvent> get playbackEventStream => _events.stream;
@@ -1516,7 +2060,7 @@ class _SystemMediaPlayer extends PlayerController {
   Duration get position => _position;
 
   @override
-  Future<void> next() async {
+  Future<void> next({bool smooth = false}) async {
     _currentIndex = (_currentIndex + 1) % _songs.length;
     notifyListeners();
   }

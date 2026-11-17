@@ -12,6 +12,7 @@ import 'core/player/player_controller.dart';
 import 'core/player/app_playback_runtime.dart';
 import 'core/player/system_media_controller.dart';
 import 'core/services/cache_service.dart';
+import 'core/services/content_insets.dart';
 import 'core/services/desktop_integration_service.dart';
 import 'core/services/device_insets.dart';
 import 'core/services/ios_sideload_service.dart';
@@ -181,15 +182,9 @@ class _ThemeBridgeState extends State<_ThemeBridge> {
               var data = mediaQuery.copyWith(
                 disableAnimations: mediaQuery.disableAnimations,
               );
-              // 只补足不覆盖：systemBars 与 displayCutout 的较大值若比 Flutter
-              // 报告的更大，说明 ROM 少传了挖孔那一段，这里补上，避免居中内容
-              // 被屏幕正中的挖孔压住。正常设备上条件不成立，行为不变。
-              if (nativeTop > mediaQuery.padding.top) {
-                data = data.copyWith(
-                  padding: mediaQuery.padding.copyWith(top: nativeTop),
-                  viewPadding: mediaQuery.viewPadding.copyWith(top: nativeTop),
-                );
-              }
+              // 原生挖孔补足逻辑收敛到 ContentInsets.resolve（只补不覆盖），
+              // 计算细节见该文件与其单测。正常设备上 nativeTop 不会更大，行为不变。
+              data = ContentInsets.resolve(data, nativeTop);
               return MediaQuery(data: data, child: inner!);
             },
           ),

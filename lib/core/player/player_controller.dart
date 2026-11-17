@@ -13,6 +13,7 @@ import '../models/song.dart';
 import '../models/playback_info.dart';
 import '../network/image_request_policy.dart';
 import '../services/cache_service.dart';
+import '../services/artwork_color_service.dart';
 import '../services/song_download_service.dart';
 import '../services/local_music_service.dart';
 import '../settings/settings_controller.dart';
@@ -20,6 +21,7 @@ import 'audio_source_policy.dart';
 import 'last_playback_store.dart';
 import 'playback_coordinator.dart';
 import 'equalizer_controller.dart';
+import 'source_fallback_resolver.dart';
 
 enum PlaybackErrorKind { none, generic, loginRequired, membershipRequired }
 
@@ -39,7 +41,19 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     Future<void> Function(SettingsController settings)? maintainAudioCache,
     LastPlaybackStore? lastPlaybackStore,
     Future<void> Function()? beforePlayback,
+    bool enablePrefetch = true,
+    bool enableAutoSkip = true,
+    bool enableSourceFallback = true,
+    bool enableAutoMix = true,
+    Future<void> Function(Uri artworkUri)? warmArtwork,
+    ArtworkColorService? artworkColorService,
   })  : _settings = settings,
+        _enablePrefetch = enablePrefetch,
+        _enableAutoSkip = enableAutoSkip,
+        _enableSourceFallback = enableSourceFallback,
+        _enableAutoMix = enableAutoMix,
+        _warmArtwork = warmArtwork,
+        _artworkColorService = artworkColorService,
         _api = musicApi ?? MusicApi(),
         _localFileFor = localFileFor,
         _localAudioFor =
@@ -84,6 +98,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _playingSub = _player.playingStream.distinct().listen((playing) {
       if (playing) {
+        // 只有在真正出声后才清零连续跳过计数。若仅 setAudioSource/play 成功
+        // 但随后播放流报错，计数得以保留，避免坏歌被反复跳过形成死循环。
+        _autoSkipStreak = 0;
         _resumeGuardUntil = _lastEmittedPosition == null
             ? null
             : DateTime.now().add(const Duration(milliseconds: 250));
@@ -112,6 +129,27 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   final Future<void> Function(SettingsController settings) _maintainAudioCache;
   final LastPlaybackStore _lastPlaybackStore;
   final Future<void> Function()? _beforePlayback;
+  final bool _enablePrefetch;
+  final bool _enableAutoSkip;
+  final bool _enableSourceFallback;
+  final bool _enableAutoMix;
+  final Future<void> Function(Uri artworkUri)? _warmArtwork;
+  final ArtworkColorService? _artworkColorService;
+
+  /// 当前封面主色。播放页用它做切歌背景渐变过渡（对标 TuneFreeNext 的
+  /// DynamicArtworkController）。未注入着色服务时保持初始中性色。
+  static const Color fallbackArtworkColor = Color(0xff243746);
+  final ValueNotifier<Color> artworkColor =
+      ValueNotifier<Color>(fallbackArtworkColor);
+  int _artworkColorSeq = 0;
+
+  // --- AutoMix 平滑切歌（单 player 近似，对标 TuneFreeNext 的 AutoMix）---
+  // 真原生 AutoMix 走 native_auto_mix_port 做双音轨交叉淡化 + ReplayGain；
+  // 单 AudioPlayer 无法同时持有两条音轨，这里在“自然播放结束”切歌时做
+  // 淡出→命中预取切歌→淡入，消除突兀静音断层。手动切歌不引入淡入延迟。
+  int _autoMixFadeSeq = 0;
+  double _autoMixTargetVolume = 1.0;
+
   late final StreamController<Duration> _positionController;
   late final Stream<Duration> _positionStream;
 
@@ -140,9 +178,29 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> Function()? loadMoreQueue;
   List<Song> _queue = [];
 
+  // --- 下一首预加载（对标 TuneFreeNext 的 _ensureNextPrepared /
+  //     _prepareNextPlayable / _activatePreparedNext）---
+  // 当前歌起播后提前解析下一首的播放地址并缓存；切歌命中即瞬时起播，
+  // 不再需要等待网络解析，这正是安卓端“加载慢”的根治点。
+  final Map<String, _PrefetchedPlayback> _prefetched = {};
+  int _prefetchGeneration = 0;
+  static const Duration _prefetchTtl = Duration(minutes: 5);
+
+  /// 自动跳过计数器：连续跳过达到队列长度后停止，避免整队列不可播时死循环。
+  int _autoSkipStreak = 0;
+  Timer? _autoSkipTimer;
+
+  void _invalidatePrefetch() {
+    _prefetchGeneration++;
+    _prefetched.clear();
+  }
+
+  String _songKey(Song song) => '${song.source}:${song.id}';
+
   void appendQueue(List<Song> songs, {required int generation}) {
     if (generation != _queueGeneration || songs.isEmpty) return;
     final seen = _queue.map((s) => '${s.source}:${s.id}').toSet();
+    _invalidatePrefetch();
     _queue.addAll(songs.where((s) => seen.add('${s.source}:${s.id}')));
     if (_queue.length > 200 && _index > 20) {
       final remove = min(_index - 20, _queue.length - 200);
@@ -393,6 +451,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> playQueue(List<Song> songs, {int index = 0}) async {
     if (songs.isEmpty) return;
     _queueGeneration++;
+    _invalidatePrefetch();
     loadMoreQueue = null;
     _queue = List.of(songs);
     _queueSnapshot = null;
@@ -407,6 +466,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     final target = (_index + 1).clamp(0, _queue.length);
     _queue.insert(target, song);
     _queueSnapshot = null;
+    _invalidatePrefetch();
     notifyListeners();
   }
 
@@ -435,12 +495,15 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _queue.insert((_index + 1).clamp(0, _queue.length), song);
     _queueSnapshot = null;
+    _invalidatePrefetch();
     notifyListeners();
   }
 
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
     final seq = ++_playSeq;
+    // 新的播放请求取消上一轮待执行的自动跳过，避免手动干预后被旧定时器切走。
+    _autoSkipTimer?.cancel();
     final previousSeek = _resetSeekSession();
     _index = index;
     _current = _queue[index];
@@ -501,7 +564,15 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         audioUri = downloaded.file.uri;
         _effectiveQuality = downloaded.quality;
       } else {
-        final resolved = await _resolveAudioUrl(song);
+        // 命中预取：切歌时直接使用上一首播放期间已解析好的地址，零网络等待。
+        // 地址带时效签名，超过 TTL 视为失效并退回正常解析。
+        final key = _songKey(song);
+        final prefetched = _prefetched.remove(key);
+        final bool prefetchedFresh = prefetched != null &&
+            DateTime.now().difference(prefetched.resolvedAt) < _prefetchTtl;
+        final ResolvedPlaybackInfo resolved = prefetchedFresh
+            ? prefetched.resolved
+            : await _resolveAudioUrl(song);
         if (seq != _playSeq) return;
         identity = resolved.info.audioIdentity;
         audioUri = Uri.parse(resolved.url);
@@ -532,6 +603,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       if (seq != _playSeq) return;
       _audioIdentity = identity;
       final artworkUrl = normalizeRemoteImageUrl(song.album.picUrl);
+      // 封面预热 + 主色提取（对标 TuneFreeNext 的封面预取 + palette 过渡）。
+      // 二者都在后台进行，绝不阻塞播放；用 seq 保护避免旧歌结果覆盖新歌。
+      _updateArtworkColor(seq, artworkUrl);
       final artworkHeaders = imageRequestHeaders(artworkUrl);
       final metadataDurationMs =
           identity.durationMs > 0 ? identity.durationMs : song.durationMs;
@@ -593,7 +667,12 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       unawaited(_lastPlaybackStore.save(song).catchError((_) {}));
       unawaited(_maintainAudioCache(_settings));
-      if (seq == _playSeq) onSongPlayed?.call(song);
+      if (seq == _playSeq) {
+        onSongPlayed?.call(song);
+        // 当前歌已起播，后台预解析下一首；不阻塞播放。
+        // 连续跳过计数只在 playingStream 确认真正出声后清零。
+        _triggerPrefetchNext(seq);
+      }
       unawaited(playback.catchError((Object error, StackTrace stackTrace) {
         _setPlaybackError(seq, error);
       }));
@@ -607,7 +686,102 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<ResolvedPlaybackInfo> _resolveAudioUrl(Song song) async {
+  /// 计算“下一首”索引，与 [next] 的顺序/shuffle 语义保持一致，
+  /// 但不触发 loadMoreQueue 副作用（预取不能改变队列）。
+  int? _peekNextIndex() {
+    if (_queue.isEmpty || _index < 0) return null;
+    if (_shuffle && _queue.length > 1) {
+      // shuffle 的下一首由 next() 用 Random 决定，无法预测，故不预取。
+      return null;
+    }
+    final next = _index + 1;
+    if (next < _queue.length) return next;
+    // 队尾：单曲循环/顺序模式不会自动前进；列表循环会回到开头。
+    if (_loopMode == LoopMode.all && _queue.length > 1) return 0;
+    return null;
+  }
+
+  /// 后台预解析下一首。只在确实需要网络解析的曲目上做，且用
+  /// playSeq + prefetchGeneration 双重保护：切歌或队列变化后旧结果作废。
+  void _triggerPrefetchNext(int seq) {
+    if (!_enablePrefetch) return;
+    if (seq != _playSeq) return;
+    final nextIndex = _peekNextIndex();
+    if (nextIndex == null) return;
+    final song = _queue[nextIndex];
+    if (song.source == 'local') return;
+    final key = _songKey(song);
+    final cached = _prefetched[key];
+    if (cached != null &&
+        DateTime.now().difference(cached.resolvedAt) < _prefetchTtl) {
+      return;
+    }
+    final generation = _prefetchGeneration;
+    unawaited(() async {
+      try {
+        // 下一首可能已有下载文件或本地缓存，此时无需网络预解析。
+        final hasLocal = await _hasLocalAudio(song);
+        if (hasLocal) return;
+        if (seq != _playSeq || generation != _prefetchGeneration) return;
+        final resolved = await _resolveAudioUrl(song, prefetch: true);
+        if (seq != _playSeq || generation != _prefetchGeneration) return;
+        // 队列顺序可能已变，确认这首歌仍是预期的下一首。
+        if (_peekNextIndex() != nextIndex) return;
+        _prefetched[key] = _PrefetchedPlayback(resolved, DateTime.now());
+        // 音源就绪的同时预热下一首封面：切歌瞬间封面与主色已就位，
+        // 消除模糊背景二次加载造成的视觉卡顿。
+        if (_settings.crossfadeArtwork) {
+          final nextArt = normalizeRemoteImageUrl(song.album.picUrl);
+          final nextUri = nextArt == null ? null : Uri.tryParse(nextArt);
+          final warm = _warmArtwork;
+          if (nextUri != null && warm != null) {
+            unawaited(warm(nextUri).catchError((_) {}));
+          }
+        }
+      } catch (_) {
+        // 预取失败静默忽略：切歌时会走正常解析，用户无感。
+      }
+    }());
+  }
+
+  /// 后台预热当前封面并提取主色。切歌时旧主色保留，新主色就绪后由 UI
+  /// 的 AnimatedContainer 平滑过渡过去。seq 保证乱序结果不会串色。
+  void _updateArtworkColor(int seq, String? artworkUrl) {
+    if (!_settings.crossfadeArtwork) return;
+    final generation = ++_artworkColorSeq;
+    if (artworkUrl == null || artworkUrl.isEmpty) return;
+    final uri = Uri.tryParse(artworkUrl);
+    if (uri == null) return;
+    final warm = _warmArtwork;
+    if (warm != null) unawaited(warm(uri).catchError((_) {}));
+    final service = _artworkColorService;
+    if (service == null) return;
+    unawaited(service.colorFor(uri).then((color) {
+      if (seq != _playSeq || generation != _artworkColorSeq) return;
+      if (color != null) artworkColor.value = color;
+    }).catchError((_) {}));
+  }
+
+  /// 判断一首歌是否已有可直接播放的本地来源（本地音乐 / 已下载）。
+  Future<bool> _hasLocalAudio(Song song) async {
+    if (song.source == 'local') return true;
+    try {
+      final localFileFor = _localFileFor;
+      if (localFileFor != null && await localFileFor(song) != null) {
+        return true;
+      }
+      final local = await _localAudioFor(song);
+      return local != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<ResolvedPlaybackInfo> _resolveAudioUrl(
+    Song song, {
+    bool prefetch = false,
+    bool allowFallback = true,
+  }) async {
     Object? lastError;
     final requestedQuality = _settings.qualityForSource(song.source);
     try {
@@ -615,7 +789,12 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         source: song.source,
         requestedQuality: requestedQuality,
         loadInfo: (quality) => _api
-            .getPlaybackInfo(song.id, source: song.source, quality: quality)
+            .getPlaybackInfo(
+              song.id,
+              source: song.source,
+              quality: quality,
+              prefetch: prefetch,
+            )
             .timeout(const Duration(seconds: 12)),
       );
       if (resolved != null) return resolved;
@@ -625,11 +804,55 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (error) {
       lastError = error;
     }
+
+    // 自动换源（对标 TuneFreeNext 的 AutomaticSourceFallbackResolver）：
+    // 普通“拿不到地址”失败时，跨备用音源搜索同一首歌，按歌名+歌手+时长打分
+    // 选最佳候选重解析。会员/登录错误在上方已 rethrow，不会走到这里。
+    // 预热预取不触发换源，避免后台放大请求。
+    if (allowFallback &&
+        !prefetch &&
+        _enableSourceFallback &&
+        _settings.autoSourceFallback) {
+      final fallback = await _tryFallbackSource(song);
+      if (fallback != null) return fallback;
+    }
+
     if (lastError is ApiException) throw lastError;
     if (song.source.trim().toLowerCase() == 'qq') {
       throw Exception('当前 QQ 音乐播放地址不可用，请稍后重试');
     }
     throw Exception('未获取到播放地址，请切换音乐源后重试');
+  }
+
+  /// 跨备用音源打分匹配同一首歌，返回最佳候选的可播放信息。
+  /// 顺序遍历备用源，每个源搜索一次并取打分最高的候选；全失败返回 null。
+  static const List<String> _fallbackSources = ['netease', 'qq', 'kuwo', 'qishui'];
+  static const SourceFallbackResolver _sourceResolver = SourceFallbackResolver();
+
+  Future<ResolvedPlaybackInfo?> _tryFallbackSource(Song song) async {
+    final originalSource = song.source.trim().toLowerCase();
+    final leadArtist = song.artists.isEmpty ? '' : song.artists.first.name;
+    final keyword = leadArtist.isEmpty ? song.name : '${song.name} $leadArtist';
+    for (final source in _fallbackSources) {
+      if (source == originalSource) continue;
+      List<Song> candidates;
+      try {
+        candidates = await _api
+            .searchSongs(keyword, source: source, limit: 8)
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {
+        continue;
+      }
+      final best = _sourceResolver.bestCandidateOrNull(song, candidates);
+      if (best == null) continue;
+      try {
+        // allowFallback:false 防止候选再次失败时递归换源。
+        return await _resolveAudioUrl(best, allowFallback: false);
+      } catch (_) {
+        // 该候选不可用，继续下一个音源。
+      }
+    }
+    return null;
   }
 
   void _loadLyric(int seq, AudioIdentity identity) {
@@ -695,7 +918,8 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         return;
       }
-      unawaited(next());
+      // 自然播放结束：AutoMix 开启时走平滑淡出淡入切歌。
+      unawaited(next(smooth: true));
       return;
     }
     notifyListeners();
@@ -729,7 +953,33 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     if (_errorKind == PlaybackErrorKind.membershipRequired) {
       onMembershipRequired?.call();
+      return;
     }
+    // 解析/播放失败自动跳过：只对普通失败生效，登录/会员错误必须让用户看到。
+    // 单首歌或整队列都试过仍失败时保留错误提示，避免死循环。
+    if (_errorKind == PlaybackErrorKind.generic) {
+      _scheduleAutoSkip(seq);
+    }
+  }
+
+  /// 失败后短暂延时自动切到下一首（对标 TuneFreeNext 的 auto_skip_unplayable）。
+  /// 延时给用户一个看到错误的瞬间，也避免与本轮错误流抢占状态。
+  void _scheduleAutoSkip(int seq) {
+    if (!_enableAutoSkip || !_settings.autoSkipUnplayable) return;
+    if (seq != _playSeq) return;
+    if (_queue.length <= 1) return; // 无处可跳，保留错误可见
+    if (_autoSkipStreak >= _queue.length) return; // 已跳过一整轮，停止
+
+    _autoSkipTimer?.cancel();
+    _autoSkipStreak++;
+    _autoSkipTimer = Timer(const Duration(milliseconds: 350), () {
+      if (seq != _playSeq) return;
+      final nextIndex = _peekNextIndex();
+      if (nextIndex == null || nextIndex == _index) return;
+      _error = null;
+      _errorKind = PlaybackErrorKind.none;
+      unawaited(next());
+    });
   }
 
   bool _looksLikeMembership(String message) {
@@ -789,6 +1039,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _restoreLastPlaybackFuture = null;
     final previousSeek = _resetSeekSession();
     _clearResolvedAudio();
+    _invalidatePrefetch();
     _positionSourceReady = false;
     _lastEmittedPosition = null;
     _resumeGuardUntil = null;
@@ -823,7 +1074,52 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _lyric = '';
   }
 
-  Future<void> next() async {
+  Future<void> next({bool smooth = false}) async {
+    // AutoMix 平滑切歌：仅在自然播放结束时由调用方传 smooth=true。
+    // 手动点“下一首”不引入淡出延迟，保持即时响应。
+    final doSmooth = smooth &&
+        _enableAutoMix &&
+        _settings.autoMix &&
+        _queue.length > 1;
+    if (!doSmooth) {
+      await _nextCore();
+      return;
+    }
+    final fadeSeq = ++_autoMixFadeSeq;
+    _autoMixTargetVolume = _player.volume;
+    await _autoMixFadeTo(0.0, const Duration(milliseconds: 110), fadeSeq);
+    try {
+      await _nextCore();
+    } finally {
+      // 即使切歌失败也恢复音量，避免卡在静音。
+      if (fadeSeq == _autoMixFadeSeq) {
+        await _autoMixFadeTo(
+            _autoMixTargetVolume, const Duration(milliseconds: 180), fadeSeq);
+      }
+    }
+  }
+
+  /// 把播放器音量在 [duration] 内平滑过渡到 [target]。
+  /// 使用 just_audio 的 setVolume（底层 ExoPlayer/AVPlayer 支持运行时调音量），
+  /// fadeSeq 变化（新一轮切歌/用户干预）时立即中止旧的渐变。
+  Future<void> _autoMixFadeTo(double target, Duration duration, int fadeSeq) async {
+    final from = _player.volume;
+    const steps = 4;
+    for (var i = 1; i <= steps; i++) {
+      if (fadeSeq != _autoMixFadeSeq) return;
+      final value = from + (target - from) * (i / steps);
+      try {
+        await _player.setVolume(value.clamp(0.0, 1.0));
+      } catch (_) {
+        return;
+      }
+      if (i < steps) {
+        await Future<void>.delayed(duration ~/ steps);
+      }
+    }
+  }
+
+  Future<void> _nextCore() async {
     if (_queue.isEmpty) return;
     final continuation = loadMoreQueue;
     if (continuation != null && _index == _queue.length - 1) {
@@ -867,6 +1163,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> setPlaybackMode(PlaybackMode mode) async {
     _shuffle = mode == PlaybackMode.shuffle;
+    _invalidatePrefetch();
     _loopMode = switch (mode) {
       PlaybackMode.singleLoop => LoopMode.one,
       PlaybackMode.sequential => LoopMode.off,
@@ -1020,8 +1317,20 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
     _volumeTimer?.cancel();
     _seekCompleter?.complete();
     _volumeCompleter?.complete();
+    _autoSkipTimer?.cancel();
+    _invalidatePrefetch();
+    artworkColor.dispose();
     _positionController.close();
     _player.dispose();
     super.dispose();
   }
+}
+
+/// 预解析好的下一首播放信息。[resolvedAt] 用于过期判断——播放地址通常
+/// 带时效签名，过旧的预取结果不能再用。
+class _PrefetchedPlayback {
+  const _PrefetchedPlayback(this.resolved, this.resolvedAt);
+
+  final ResolvedPlaybackInfo resolved;
+  final DateTime resolvedAt;
 }

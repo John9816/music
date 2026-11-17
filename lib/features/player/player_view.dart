@@ -316,6 +316,24 @@ class _AmbientBackground extends StatelessWidget {
                 ? Colors.black.withValues(alpha: 0.68)
                 : Colors.white.withValues(alpha: 0.82),
           ),
+          // 封面主色渐变过渡（对标 TuneFreeNext 的 DynamicArtworkController）。
+          ValueListenableBuilder<Color>(
+            valueListenable: context.read<PlayerController>().artworkColor,
+            builder: (context, tint, _) => AnimatedContainer(
+              duration: const Duration(milliseconds: 650),
+              curve: Curves.easeInOutCubic,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    tint.withValues(alpha: dark ? 0.22 : 0.10),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
           // 顶部品牌渐变氛围
           DecoratedBox(
             decoration: BoxDecoration(

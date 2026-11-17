@@ -34,6 +34,11 @@ class SettingsController extends ChangeNotifier {
   static const _carModeKey = 'car_mode_enabled';
   static const _originIslandKey = 'origin_island_enabled';
   static const _alertSliderPauseKey = 'alert_slider_pause_enabled';
+  static const _autoSkipUnplayableKey = 'auto_skip_unplayable';
+  static const _autoSourceFallbackKey = 'auto_source_fallback';
+  static const _autoMixKey = 'auto_mix_enabled';
+  static const _crossfadeArtworkKey = 'crossfade_artwork';
+  static const _skinFrameRateKey = 'player_skin_frame_rate';
 
   String _source = 'netease';
   String _searchSource = 'netease';
@@ -55,6 +60,14 @@ class SettingsController extends ChangeNotifier {
   bool _carModeEnabled = false;
   bool _originIslandEnabled = true;
   bool _alertSliderPauseEnabled = false;
+  bool _autoSkipUnplayable = true;
+  // 解析/播放失败时跨音源打分匹配同一首歌再试（对标 TuneFreeNext 自动换源）。
+  bool _autoSourceFallback = true;
+  // 无缝混音：切歌前提前激活下一首，消除静音断层（对标 TuneFreeNext AutoMix）。
+  bool _autoMix = false;
+  // 封面预取 + 主色过渡：预热下一首封面并用主色做切歌渐变。
+  bool _crossfadeArtwork = true;
+  SkinFrameRate _skinFrameRate = SkinFrameRate.balanced;
   PlayerSkin _playerSkin = PlayerSkin.classic;
   bool _fluidBackground = true;
   bool _animatedArtwork = true;
@@ -99,6 +112,19 @@ class SettingsController extends ChangeNotifier {
   bool get originIslandEnabled => _originIslandEnabled;
   bool get alertSliderPauseEnabled => _alertSliderPauseEnabled;
 
+  /// 播放/解析失败时自动跳过不可播的曲目（对标 TuneFreeNext 的无感换源）。
+  bool get autoSkipUnplayable => _autoSkipUnplayable;
+
+  /// 解析失败时跨音源打分匹配同一首歌重试。
+  bool get autoSourceFallback => _autoSourceFallback;
+
+  /// 无缝混音：切歌前提前激活下一首，消除静音断层。
+  bool get autoMix => _autoMix;
+
+  /// 封面预取 + 主色过渡。
+  bool get crossfadeArtwork => _crossfadeArtwork;
+  SkinFrameRate get skinFrameRate => _skinFrameRate;
+
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -131,7 +157,16 @@ class SettingsController extends ChangeNotifier {
       _originIslandEnabled = prefs.getBool(_originIslandKey) ?? true;
       _alertSliderPauseEnabled =
           prefs.getBool(_alertSliderPauseKey) ?? false;
+      _autoSkipUnplayable =
+          prefs.getBool(_autoSkipUnplayableKey) ?? true;
+      _autoSourceFallback =
+          prefs.getBool(_autoSourceFallbackKey) ?? true;
+      _autoMix = prefs.getBool(_autoMixKey) ?? false;
+      _crossfadeArtwork =
+          prefs.getBool(_crossfadeArtworkKey) ?? true;
       _playerSkin = PlayerSkin.fromStored(prefs.getString('player_skin'));
+      _skinFrameRate =
+          SkinFrameRate.fromStored(prefs.getString(_skinFrameRateKey));
       _fluidBackground = prefs.getBool('fluid_background') ?? true;
       _animatedArtwork = prefs.getBool('animated_artwork') ?? true;
       _liquidNavigation = prefs.getBool('liquid_navigation') ?? true;
@@ -177,12 +212,41 @@ class SettingsController extends ChangeNotifier {
       () => _alertSliderPauseEnabled,
       (v) => _alertSliderPauseEnabled = v);
 
+  Future<void> setAutoSkipUnplayable(bool value) => _setBool(
+      _autoSkipUnplayableKey,
+      value,
+      () => _autoSkipUnplayable,
+      (v) => _autoSkipUnplayable = v);
+
+  Future<void> setAutoSourceFallback(bool value) => _setBool(
+      _autoSourceFallbackKey,
+      value,
+      () => _autoSourceFallback,
+      (v) => _autoSourceFallback = v);
+
+  Future<void> setAutoMix(bool value) => _setBool(
+      _autoMixKey, value, () => _autoMix, (v) => _autoMix = v);
+
+  Future<void> setCrossfadeArtwork(bool value) => _setBool(
+      _crossfadeArtworkKey,
+      value,
+      () => _crossfadeArtwork,
+      (v) => _crossfadeArtwork = v);
+
   Future<void> setPlayerSkin(PlayerSkin value) async {
     if (_playerSkin == value) return;
     _playerSkin = value;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('player_skin', value.name);
+  }
+
+  Future<void> setSkinFrameRate(SkinFrameRate value) async {
+    if (_skinFrameRate == value) return;
+    _skinFrameRate = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_skinFrameRateKey, value.name);
   }
 
   Future<void> setFluidBackground(bool value) => _setBool('fluid_background',

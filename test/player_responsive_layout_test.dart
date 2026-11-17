@@ -314,7 +314,7 @@ class _ResponsivePlayer extends PlayerController {
   }
 
   @override
-  Future<void> next() async {
+  Future<void> next({bool smooth = false}) async {
     _index = (_index + 1) % _songs.length;
     notifyListeners();
   }

@@ -70,15 +70,55 @@ class ReferenceArtworkBackground extends StatelessWidget {
                       memCacheWidth: 256,
                       memCacheHeight: 256),
                 )))),
-        const DecoratedBox(
-            decoration: BoxDecoration(
-                gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0x38202a40), Color(0x20000000), Color(0x99050a16)],
-          stops: [0, .5, 1],
-        ))),
+        // 主色渐变过渡（对标 TuneFreeNext 的 DynamicArtworkController）：
+        // 从当前封面提取的主色随切歌平滑变化，让背景氛围与歌曲一致。
+        const _ArtworkTintGradient(),
       ]),
+    );
+  }
+}
+
+/// 用封面主色绘制一层柔和渐变，切歌时平滑过渡。
+/// 无可用主色时回退到中性色，视觉与改造前一致。
+class _ArtworkTintGradient extends StatelessWidget {
+  const _ArtworkTintGradient();
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerController>();
+    final crossfade = context.select<SettingsController, bool>(
+        (s) => s.crossfadeArtwork);
+    if (!crossfade) {
+      return const DecoratedBox(
+          decoration: BoxDecoration(
+              gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0x38202a40), Color(0x20000000), Color(0x99050a16)],
+        stops: [0, .5, 1],
+      )));
+    }
+    return ValueListenableBuilder<Color>(
+      valueListenable: player.artworkColor,
+      builder: (context, tint, _) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 650),
+          curve: Curves.easeInOutCubic,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                tint.withValues(alpha: 0.34),
+                const Color(0x20000000),
+                Color.lerp(tint, const Color(0xff050a16), 0.8)!
+                    .withValues(alpha: 0.55),
+              ],
+              stops: const [0, .5, 1],
+            ),
+          ),
+        );
+      },
     );
   }
 }

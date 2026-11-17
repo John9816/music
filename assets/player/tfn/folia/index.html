@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <style>
+    html,body,#window{margin:0;width:100%;height:100%;overflow:hidden;background:#10121a}
+    body{user-select:none;-webkit-user-select:none;touch-action:none}
+    #backdrop{position:absolute;inset:0;background:radial-gradient(ellipse at 75% 15%,var(--accent,#49394a),#10121a 80%)}
+    #window{position:absolute;background:transparent}
+    canvas{pointer-events:none}
+  </style>
+</head>
+<body><div id="backdrop"></div><div id="window"></div><script type="module" src="host.js"></script></body>
+</html>

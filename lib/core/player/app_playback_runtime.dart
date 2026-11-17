@@ -5,7 +5,9 @@ import '../api/user_api.dart';
 import '../auth/auth_controller.dart';
 import '../models/song.dart';
 import '../services/listen_time_reporter.dart';
+import '../services/artwork_color_service.dart';
 import '../services/song_download_service.dart';
+import '../utils/image_cache_manager.dart';
 import '../settings/settings_controller.dart';
 import 'car_media_library.dart';
 import 'player_controller.dart';
@@ -24,6 +26,10 @@ class AppPlaybackRuntime {
         () => settings.alertSliderPauseEnabled);
     player = PlayerController(
         settings: settings,
+        // 封面预热 + 主色提取：预热走已有图片缓存，主色走独立 LRU 服务。
+        warmArtwork: (uri) =>
+            ImageCacheManager.preloadCovers([uri.toString()], limit: 1),
+        artworkColorService: ArtworkColorService(),
         beforePlayback: Platform.isAndroid || Platform.isIOS
             ? SystemMediaController.instance.prepareForPlayback
             : null);

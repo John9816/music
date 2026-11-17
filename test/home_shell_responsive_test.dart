@@ -424,7 +424,7 @@ class _CurrentSongPlayer extends PlayerController {
   }
 
   @override
-  Future<void> next() async => nextCount++;
+  Future<void> next({bool smooth = false}) async => nextCount++;
 
   @override
   Song get current => Song(

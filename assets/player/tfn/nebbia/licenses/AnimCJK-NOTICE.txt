@@ -1,0 +1,1 @@
+Modified 2026-11-09 by TuneFreeNext, following Folia: extract stroke medians from AnimCJK 99dba566b92daf45ae20d05e6c91d3f68d8619f2; choose Kana, simplified Chinese, then Japanese; invert y as 900-y; omit out-of-bounds strokes; compress JSON with gzip. Arphic Public License. Copyright 2016-2026 FM&SH and Arphic Technology.

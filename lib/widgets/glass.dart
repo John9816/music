@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/services/content_insets.dart';
 import '../core/theme/design_tokens.dart';
 import '../core/theme/platform_motion.dart';
 import 'wave_progress_track.dart';
@@ -65,8 +66,10 @@ double macOSWindowControlsInset(BuildContext context) {
 /// 设计成「读多少让多少」：`SafeArea` 会把自己已经消费掉的 inset 从子树
 /// 的 `MediaQuery` 里移除，所以已经包在 `SafeArea` 里的组件读到的恒为 0，
 /// 头部组件可以无条件叠加，不会出现双重避让。
-double topSystemInset(BuildContext context) =>
-    MediaQuery.paddingOf(context).top;
+///
+/// 统一走 [ContentInsets.topOf]：挖掘/状态栏的补足计算集中在 ContentInsets，
+/// 这里只负责读取，保持与改动前逐字一致的语义。
+double topSystemInset(BuildContext context) => ContentInsets.topOf(context);
 
 /// 页面大标题（各页顶部统一使用）
 TextStyle pageTitleStyle(BuildContext context) => TextStyle(

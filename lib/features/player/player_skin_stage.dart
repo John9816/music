@@ -8,6 +8,7 @@ import '../../core/settings/settings_controller.dart';
 import '../../widgets/async_cover.dart';
 import 'folia_player_stage.dart';
 import 'poster_lyric_stage.dart';
+import 'tfn_skin_stage.dart';
 
 Future<void> showPlayerSkins(BuildContext context) =>
     showModalBottomSheet<void>(
@@ -58,6 +59,39 @@ Future<void> showPlayerSkins(BuildContext context) =>
                               },
                             )),
                   const SizedBox(height: 12),
+                  Consumer<SettingsController>(
+                    builder: (context, settings, _) =>
+                        settings.playerSkin.isTfn
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('原版引擎帧率',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 4),
+                                  const Text('低帧率更省电，高帧率更流畅',
+                                      style: TextStyle(
+                                          fontSize: 12, color: Colors.white60)),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      for (final rate in SkinFrameRate.values)
+                                        ChoiceChip(
+                                          label: Text(rate.label),
+                                          selected:
+                                              settings.skinFrameRate == rate,
+                                          onSelected: (_) =>
+                                              settings.setSkinFrameRate(rate),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                              )
+                            : const SizedBox.shrink(),
+                  ),
                   const Text('动态效果会增加耗电。选择保存在这台设备上。',
                       style: TextStyle(fontSize: 12)),
                 ]),
@@ -72,6 +106,9 @@ List<Color> _skinColors(PlayerSkin s) => switch (s) {
           const Color(0xffdb976a),
           const Color(0xff33243f)
         ],
+      PlayerSkin.lumiere => [const Color(0xff7b6fd6), const Color(0xff1a1738)],
+      PlayerSkin.hanabi => [const Color(0xffd4768f), const Color(0xff2a1424)],
+      PlayerSkin.nebbia => [const Color(0xff6f9fb5), const Color(0xff14242c)],
     };
 IconData _skinIcon(PlayerSkin s) => switch (s) {
       PlayerSkin.classic => Icons.album_outlined,
@@ -79,6 +116,9 @@ IconData _skinIcon(PlayerSkin s) => switch (s) {
       PlayerSkin.mist => Icons.cloud_outlined,
       PlayerSkin.light => Icons.blur_on,
       PlayerSkin.fireworks => Icons.auto_awesome_outlined,
+      PlayerSkin.lumiere => Icons.brightness_7_outlined,
+      PlayerSkin.hanabi => Icons.auto_awesome,
+      PlayerSkin.nebbia => Icons.ac_unit_outlined,
     };
 
 /// Shares one slow clock per effect and stops it whenever it cannot be seen.
@@ -199,13 +239,26 @@ class PlayerSkinStage extends StatelessWidget {
   final VoidCallback onLyrics;
   final bool visible;
   @override
-  Widget build(BuildContext context) => skin == PlayerSkin.poster
-      ? PosterLyricStage(song: song, lrc: lrc, onLyrics: onLyrics)
-      : FoliaPlayerStage(
-          key: ValueKey(skin),
-          song: song,
-          skin: skin,
-          lrc: lrc,
-          visible: visible,
-          onLyrics: onLyrics);
+  Widget build(BuildContext context) {
+    final tfn = skin.tfnSkin;
+    if (tfn != null) {
+      return TfnSkinStage(
+        key: ValueKey(skin),
+        song: song,
+        skin: tfn,
+        lrc: lrc,
+        visible: visible,
+        onLyrics: onLyrics,
+      );
+    }
+    return skin == PlayerSkin.poster
+        ? PosterLyricStage(song: song, lrc: lrc, onLyrics: onLyrics)
+        : FoliaPlayerStage(
+            key: ValueKey(skin),
+            song: song,
+            skin: skin,
+            lrc: lrc,
+            visible: visible,
+            onLyrics: onLyrics);
+  }
 }

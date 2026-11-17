@@ -53,7 +53,10 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  for (final skin in PlayerSkin.values.where((s) => s != PlayerSkin.classic)) {
+  // 原版引擎皮肤依赖 WebView 渲染，测试环境无 WebViewPlatform 时走降级路径，
+  // 不在此断言歌词文本；其降级行为由下方单独的测试覆盖。
+  for (final skin in PlayerSkin.values.where(
+      (s) => s != PlayerSkin.classic && !s.isTfn)) {
     for (final size in [const Size(280, 210), const Size(390, 450)]) {
       testWidgets('${skin.name} fits $size and opens synchronized lyrics',
           (tester) async {
@@ -92,5 +95,38 @@ void main() {
         await tester.pumpWidget(const SizedBox());
       });
     }
+  }
+
+  for (final skin in PlayerSkin.values.where((s) => s.isTfn)) {
+    testWidgets('${skin.name} 在无 WebView 环境下降级且不崩溃', (tester) async {
+      final settings = SettingsController();
+      final player = _Player(settings);
+      addTearDown(player.dispose);
+      addTearDown(settings.dispose);
+      var opened = false;
+      final song = Song.fromV1(
+          {'id': 'a', 'source': 'qishui', 'name': '歌名', 'artist': '歌手'});
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          ChangeNotifierProvider<PlayerController>.value(value: player),
+        ],
+        child: MaterialApp(
+            home: Center(
+                child: SizedBox.fromSize(
+                    size: const Size(390, 450),
+                    child: PlayerSkinStage(
+                        song: song,
+                        skin: skin,
+                        lrc: '[00:01.00]上一句\n[00:10.00]当下这一句歌词',
+                        onLyrics: () => opened = true)))),
+      ));
+      await tester.pump();
+      // 无 WebView 时不应抛异常，且点击仍能触发打开完整歌词。
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byType(GestureDetector).last);
+      expect(opened, isTrue);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
 }
