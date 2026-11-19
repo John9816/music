@@ -399,6 +399,28 @@ class _MobilePlayerState extends State<_MobilePlayer> {
   int _page = 0;
   bool _addingPlaylist = false;
 
+  /// 全屏 TFN 皮肤底部被播放控件遮挡的高度（逻辑像素）。
+  ///
+  /// 渲染器按 insets 把歌词舞台限制在顶栏与控件之间，取控件实测高度可避免
+  /// 歌词被控件压住；数值稳定后不再 setState，不会造成重复布局。
+  double _tfnBottomInset = 0;
+
+  void _scheduleTfnMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _controlsKey.currentContext;
+      if (ctx == null) return;
+      final box = ctx.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return;
+      // 控件底边缘到屏幕底之间还有系统手势区，皮肤 WebView 铺满整页，
+      // 因此底部内缩要把这段安全区一并算进去。
+      final height = box.size.height + MediaQuery.paddingOf(context).bottom;
+      if ((height - _tfnBottomInset).abs() >= 1) {
+        setState(() => _tfnBottomInset = height);
+      }
+    });
+  }
+
   @override
   void didUpdateWidget(covariant _MobilePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -450,13 +472,32 @@ class _MobilePlayerState extends State<_MobilePlayer> {
           final lyrics = _page == 1;
           final skin = context
               .select<SettingsController, PlayerSkin>((s) => s.playerSkin);
+          if (!lyrics && skin.isTfn) _scheduleTfnMeasure();
           return PopScope<void>(
             canPop: !lyrics,
             onPopInvokedWithResult: (didPop, _) {
               if (!didPop && lyrics) _showPage(0);
             },
             child: Stack(fit: StackFit.expand, children: [
-              if (lyrics ||
+              if (!lyrics && skin.isTfn)
+                // TuneFreeNext 原版皮肤：WebView 全屏铺底（含状态栏区），
+                // 顶栏与控件以浮层叠加，靠 insets 把歌词舞台限制在中间。
+                LayoutBuilder(builder: (context, box) {
+                  final wide = box.maxWidth >= 600 &&
+                      box.maxWidth > box.maxHeight;
+                  return PlayerSkinStage(
+                    key: ValueKey('tfn-full-${skin.name}'),
+                    song: widget.song,
+                    skin: skin,
+                    lrc: state.$1,
+                    visible: true,
+                    topInset: MediaQuery.paddingOf(context).top +
+                        (wide ? 0.0 : 48.0),
+                    bottomInset: wide ? 0.0 : _tfnBottomInset,
+                    onLyrics: () => _showPage(1),
+                  );
+                })
+              else if (lyrics ||
                   skin == PlayerSkin.classic ||
                   skin == PlayerSkin.poster)
                 ReferenceArtworkBackground(
@@ -480,12 +521,21 @@ class _MobilePlayerState extends State<_MobilePlayer> {
                             key: ValueKey(
                                 'mobile-cover-${widget.song.source}:${widget.song.id}'),
                             song: widget.song)
-                        : PlayerSkinStage(
-                            song: widget.song,
-                            skin: skin,
-                            visible: !lyrics,
-                            lrc: state.$1,
-                            onLyrics: () => _showPage(1)),
+                        : skin.isTfn && !lyrics
+                        // 原版皮肤已在底层全屏渲染，此页仅保留"点击打开歌词"
+                        // 与左右滑动切页的手势，避免重复创建第二个 WebView。
+                            ? Semantics(
+                                button: true,
+                                label: '打开完整歌词',
+                                child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _showPage(1)))
+                            : PlayerSkinStage(
+                                song: widget.song,
+                                skin: skin,
+                                visible: !lyrics,
+                                lrc: state.$1,
+                                onLyrics: () => _showPage(1)),
                     _LyricView(
                         key: ValueKey(
                             'mobile-lyrics-${widget.song.source}:${widget.song.id}'),

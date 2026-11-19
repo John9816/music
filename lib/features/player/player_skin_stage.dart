@@ -232,12 +232,16 @@ class PlayerSkinStage extends StatelessWidget {
       required this.skin,
       required this.lrc,
       required this.onLyrics,
-      this.visible = true});
+      this.visible = true,
+      this.topInset = 0,
+      this.bottomInset = 0});
   final Song song;
   final PlayerSkin skin;
   final String lrc;
   final VoidCallback onLyrics;
   final bool visible;
+  final double topInset;
+  final double bottomInset;
   @override
   Widget build(BuildContext context) {
     final tfn = skin.tfnSkin;
@@ -249,6 +253,8 @@ class PlayerSkinStage extends StatelessWidget {
         lrc: lrc,
         visible: visible,
         onLyrics: onLyrics,
+        topInset: topInset,
+        bottomInset: bottomInset,
       );
     }
     return skin == PlayerSkin.poster

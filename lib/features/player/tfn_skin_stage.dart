@@ -28,6 +28,8 @@ class TfnSkinStage extends StatefulWidget {
     required this.lrc,
     required this.visible,
     required this.onLyrics,
+    this.topInset = 0,
+    this.bottomInset = 0,
   });
 
   final Song song;
@@ -35,6 +37,13 @@ class TfnSkinStage extends StatefulWidget {
   final String lrc;
   final bool visible;
   final VoidCallback onLyrics;
+
+  /// 顶部/底部被浮层（状态栏、播放控件）遮挡的逻辑像素高度。
+  ///
+  /// 全屏皮肤下 WebView 铺满整页，歌词舞台需按这两个值内缩，才能与
+  /// TuneFreeNext 的 `setTfnInsets` 行为一致、不被顶栏和控件压住。
+  final double topInset;
+  final double bottomInset;
 
   @override
   State<TfnSkinStage> createState() => _TfnSkinStageState();
@@ -185,7 +194,9 @@ class _TfnSkinStageState extends State<TfnSkinStage>
     if (oldWidget.song.id != widget.song.id ||
         oldWidget.song.source != widget.song.source ||
         oldWidget.lrc != widget.lrc ||
-        oldWidget.skin != widget.skin) {
+        oldWidget.skin != widget.skin ||
+        oldWidget.topInset != widget.topInset ||
+        oldWidget.bottomInset != widget.bottomInset) {
       _contentDirty = true;
     }
     _sync();
@@ -318,9 +329,11 @@ class _TfnSkinStageState extends State<TfnSkinStage>
       },
       'lyricScale': _fontSize / 30,
       'scale': 1.0,
+      // 全屏皮肤：把顶栏/控件遮挡区传给渲染器，歌词舞台在剩余区域居中。
+      // 数值为逻辑像素，与 WebView CSS 像素 1:1（devicePixelRatio 由引擎处理）。
       'insets': {
-        'top': 0.0,
-        'bottom': 0.0,
+        'top': widget.topInset,
+        'bottom': widget.bottomInset,
       },
     };
   }
