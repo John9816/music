@@ -19,9 +19,19 @@ class AboutView extends StatefulWidget {
 class _AboutViewState extends State<AboutView> {
   bool _checkingUpdate = false;
   double? _downloadProgress;
+  UpdateDownloadPhase _downloadPhase = UpdateDownloadPhase.connecting;
   String _updateText = '点击检查新版本';
   String _serviceStatus = '检查中';
   AppInstallIdentity? _identity;
+  /// 当前正在进行更新的服务实例，取消下载必须作用于同一个实例。
+  AppUpdateService? _activeUpdateService;
+
+  @override
+  void dispose() {
+    // 离开页面时若仍在下载，主动取消，避免后台长期挂起等待网络。
+    _activeUpdateService?.cancelDownload();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -98,15 +108,23 @@ class _AboutViewState extends State<AboutView> {
       if (!opened) _message('无法打开更新地址');
       return;
     }
-    setState(() => _downloadProgress = 0);
+    setState(() {
+      _downloadProgress = 0;
+      _downloadPhase = UpdateDownloadPhase.connecting;
+    });
+    _activeUpdateService = service;
     final path = await service.downloadUpdate(
       release.assetUrl!,
       onProgress: (progress) {
         if (mounted) setState(() => _downloadProgress = progress);
       },
+      onPhase: (phase) {
+        if (mounted) setState(() => _downloadPhase = phase);
+      },
     );
     if (!mounted) return;
     setState(() => _downloadProgress = null);
+    _activeUpdateService = null;
     if (path == null) {
       _message('更新包下载失败');
       return;
@@ -157,18 +175,30 @@ class _AboutViewState extends State<AboutView> {
                 title: '检查更新',
                 subtitle: _downloadProgress == null
                     ? _updateText
-                    : '正在下载 ${(_downloadProgress! * 100).round()}%',
+                    : _downloadPhase == UpdateDownloadPhase.waitingForNetwork
+                        ? '网络已断开，等待联网后自动继续…'
+                        : '正在下载 ${(_downloadProgress! * 100).round()}%',
                 trailing: _checkingUpdate || _downloadProgress != null
                     ? SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          value: _downloadProgress,
-                        ),
+                        child: _downloadPhase ==
+                                UpdateDownloadPhase.waitingForNetwork
+                            ? const Icon(Icons.cloud_off_outlined, size: 20)
+                            : CircularProgressIndicator(
+                                strokeWidth: 2,
+                                value: _downloadProgress,
+                              ),
                       )
                     : null,
-                onTap: _checkUpdate,
+                onTap: _downloadProgress != null &&
+                        _downloadPhase == UpdateDownloadPhase.waitingForNetwork
+                    ? () {
+                        // 等待网络时允许用户主动取消，避免长期挂起。
+                        _activeUpdateService?.cancelDownload();
+                        if (mounted) setState(() => _downloadProgress = null);
+                      }
+                    : _checkUpdate,
               ),
               SettingsRow(
                 icon: Icons.cloud_rounded,

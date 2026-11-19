@@ -10,10 +10,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 import '../config/app_config.dart';
+import '../network/network_connectivity.dart';
 
 enum UpdateTarget { android, ios, macos, windows, unsupported }
 
 enum UpdateCheckStatus { updateAvailable, upToDate, failed }
+
+/// 更新包下载阶段。[waitingForNetwork] 表示网络中断、正在等待恢复后自动续传。
+enum UpdateDownloadPhase { connecting, downloading, waitingForNetwork }
 
 /// 读流空闲超过该时长仍无新字节，判定为挂起并触发断点续传重试。
 /// 设 15s：远大于正常 chunk 间隔（实测健康流每块 <2s），又能在"卡 1%"时较快恢复。
@@ -280,15 +284,26 @@ class AppUpdateService {
     }
   }
 
-  /// 下载更新包，支持断点续传与断流自动重试。
+  /// 用户主动取消下载。[downloadUpdate] 在每个等待点检查此标志。
+  bool _cancelDownload = false;
+
+  void cancelDownload() => _cancelDownload = true;
+
+  /// 下载更新包，支持断点续传、断流自动重试、断网等待恢复。
   ///
   /// 中间结果保存在 `<file>.part`，中断后再次进入会从已下载字节处继续，
   /// 而不是从头开始。若服务端忽略 Range（返回 200）则自动回退为整包重下；
   /// 若服务端声明了不同的起始偏移，同样丢弃本地片段重来，避免拼出坏包。
   /// 文件名带 URL 指纹，换版本后不会错误复用上个版本的残留片段。
+  ///
+  /// 网络感知：一次尝试失败后，先探测真实网络连通性。若判定离线，则通过
+  /// [onPhase] 通知 UI「等待网络」，挂起等待直到网络恢复，再自动从 .part 续传
+  /// （不消耗重试次数、不打断用户）；仅当网络正常但仍失败时才计入重试次数并
+  /// 有限退避。这样手机切飞行模式/进隧道再联网后能无感继续下载。
   Future<String?> downloadUpdate(
     String url, {
     ValueChanged<double>? onProgress,
+    ValueChanged<UpdateDownloadPhase>? onPhase,
     UpdateTarget? target,
   }) async {
     final resolvedTarget = target ?? currentTarget;
@@ -297,6 +312,7 @@ class AppUpdateService {
       return null;
     }
 
+    _cancelDownload = false;
     final directory = await getTemporaryDirectory();
     final extension = _extensionForUrl(url, resolvedTarget);
     final fingerprint =
@@ -306,19 +322,38 @@ class AppUpdateService {
     );
     final targetFile = File('${directory.path}/duck_music_update$extension');
 
-    const maxAttempts = 4;
-    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+    const maxAttempts = 5;
+    var attempt = 0;
+    while (!_cancelDownload) {
+      onPhase?.call(UpdateDownloadPhase.connecting);
       final completed = await _downloadOnce(
         url: url,
         partFile: partFile,
         targetFile: targetFile,
         onProgress: onProgress,
       );
+      if (_cancelDownload) return null;
       if (completed != null) return completed;
-      if (attempt < maxAttempts) {
-        // 1s、2s、4s 退避，给弱网留出恢复时间
-        await Future<void>.delayed(Duration(seconds: 1 << (attempt - 1)));
+
+      // 关键改动：失败后先判断是否网络断开。离线则等待恢复再续传，
+      // 且不计入重试次数——断网多久都不该让用户手动重来。
+      final online = await NetworkConnectivity.instance.probeNow();
+      if (_cancelDownload) return null;
+      if (!online) {
+        onPhase?.call(UpdateDownloadPhase.waitingForNetwork);
+        final recovered = await NetworkConnectivity.instance.waitForOnline(
+          shouldAbort: () => _cancelDownload,
+        );
+        onPhase?.call(UpdateDownloadPhase.connecting);
+        if (_cancelDownload || !recovered) return null;
+        // 网络已恢复，回到循环顶部从 .part 续传。
+        continue;
       }
+
+      // 网络正常但仍失败：有限退避后重试，耗尽则放弃。
+      attempt++;
+      if (attempt >= maxAttempts) return null;
+      await Future<void>.delayed(Duration(seconds: 1 << (attempt - 1)));
     }
     return null;
   }

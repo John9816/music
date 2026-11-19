@@ -12,6 +12,7 @@ import '../api/music_api.dart';
 import '../models/song.dart';
 import '../models/playback_info.dart';
 import '../network/image_request_policy.dart';
+import '../network/network_connectivity.dart';
 import '../services/cache_service.dart';
 import '../services/artwork_color_service.dart';
 import '../services/song_download_service.dart';
@@ -189,6 +190,18 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   /// 自动跳过计数器：连续跳过达到队列长度后停止，避免整队列不可播时死循环。
   int _autoSkipStreak = 0;
   Timer? _autoSkipTimer;
+
+  // --- 断网恢复：网络中断时记录进度并等待恢复，联网后自动续播 ---
+  /// 正在等待网络恢复（供 UI 显示"等待联网后自动继续"）。
+  bool _awaitingNetwork = false;
+  /// 断网瞬间的播放进度，联网后从该位置续播。
+  Duration? _networkResumePosition;
+  /// 一次性续播位置：由网络恢复流程设置，下一次 playAt 消费后清空。
+  Duration? _pendingResumePosition;
+  /// 网络等待的订阅，手动切歌/暂停/dispose 时取消，避免串台。
+  StreamSubscription<bool>? _networkSub;
+
+  bool get awaitingNetwork => _awaitingNetwork;
 
   void _invalidatePrefetch() {
     _prefetchGeneration++;
@@ -501,6 +514,13 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
+    // 用户主动切歌即视为干预，取消任何后台网络等待。
+    // 但断网恢复自己触发的 playAt 前已清空 _awaitingNetwork 并设置了一次性
+    // 续播位置，此处不会误伤（见 _pendingResumePosition）。
+    _cancelNetworkWait();
+    // 断网恢复续播：取出一次性续播位置并在音源就绪后应用，随后清空。
+    final resumePosition = _pendingResumePosition;
+    _pendingResumePosition = null;
     final seq = ++_playSeq;
     // 新的播放请求取消上一轮待执行的自动跳过，避免手动干预后被旧定时器切走。
     _autoSkipTimer?.cancel();
@@ -652,6 +672,11 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
         final deferredSeek = _deferredSeek!;
         _deferredSeek = null;
         await _seekNative(deferredSeek, seq);
+      }
+      if (seq != _playSeq) return;
+      // 断网恢复续播：音源就绪后回到中断前的进度。
+      if (resumePosition != null && resumePosition > Duration.zero) {
+        await _seekNative(resumePosition, seq);
       }
       if (seq != _playSeq) return;
       if (song.source != 'local') _loadLyric(seq, identity);
@@ -955,11 +980,81 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
       onMembershipRequired?.call();
       return;
     }
-    // 解析/播放失败自动跳过：只对普通失败生效，登录/会员错误必须让用户看到。
-    // 单首歌或整队列都试过仍失败时保留错误提示，避免死循环。
+    // 解析/播放失败：先判断是否由断网引起。
+    // 登录/会员错误必须让用户看到，不走网络等待。本地/已下载歌曲也不依赖网络。
     if (_errorKind == PlaybackErrorKind.generic) {
-      _scheduleAutoSkip(seq);
+      final song = _current;
+      final needsNetwork = song != null && song.source != 'local';
+      if (needsNetwork) {
+        unawaited(_handlePossibleNetworkFailure(seq));
+      } else {
+        _scheduleAutoSkip(seq);
+      }
     }
+  }
+
+  /// 播放失败后探测真实网络连通性，区分「断网」与「坏源/服务错误」。
+  ///
+  /// 断网：不跳过、不弹失败，进入等待态记录进度；网络恢复后自动重新解析地址
+  /// 并从原进度续播（重新走 playAt 会触发正常的换源逻辑）。用户在等待期间
+  /// 切歌/暂停会取消等待，避免把新操作拉回旧歌。网络正常则沿用自动跳过。
+  Future<void> _handlePossibleNetworkFailure(int seq) async {
+    // 用真实端点探测，能识别"连着 WiFi 但无外网"，比网卡状态更准。
+    final online = await NetworkConnectivity.instance.probeNow();
+    if (seq != _playSeq) return; // 期间用户已切歌，交给新序列处理
+    if (online) {
+      // 网络正常 → 确实是坏源/解析失败，沿用原来的自动跳过。
+      _scheduleAutoSkip(seq);
+      return;
+    }
+
+    // 离线 → 进入等待态，保存进度并订阅恢复。
+    _awaitingNetwork = true;
+    _networkResumePosition = _lastEmittedPosition;
+    _error = null;
+    _errorKind = PlaybackErrorKind.none;
+    notifyListeners();
+
+    final completer = Completer<void>();
+    await _networkSub?.cancel();
+    _networkSub = NetworkConnectivity.instance.onConnectivityChanged.listen((
+      restored,
+    ) {
+      if (restored && !completer.isCompleted) completer.complete();
+    });
+    // 双重保障：超时兜底 + 用户主动干预（切歌/暂停）也结束等待。
+    final deadline = Timer(const Duration(minutes: 10), () {
+      if (!completer.isCompleted) completer.complete();
+    });
+    try {
+      await completer.future;
+    } finally {
+      deadline.cancel();
+      await _networkSub?.cancel();
+      _networkSub = null;
+    }
+    if (seq != _playSeq || !_awaitingNetwork) return;
+
+    // 网络恢复：清掉等待态，重新播放当前歌并从断点续播。
+    final resume = _networkResumePosition;
+    _networkResumePosition = null;
+    _awaitingNetwork = false;
+    // 失效旧的地址解析/预取缓存，强制重新解析（播放地址常带时效签名）。
+    _clearResolvedAudio();
+    _invalidatePrefetch();
+    // playAt 内部全程按 seq 保护；用一次性字段传递断点位置，避免改方法签名
+    // 破坏测试里的子类 override，也避免 await 后 seq 已变导致的漏 seek。
+    _pendingResumePosition = resume;
+    await playAt(_index);
+  }
+
+  /// 用户主动干预时取消网络等待态，避免后台恢复把用户拉回旧歌。
+  void _cancelNetworkWait() {
+    if (!_awaitingNetwork) return;
+    _awaitingNetwork = false;
+    _networkResumePosition = null;
+    _networkSub?.cancel();
+    _networkSub = null;
   }
 
   /// 失败后短暂延时自动切到下一首（对标 TuneFreeNext 的 auto_skip_unplayable）。
@@ -992,6 +1087,7 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> pause() async {
+    _cancelNetworkWait();
     if (_player.playing) {
       await _player.pause();
       notifyListeners();
@@ -1305,6 +1401,9 @@ class PlayerController extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void dispose() {
     equalizer.dispose();
+    _awaitingNetwork = false;
+    _networkSub?.cancel();
+    _networkSub = null;
     _clearResolvedAudio();
     WidgetsBinding.instance.removeObserver(this);
     PlaybackCoordinator.instance.unregister(this);
