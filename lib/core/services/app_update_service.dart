@@ -15,6 +15,15 @@ enum UpdateTarget { android, ios, macos, windows, unsupported }
 
 enum UpdateCheckStatus { updateAvailable, upToDate, failed }
 
+/// 读流空闲超过该时长仍无新字节，判定为挂起并触发断点续传重试。
+/// 设 15s：远大于正常 chunk 间隔（实测健康流每块 <2s），又能在"卡 1%"时较快恢复。
+const Duration _streamIdleTimeout = Duration(seconds: 15);
+
+/// 内部信号：读流空闲超时。由 _downloadOnce 的 catch 统一转成可重试的 null。
+class _StreamIdleException implements Exception {
+  const _StreamIdleException();
+}
+
 class AppInstallIdentity {
   const AppInstallIdentity(
       {required this.packageName,
@@ -377,7 +386,17 @@ class AppUpdateService {
       if (total != null && total > 0) {
         onProgress?.call((received / total).clamp(0, 1));
       }
-      await for (final chunk in response.stream) {
+      // 读流空闲超时：CF 冷回源（3Mbps ECS）常出现"首屏几 KB 后长时间不出字节"，
+      // 纯 await for 无超时会永久挂起，UI 表现为卡在 1%。这里对每个数据块间隔计时，
+      // 超过 _streamIdleTimeout 即抛错中断本次尝试，保留 .part 交给上层断点续传重试。
+      // 阈值设得足够长，避免把"慢但健康"的流误杀。
+      final timedStream = response.stream.timeout(
+        _streamIdleTimeout,
+        // 必须用 sink.addError 而非 throw：onTimeout 里直接 throw 会逃逸成
+        // 未捕获异常直接崩溃 App；addError 才会作为流错误被 await for 的 catch 接住。
+        onTimeout: (sink) => sink.addError(const _StreamIdleException()),
+      );
+      await for (final chunk in timedStream) {
         sink.add(chunk);
         received += chunk.length;
         if (total != null && total > 0) {
