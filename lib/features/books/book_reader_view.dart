@@ -9,6 +9,7 @@ import '../../core/models/book_chapter.dart';
 import '../../core/models/book_content.dart';
 import '../../core/models/book_progress.dart';
 import '../../widgets/glass.dart';
+import 'book_offline_cache.dart';
 import 'book_progress_store.dart';
 
 class BookReaderView extends StatefulWidget {
@@ -32,6 +33,7 @@ class BookReaderView extends StatefulWidget {
 class _BookReaderViewState extends State<BookReaderView> {
   final _api = BookApi();
   final _store = BookProgressStore.instance;
+  final _offline = BookOfflineCache.instance;
   late final PageController _pageController;
   late final ScrollController _scrollController;
   final _readerFocusNode = FocusNode(debugLabel: 'book-reader');
@@ -47,8 +49,13 @@ class _BookReaderViewState extends State<BookReaderView> {
   bool _loading = true;
   bool _controlsVisible = false;
   String? _error;
+  bool _fromCache = false;
+  bool _caching = false;
   Timer? _controlsHideTimer;
   Offset? _pointerDownPosition;
+
+  /// 快速翻章时丢弃过期的异步结果，避免旧请求覆盖新章节。
+  int _loadGeneration = 0;
 
   BookChapter get _chapter => widget.chapters.isEmpty
       ? const BookChapter(title: '', chapterUrl: '', index: 0)
@@ -101,6 +108,14 @@ class _BookReaderViewState extends State<BookReaderView> {
 
   Future<void> _loadChapter(int index, {double position = 0}) async {
     if (index < 0 || index >= widget.chapters.length) return;
+    final generation = ++_loadGeneration;
+    final chapter = widget.chapters[index];
+    final key = _offline.chapterCacheKey(
+      widget.book.sourceId,
+      widget.book.bookUrl,
+      chapter.chapterUrl,
+    );
+
     setState(() {
       _chapterIndex = index;
       _position = position.clamp(0.0, 1.0);
@@ -108,36 +123,73 @@ class _BookReaderViewState extends State<BookReaderView> {
       _error = null;
       _content = null;
       _pages = const [];
+      _fromCache = false;
     });
+
+    // 1) 缓存优先：命中则立即渲染，做到离线秒开。
+    final cached = await _offline.readChapter(key);
+    if (!mounted || generation != _loadGeneration) return;
+    if (cached != null) {
+      _renderContent(
+        cached,
+        position: _position,
+        fromCache: true,
+        generation: generation,
+      );
+    }
+
+    // 2) 后台刷新：无论是否命中缓存都拉取最新正文。
     try {
-      final content =
-          await _api.getContent(widget.book, widget.chapters[index]);
-      if (!mounted) return;
-      setState(() {
-        _content = content;
-        _pages = _paginate(content.text);
-        _loading = false;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_mode == 'page' &&
-            _pages.isNotEmpty &&
-            _pageController.hasClients) {
-          final page = ((_pages.length - 1) * _position).round();
-          _pageController.jumpToPage(page);
-        } else if (_mode == 'scroll' && _scrollController.hasClients) {
-          final offset = _scrollController.position.maxScrollExtent * _position;
-          _scrollController.jumpTo(offset);
-        }
-      });
+      final content = await _api.getContent(widget.book, chapter);
+      if (!mounted || generation != _loadGeneration) return;
+      // 命中缓存时用户可能已在阅读，更新正文但尽量保持当前阅读位置。
+      final keepPosition = cached != null ? _position : position;
+      _renderContent(
+        content,
+        position: keepPosition,
+        fromCache: false,
+        generation: generation,
+      );
+      unawaited(_offline.writeChapter(key, content));
       _saveProgress(_position);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
+      // 离线 / 上游失败：有缓存就继续读，不打断用户；无缓存才显示错误。
+      if (cached != null && _content != null) {
+        setState(() => _fromCache = true);
+        return;
+      }
       setState(() {
         _error = error.toString();
         _loading = false;
       });
     }
+  }
+
+  /// 统一渲染章节正文：分页、定位、记录进度。
+  void _renderContent(
+    BookContent content, {
+    required double position,
+    required bool fromCache,
+    required int generation,
+  }) {
+    setState(() {
+      _content = content;
+      _pages = _paginate(content.text);
+      _loading = false;
+      _fromCache = fromCache;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _loadGeneration) return;
+      if (_mode == 'page' && _pages.isNotEmpty && _pageController.hasClients) {
+        final page = ((_pages.length - 1) * position).round();
+        _pageController.jumpToPage(page);
+      } else if (_mode == 'scroll' && _scrollController.hasClients) {
+        final offset = _scrollController.position.maxScrollExtent * position;
+        _scrollController.jumpTo(offset);
+      }
+    });
+    _saveProgress(position);
   }
 
   List<String> _paginate(String text) {
@@ -166,6 +218,69 @@ class _BookReaderViewState extends State<BookReaderView> {
       }
     }
     return chunks.where((chunk) => chunk.isNotEmpty).toList(growable: false);
+  }
+
+  /// 串行缓存从当前章开始的后续章节，供离线阅读。小延时避免压垮上游。
+  Future<void> _cacheForward(int count) async {
+    if (_caching) return;
+    if (widget.chapters.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没有可缓存的章节')),
+        );
+      }
+      return;
+    }
+    setState(() => _caching = true);
+    final cached = await _offline.cachedKeys();
+    final targets = <BookChapter>[];
+    for (var i = _chapterIndex; i < widget.chapters.length && targets.length < count; i++) {
+      final chapter = widget.chapters[i];
+      final key = _offline.chapterCacheKey(
+        widget.book.sourceId,
+        widget.book.bookUrl,
+        chapter.chapterUrl,
+      );
+      if (!cached.contains(key)) targets.add(chapter);
+    }
+    if (targets.isEmpty) {
+      if (mounted) {
+        setState(() => _caching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('这些章节已经缓存过了')),
+        );
+      }
+      return;
+    }
+
+    var ok = 0;
+    for (final chapter in targets) {
+      try {
+        final content = await _api.getContent(widget.book, chapter);
+        final key = _offline.chapterCacheKey(
+          widget.book.sourceId,
+          widget.book.bookUrl,
+          chapter.chapterUrl,
+        );
+        if (await _offline.writeChapter(key, content)) ok++;
+      } catch (_) {
+        // 单章失败不影响其余缓存。
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    if (!mounted) return;
+    setState(() => _caching = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已缓存 $ok/${targets.length} 章，可离线阅读')),
+    );
+  }
+
+  Future<void> _clearCache() async {
+    final removed = await _offline.clearMyCache();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已清空 $removed 章离线缓存')),
+    );
   }
 
   void _saveProgress(double position) {
@@ -328,7 +443,9 @@ class _BookReaderViewState extends State<BookReaderView> {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
+        builder: (context, setSheetState) {
+          final scheme = Theme.of(context).colorScheme;
+          return Padding(
           padding: const EdgeInsets.fromLTRB(22, 4, 22, 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -406,9 +523,67 @@ class _BookReaderViewState extends State<BookReaderView> {
                   });
                 },
               ),
+              const SizedBox(height: 20),
+              Divider(height: 1, color: scheme.outlineVariant),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Icon(
+                    Icons.offline_bolt_outlined,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '离线缓存',
+                    style: TextStyle(
+                      fontSize: TypeScale.body,
+                      fontWeight: TypeScale.semibold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '缓存章节后，断网也能继续阅读。缓存仅保存在本机。',
+                style: TextStyle(
+                  fontSize: TypeScale.caption,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _cacheForward(10),
+                      icon: const Icon(Icons.download_outlined, size: 16),
+                      label: const Text('后续 10 章'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _cacheForward(30),
+                      icon: const Icon(Icons.download_for_offline_outlined,
+                          size: 16),
+                      label: const Text('后续 30 章'),
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _clearCache,
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('清空离线缓存'),
+                ),
+              ),
             ],
           ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -518,14 +693,41 @@ class _BookReaderViewState extends State<BookReaderView> {
                   children: [
                     Text(widget.book.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(
-                      chapterTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: TypeScale.caption,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            chapterTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: TypeScale.caption,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        if (_fromCache) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '离线',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: scheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
